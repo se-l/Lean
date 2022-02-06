@@ -30,6 +30,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using Order = QuantConnect.Orders.Order;
+using System.IO;
+using System.Text;
 
 namespace QuantConnect.Brokerages.Bitfinex
 {
@@ -40,6 +42,9 @@ namespace QuantConnect.Brokerages.Bitfinex
     public partial class BitfinexBrokerage : BaseWebsocketsBrokerage, IDataQueueHandler
     {
         private readonly SymbolPropertiesDatabaseSymbolMapper _symbolMapper = new SymbolPropertiesDatabaseSymbolMapper(Market.Bitfinex);
+        private Tuple<Symbol, TickType, String> writerKey;
+        private Dictionary<Tuple<Symbol, TickType, String>, StreamWriter> writer;
+        private string path;
 
         #region IBrokerage
 
@@ -445,6 +450,7 @@ namespace QuantConnect.Brokerages.Bitfinex
                 aggregator: aggregator,
                 job: job
             );
+            writer = new Dictionary<Tuple<Symbol, TickType, string>, StreamWriter>();
 
             if (!IsConnected)
             {
@@ -511,6 +517,33 @@ namespace QuantConnect.Brokerages.Bitfinex
                 return false;
             }
             return symbol.ID.Market == Market.Bitfinex;
+        }
+
+        public void AppendToFile(string msg, Symbol symbol, TickType tickType, DateTime time)
+        {
+            writerKey = Tuple.Create(symbol, TickType.Quote, time.ToString("yyyyMMdd"));
+
+            if (!writer.ContainsKey(writerKey))
+            {
+                path = Path.Combine(new string[] { Globals.DataFolder, "crypto", "bitfinex", "tick", symbol.ToLower(), $"{time.ToString("yyyyMMdd")}_{tickType.ToLower()}.txt" });
+                //Log($"Creating new writer for {path}...");
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                writer[writerKey] = new StreamWriter(path, true, Encoding.ASCII);
+            }
+            if (!string.IsNullOrEmpty(msg))
+            {
+                try
+                {
+                    writer[writerKey].Write(msg + "\n");
+                }
+                catch (Exception e)
+                {
+                    writer[writerKey].Close();
+                    //Debug("Exception: " + e.Message);
+                    path = Path.Combine(new string[] { Globals.DataFolder, "crypto", "bitfinex", "tick", symbol.ToLower(), $"{time.ToString("yyyyMMdd")}_{tickType.ToLower()}.txt" });
+                    writer[writerKey] = new StreamWriter(path, true, Encoding.ASCII);
+                }
+            }
         }
     }
 }

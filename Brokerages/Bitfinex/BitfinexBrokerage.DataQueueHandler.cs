@@ -437,6 +437,16 @@ namespace QuantConnect.Brokerages.Bitfinex
                 var count = Parse.Long(entries[1]);
                 var amount = decimal.Parse(entries[2], NumberStyles.Float, CultureInfo.InvariantCulture);
 
+                var time = DateTime.UtcNow;
+                var msg = string.Join(",", new string[]
+                {
+                        $"{time.Hour * 60 * 60 + time.Minute * 60 + time.Second}" + $".{time.Millisecond}",
+                        price.ToStringInvariant(),
+                        amount.ToStringInvariant(),
+                        count.ToStringInvariant()
+                });
+                AppendToFile(msg, symbol, TickType.Quote, time);
+
                 if (count == 0)
                 {
                     orderBook.RemovePriceLevel(price);
@@ -467,6 +477,15 @@ namespace QuantConnect.Brokerages.Bitfinex
                 var time = Time.UnixMillisecondTimeStampToDateTime(decimal.Parse(entries[1], NumberStyles.Float, CultureInfo.InvariantCulture));
                 var amount = decimal.Parse(entries[2], NumberStyles.Float, CultureInfo.InvariantCulture);
                 var price = decimal.Parse(entries[3], NumberStyles.Float, CultureInfo.InvariantCulture);
+
+                var msg = string.Join(",", new string[]
+                {
+                        $"{time.Hour * 60 * 60 + time.Minute * 60 + time.Second}" + $".{time.Millisecond}",
+                        price.ToStringInvariant(),
+                        amount.ToStringInvariant(),
+                        amount < 1 ? "Sell" : "Buy"
+                });
+                AppendToFile(msg, channel.Symbol, TickType.Trade, time);
 
                 EmitTradeTick(channel.Symbol, time, price, amount);
             }
