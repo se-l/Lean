@@ -445,7 +445,7 @@ namespace QuantConnect.Brokerages.Bitfinex
                         amount.ToStringInvariant(),
                         count.ToStringInvariant()
                 });
-                AppendToFile(msg, symbol, TickType.Quote, time);
+                AppendToFile(msg, channel.Symbol, TickType.Quote, time);
 
                 if (count == 0)
                 {

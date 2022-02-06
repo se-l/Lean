@@ -521,7 +521,7 @@ namespace QuantConnect.Brokerages.Bitfinex
 
         public void AppendToFile(string msg, Symbol symbol, TickType tickType, DateTime time)
         {
-            writerKey = Tuple.Create(symbol, TickType.Quote, time.ToString("yyyyMMdd"));
+            writerKey = Tuple.Create(symbol, tickType, time.ToString("yyyyMMdd"));
 
             if (!writer.ContainsKey(writerKey))
             {
@@ -542,6 +542,17 @@ namespace QuantConnect.Brokerages.Bitfinex
                     //Debug("Exception: " + e.Message);
                     path = Path.Combine(new string[] { Globals.DataFolder, "crypto", "bitfinex", "tick", symbol.ToLower(), $"{time.ToString("yyyyMMdd")}_{tickType.ToLower()}.txt" });
                     writer[writerKey] = new StreamWriter(path, true, Encoding.ASCII);
+                }
+            }
+            // check if file can be closed
+            if (time.Minute == 0)
+            {
+                foreach (Tuple<Symbol, TickType, String> key in writer.Keys)
+                {
+                    if (Int32.Parse(key.Item3) < Int32.Parse(time.ToString("yyyyMMdd")))
+                    {
+                        writer[key].Close();
+                    }
                 }
             }
         }
