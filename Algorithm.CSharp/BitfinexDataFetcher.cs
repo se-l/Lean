@@ -29,12 +29,13 @@ namespace QuantConnect.Algorithm.CSharp
     {
         public override void Initialize()
         {
-            SetStartDate(2013, 10, 02);
-            SetEndDate(2013, 10, 03);
             SetBrokerageModel(BrokerageName.Bitfinex, AccountType.Margin);
-            foreach (string symbol in new List<string>() { 
-                "ETHUSD", 
-                "BTCUSD"
+            foreach (string symbol in new List<string>() {
+                "BTCUSD",
+                "ETHUSD",
+                "ADAUSD",
+                "SOLUSD",
+                "XRPUSD"
             })
             {
                 AddCrypto(symbol, Resolution.Tick);
