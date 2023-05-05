@@ -1608,22 +1608,6 @@ namespace QuantConnect.Tests.Algorithm
             }
         }
 
-        private class TestShortableProvider : IShortableProvider
-        {
-            public Dictionary<Symbol, long> AllShortableSymbols(DateTime localTime)
-            {
-                return new Dictionary<Symbol, long>
-                {
-                    { Symbols.MSFT, 1000 }
-                };
-            }
-
-            public long? ShortableQuantity(Symbol symbol, DateTime localTime)
-            {
-                return 1000;
-            }
-        }
-
         private QCAlgorithm GetAlgorithm(out Security msft, decimal leverage, decimal fee)
         {
             //Initialize algorithm
@@ -1633,6 +1617,7 @@ namespace QuantConnect.Tests.Algorithm
             algo.SetCash(100000);
             algo.SetFinishedWarmingUp();
             algo.Securities[Symbols.MSFT].FeeModel = new ConstantFeeModel(fee);
+            algo.SetLiveMode(false);
             _fakeOrderProcessor = new FakeOrderProcessor();
             algo.Transactions.SetOrderProcessor(_fakeOrderProcessor);
             msft = algo.Securities[Symbols.MSFT];

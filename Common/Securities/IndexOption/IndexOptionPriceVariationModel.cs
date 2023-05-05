@@ -11,22 +11,24 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
 */
 
-namespace QuantConnect.Data.Shortable
+namespace QuantConnect.Securities.IndexOption
 {
     /// <summary>
-    /// Defines the default Atreyu Shortable Provider
+    /// The index option price variation model
     /// </summary>
-    public class AtreyuShortableProvider : LocalDiskShortableProvider
+    public class IndexOptionPriceVariationModel : IPriceVariationModel
     {
         /// <summary>
-        /// Initialize an instance of <see cref="AtreyuShortableProvider"/>
+        /// Get the minimum price variation from a security
         /// </summary>
-        /// <param name="securityType">SecurityType to read data</param>
-        /// <param name="market">Market to read ETB data</param>
-        public AtreyuShortableProvider(SecurityType securityType, string market) : base(securityType, "atreyu", market)
+        /// <param name="parameters">An object containing the method parameters</param>
+        /// <returns>Decimal minimum price variation of a given security</returns>
+        public decimal GetMinimumPriceVariation(GetMinimumPriceVariationParameters parameters)
         {
+            return IndexOptionSymbolProperties.MinimumPriceVariationForPrice(parameters.Security.Symbol, parameters.ReferencePrice);
         }
     }
 }

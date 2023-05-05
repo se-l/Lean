@@ -29,6 +29,7 @@ using Python.Runtime;
 using QuantConnect.Data.Fundamental;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
+using QuantConnect.Data.Shortable;
 
 namespace QuantConnect.Securities
 {
@@ -53,7 +54,7 @@ namespace QuantConnect.Securities
         /// <summary>
         /// This securities <see cref="IShortableProvider"/>
         /// </summary>
-        protected IShortableProvider ShortableProvider { get; private set; }
+        public IShortableProvider ShortableProvider { get; private set; }
 
         /// <summary>
         /// A null security leverage value
@@ -425,6 +426,7 @@ namespace QuantConnect.Securities
             MarginInterestRateModel = marginInterestRateModel;
             Holdings = new SecurityHolding(this, currencyConverter);
             Data = new DynamicSecurityData(registeredTypesProvider, Cache);
+            ShortableProvider = new NullShortableProvider();
 
             UpdateSubscriptionProperties();
         }
@@ -602,7 +604,7 @@ namespace QuantConnect.Securities
         /// This is the source of this instance's time.
         /// </summary>
         /// <param name="localTimeKeeper">The source of this <see cref="Security"/>'s time.</param>
-        public void SetLocalTimeKeeper(LocalTimeKeeper localTimeKeeper)
+        public virtual void SetLocalTimeKeeper(LocalTimeKeeper localTimeKeeper)
         {
             _localTimeKeeper = localTimeKeeper;
             Exchange.SetLocalDateTimeFrontier(localTimeKeeper.LocalTime);
@@ -831,12 +833,68 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// Set Python Shortable Provider for this <see cref="Security"/>
+        /// </summary>
+        /// <param name="pyObject">Python class that represents a custom shortable provider</param>
+        public void SetShortableProvider(PyObject pyObject)
+        {
+            if (pyObject.TryConvert<IShortableProvider>(out var shortableProvider))
+            {
+                SetShortableProvider(shortableProvider);
+            }
+            else if (Extensions.TryConvert<IShortableProvider>(pyObject, out _, allowPythonDerivative: true))
+            {
+                SetShortableProvider(new ShortableProviderPythonWrapper(pyObject));
+            }
+            else
+            {
+                using (Py.GIL())
+                {
+                    throw new Exception($"SetShortableProvider: {pyObject.Repr()} is not a valid argument");
+                }
+            }
+        }
+
+        /// <summary>
         /// Set Shortable Provider for this <see cref="Security"/>
         /// </summary>
         /// <param name="shortableProvider">Provider to use</param>
         public void SetShortableProvider(IShortableProvider shortableProvider)
         {
             ShortableProvider = shortableProvider;
+        }
+
+        /// <summary>
+        /// Set Security Data Filter
+        /// </summary>
+        /// <param name="pyObject">Python class that represents a custom Security Data Filter</param>
+        /// <exception cref="ArgumentException"></exception>
+        public void SetDataFilter(PyObject pyObject)
+        {
+            if (pyObject.TryConvert<ISecurityDataFilter>(out var dataFilter))
+            {
+                SetDataFilter(dataFilter);
+            }
+            else if (Extensions.TryConvert<ISecurityDataFilter>(pyObject, out _, allowPythonDerivative: true))
+            {
+                SetDataFilter(new SecurityDataFilterPythonWrapper(pyObject));
+            }
+            else
+            {
+                using (Py.GIL())
+                {
+                    throw new ArgumentException($"SetDataFilter: {pyObject.Repr()} is not a valid argument");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Set Security Data Filter
+        /// </summary>
+        /// <param name="dataFilter">Security Data Filter</param>
+        public void SetDataFilter(ISecurityDataFilter dataFilter)
+        {
+            DataFilter = dataFilter;
         }
 
         /// <summary>
