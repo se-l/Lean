@@ -29,6 +29,8 @@ using System.Net;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Securities;
 using QuantConnect.Util;
+using IQFeed.CSharpApiClient.Lookup.Chains;
+using IQFeed.CSharpApiClient.Lookup.Chains.Equities;
 
 namespace QuantConnect.ToolBox.IQFeed
 {
@@ -94,6 +96,41 @@ namespace QuantConnect.ToolBox.IQFeed
             UpdateCollections(symbols);
         }
 
+        public static string Encode(EquityOptionMonthCode code)
+        {
+            int month = code.Month;
+            OptionSide side = code.Side;
+            switch (month)
+            {
+                case 1:
+                    return side == OptionSide.Call ? "A" : "M";
+                case 2:
+                    return side == OptionSide.Call ? "B" : "N";
+                case 3:
+                    return side == OptionSide.Call ? "C" : "O";
+                case 4:
+                    return side == OptionSide.Call ? "D" : "P";
+                case 5:
+                    return side == OptionSide.Call ? "E" : "Q";
+                case 6:
+                    return side == OptionSide.Call ? "F" : "R";
+                case 7:
+                    return side == OptionSide.Call ? "G" : "S";
+                case 8:
+                    return side == OptionSide.Call ? "H" : "T";
+                case 9:
+                    return side == OptionSide.Call ? "I" : "U";
+                case 10:
+                    return side == OptionSide.Call ? "J" : "V";
+                case 11:
+                    return side == OptionSide.Call ? "K" : "W";
+                case 12:
+                    return side == OptionSide.Call ? "L" : "X";
+                default:
+                    throw new Exception();
+            }
+        }
+
         /// <summary>
         /// Converts a Lean symbol instance to IQFeed ticker
         /// </summary>
@@ -101,8 +138,30 @@ namespace QuantConnect.ToolBox.IQFeed
         /// <returns>IQFeed ticker</returns>
         public string GetBrokerageSymbol(Symbol symbol)
         {
-            string leanSymbol;
-            return _symbols.TryGetValue(symbol, out leanSymbol) ? leanSymbol : string.Empty;
+            //    private const string OptionSymbolPattern = @"(.{1,5})(\d{2})(\d{2})([A-Z])(.+)";
+
+            //private const int EquitySymbolComponent = 1;
+            //private const int ExpirationYearComponent = 2;
+            //private const int ExpirationDateComponent = 3;
+            //private const int ExpirationMonthComponent = 4;
+            //private const int StrikePriceComponent = 5;
+        _ = _symbols.TryGetValue(symbol, out string leanSymbol) ? leanSymbol : string.Empty;
+
+            if (string.IsNullOrEmpty(leanSymbol) && symbol.ID.SecurityType == SecurityType.Option)
+            {
+                OptionSide optionSide = symbol.ID.OptionRight switch
+                {
+                    OptionRight.Call => OptionSide.Call,
+                    OptionRight.Put => OptionSide.Put,
+                    _ => throw new NotImplementedException()
+                };
+                var option = new EquityOption(symbol.Underlying.Value, symbol.Underlying.Value, (double)symbol.ID.StrikePrice, symbol.ID.Date, optionSide);
+                return $"{option.EquitySymbol}{option.Expiration.ToStringInvariant("yydd")}{Encode(new EquityOptionMonthCode(symbol.ID.Date.Month, option.Side))}{option.StrikePrice}";
+            }
+            else
+            {
+                return leanSymbol;
+            }
         }
 
         /// <summary>
@@ -117,7 +176,23 @@ namespace QuantConnect.ToolBox.IQFeed
         /// <returns>A new Lean Symbol instance</returns>
         public Symbol GetLeanSymbol(string ticker, SecurityType securityType, string market, DateTime expirationDate = default(DateTime), decimal strike = 0, OptionRight optionRight = 0)
         {
-            return _tickers.ContainsKey(ticker) ? _tickers[ticker] : Symbol.Empty;
+            Symbol symbol = _tickers.ContainsKey(ticker) ? _tickers[ticker] : Symbol.Empty;
+
+            if (symbol == Symbol.Empty && securityType == SecurityType.Option)
+            {
+                var equityOption = EquityOption.Parse(ticker);
+                OptionRight _optionRight = equityOption.Side switch
+                {
+                    OptionSide.Call => OptionRight.Call,
+                    OptionSide.Put => OptionRight.Put,
+                    _ => throw new NotImplementedException()
+                };
+                return Symbol.CreateOption(equityOption.EquitySymbol, market, OptionStyle.American, _optionRight, (decimal)equityOption.StrikePrice, equityOption.Expiration);
+            }
+            else
+            {
+                return symbol;
+            }
         }
 
         /// <summary>

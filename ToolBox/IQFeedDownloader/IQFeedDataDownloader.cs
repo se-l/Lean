@@ -14,7 +14,6 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
     public class IQFeedDataDownloader : IDataDownloader
     {
         private readonly IQFeedFileHistoryProvider _fileHistoryProvider;
-        private readonly TickType _tickType;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="IQFeedDataDownloader"/> class
@@ -43,8 +42,12 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                 return Enumerable.Empty<BaseData>();
             }
 
-            if (symbol.ID.SecurityType != SecurityType.Equity)
+            List<SecurityType> supportedSecurityTypes = new() { SecurityType.Equity, SecurityType.Option };
+
+            if (!supportedSecurityTypes.Contains(symbol.ID.SecurityType))
+            {
                 throw new NotSupportedException("SecurityType not available: " + symbol.ID.SecurityType);
+            }
 
             if (endUtc < startUtc)
                 throw new ArgumentException("The end date must be greater or equal than the start date.");

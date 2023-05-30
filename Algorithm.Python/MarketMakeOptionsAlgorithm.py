@@ -1,15 +1,31 @@
+import clr
+import json
 import random
+import getpass
 
-from collections import defaultdict
-from core.option_contract_filters import filter_is_liquid, filter_option_no_position
+from pathlib import Path
+from itertools import chain
+from collections import defaultdict, deque
+from core.events.handler import publish_event
+from core.events.high_portfolio_risk import is_high_portfolio_risk, EventHighPortfolioRisk
+from core.events.new_bid_ask import is_event_new_bid_ask, EventNewBidAsk
+from core.events.signal import get_signals, filter_signal_by_risk, EventSignals
 from core.position import Position
-from core.risk.portfolio import PortfolioRisk
+from core.risk.limit import RiskLimit
 from core.stubs import *
-from functools import partial, reduce
-from core.log import log_dividend, log_contract, log_order_event, log_pl, humanize, log_last_price_change
-from core.utils import RiskLmt, MMWindow, round_tick, get_contract, mid_price, tick_size
-from core.constants import BP, DIRECTION2NUM
+from core.log import log_contract, log_order_event, log_risk, quick_log
+from core.utils import MMWindow, round_tick, get_contract, mid_price, tick_size, cancel_open_tickets, profile_performance
+from core.constants import SEB, DIRECTION2NUM
 from core.pricing.option_contract_wrap import OptionContractWrap
+from core.risk.portfolio import PortfolioRisk
+from core.cache import cache
+
+clr.AddReference("QuantConnect.ToolBox")
+from QuantConnect.ToolBox.IQFeed.IQ import IQOptionChainProvider
+
+user = getpass.getuser()
+if user == SEB:
+    import cProfile
 
 
 class MarketMakeOptions(QCAlgorithm):
@@ -25,155 +41,188 @@ class MarketMakeOptions(QCAlgorithm):
 
     def __init__(self):
         super().__init__()
-        self.sod_slices = self.log_frequency = self.equity_price_increments = self.mm_window = self.max_strike_distance = self.q_options = \
-            self.one_side_cancel_options_equity_position_usd = self.tickets_option_contracts = self.tickets_equity = self.sym_sod_price_mid = \
+        self.sod_slices = self.equity_price_increments = self.mm_window = \
+            self.order_tickets = self.order_events = self.sym_sod_price_mid = \
             self.last_price = self.order_type = self.ticker = self.equities = self.options = self.option_chains = \
-            self.unwind = self.resolution = self.fct_is_if = self.simulated_missed_gain = self.start_value = None
+            self.resolution = self.min_correlation = self.fct_is_if = self.simulated_missed_gain = self.start_value = self.hedge_ticker = \
+            self.slices = self.option_ticker = self.risk_limit = None
 
     def Initialize(self):
         self.UniverseSettings.Resolution = self.resolution = Resolution.Minute
-        self.SetStartDate(2023, 5, 3)
-        self.SetEndDate(2023, 5, 3)
+        self.SetStartDate(2023, 5, 10)
+        self.SetEndDate(2023, 5, 10)
         self.SetCash(100000)
         self.SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin)
-        self.UniverseSettings.DataNormalizationMode = DataNormalizationMode.SplitAdjusted
+        # self.SetSecurityInitializer(MySecurityInitializer(self.BrokerageModel, FuncSecuritySeeder(self.GetLastKnownPrices)))
+        self.UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw
+        if self.LiveMode:
+            self.SetOptionChainProvider(IQOptionChainProvider())
+        self.SetSecurityInitializer(lambda x: x.SetMarketPrice(self.GetLastKnownPrice(x)))
+
+        self.equity_price_increments: float = 0  # refactor pct if needed
+        self.mm_window = MMWindow(time(9, 30, 0), time(15, 58, 0))
+        self.min_correlation = 0.0  # for paper trading. Should be rather 0.3 at least..
+        self.risk_limit = RiskLimit(40, 100_000)
+        self.volatility_span = 20
 
         self.order_events: List[OrderEvent] = []
-        self.log_frequency = 60 * 5 if self.LiveMode else 60 * 60 * 99999
-        self.equity_price_increments: int = 0
-
-        self.mm_window = MMWindow(time(9, 40, 0), time(15, 50, 0))  # after 15:50 may want to hedge with stocks
-        self.max_strike_distance = 1
-        self.q_options = 1
-        self.one_side_cancel_options_equity_position_usd = 100
-        self.tickets_option_contracts: List[OrderTicket] = []
-        self.tickets_equity: List[OrderTicket] = []
+        self.order_tickets: Dict[Symbol, List[OrderTicket]] = defaultdict(list)
         self.order_type = OrderType.Limit
 
-        self.ticker = ['HPE', 'IPG', 'SPY']
-        # self.AddUniverse(self.SelectCoarseCloud, self.SelectFine)
-        self.equities: List[Equity] = []
-        self.options: List[Option] = []
-        self.option_chains: Dict[Union[Option, Equity], Union[OptionChain, None]] = {}
-        self.unwind = False
+        self.hedge_ticker = ['SPY']
+        self.option_ticker = ['HPE', 'IPG', 'AKAM', 'AOS', 'A', 'MO', 'FL', 'ALL', 'ARE', 'ZBRA', 'AES', 'APD', 'ALLE', 'LNT', 'ZTS', 'ZBH']
+        self.option_ticker = ['HPE', 'IPG']
+        self.ticker = self.option_ticker + self.hedge_ticker
+        self.equities: List[Symbol] = []
+        self.options: List[Symbol] = []  # Canonical symbols
+        self.option_chains: Dict[Symbol, Union[List[OptionContract], None]] = {}
 
+        subscriptions = 0
         for ticker in self.ticker:
             equity = self.AddEquity(ticker, resolution=self.resolution)
-            self.equities.append(equity)
-            if ticker not in ['SPY']:
-                option = self.AddOption(ticker, resolution=self.resolution)
-                option.PriceModel = CurrentPriceOptionPriceModel()
-                option.SetFilter(-3, 3, timedelta(30), timedelta(365))
-                self.options.append(option)
-                self.option_chains[option] = self.option_chains[equity] = None
-        self.AddUniverseSelection(ManualUniverseSelectionModel([e.Symbol for e in self.equities]))
-        # self.SetWarmup(5 * 60 * 24, Resolution.Minute)
-        self.SetSecurityInitializer(lambda x: x.SetMarketPrice(self.GetLastKnownPrice(x)))
-        self.risk_is_lmt = RiskLmt(100_000, 1_000)
-        self.fct_is_if = 5
-        self.risk_if_lmt = RiskLmt(self.risk_is_lmt.position * self.fct_is_if, self.risk_is_lmt.unhedged * self.fct_is_if)
-        self.simulated_missed_gain = 0
-        self.start_value = self.Portfolio.TotalPortfolioValue
-
-        for equity in self.equities:
-            equity.VolatilityModel = StandardDeviationOfReturnsVolatilityModel(periods=30, resolution=Resolution.Daily)
+            # rather move this into the security initializer
+            equity.VolatilityModel = StandardDeviationOfReturnsVolatilityModel(periods=self.volatility_span, resolution=Resolution.Daily)
             # https://www.quantconnect.com/docs/v2/writing-algorithms/reality-modeling/options-models/volatility/key-concepts
             # https://github.com/QuantConnect/Lean/blob/master/Algorithm.Python/CustomVolatilityModelAlgorithm.py
             # https://www.quantconnect.com/docs/v2/writing-algorithms/indicators/manual-indicators
-        self.SetWarmUp(30, Resolution.Daily)
+            subscriptions += 1
+            self.equities.append(equity.Symbol)
+            if ticker in self.option_ticker:
+
+                option = Symbol.CreateCanonicalOption(equity.Symbol, Market.USA)
+                self.options.append(option)
+                self.option_chains[option] = self.option_chains[equity.Symbol] = None
+
+                history: List[TradeBars] = self.History[TradeBar](symbol=equity.Symbol, start=self.StartDate - timedelta(days=30), end=self.StartDate, resolution=Resolution.Daily)
+                try:
+                    latest_close = list(history)[-1].Close
+                except IndexError as e:
+                    self.Debug(f'No history for {ticker}. Not subscribing to any relating options.')
+                    continue
+
+                contract_symbols = self.OptionChainProvider.GetOptionContractList(ticker, self.Time)
+                for symbol in contract_symbols:
+                    if self.Time + timedelta(days=60) < symbol.ID.Date < self.Time + timedelta(days=365) and \
+                        symbol.ID.OptionStyle == OptionStyle.American and \
+                        latest_close * .9 < symbol.ID.StrikePrice < latest_close * 1.1:
+                        # improve: close to ATM +/- 1 Strike. 3 contracts per sym and maturity! can reduce
+                         #further. if ATM is O for call, strike +1 => only 2 contracts per sym.
+
+                        option_contract = self.AddOptionContract(symbol, resolution=self.resolution)
+                        option_contract.SetFilter(minStrike=-3, maxStrike=3)
+                        option_contract.PriceModel = CurrentPriceOptionPriceModel()
+                        subscriptions += 1
+        self.Debug(f'Subscribing to {subscriptions} securities')
+
+        self.AddUniverseSelection(ManualUniverseSelectionModel(self.equities))
+        
+        self.simulated_missed_gain = 0
+        self.start_value = self.Portfolio.TotalPortfolioValue
+
+        self.SetWarmUp(int(self.volatility_span * 1.5), Resolution.Daily)
         self.sym_sod_price_mid: Dict[Symbol, float] = {}
         self.last_price: Dict[Symbol, float] = defaultdict(lambda: 0)
+        self.slices: Deque[Slice] = deque(maxlen=2)
+        self.pf_risks: Deque[PortfolioRisk] = deque(maxlen=2)
 
-        self.Schedule.On(self.DateRules.EveryDay("SPY"),
-                         self.TimeRules.BeforeMarketClose("SPY", -10),
+        # Scheduled functions
+
+        self.Schedule.On(self.DateRules.EveryDay(self.hedge_ticker[0]),
+                         self.TimeRules.BeforeMarketClose(self.hedge_ticker[0], 1),
                          self.hedge_with_index)
 
+        self.Schedule.On(self.DateRules.EveryDay(self.hedge_ticker[0]),
+                         self.TimeRules.AfterMarketOpen(self.hedge_ticker[0]),
+                         self.populate_option_chains)
+
+        self.Schedule.On(self.DateRules.EveryDay(self.hedge_ticker[0]),
+                         self.TimeRules.Every(timedelta(minutes=30)),
+                         self.log_risk_schedule)
+
+        self.profile = True and self.LiveMode
+        if self.profile:
+            self.profiler = cProfile.Profile()
+            self.profiler.enable()
+
     def OnData(self, data: Slice):
-        # Check if any of the data requests failed
-        from core.state import action
+        self.slices.append(data)
         if self.IsWarmingUp:
             return
 
-        for symbol in data.keys():  # Could be Equity, Option, Dividend
+        for symbol in self.Securities.Keys:
             if symbol not in self.sym_sod_price_mid:
                 self.sym_sod_price_mid[symbol] = mid_price(self, symbol)
-            if str(symbol) == "SPY":
-                continue
 
-            if data.Dividends.ContainsKey(symbol):
-                log_dividend(self, data, symbol)
+            if is_event_new_bid_ask(self, data, symbol):  # proxy for new mid-price!
+                publish_event(self, EventNewBidAsk(symbol))
 
-            equity, option = self.equity_option_from_symbol(symbol)
-            if option:
-                # self.Debug(f'{self.Time} {symbol.Value} {data[symbol].Close}')
-                if chain := data.OptionChains.get(option.Symbol):
-                    self.option_chains[equity] = self.option_chains[option] = chain
-                    for contract in chain:
-                        if contract.Symbol not in self.sym_sod_price_mid:
-                            self.sym_sod_price_mid[contract] = mid_price(self, symbol)
+        pf_risk = PortfolioRisk.e(self)  # Log the risk on every price change and order Event!
+        self.pf_risks.append(pf_risk)
+        if is_high_portfolio_risk(self):
+            publish_event(self, EventHighPortfolioRisk(pf_risk))
 
-                        log_last_price_change(self, contract.Symbol)
+        if signals := get_signals(self):
+            if signals := filter_signal_by_risk(self, signals):  # once anything is filled. this calcs a lot
+                publish_event(self, EventSignals(signals))
 
-                    self.update_contract_limit_prices(equity, chain)
-            self.update_equity_limit_prices(equity)
-
-            # Minute Bars is not event driven. Triggering actions even if nothing changed... Bad
-            action(self, equity, option)
-
-        # CleanUp tickets
-        self.tickets_option_contracts = [t for t in self.tickets_option_contracts
-                                         if t.Status not in (OrderStatus.Filled, OrderStatus.Canceled)]
-        self.tickets_equity = [t for t in self.tickets_equity if t.Status not in (OrderStatus.Filled, OrderStatus.Canceled)]
         if self.Time.time() >= self.mm_window.stop:
-            for t in self.tickets_option_contracts:
-                t.Cancel()
+            cancel_open_tickets(self)  # maybe removing this to stay in limit order book. Review close-open jumps...
 
-        # self.simulate_fill()
-        # if (self.Portfolio.TotalPortfolioValue - self.start_value) < -200:
-        #     for ticket in self.tickets_option_contracts:
-        #         ticket.Cancel()
-        #     for ticket in self.tickets_equity:
-        #         ticket.Cancel()
-        #     self.Liquidate()
-        #     self.Log(f'Creating RunTime Error: Profit {self.Portfolio.TotalPortfolioValue - self.start_value}')
-        #     raise ValueError
+        # if user == SEB:
+        #     self.simulate_fill()
 
     def OnOrderEvent(self, order_event: OrderEvent):
         self.order_events.append(order_event)
-        from core.state import action
         log_order_event(self, order_event)
-        equity, option = self.equity_option_from_symbol(order_event.Symbol)
-        if order_event.Status in (OrderStatus.Filled, OrderStatus.PartiallyFilled) and not self.unwind:
-            action(self, equity, option)
+        # if order_event.Status in (OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Invalid):
+        for t in list(chain(*self.order_tickets.values())):
+            # for t in self.order_tickets[order_event.Symbol]:
+            if t.Status in (OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Invalid):
+                self.order_tickets[t.Symbol].remove(t)
+        publish_event(self, order_event)
 
     def OnEndOfDay(self, symbol: str):
         self.on_end_of_day()
 
     def OnEndOfAlgorithm(self):
         self.on_end_of_day()
-        self.Log('QC parent OnEndOfAlgorithm called.')
+        profile_performance(self)
         super().OnEndOfAlgorithm()
 
     #########################################################################################################
 
-    def on_end_of_day(self, cache=defaultdict(lambda: False)):
+    def log_risk_schedule(self):
+        if self.IsWarmingUp or not self.IsMarketOpen(self.equities[0]):
+            return
+        log_risk(self)
+
+    def populate_option_chains(self):
+        """Triggered at market open"""
+        for symbol in self.option_chains.keys():
+            if symbol.SecurityType == SecurityType.Option:
+                self.option_chains[symbol] = [c for c in self.Securities.Values if c.Type == SecurityType.Option and c.Underlying.Symbol == symbol.Underlying]
+            elif symbol.SecurityType == SecurityType.Equity:
+                self.option_chains[symbol] = [c for c in self.Securities.Values if c.Type == SecurityType.Option and c.Underlying.Symbol == symbol]
+            else:
+                raise ValueError(f'Keys in option chains should either by Equity or Canonical Option. Encountered {symbol.SecurityType}')
+
+    @cache(lambda self: str(self.Time.date()), maxsize=1)
+    def on_end_of_day(self):
         """
         Log Positions and corresponding PnL, Risk, etc. for ensued analysis. Time series grid & Group-bys.
         Log Portfolio Risk
         Given a position's risk is calculated with the respect to whole portfolio, their sum should equal PF risk.
         """
-        if self.IsWarmingUp or cache[self.Time.date()]:
+        if self.IsWarmingUp:
             return
 
         positions = [Position.e(self, symbol) for symbol, holding in self.Portfolio.items() if holding.Quantity != 0]
-        estimated_position_valuation_gain = sum([abs(p.multiplier * p.spread * p.quantity) for p in positions])
-        pf_risk = PortfolioRisk.e(self)
+        estimated_position_valuation_gain = sum([abs(p.multiplier * (p.spread / 2) * p.quantity) for p in positions])
+        log_risk(self)
 
         # Write the positions to a .json file
         positions_json = [p.to_json() for p in positions]
-        import json
-        from pathlib import Path
-        Path(__name__).parent.joinpath('positions.json').write_text(json.dumps(positions_json, indent=4))
+        Path(__name__).parent.joinpath(f'positions_{self.Time.date()}.json').write_text(json.dumps(positions_json, indent=4))
 
         self.Log(f'simulated_missed_gain: {self.simulated_missed_gain}')
         self.Log(f'Cash: {self.Portfolio.Cash}')
@@ -187,93 +236,84 @@ class MarketMakeOptions(QCAlgorithm):
         estimated_portfolio_value = self.Portfolio.TotalPortfolioValue + self.simulated_missed_gain + estimated_position_valuation_gain
         self.Log(f'EstimatedPortfolioValue: {estimated_portfolio_value}')
 
-        cache[self.Time.date()] = True
-
     def simulate_fill(self):
         if not self.LiveMode:
-            for ticket in self.tickets_option_contracts:
-                contract: OptionContract = self.Securities.get(ticket.Symbol)
-                limit_price = ticket.Get(OrderField.LimitPrice)
-                if ticket.Quantity > 0 and limit_price < contract.BidPrice:
-                    continue
-                elif ticket.Quantity < 0 and limit_price > contract.AskPrice:
-                    continue
-                p_fill = contract.Volume / (24 * 60 * 1)
-                if random.choices([True, False], [p_fill, 1 - p_fill])[0]:
-                    ticket.Cancel()
-                    self.MarketOrder(contract.Symbol, ticket.Quantity, tag=ticket.Tag)
-                    self.simulated_missed_gain += (contract.AskPrice - contract.BidPrice) * 100 * abs(ticket.Quantity)
-                    self.Log(f'{self.simulated_missed_gain}: self.simulated_missed_gain')
+            for ticket in chain(*self.order_tickets.values()):
+                if ticket.Symbol.SecurityType == SecurityType.Option:
+                    contract: OptionContract = get_contract(self, ticket.Symbol)
+                    limit_price = ticket.Get(OrderField.LimitPrice)
+                    if ticket.Quantity > 0 and limit_price < contract.BidPrice:
+                        continue
+                    elif ticket.Quantity < 0 and limit_price > contract.AskPrice:
+                        continue
+                    p_fill = contract.Volume / (24 * 60 * 1)
+                    if random.choices([True, False], [p_fill, 1 - p_fill])[0]:
+                        ticket.Cancel()
+                        self.MarketOrder(contract.Symbol, ticket.Quantity, tag=ticket.Tag)
+                        self.simulated_missed_gain += (contract.AskPrice - contract.BidPrice) * 100 * abs(ticket.Quantity)
+                        self.Log(f'{self.simulated_missed_gain}: self.simulated_missed_gain')
 
     def hedge_with_index(self):
         """We want to have a parameterized target delta. If market takes a downturn, update target hedge via MQ and hedge along..."""
         if self.IsWarmingUp:
             return
-        from core.risk.portfolio import PortfolioRisk
-        pf_risk = PortfolioRisk.e(self)
-        # Ideally get an option on SPY matching delta, gamma, vega, theta - unlikely. just hedge delta now...
-        quantity = int(-(pf_risk.delta / pf_risk.ppi.beta('SPY')) / self.Securities['SPY'].Price)
-        self.MarketOrder('SPY', quantity=quantity)
+        for ticker in self.hedge_ticker:
+            # not quite right. If we use multiple ETFs to hedge, would not want to fill with first one in list.
+            try:
+                pf_risk = PortfolioRisk.e(self)
+                # Ideally get an option on SPY matching delta, gamma, vega, theta - unlikely. just hedge delta now...
+                if pf_risk.ppi.beta(ticker) > self.min_correlation:  # If correlation is too low, need alternative hedge.
+                    quantity = int(-1 / pf_risk.ppi.beta(ticker))
+                    self.MarketOrder(ticker, quantity=quantity)
+                else:
+                    quick_log(self, topic="HEDGE INDEX", msg=f'{ticker} correlation too low. No suitable hedge.')
+            except Exception as e:
+                quick_log(self, topic="HEDGE INDEX", msg=f'Failed to hedge portfolio with {ticker} due to: {e}')
 
-    def equity_option_from_symbol(self, symbol: Symbol) -> Tuple[Equity | None, Option | None]:
-        """Not handling contracts..."""
-        security: Equity | OptionContract | Option = self.Securities.get(symbol)
+    def equity_option_from_symbol(self, symbol: Symbol) -> Tuple[Union[Symbol, None], Union[Symbol, None]]:
+        """Confusing returning 2 types. Stop working with Security, just use Symbol."""
+        security: Union[Equity, OptionContract, Option] = self.Securities.get(symbol)
 
-        if symbol.SecurityType == SecurityType.Option:
-            if hasattr(security, 'StrikePrice'):  # OptionContract
-                contract: OptionContract = security
-                equity: Equity | Security = self.Securities[contract.Underlying.Symbol]
-                option = next((o for o in self.options if o.Underlying == equity), None)
-            else:  # Option
-                option: Option = security
-                equity = self.Securities.get(option.Underlying.Symbol)
+        if symbol.SecurityType == SecurityType.Option and getattr(security, 'IsOptionContract', False):
+            contract: OptionContract = security
+            equity: Symbol = getattr(contract, 'UnderlyingSymbol', contract.Underlying.Symbol)
+            option = next((o for o in self.options if o.Underlying == equity), None)
+        elif symbol.SecurityType == SecurityType.Option and symbol.IsCanonical():
+            option: Symbol = symbol
+            equity = symbol.Underlying
         elif symbol.SecurityType == SecurityType.Equity:
-            equity = security
+            equity = symbol
             option = next((o for o in self.options if o.Underlying == equity), None)
 
             if option is None:
-                self.Log(f'Failed to derive Option from Equity {equity.Symbol}. Not processing.... Missed a subscription?')
+                self.Log(f'Failed to derive Option from symbol {symbol}.')
         else:
-            self.Log(f'Failed to derive Security Type of {symbol}. Not processing...')
+            self.Log(f'Failed to derive Security Type of {symbol}.')
             equity = option = None
         return equity, option
 
-    def cancel_open_option_bids(self, order_event: OrderEvent):
-        sym = order_event.Symbol
-        for ticket in self.tickets_option_contracts:
-            if ticket.Symbol.Underlying == order_event.Symbol.Underlying:
-                ticket.Cancel(f"Cancel other options due to Fill of {sym}")
-
-    def order_option(self, option: Option, option_right: OptionRight, quantity: int,
-                     order_type: OrderType = OrderType.Limit):
-        """Limit order option contracts within scoped option chain (contract symbols)
-        LO put&call expiry > 7 strike <=2 volume >=50 open_interest >= 50 OTM ITM
+    def order_option_contract(
+        self,
+        contract: OptionContract,
+        quantity: float,
+        order_type: OrderType = OrderType.Limit
+    ):
         """
-        from core.state import contract_in
-        if option_chain := self.option_chains.get(option):
-            for contract in self.select_option_contracts(option_chain, f_filter=[
-                # partial(filter_option_otm, option_chain=option_chain, option_right=option_right),
-                # partial(filter_option_open_interest),  # No open interest data locally yet. Need other API
-                # partial(filter_option_volume),
-                partial(filter_is_liquid, algo=self, window=3),
-                lambda option_contracts: [c for c in option_contracts if c.BidPrice and c.AskPrice],
-                partial(filter_option_no_position, algo=self)
-            ]):
-                if contract_in(self.tickets_option_contracts, contract):
-                    return
-                self.order_option_contract(contract, quantity, order_type)
-
-    def order_option_contract(self,
-                              contract: OptionContract,
-                              quantity: float,
-                              order_type: OrderType = OrderType.Limit):
-        from core.risk.portfolio import PortfolioRisk
+        Begin of a sort of execution mgmt. Concretely, ignore calls where there is already a corresponding unfilled order ticket.
+        """
+        if self.mm_window.stop > self.Time.time() < self.mm_window.start:
+            quick_log(self, topic='EXECUTION', msg=f'No time to trade...')
+            return
+        for ticket in self.order_tickets[contract.Symbol]:
+            if ticket.Quantity * quantity >= 0:
+                quick_log(self, topic='EXECUTION', msg=f'Already have an order ticket for {contract.Symbol} with same sign. Not processing...')
+                return
 
         order_direction = OrderDirection.Buy if quantity > 0 else OrderDirection.Sell
         limit_price = self.price_option_pf_risk_adjusted(contract, PortfolioRisk.e(self), order_direction)
 
         if limit_price is None:
-            self.Log('Failed to derive limit price. Not processing...')
+            quick_log(self, topic='EXECUTION', msg='Failed to derive limit price. Not processing...')
             return
         if limit_price < tick_size(self, contract):
             return
@@ -287,74 +327,79 @@ class MarketMakeOptions(QCAlgorithm):
                 limit_price,
                 order_msg
             )
-            self.tickets_option_contracts.append(ticket)
+            self.order_tickets[contract.Symbol].append(ticket)
 
-    def update_contract_limit_prices(self, equity: Equity, chain: OptionChain):
-        from core.risk.portfolio import PortfolioRisk
-        tick_size = self.Securities[equity.Symbol].SymbolProperties.MinimumPriceVariation
-        tickets: List[OrderTicket] = [t for t in self.tickets_option_contracts if t.Symbol.Underlying == equity.Symbol]
-        for t in tickets:
-            if t.Status in (OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.CancelPending, OrderStatus.Invalid):
-                continue
-            limit_price = t.Get(OrderField.LimitPrice)
-            contract: OptionContract = chain.Contracts.get(t.Symbol)
-            order_direction = OrderDirection.Buy if t.Quantity > 0 else OrderDirection.Sell
-            ideal_limit_price = price_theoretical = self.price_option_pf_risk_adjusted(contract, PortfolioRisk.e(self), order_direction)
-            if price_theoretical is None:
-                self.Log('Failed to derive limit price. Not processing...')
+    def update_limit_price(self, symbol: Symbol):
+        if symbol.SecurityType == SecurityType.Option:
+            self.update_contract_limit_price(self.Securities[symbol])
+        elif symbol.SecurityType == SecurityType.Equity:
+            self.update_equity_limit_prices(self.Securities[symbol])
 
-            if t.UpdateRequests and t.UpdateRequests[-1].LimitPrice == ideal_limit_price:
-                continue
-            elif ideal_limit_price != limit_price and ideal_limit_price >= tick_size:
-                tag = f"Price not good {limit_price}: Changing to ideal limit price: {ideal_limit_price}"
-                if ideal_limit_price < tick_size:
-                    t.Cancel()
-                else:
-                    response = t.UpdateLimitPrice(ideal_limit_price, tag)
-                    self.Log(f'UpdateLimitPrice response: {response}')
+    def update_contract_limit_price(self, contract: Union[OptionContract, Security]):
+        for t in self.order_tickets[contract.Symbol]:
+            if t.Status in (OrderStatus.Submitted, OrderStatus.PartiallyFilled, OrderStatus.UpdateSubmitted):
+                tick_size_ = tick_size(self, contract.Symbol)
+                limit_price = t.Get(OrderField.LimitPrice)
+                order_direction = OrderDirection.Buy if t.Quantity > 0 else OrderDirection.Sell
+                ideal_limit_price = price_theoretical = self.price_option_pf_risk_adjusted(contract, PortfolioRisk.e(self), order_direction)
+                if price_theoretical is None:
+                    self.Log('Failed to derive limit price. Not processing...')
 
-    def update_equity_limit_prices(self, equity: Equity):
-        tick_size = self.Securities[equity.Symbol].SymbolProperties.MinimumPriceVariation
-        tickets: List[OrderTicket] = [t for t in self.tickets_equity if t.Symbol == equity.Symbol]
-        for t in tickets:
-            if t.Status in (OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.CancelPending, OrderStatus.Invalid):
+                if t.UpdateRequests and t.UpdateRequests[-1].LimitPrice == ideal_limit_price:
+                    continue
+                elif ideal_limit_price != limit_price and ideal_limit_price >= tick_size_:
+                    if ideal_limit_price < tick_size_:
+                        t.Cancel()
+                    else:
+                        tag = f"Moving limit price from {limit_price} to {ideal_limit_price}"
+                        response = t.UpdateLimitPrice(ideal_limit_price, tag)
+                        self.Log(f'UpdateLimitPrice response: {response}')
+
+    def update_equity_limit_prices(self, equity: Union[Equity, Security]):
+        """
+        Should be triggered when equity bid ask changes
+        """
+        for t in self.order_tickets[equity.Symbol]:
+            if t.Status in (OrderStatus.Submitted, OrderStatus.PartiallyFilled, OrderStatus.UpdateSubmitted):
                 # bad bug. Canceled already, still went through and created market order... could ruin me 
                 continue
             elif self.LiveMode and len(t.UpdateRequests) > 1:  # Chasing the market. Risky. Market Order
                 t.Cancel()
                 self.MarketOrder(t.Symbol, t.Quantity, tag=t.Tag.replace('Limit', 'Market'))
             else:
+                tick_size_ = tick_size(self, equity.Symbol)
                 limit_price = t.Get(OrderField.LimitPrice)
                 if t.Quantity > 0 and (equity.BidSize > abs(t.Quantity) if self.LiveMode else True):  # should not outbid myself...
-                    ideal_limit_price = equity.BidPrice + self.equity_price_increments * tick_size
+                    ideal_limit_price = equity.BidPrice + self.equity_price_increments * tick_size_
                 elif t.Quantity < 0 and (equity.BidSize > abs(t.Quantity) if self.LiveMode else True):  # should not outbid myself...
-                    ideal_limit_price = equity.AskPrice - self.equity_price_increments * tick_size
+                    ideal_limit_price = equity.AskPrice - self.equity_price_increments * tick_size_
                 else:
                     continue
                 if round(ideal_limit_price, 2) != round(limit_price, 2) and ideal_limit_price > 0:
                     tag = f"Price not good {limit_price}: Changing to ideal limit price: {ideal_limit_price}"
+                    t0 = datetime.now()
                     response = t.UpdateLimitPrice(ideal_limit_price, tag)
-                    self.Log(f'UpdateLimitPrice response: {response}')
+                    self.Log(f'UpdateLimitPrice response: {response} in {(datetime.now() - t0).total_seconds()}s')
 
-    def select_option_contracts(self,
-                                option_chain: OptionChain,
-                                f_filter: List[Callable],
-                                cache={}
-                                ) -> List[OptionContract]:
+    # @cache(lambda self, option_chain, f_filter, **kw: self.Time.date().isoformat() + option_chain.Symbol.ToString(), f_filter=)  # , maxsize=len(self.option_tickers))
+    # def select_option_contracts(self, option_chain: OptionChain, f_filter: List[Callable]) -> List[OptionContract]:
+    #     """
+    #     Get an options contract that matches the specified criteria:
+    #     Underlying symbol, delta, days till expiration, Option right (put or call)
+    #     """
+    #     # min_expiry_date = self.Time + timedelta(days=expiry_delta_days)
+    #     # cache['f_filter'] = reduce(lambda res, f: res + hash(f), f_filter, 0)
+    #     return reduce(lambda res, f: f(res), f_filter, option_chain)
+
+    def risk_spread_adjustment(self, spread, pf_risk: PortfolioRisk, pf_delta_if: float) -> float:
         """
-        Get an options contract that matches the specified criteria:
-        Underlying symbol, delta, days till expiration, Option right (put or call)
+        Reduces the spread the more we:
+        - need a hedge (large absolute portfolio delta)
+        - fitting is the hedge, primarily how much it'd offset the current portfolio delta
         """
-        # self.Debug(cache)
-        if cache.get('date') == self.Time.date():  # and cache['f_filter'] == reduce(lambda res, f: res+hash(f), f_filter, 0):
-            return cache.get('contracts')
-        else:
-            contracts: List[OptionContract] = reduce(lambda res, f: f(res), f_filter, option_chain)
-            # min_expiry_date = self.Time + timedelta(days=expiry_delta_days)            
-            cache['date'] = self.Time.date()
-            cache['f_filter'] = reduce(lambda res, f: res + hash(f), f_filter, 0)
-            cache['contracts'] = contracts
-            return contracts
+        return spread \
+               * max(min(0, pf_risk.delta_usd / 500), 1) \
+               * 0.5 * (pf_risk.delta - pf_delta_if) / pf_risk.delta
 
     def price_option_pf_risk_adjusted(self, contract: OptionContract, pf_risk: PortfolioRisk, order_direction: OrderDirection) -> float:
         ts = tick_size(self, contract)
@@ -372,24 +417,34 @@ class MarketMakeOptions(QCAlgorithm):
 
         if order_direction == OrderDirection.Buy:
             price_theoretical = bid_price_theoretical
-        elif OrderDirection.Sell:
+        elif order_direction == OrderDirection.Sell:
             price_theoretical = ask_price_theoretical
         else:
             raise ValueError(f'Invalid order direction: {order_direction}')
-        best_bid = contract.BidPrice
-        best_ask = contract.AskPrice
+        spread = contract.AskPrice - contract.AskPrice
 
         # # Adjust theoretical price for portfolio risk
-        increases_pf_delta = DIRECTION2NUM[order_direction] * ocw.greeks().delta
+        pf_delta_if = get_pf_delta_if_filled(pf_risk, ocw, order_direction)
+        increases_pf_delta = pf_delta_if * pf_risk.delta > 0
+        # spread_adjustment = self.risk_spread_adjustment(spread, pf_risk, pf_delta_if)
+
         if increases_pf_delta and pf_risk.delta > 0:  # Don't want this trade much
-            limit_price = round_tick(min(price_theoretical, best_bid), tick_size=ts)
+            limit_price = round_tick(price_theoretical, tick_size=ts)  # todo: want much factor tbd
+            # limit_price = round_tick(min(price_theoretical, best_bid), tick_size=ts)
         elif increases_pf_delta and pf_risk.delta < 0:  # Want this trade much
-            limit_price = round_tick(max(price_theoretical, best_ask), tick_size=ts)
+            limit_price = round_tick(price_theoretical, tick_size=ts)  # todo: want much factor tbd
+            # limit_price = round_tick(max(price_theoretical, best_ask), tick_size=ts)
         else:  # no pf_risk.delta
-            if order_direction == OrderDirection.Buy:
-                limit_price = min(best_bid, round_tick(price_theoretical, tick_size=ts))
-            elif order_direction == OrderDirection.Sell:
-                limit_price = max(best_ask, round_tick(price_theoretical, tick_size=ts))
-            else:
-                raise ValueError(f'Invalid order direction: {order_direction}')
+            # if order_direction == OrderDirection.Buy:
+            limit_price = round_tick(price_theoretical, tick_size=ts)
+            # limit_price = min(best_bid, round_tick(price_theoretical, tick_size=ts))
+            # elif order_direction == OrderDirection.Sell:
+            #     limit_price = max(best_ask, round_tick(price_theoretical, tick_size=ts))
+            # else:
+            #     raise ValueError(f'Invalid order direction: {order_direction}')
         return limit_price
+
+
+@cache(lambda pf_risk, ocw, order_direction: (pf_risk.delta > 0, order_direction, str(ocw.contract)))
+def get_pf_delta_if_filled(pf_risk: PortfolioRisk, ocw: OptionContractWrap, order_direction: OrderDirection) -> float:
+    return DIRECTION2NUM[order_direction] * ocw.greeks().delta * pf_risk.ppi.beta(ocw.underlying_symbol)

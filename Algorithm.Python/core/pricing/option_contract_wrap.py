@@ -1,10 +1,10 @@
 import QuantLib as ql
 
-from AlgorithmImports import *
+from core.cache import cache
 from core.constants import STEPS, RISK_FREE_RATE
 from core.pricing.greeks_plus import GreeksPlus
 from core.stubs import *
-from core.utils import handle_error
+from core.utils import handle_error, get_contract
 
 day_count = ql.Actual365Fixed()
 calendar = ql.UnitedStates(ql.UnitedStates.NYSE)
@@ -13,29 +13,32 @@ SPOT_PRICE = 'spot_price'
 
 class OptionContractWrap:
     """Singleton class for caching contract attributes and calculating Greeks"""
-    _instance: Dict[OptionContract, Any] = {}
+    _instance: Dict[Symbol, Any] = {}
     date = ''
 
     def __new__(cls, algo: QCAlgorithm, contract: OptionContract, **kwargs):
-        if contract not in cls._instance or cls.date < algo.Time.date().isoformat():  # caching might be more attributes. On the other hand Contract object constantly changes
-            cls._instance[contract] = super(OptionContractWrap, cls).__new__(cls)
-            cls._instance[contract].__init__(algo, contract, **kwargs)
+        contract = get_contract(algo, contract.Symbol)  # Ensure getting the right type (option_chain, not Security)
+        if contract.Symbol not in cls._instance or cls.date < algo.Time.date().isoformat():  # caching might be more attributes. On the other hand Contract object constantly changes
+            cls._instance[contract.Symbol] = super(OptionContractWrap, cls).__new__(cls)
             cls.date = algo.Time.date().isoformat()
-        return cls._instance[contract]
+        return cls._instance[contract.Symbol]
 
     def __init__(self, algo: QCAlgorithm, contract: OptionContract, **kwargs):
+        if hasattr(self, 'algo'):
+            return
         self.algo = algo
-        self.contract = contract
+        self.contract = get_contract(algo, contract.Symbol)  # Ensure getting the right type (option_chain, not Security)
+        self.underlying_symbol = getattr(self.contract, 'UnderlyingSymbol', None) or self.contract.Underlying.Symbol
 
         self.calculation_date = ql.Date(algo.Time.day, algo.Time.month, algo.Time.year)
         self.settlement = self.calculation_date
         self.maturity_date = ql.Date(self.contract.Expiry.day, self.contract.Expiry.month, self.contract.Expiry.year)
-        self.strike_price = self.contract.Strike
+        self.strike_price = getattr(self.contract, 'StrikePrice', None) or self.contract.Strike
         self.dividend_rate_quote = ql.SimpleQuote(0.0)  # 0.0163
         self.option_type = ql.Option.Call if self.contract.Right == OptionRight.Call else ql.Option.Put
-        self.spot_quote = ql.SimpleQuote(kwargs.get(SPOT_PRICE) or algo.Securities[self.contract.UnderlyingSymbol].Price)
+        self.spot_quote = ql.SimpleQuote(kwargs.get(SPOT_PRICE) or algo.Securities[self.underlying_symbol].Price)
         self.rf_quote = ql.SimpleQuote(RISK_FREE_RATE)
-        self.hv_quote = ql.SimpleQuote(algo.Securities[self.contract.UnderlyingSymbol].VolatilityModel.Volatility)  # to modified with IV or prediction.
+        self.hv_quote = ql.SimpleQuote(algo.Securities[self.underlying_symbol].VolatilityModel.Volatility)  # to modified with IV or prediction.
 
         self.payoff = ql.PlainVanillaPayoff(self.option_type, self.strike_price)
         self.am_exercise = ql.AmericanExercise(self.settlement, self.maturity_date)
@@ -45,16 +48,17 @@ class OptionContractWrap:
         self.am_option = engined_option(am_option, self.bsm_process)
 
     def reset(self):
-        self.spot_quote.setValue(self.algo.Securities[self.contract.UnderlyingSymbol].Price)
-        self.hv_quote.setValue(self.algo.Securities[self.contract.UnderlyingSymbol].VolatilityModel.Volatility)
+        self.spot_quote.setValue(self.algo.Securities[self.underlying_symbol].Price)
+        self.hv_quote.setValue(self.algo.Securities[self.underlying_symbol].VolatilityModel.Volatility)
 
     def price(
         self,
-        spot_price: float | None = None,
+        spot_price: Union[float, None] = None,
         calculation_date: date = None,
-    ) -> Tuple[float | None, float | None]:
+    ) -> Tuple[Union[float, None], Union[float, None]]:
+        # Needs caching logic, once we don't just quote BID/ASK
         algo = self.algo
-        _spot_price = spot_price or algo.Securities[self.contract.UnderlyingSymbol].Price
+        _spot_price = spot_price or algo.Securities[self.underlying_symbol].Price
         self.spot_quote.setValue(_spot_price)
         bid_iv, ask_iv = self.iv_bid_ask()
 
@@ -79,11 +83,11 @@ class OptionContractWrap:
         return bid_price, ask_price
 
     @handle_error()
-    def iv(self, spot_price_contract=None) -> float | None:
+    def iv(self, spot_price_contract=None) -> Union[float, None]:
         _spot_price_contract = spot_price_contract or (self.contract.BidPrice + (self.contract.AskPrice - self.contract.BidPrice) / 2)
         return self.am_option.impliedVolatility(_spot_price_contract, self.bsm_process)
 
-    def iv_bid_ask(self, bid_price: float = None, ask_price: float = None) -> Tuple[float | None, float | None]:
+    def iv_bid_ask(self, bid_price: float = None, ask_price: float = None) -> Tuple[Union[float, None], Union[float, None]]:
         try:
             bid_iv = max(self.am_option.impliedVolatility(bid_price or self.contract.BidPrice, self.bsm_process), 0.01)
         except RuntimeError as e:
@@ -96,10 +100,11 @@ class OptionContractWrap:
             ask_iv = None
         return bid_iv, ask_iv
 
+    @cache(lambda self, **kw: str(self.contract.Symbol) + str(self.algo.Time.date()) + str(kw))
     def greeks(self, spot_price: float = None, hv=None) -> GreeksPlus:
         algo = self.algo
 
-        self.spot_quote.setValue(spot_price or algo.Securities[self.contract.UnderlyingSymbol].Price)
+        self.spot_quote.setValue(spot_price or algo.Securities[self.underlying_symbol].Price)
         if hv:
             self.hv_quote.setValue(hv)
 
@@ -136,7 +141,6 @@ class OptionContractWrap:
                                                    self.dividend_rate_quote, calendar, day_count, derive='vega', n_days=1, method='forward')
         gamma_decay = finite_difference_approx_time(self.calculation_date, self.option_type, self.strike_price, self.maturity_date, self.spot_quote, self.hv_quote, self.rf_quote,
                                                     self.dividend_rate_quote, calendar, day_count, derive='gamma', n_days=1, method='forward')
-
         return GreeksPlus(delta, gamma, delta_decay, dPdIV, dGdP, gamma_decay, dGdIV, theta, dTdP, theta_decay, dTdIV, vega, dIVdP, vega_decay, dIV2)
 
 
@@ -160,6 +164,7 @@ def engined_option(option, bsm_process, steps=STEPS):
 
 
 def finite_difference_approx(quote, option, d_pct=0.01, derive='NPV', method='central', d1perturbance=None):
+    # Called 40k times in 10mins. reduce it!
     h0 = quote.value()
     quote.setValue(h0 * (1 + d_pct))
     # if hasattr(option, derive):
@@ -192,7 +197,3 @@ def finite_difference_approx_time(calculation_date, option_type, strike_price, m
         else:
             values.append(option.__getattribute__(derive)())
     return (values[0] - values[-1]) / n_days
-
-
-if __name__ == '__main__':
-    pass

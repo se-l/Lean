@@ -95,7 +95,7 @@ namespace QuantConnect.ToolBox
                         break;
                     case "iqfdl":
                     case "iqfeeddownloader":
-                        IQFeedDownloaderProgram.IQFeedDownloader(tickers, resolution, fromDate, toDate);
+                        IQFeedDownloaderProgram.IQFeedDownloader(tickers, resolution, fromDate, toDate, securityType);
                         break;
                     case "kdl":
                     case "krakendownloader":

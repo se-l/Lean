@@ -26,6 +26,7 @@ using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Configuration;
 using QuantConnect.Data.Auxiliary;
+using System.IO.Compression;
 
 namespace QuantConnect.Data
 {
@@ -281,6 +282,18 @@ namespace QuantConnect.Data
             }
         }
 
+        public bool EntryExists(string fileName, string entryName)
+        {
+            using (var stream = _dataCacheProvider.Fetch($"{fileName}#{entryName}"))
+            {
+                if (stream == null)
+                {
+                    return false;
+                }
+                return true;
+            }
+        }
+
         /// <summary>
         /// Write this file to disk with the given data.
         /// </summary>
@@ -357,6 +370,35 @@ namespace QuantConnect.Data
                     var to = data[data.Count - 1].Time.Date.ToString(DateFormat.EightCharacter, CultureInfo.InvariantCulture);
                     Log.Debug($"LeanDataWriter.Write({symbol.ID}): Appended: {filePath} @ {entryName} {from}->{to}");
                 }
+            });
+        }
+
+        public void WriteEmptyFile(DateTime date, Symbol symbol)
+        {
+            var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
+            
+            _keySynchronizer.Execute(filePath, singleExecution: false, () =>
+            {
+                // Generate this csv entry name
+                var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+
+                // Check disk once for this file ahead of time, reuse where possible
+                var fileExists = File.Exists(filePath);
+
+                // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
+                if (!fileExists)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                }
+
+                // Handle merging of files
+                // Only merge on files with hour/daily resolution, that exist, and can be loaded
+                if (!EntryExists(filePath, entryName))
+                {
+                    var bytes = Encoding.UTF8.GetBytes("");
+                    _dataCacheProvider.Store($"{filePath}#{entryName}", bytes);
+                }
+                Log.Trace($"LeanDataWriter.Write({symbol.ID}): Create empty csv file: {filePath} @ {entryName}");
             });
         }
 

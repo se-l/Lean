@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -18,9 +18,13 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using IQFeed.CSharpApiClient.Common.Exceptions;
 using IQFeed.CSharpApiClient.Lookup;
+using IQFeed.CSharpApiClient.Lookup.Chains;
+using IQFeed.CSharpApiClient.Lookup.Chains.Equities;
 using IQFeed.CSharpApiClient.Lookup.Historical.Enums;
 using IQFeed.CSharpApiClient.Lookup.Historical.Messages;
+using QLNet;
 using QuantConnect.Brokerages;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
@@ -52,7 +56,6 @@ namespace QuantConnect.ToolBox.IQFeed
         {
             // skipping universe and canonical symbols
             if (!CanHandle(request.Symbol) ||
-                request.Symbol.ID.SecurityType == SecurityType.Option && request.Symbol.IsCanonical() ||
                 request.Symbol.ID.SecurityType == SecurityType.Future && request.Symbol.IsCanonical())
             {
                 return Enumerable.Empty<BaseData>();
@@ -83,6 +86,35 @@ namespace QuantConnect.ToolBox.IQFeed
             return FilterUnorderedData(GetDataFromFile(request, ticker, start, end));
         }
 
+        public IEnumerable<EquityOption> GetIndexEquityOptionChain(Symbol symbol, DateTime startDate, DateTime? endDate)
+        {
+            if (
+                (symbol.SecurityType == SecurityType.Option && symbol.IsCanonical()) ||
+                (symbol.SecurityType == SecurityType.Equity)
+                )
+            {
+                var ticker = _symbolMapper.GetBrokerageSymbol(symbol.Underlying);
+                var chains = _lookupClient.Chains.GetChainIndexEquityOptionAsync(ticker, OptionSideFilterType.CP, "ABCDEFGHIJKL").SynchronouslyAwaitTaskResult();
+                chains = chains.Union(_lookupClient.Chains.GetChainIndexEquityOptionAsync(ticker, OptionSideFilterType.CP, "MNOPQRSTVWXY").SynchronouslyAwaitTaskResult());
+                if (false && startDate < DateTime.Today)
+                {
+                    Log.Trace($"Loading expired options for {ticker} from {startDate.ToStringInvariant()}");
+                    var expiredOptions = _lookupClient.Symbol.GetAllExpiredOptions()
+                    .Select(x => x.EquityOption)
+                    .Where(x => x.EquitySymbol == ticker)
+                    .Where(x => x.Expiration >= startDate)
+                    .ToList();
+                    chains = chains.Union(expiredOptions);
+                }
+                return chains;
+            }
+            else
+            {
+                Log.Error("Fetchting Option Chains only supported for canonical option or equity symbols.");
+                return Enumerable.Empty<EquityOption>();
+            }
+        }
+
         private IEnumerable<BaseData> GetDataFromFile(HistoryRequest request, string ticker, DateTime startDate, DateTime? endDate)
         {
             try
@@ -102,6 +134,7 @@ namespace QuantConnect.ToolBox.IQFeed
                         _filesByRequestKeyCache.AddOrUpdate(requestKey, filename);
                         return GetDataFromTickMessages(filename, request, tickFunc, false);
 
+
                     case Resolution.Daily:
                         filename = _lookupClient.Historical.File.GetHistoryDailyTimeframeAsync(ticker, startDate, endDate, dataDirection: DataDirection.Oldest).SynchronouslyAwaitTaskResult();
                         return GetDataFromDailyMessages(filename, request);
@@ -110,6 +143,18 @@ namespace QuantConnect.ToolBox.IQFeed
                         var interval = new Interval(GetPeriodType(request.Resolution), 1);
                         filename = _lookupClient.Historical.File.GetHistoryIntervalTimeframeAsync(ticker, interval.Seconds, startDate, endDate, dataDirection: DataDirection.Oldest).SynchronouslyAwaitTaskResult();
                         return GetDataFromIntervalMessages(filename, request);
+                }
+            }
+            catch (NoDataIQFeedException)
+            {
+                Log.Trace($"IQFeedFileHistoryProvider - no data returned for {request.Symbol} {ticker} {startDate} {endDate}");
+                var writer = new LeanDataWriter(request.Resolution, request.Symbol, "C:/repos/trade/data/");
+                // Loop over all dates in between start and end date and write empty files
+                if (request.Resolution != Resolution.Daily) {
+                    for (var date = request.StartTimeLocal; date <= request.EndTimeLocal; date = date.AddDays(1))
+                    {
+                        writer.WriteEmptyFile(date, request.Symbol);
+                    }
                 }
             }
             catch (Exception e)

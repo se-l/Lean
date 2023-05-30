@@ -21,6 +21,7 @@ using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
+using QuantConnect.Securities;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -30,19 +31,29 @@ using QuantConnect.Util;
 using HistoryRequest = QuantConnect.Data.HistoryRequest;
 using Timer = System.Timers.Timer;
 using System.Threading;
+using QuantConnect.Data.Auxiliary;
+using IQFeed.CSharpApiClient.Lookup.Chains.Equities;
+using IQFeed.CSharpApiClient.Lookup.Chains;
+using IQFeed.CSharpApiClient.Lookup;
 
 namespace QuantConnect.ToolBox.IQFeed
 {
     /// <summary>
     /// IQFeedDataQueueHandler is an implementation of IDataQueueHandler and IHistoryProvider
     /// </summary>
-    public class IQFeedDataQueueHandler : HistoryProviderBase, IDataQueueHandler, IDataQueueUniverseProvider
+    public class IQFeedDataQueueHandler : HistoryProviderBase, IDataQueueHandler, IDataQueueUniverseProvider, IOptionChainProvider
     {
         private bool _isConnected;
         private readonly HashSet<Symbol> _symbols;
         private readonly Dictionary<Symbol, Symbol> _underlyings;
         private readonly object _sync = new object();
         private IQFeedDataQueueUniverseProvider _symbolUniverse;
+
+        //OptionChain
+        private const int NumberOfClients = 8;
+        const string market = Market.USA;
+        private IMapFileProvider _mapFileProvider;
+        private IQFeedFileHistoryProvider _historyProvider;
 
         //Socket connections:
         private AdminPort _adminPort;
@@ -66,6 +77,10 @@ namespace QuantConnect.ToolBox.IQFeed
             _symbols = new HashSet<Symbol>();
             _underlyings = new Dictionary<Symbol, Symbol>();
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
+            LookupClient lookupClient = LookupClientFactory.CreateNew(NumberOfClients);
+            lookupClient.Connect();
+            IQFeedDataQueueUniverseProvider universeProvider = new IQFeedDataQueueUniverseProvider();
+            _historyProvider = new IQFeedFileHistoryProvider(lookupClient, universeProvider, MarketHoursDatabase.FromDataFolder());
             _subscriptionManager.SubscribeImpl += (s, t) =>
             {
                 Subscribe(s);
@@ -246,13 +261,13 @@ namespace QuantConnect.ToolBox.IQFeed
             try
             {
                 // Launch the IQ Feed Application:
-                Log.Trace("IQFeed.Connect(): Launching client...");
+                Log.Trace("IQFeed.Connect(): Launching client without connector...");
 
                 if (OS.IsWindows)
                 {
                     // IQConnect is only supported on Windows
-                    var connector = new IQConnect(Config.Get("iqfeed-productName"), "1.0");
-                    connector.Launch();
+                    //  var connector = new IQConnect(Config.Get("iqfeed-productName"), "1.0");
+                    //connector.Launch();
                 }
 
                 // Initialise one admin port
@@ -380,6 +395,90 @@ namespace QuantConnect.ToolBox.IQFeed
         public void Dispose()
         {
             _symbolUniverse.DisposeSafely();
+        }
+
+        ///// <summary>
+        ///// Creates a new instance
+        ///// </summary>
+        ///// <param name="dataCacheProvider">The data cache provider instance to use</param>
+        ///// <param name="mapFileProvider">The map file provider instance to use</param>
+        //public IQOptionChainProvider(IMapFileProvider mapFileProvider)
+        //{
+        //    _mapFileProvider = mapFileProvider;
+
+        //}
+
+        /// <summary>
+        /// Gets the list of option contracts for a given underlying symbol
+        /// </summary>
+        /// <param name="symbol">The option or the underlying symbol to get the option chain for.
+        /// Providing the option allows targetting an option ticker different than the default e.g. SPXW</param>
+        /// <param name="date">The date for which to request the option chain (only used in backtesting)</param>
+        /// <returns>The list of option contracts</returns>
+        public virtual IEnumerable<Symbol> GetOptionContractList(Symbol symbol, DateTime date)
+        {
+            Symbol canonicalSymbol;
+            if (!symbol.SecurityType.HasOptions())
+            {
+                // we got an option
+                if (symbol.SecurityType.IsOption() && symbol.Underlying != null)
+                {
+                    canonicalSymbol = GetCanonical(symbol, date);
+                }
+                else
+                {
+                    throw new NotSupportedException($"IQOptionChainProvider.GetOptionContractList(): " +
+                        $"{nameof(SecurityType.Equity)}, {nameof(SecurityType.Future)}, or {nameof(SecurityType.Index)} is expected but was {symbol.SecurityType}");
+                }
+            }
+            else
+            {
+                // we got the underlying
+                var mappedUnderlyingSymbol = MapUnderlyingSymbol(symbol, date);
+                canonicalSymbol = Symbol.CreateCanonicalOption(mappedUnderlyingSymbol);
+            }
+            IEnumerable<EquityOption> optionChain = _historyProvider.GetIndexEquityOptionChain(canonicalSymbol, date, date);
+
+            var symbols = Enumerable.Empty<Symbol>();
+            foreach (var optionContract in optionChain)
+            {
+                OptionRight optionRight = optionContract.Side == OptionSide.Call ? OptionRight.Call : OptionRight.Put;
+                // Defaulting to American style in abscence of definition in EquityOption type.
+                var optionContractSymbol = Symbol.CreateOption(canonicalSymbol.Underlying, market, OptionStyle.American, optionRight, (decimal)optionContract.StrikePrice, optionContract.Expiration);
+                symbols = symbols.Append(optionContractSymbol);
+            }
+            return symbols;
+        }
+
+        private Symbol GetCanonical(Symbol optionSymbol, DateTime date)
+        {
+            // Resolve any mapping before requesting option contract list for equities
+            // Needs to be done in order for the data file key to be accurate
+            if (optionSymbol.Underlying.RequiresMapping())
+            {
+                var mappedUnderlyingSymbol = MapUnderlyingSymbol(optionSymbol.Underlying, date);
+
+                return Symbol.CreateCanonicalOption(mappedUnderlyingSymbol);
+            }
+            else
+            {
+                return optionSymbol.Canonical;
+            }
+        }
+
+        private Symbol MapUnderlyingSymbol(Symbol underlying, DateTime date)
+        {
+            if (underlying.RequiresMapping())
+            {
+                var mapFileResolver = _mapFileProvider.Get(AuxiliaryDataKey.Create(underlying));
+                var mapFile = mapFileResolver.ResolveMapFile(underlying);
+                var ticker = mapFile.GetMappedSymbol(date, underlying.Value);
+                return underlying.UpdateMappedSymbol(ticker);
+            }
+            else
+            {
+                return underlying;
+            }
         }
     }
 
@@ -602,7 +701,7 @@ namespace QuantConnect.ToolBox.IQFeed
         private bool _inProgress;
         private ConcurrentDictionary<string, HistoryRequest> _requestDataByRequestId;
         private ConcurrentDictionary<string, List<BaseData>> _currentRequest;
-        private readonly string DataDirectory = Config.Get("data-directory", "../../../Data");
+        private readonly string DataDirectory = Config.Get("data-directory", "C:/repos/trade/data/");
         private readonly double MaxHistoryRequestMinutes = Config.GetDouble("max-history-minutes", 5);
         private readonly IQFeedDataQueueUniverseProvider _symbolUniverse;
 

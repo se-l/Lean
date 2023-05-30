@@ -136,6 +136,12 @@ namespace QuantConnect.Lean.Engine.HistoricalData
                     yield return latestMergeSlice;
                     latestMergeSlice = synchronizer.Current;
                 }
+                if (synchronizer.Current.UtcTime < latestMergeSlice.UtcTime)
+                {
+                    // an older slice we merge it into 'latestMergeSlice'
+                    latestMergeSlice = synchronizer.Current;
+                    yield return latestMergeSlice;
+                }
                 else
                 {
                     // a new slice with same time we merge them into 'latestMergeSlice'

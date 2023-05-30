@@ -59,6 +59,7 @@ class GreeksPlus:
 
     def pl_explain(self, dP=1, dT=0, dIV=0, dR=0):
         # missed negative carry cost (interest payments). Not Greeks related though. Goes elsewhere.
+        # Missing changes in Correlation leading to portfolio valuation differences.
         return PLExplain(
             delta=self.delta * dP,
             gamma=0.5 * self.gamma * dP ** 2,

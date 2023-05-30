@@ -25,6 +25,8 @@ using System.Collections.Generic;
 using QuantConnect.Configuration;
 using QuantConnect.ToolBox.IQFeed;
 using IQFeed.CSharpApiClient.Lookup;
+using IQFeed.CSharpApiClient.Lookup.Chains;
+using IQFeed.CSharpApiClient.Lookup.Chains.Equities;
 
 namespace QuantConnect.ToolBox.IQFeedDownloader
 {
@@ -34,11 +36,12 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
     public static class IQFeedDownloaderProgram
     {
         private const int NumberOfClients = 8;
+        private const string option = "Option";
 
         /// <summary>
         /// Primary entry point to the program. This program only supports EQUITY for now.
         /// </summary>
-        public static void IQFeedDownloader(IList<string> tickers, string resolution, DateTime fromDate, DateTime toDate)
+        public static void IQFeedDownloader(IList<string> tickers, string resolution, DateTime fromDate, DateTime toDate, string securityType = "Equity")
         {
             if (resolution.IsNullOrEmpty() || tickers.IsNullOrEmpty())
             {
@@ -57,7 +60,7 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                 endDate = endDate.AddDays(1).AddMilliseconds(-1);
 
                 // Load settings from config.json
-                var dataDirectory = Config.Get("data-folder", "../../../Data");
+                var dataDirectory = "C:/repos/trade/data/";
                 var userName = Config.Get("iqfeed-username", "username");
                 var password = Config.Get("iqfeed-password", "password");
                 var productName = Config.Get("iqfeed-productName", "productname");
@@ -67,7 +70,14 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                 const string market = Market.USA;
 
                 // Connect to IQFeed
-                IQFeedLauncher.Start(userName, password, productName, productVersion);
+                if (!string.IsNullOrEmpty(productName))
+                {
+                    IQFeedLauncher.Start(userName, password, productName, productVersion);
+                }
+                else
+                {
+                    Log.Trace("No IQFeed product name provided. Assuming IQFeed is already running.");
+                }
                 var lookupClient = LookupClientFactory.CreateNew(NumberOfClients);
                 lookupClient.Connect();
 
@@ -77,26 +87,51 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                 var downloader = new IQFeedDataDownloader(historyProvider);
                 var quoteDownloader = new IQFeedDataDownloader(historyProvider);
 
-                var resolutions = allResolution ? new List<Resolution> { Resolution.Tick, Resolution.Second, Resolution.Minute, Resolution.Hour, Resolution.Daily } : new List<Resolution> { castResolution };
-                var requests = resolutions.SelectMany(r => tickers.Select(t => new { Ticker = t, Resolution = r })).ToList();
+                var resolutions = allResolution ? new List<Resolution> { Resolution.Tick, Resolution.Minute, Resolution.Daily } : new List<Resolution> { castResolution };
+
+                var symbols = Enumerable.Empty<Symbol>();
+
+                switch (securityType)
+                {
+                    case option:
+                        // Resolve option tickers
+                        foreach (string ticker in tickers)
+                        {
+                            Symbol option = Symbol.Create(ticker, SecurityType.Option, market);
+                            IEnumerable<EquityOption> optionChain = historyProvider.GetIndexEquityOptionChain(option, startDate, endDate);
+                            foreach (var optionContract in optionChain)
+                            {
+                                OptionRight optionRight = optionContract.Side == OptionSide.Call ? OptionRight.Call : OptionRight.Put;
+                                // Defaulting to American style in abscence of definition in EquityOption type.
+                                var optionContractSymbol = Symbol.CreateOption(option.Underlying, market, OptionStyle.American, optionRight, (decimal)optionContract.StrikePrice, optionContract.Expiration);
+                                symbols = symbols.Append(optionContractSymbol);
+                            }
+                        }
+                        break;
+                    default:
+                        symbols = symbols.Concat(tickers.Select(t => Symbol.Create(t, SecurityType.Equity, market)));
+                        break;
+                }
+
+                var requests = resolutions.SelectMany(r => symbols.Select(s => new { Symbol = s, Resolution = r })).ToList();
 
                 var sw = Stopwatch.StartNew();
                 Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = NumberOfClients }, request =>
                  {
-                     // Download the data
-                     var symbol = Symbol.Create(request.Ticker, SecurityType.Equity, market);
-                     var data = downloader.Get(new DataDownloaderGetParameters(symbol, request.Resolution, startDate, endDate));
-
-                     // Write the data
-                     var writer = new LeanDataWriter(request.Resolution, symbol, dataDirectory);
+                     var writer = new LeanDataWriter(request.Resolution, request.Symbol, dataDirectory);
+                     // Fetch
+                     var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, request.Resolution, startDate, endDate));
+                     // Write
                      writer.Write(data);
 
-                     if (request.Resolution == Resolution.Tick)
-                     {
-                         var quotes = quoteDownloader.Get(new DataDownloaderGetParameters(symbol, request.Resolution, startDate, endDate, TickType.Quote));
-                         var quoteWriter = new LeanDataWriter(request.Resolution, symbol, dataDirectory, TickType.Quote);
-                         quoteWriter.Write(quotes);
-                     }
+                     // Not as of 2023-05-11, IQFeed still does only provide quote ticks when a trade happened. For options, that's especially limiting given most contract don't actually trade througout the day
+                     // while implied volatility is derived from a contracts bid/ask prices.
+                     // https://forums.iqfeed.net/index.cfm?page=topic&topicID=5679
+                     //if (request.Resolution == Resolution.Tick) // To add: Supporting quote requests for higher resolutions.
+                     //{
+                     //    var quoteWriter = new LeanDataWriter(request.Resolution, symbol, dataDirectory, TickType.Quote);
+                     //    quoteWriter.Write(quoteDownloader.Get(new DataDownloaderGetParameters(symbol, request.Resolution, startDate, endDate, TickType.Quote)));
+                     //}
                  });
                 sw.Stop();
 

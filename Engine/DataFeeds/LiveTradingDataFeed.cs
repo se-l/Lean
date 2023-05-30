@@ -533,7 +533,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                             try
                             {
                                 var data = slice.Get(historyRequest.DataType);
-                                return (BaseData)data[warmup.Configuration.Symbol];
+                                if (data.ContainsKey(warmup.Configuration.Symbol))
+                                {
+                                    return (BaseData)data[warmup.Configuration.Symbol];
+                                } 
+                                else
+                                {
+                                    return null;
+                                }
                             }
                             catch (Exception e)
                             {

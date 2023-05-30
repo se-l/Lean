@@ -2,12 +2,14 @@ import logging
 import math
 import System
 
+from functools import reduce
 from itertools import combinations, chain
 from dataclasses import dataclass, astuple
 from scipy.stats import pearsonr
 
 from core.stubs import *
 from core.constants import CLOSE
+from core.cache import cache
 
 logger = logging.Logger(__name__)
 
@@ -58,11 +60,13 @@ def round_tick(x, tick_size, ceil=None, reference=None) -> float:
         return math.ceil(x*(1/tick_size))/(1/tick_size)
     elif ceil is False:
         return math.floor(x*(1/tick_size))/(1/tick_size)
+    elif not tick_size:
+        return x
     else:
         return round(x*(1/tick_size))/(1/tick_size)
 
 
-def rolling_pearson_corr(x: np.ndarray | List, y: np.ndarray | List, window: Tuple[int]) -> Tuple[np.ndarray, np.ndarray]:
+def rolling_pearson_corr(x: Union[np.ndarray, List], y: Union[np.ndarray, List], window: Tuple[int]) -> Tuple[np.ndarray, np.ndarray]:
     """
     Calculate the rolling Pearson correlation coefficient between two time series with a parameterized lookback window.
 
@@ -108,22 +112,14 @@ def get_correlation_tensor(algo: QCAlgorithm, symbols: List[Symbol], windows: Li
     return arr
 
 
-def history_symbol_bar(algo: QCAlgorithm, symbol: Symbol, window: int = 30, start=None, end=None, resolution=Resolution.Daily, slice=TradeBar, cache={}) -> List[QuoteBar | TradeBar | Tick]:
-    if symbol == cache.get('symbol') and resolution == cache.get('resolution') and start == cache.get('start') and end == cache.get('end') and cache.get(slice) == slice:
-        return cache['history']
-    else:
-        history = algo.History[slice](symbol=symbol, start=start or algo.Time.date() - timedelta(days=window), end=end or algo.Time.date(), resolution=resolution)
-        cache['symbol'] = symbol
-        cache['resolution'] = resolution
-        cache['start'] = start
-        cache['end'] = end
-        cache['slice'] = slice
-        cache['history'] = history
-        return history
+@cache(lambda symbol, resolution, start, end, bar, **kw: reduce(lambda res, el: res + str(el), [symbol, resolution, start, end, bar], ''))
+def history_symbol_bar(algo: QCAlgorithm, symbol: Symbol, window: int = 30, start=None, end=None, resolution=Resolution.Daily, bar: Union[Type[TradeBar], Type[QuoteBar]] = TradeBar) -> List[Union[QuoteBar, TradeBar, Tick]]:
+    return algo.History[bar](symbol=symbol, start=start or algo.Time.date() - timedelta(days=window), end=end or algo.Time.date(), resolution=resolution)
 
 
+@cache(lambda algo, contract, window, **kw: str(algo.Time.date()) + str(contract.Symbol) + str(window))
 def is_liquid(algo: QCAlgorithm, contract: OptionContract, window: int = 3, start=None, end=None, resolution=Resolution.Daily) -> bool:
-    trade_bars: List[TradeBar] = history_symbol_bar(algo, contract.Symbol, window=window, start=start, end=end, resolution=resolution, slice=TradeBar)
+    trade_bars: List[TradeBar] = history_symbol_bar(algo, contract.Symbol, window=window, start=start, end=end, resolution=resolution, bar=TradeBar)
     return sum([bar.Volume for bar in trade_bars]) > 0
 
 
@@ -134,18 +130,15 @@ def prev_business_day(dt: date):
 
 def get_avg_spread(algo: QCAlgorithm, contract: OptionContract, start: datetime.date = None) -> float:
     start = start or prev_business_day(algo.Time.date())
-    quote_bars: List[QuoteBar] = history_symbol_bar(algo, contract.Symbol, start=start, end=start, resolution=Resolution.Minute, slice=QuoteBar)
+    quote_bars: List[QuoteBar] = history_symbol_bar(algo, contract.Symbol, start=start, end=start, resolution=Resolution.Minute, bar=QuoteBar)
     bids = [b.Bid for b in quote_bars]
     asks = [b.Ask for b in quote_bars]
     return (np.mean(asks) - np.mean(bids)) if (bids and asks) else 0
 
 
 def get_contract(algo: QCAlgorithm, symbol: Symbol) -> Union[OptionContract, None]:
-    """Gives Greeks. Must pass Symbol of a contract"""
-    contract = algo.option_chains[algo.Securities.get(symbol).Underlying].Contracts.get(symbol)
-    if not contract:
-        algo.Log(f"Did not find contract for {symbol}. Not fully initialized?")
-    return contract
+    return algo.Securities.get(symbol)
+    # algo.Debug(f"Did not find contract for {symbol} in algo.option_chains. Not fully initialized?")
 
 
 def hist_vol(prices: pd.Series, span=30, annualized=True, ddof=1):
@@ -153,19 +146,39 @@ def hist_vol(prices: pd.Series, span=30, annualized=True, ddof=1):
     return std * np.sqrt(252) if annualized else std
 
 
-def mid_price(algo: QCAlgorithm, symbol: Symbol | Security | OptionContract) -> float:
+def mid_price(algo: QCAlgorithm, symbol: Union[Symbol, Security, OptionContract]) -> float:
     sec = algo.Securities[symbol] if isinstance(symbol, Symbol) else symbol
     return sec.AskPrice + sec.BidPrice / 2
 
 
-def tick_size(algo: QCAlgorithm, symbol: Symbol | Security | OptionContract, cache={}) -> float:
-    if symbol in cache:
-        return cache[symbol]
+@cache(lambda symbol, **kw: symbol)
+def tick_size(algo: QCAlgorithm, symbol: Union[Symbol, Security, OptionContract]) -> float:
+    if hasattr(symbol, 'Symbol'):  # Symbol
+        sec = algo.Securities[symbol.Symbol]  # OptionContract, Security
     else:
-        if hasattr(symbol, 'Symbol'):  # Symbol
-            sec = algo.Securities[symbol.Symbol]  # OptionContract, Security            
-        else:            
-            sec = algo.Securities[symbol]  # Symbol
+        sec = algo.Securities[symbol]  # Symbol
+    return sec.SymbolProperties.MinimumPriceVariation
 
-        cache[symbol] = sec.SymbolProperties.MinimumPriceVariation
-        return cache[symbol]
+
+def cancel_open_tickets(algo: QCAlgorithm):
+    for _, tickets in algo.order_tickets.items():
+        for t in tickets:
+            t.Cancel()
+
+
+def profile_performance(algo: QCAlgorithm):
+    if self.profile:
+        # if algo.profile and algo.Time.hour > 10:
+        algo.profiler.disable()
+        algo.profiler.dump_stats('profile.stats')
+            # raise RuntimeError('Time is up')
+
+
+@cache(lambda algo, **kw: str(algo.Time), maxsize=1)
+def positions_n(algo: QCAlgorithm) -> int:
+    return len([s for s in algo.Portfolio.Values if s.Invested])
+
+
+@cache(lambda algo, **kw: str(algo.Time), maxsize=1)
+def positions_total(algo: QCAlgorithm) -> float:
+    return sum([s.HoldingsValue for s in algo.Portfolio.Values if s.Invested])
