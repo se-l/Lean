@@ -1,3 +1,4 @@
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
@@ -6,7 +7,6 @@ using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -26,27 +26,34 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double Rho { get; }
         public double DeltaSPY { get; }
         public decimal DeltaSPY100BpUSD { get; }
+        // Need 2 risk measures. One excluding hedge instruments and one with to avoid increasing position in hedge instruments.
+        public decimal DeltaSPYUnhedged100BpUSD { get; }  // At first SPY, eventually something derived from option portfolio
         public PortfolioProxyIndex Ppi { get; }
 
         private readonly Foundations algo;
-        /// <summary>
-        /// Caching
-        /// </summary>
+        private static string instanceKey { get; set; }
+        private static DateTime instanceCreatedTime { get; set; }
+        private static PortfolioRisk instance;
 
-        private static Func<Foundations, string> genCacheKey = algo => $"{algo.Time}{algo.OrderEvents.FindAll(x => x.Status == OrderStatus.Filled || x.Status == OrderStatus.PartiallyFilled).Count}";
-        private static Func<Foundations, PortfolioRisk> func = algo => new PortfolioRisk(algo);
-        private static Func<Foundations, PortfolioRisk> constructorCached = Cache(func, genCacheKey);
 
-        public static PortfolioRisk E(Foundations algo, bool useCache = true)
+        public static PortfolioRisk E(Foundations algo, IEnumerable<Position> positions = null, PortfolioProxyIndex ppi = null)
         {
-            // get rid of this useCache parameter.  It's a hack.
-            return useCache == true ? constructorCached(algo) : func(algo);
+            // Only 1 instance of PF Risk at a time. Invalidated after 30mins.
+            // Also may need to have event driven refresh or PF risk instead of cache key. Should get into key....
+            string key = $"{algo.OrderEvents.FindAll(x => x.Status == OrderStatus.Filled || x.Status == OrderStatus.PartiallyFilled).Count}";
+            if (instanceKey != key || instanceCreatedTime.AddMinutes(30) <= algo.Time)
+            {
+                instanceKey = key;
+                instanceCreatedTime = algo.Time;
+                instance = new PortfolioRisk(algo, positions, ppi);
+            }
+            return instance;
         }
 
-        private PortfolioRisk(Foundations algo, IEnumerable<Position> positions = null, PortfolioProxyIndex ppi = null)
+        public PortfolioRisk(Foundations algo, IEnumerable<Position> positions = null, PortfolioProxyIndex ppi = null)
         {
             this.algo = algo;
-            algo.Log($"{algo.Time}: PortfolioRisk.Constructor called.");
+            //algo.Log($"{algo.Time}: PortfolioRisk.Constructor called.");
             Positions = positions ?? GetPositions();
             Ppi = ppi ?? PortfolioProxyIndex.E(algo);  // needs also positions as option input.
             
@@ -55,19 +62,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             //    position.SetPfGreeks();
             //}
             // Refactor below into GreeksPlus
-            Delta = Positions.Sum(x => x.PfDelta);
-            Delta100BpUSD = Positions.Sum(x => x.PfDelta100BpUSD);
-            Gamma = Positions.Sum(x => x.PfGamma);
-            Gamma100BpUSD = Positions.Sum(x => x.PfGamma100BpUSD);
-            Theta = Positions.Sum(x => x.PfTheta);
-            ThetaUSD = Positions.Sum(x => x.PfThetaUSD);
-            Vega = Positions.Sum(x => x.PfVega);
-            Vega100BpUSD = Positions.Sum(x => x.PfVega100BpUSD);
+            Delta = Positions.Sum(x => x.Trades.Sum(t => t.PfDelta));
+            Delta100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfDelta100BpUSD));
+            Gamma = Positions.Sum(x => x.Trades.Sum(t => t.PfGamma));
+            Gamma100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfGamma100BpUSD));
+            Theta = Positions.Sum(x => x.Trades.Sum(t => t.PfTheta));
+            ThetaUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfThetaUSD));
+            Vega = Positions.Sum(x => x.Trades.Sum(t => t.PfVega));
+            Vega100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfVega100BpUSD));
 
             //tex:
             //$$ID_i = \Delta_i * \beta_i * \frac{A_i}{I}$$
-            DeltaSPY = Positions.Sum(x => x.DeltaSPY);
-            DeltaSPY100BpUSD = Positions.Sum(x => x.DeltaSPY100BpUSD);
+            DeltaSPY = Positions.Sum(x => x.Trades.Sum(t => t.DeltaSPY));
+            DeltaSPY100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.DeltaSPY100BpUSD));
+            DeltaSPYUnhedged100BpUSD = Positions.Where(x => x.SecurityType == SecurityType.Option).Sum(x => x.Trades.Sum(t => t.DeltaSPY100BpUSD));
 
             
             //if (orderTickets != null)
@@ -84,17 +92,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return Ppi.Beta(symbol, window);
         }
 
-        public double PfDeltaIfFilled(Symbol symbol, OrderDirection orderDirection)
+        public decimal DPfDeltaIfFilled(Symbol symbol, decimal quantity)
         {
             // too tricky currently as it only returns a sensitity. not good for estimating what-if-filled.
             if (symbol.SecurityType == SecurityType.Option)
             {
                 Option option = (Option)algo.Securities[symbol];
-                return DIRECTION2NUM[orderDirection] * Ppi.DeltaIf(option) * option.ContractMultiplier;
+                var delta = OptionContractWrap.E(algo, option).Greeks(null, null).Delta;
+                double betaUnderlying = algo.Beta(algo.spy, option.Underlying.Symbol, 20, Resolution.Daily);
+                var deltaSPY = delta * betaUnderlying * (double)option.Underlying.Price / (double)algo.MidPrice(algo.spy);
+                decimal deltaSPY100BpUSD = (decimal)deltaSPY * option.ContractMultiplier * quantity * algo.MidPrice(algo.spy);
+                return deltaSPY100BpUSD;
             }
             else if (symbol.SecurityType == SecurityType.Equity)
             {
-                return DIRECTION2NUM[orderDirection] * Ppi.DeltaIf((Equity)algo.Securities[symbol]);
+                return (decimal)(Math.Sign(quantity) * Ppi.DeltaIf((Equity)algo.Securities[symbol]));
             }
             else
             {
@@ -102,9 +114,33 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }            
         }
 
+        public decimal PortfolioValue(string method= "Mid")
+        {
+            if (method == "Mid")
+            {
+                return Positions.Sum(p => p.Trades.Sum(t => t.ValueMid)) + algo.Portfolio.Cash;
+            }
+            else if (method == "Close")
+            {
+                return Positions.Sum(p => p.Trades.Sum(t => t.ValueClose)) + algo.Portfolio.Cash;
+            }
+            else if (method == "Worst")
+            {
+                return Positions.Sum(p => p.Trades.Sum(t => t.ValueWorst)) + algo.Portfolio.Cash;
+            }
+            else if (method == "UnrealizedProfit")
+            {
+                return Positions.Sum(p => p.Trades.Sum(t => t.UnrealizedProfit));
+            }
+            else
+            {
+                return algo.Portfolio.TotalPortfolioValue;
+            }            
+        }
+
         public double Correlation(Symbol symbol)
         {
-            return algo.Correlation(algo.spy, symbol, 30, Resolution.Daily);
+            return algo.Correlation(algo.spy, symbol, 20, Resolution.Daily);
         }
 
 
@@ -128,7 +164,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             };
         }
 
-        private IEnumerable<Position> GetPositions()
+        public IEnumerable<Position> GetPositions()
         {
             var positions = new List<Position>();
             foreach (SecurityHolding security_holding in algo.Portfolio.Values.Where(x => x.Quantity != 0))
@@ -138,48 +174,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return positions;
         }
 
-        //private void OldWayBuildingRisk()
-        //{
-        //    foreach (SecurityHolding securityHolding in algo.Portfolio.Values)
-        //    {
-        //        if (securityHolding.Type == SecurityType.Equity && securityHolding.Quantity != 0)
-        //        {
-        //            double deltaSecurity = GetPfDelta((Equity)algo.Securities[securityHolding.Symbol]);  // Includes quantity/position.
-
-        //            Delta += deltaSecurity;
-        //            Delta100BpUSD += (decimal)deltaSecurity * 100 * BP * ppiPrice;
-        //        }
-        //        else if (securityHolding.Type == SecurityType.Option && securityHolding.Quantity != 0)
-        //        {
-        //            Option contract = (Option)algo.Securities.GetValueOrDefault(securityHolding.Symbol, null);
-        //            if (contract != null)
-        //            {
-        //                decimal quantity = securityHolding.Quantity;
-        //                //decimal price = algo.MidPrice(securityHolding.Symbol);
-        //                OptionContractWrap ocw = OptionContractWrap.E(algo, contract);
-        //                GreeksPlus greeks = ocw.Greeks(null, null);  // refactor any PF greeks there providing an index?
-
-        //                double deltaPf = GetPfDelta((Option)algo.Securities[securityHolding.Symbol]);  // Not including quantity or option multiplier.
-        //                Delta += deltaPf;
-
-        //                var taylorTerm = contract.ContractMultiplier * quantity * 100 * BP * ppiPrice;
-        //                Delta100BpUSD += (decimal)deltaPf * taylorTerm;
-
-        //                double gammaContract = Ppi.Gamma((Option)algo.Securities[securityHolding.Symbol]);  // Not including quantity or option multiplier.
-        //                Gamma += gammaContract;
-        //                Gamma100BpUSD += (decimal)(0.5 * Math.Pow((double)taylorTerm, 2) * gammaContract);
-
-        //                // Below 2 simplifications assuming a pure options portfolio.
-        //                Theta += greeks.Theta;
-        //                ThetaUSD += (decimal)greeks.Theta * contract.ContractMultiplier * quantity;
-
-        //                // Summing up individual vegas. Only applicable to Ppi constructed from options, not for Ppi(SPY or any index)
-        //                Vega += greeks.Vega;
-        //                Vega100BpUSD += (decimal)greeks.Vega * contract.ContractMultiplier * quantity;  // * 100 * BP * algo.Securities[ocw.UnderlyingSymbol].VolatilityModel.Volatility;
-        //            }
-        //        }
-        //    }
-        //}
+        public static IEnumerable<Position> GetPositionsSince(Foundations algo, DateTime? since = null, bool setPL = false)
+        {
+            var positions = new List<Position>();
+            if (since == null)
+            {
+                return algo.Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).ToHashSet(o => o.Symbol).Select(symbol => new Position(algo, symbol, setPL: true));  // setPL to be deleted.
+            }
+            else
+            {
+                throw new NotImplementedException();
+            }
+        }
     }
 }
 

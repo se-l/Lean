@@ -51,6 +51,11 @@ namespace QuantConnect.Configuration
                                                                                    + " QuantQuoteConverter] *Not all downloaders support all resolutions. Send empty for more information.*"
                                                                                    + " CASE SENSITIVE: --resolution=Tick/Second/Minute/Hour/Daily/All" +Environment.NewLine+
                                                                                    "[OPTIONAL for RandomDataGenerator - same format as downloaders, Options only support Minute"),
+                new CommandLineOption("resolutions", CommandOptionType.MultipleValue, "[REQUIRED ALL downloaders (except QBDL, CDL) and IVolatilityEquityConverter,"
+                                                                                   + " QuantQuoteConverter] *Not all downloaders support all resolutions. Send empty for more information.*"
+                                                                                   + " CASE SENSITIVE: --resolution=Tick/Second/Minute/Hour/Daily/All" +Environment.NewLine+
+                                                                                   "[OPTIONAL for RandomDataGenerator - same format as downloaders, Options only support Minute"),
+                new CommandLineOption("tick-types", CommandOptionType.MultipleValue, "[OPTIONS for IQF Downloader. Quote/Trade."),
                 new CommandLineOption("from-date", CommandOptionType.SingleValue, "[REQUIRED ALL downloaders] --from-date=yyyyMMdd-HH:mm:ss"),
                 new CommandLineOption("to-date", CommandOptionType.SingleValue, "[OPTIONAL for downloaders] If not provided 'DateTime.UtcNow' will "
                                                                                 + "be used. --to-date=yyyyMMdd-HH:mm:ss"),
@@ -68,6 +73,7 @@ namespace QuantConnect.Configuration
                 new CommandLineOption("market", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Market of generated symbols. Defaults to default market for security type: Example: --market=usa]"),
                 new CommandLineOption("symbol-count", CommandOptionType.SingleValue, "[REQUIRED for RandomDataGenerator. Number of symbols to generate data for: Example: --symbol-count=10]"),
                 new CommandLineOption("security-type", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Security type of generated symbols, defaults to Equity: Example: --security-type=Equity/Option/Forex/Future/Cfd/Crypto]"),
+                new CommandLineOption("tick-type", CommandOptionType.SingleValue, "[OPTIONAL. Tick type of IQ Feed downloader, defaults to Trade: Example: --tick-type=Trade/Quote"),
                 new CommandLineOption("data-density", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Defaults to Dense. Valid values: --data-density=Dense/Sparse/VerySparse ]"),
                 new CommandLineOption("include-coarse", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Only used for Equity, defaults to true: Example: --include-coarse=true]"),
                 new CommandLineOption("quote-trade-ratio", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Sets the ratio of generated quotes to generated trades. Values larger than 1 mean more quotes than trades. Only used for Option, Future and Crypto, defaults to 1: Example: --quote-trade-ratio=1.75 ]"),
@@ -97,6 +103,23 @@ namespace QuantConnect.Configuration
         {
             return optionsObject.ContainsKey("tickers")
                 ? (optionsObject["tickers"] as Dictionary<string, string>)?.Keys.ToList()
+                : new List<string>();
+        }
+
+        /// <summary>
+        /// Helper method to get the resolutions from the provided options
+        /// </summary>
+        public static List<string> GetResolutions(Dictionary<string, object> optionsObject)
+        {
+            return optionsObject.ContainsKey("resolutions")
+                ? (optionsObject["resolutions"] as Dictionary<string, string>)?.Keys.ToList()
+                : new List<string>();
+        }
+
+        public static List<string> GetTickTypes(Dictionary<string, object> optionsObject)
+        {
+            return optionsObject.ContainsKey("tick-types")
+                ? (optionsObject["tick-types"] as Dictionary<string, string>)?.Keys.ToList()
                 : new List<string>();
         }
     }

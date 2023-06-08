@@ -1,9 +1,13 @@
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
+using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using static QuantConnect.Messages;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -16,7 +20,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Extrinsic Time value:
             //      Volatility value Implied
             //      Volatility value Historical
-            //      Volaatility value Forecasted
+            //      Volatility value Forecasted
             //      Directional Bias / Drift
             //
             // Interest rate
@@ -24,68 +28,157 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Option Liquidity
             return 0;
         }
-        public decimal IntrinsicValue(OptionContractWrap ocw) {
-            return (ocw.Contract.StrikePrice - ocw.Contract.Underlying.Price) * OptionRight2Int[ocw.Contract.Right];
-        }
+
         public void TimeValue() { }
         public decimal? GetFairOptionPrice(Option contract)
         {
             return (decimal)OptionContractWrap.E(this, contract).PriceFair();
         }
 
-        private decimal AdjustPriceForMarket(Symbol symbol, OrderDirection orderDirection, decimal price)
+        /// <summary>
+        /// Due to smoothing out of IV, the implied price is often different from the respected bid/ask, therefore no need to further price better.
+        /// </summary>
+        private decimal MarketMarkup(Symbol symbol, OrderDirection orderDirection, decimal price)
         {
-            // Upper limit is mid price. Lower limit is fair price, meaning may not be on bid/ask... Paying more than market is up to risk adjustment.
-            decimal midPrice = MidPrice(symbol);
-            decimal spreadMarket2FairPrice;
-            if (orderDirection == OrderDirection.Buy)
-            {
-                if (price > midPrice) { return midPrice ; }
-                //else
-                //{
-                //    spreadMarket2FairPrice = (decimal)price - contract.BidPrice;
-                //}                
-            }
-            else if (orderDirection == OrderDirection.Sell)
-            {
-                if (price < midPrice) { return midPrice; }
-                //else
-                //{
-                //    spreadMarket2FairPrice = contract.AskPrice - (decimal)price;
-                //}
-                
-            }
-            return price;
-            
+            return 0m;
+            //decimal ownSizeOnLevel = QuantityLimitOrdersOnPriceLevel(symbol, price);            
+            //decimal markUp = ownSizeOnLevel == 0 ? DIRECTION2NUM[orderDirection] * TickSize(symbol) : 0m;
+            //decimal spread = Securities[symbol].AskPrice - Securities[symbol].BidPrice;
+            //if (markUp <= spread / 2m)
+            //{
+            //    return markUp;
+            //} 
+            //else
+            //{
+            //    return 0m;
+            //}
         }
 
-        public decimal PriceOptionPfRiskAdjusted(Option contract, PortfolioRisk pfRisk, OrderDirection orderDirection)
+        /// <summary>
+        /// Looking to offer a better price for contracts that reduce portfolio risk.
+        /// 1) If contract is in my inventory - try get rid of it earning the spread!
+        /// </summary>
+        private decimal PricePortfolioRisk(OptionContractWrap ocw, OrderDirection orderDirection)
+        { 
+            Symbol symbol = ocw.Contract.Symbol;
+            decimal price = 0m;
+            double iVSpread = (RollingIVBidAsk[symbol].Current?.AskIV - RollingIVBidAsk[symbol].Current?.BidIV) ?? 0;
+            decimal bidPrice = Securities[symbol].BidPrice;
+            decimal askPrice = Securities[symbol].BidPrice;
+            decimal priceSpread = askPrice - bidPrice;
+
+            if (Position(symbol) != 0)
+            {
+                // sell at 75% of IV spread.
+                double spreadFactor = orderDirection switch
+                {
+                    OrderDirection.Buy => 0.25,
+                    OrderDirection.Sell => 0.75,
+                    _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
+                };
+                double iv = (RollingIVBidAsk[symbol].Current?.BidIV + iVSpread * spreadFactor) ?? 0;
+                // These are smoothed and eventually forecasted IV values. May want to use those as starting point and improve with market.
+
+                decimal? smoothedIVPrice = (decimal?)ocw.PriceFair(hv: iv);
+                price = orderDirection switch
+                {
+                    OrderDirection.Buy => Math.Min(bidPrice + (decimal)spreadFactor * priceSpread, smoothedIVPrice ?? askPrice),
+                    OrderDirection.Sell => Math.Max(bidPrice + (decimal)spreadFactor * priceSpread, smoothedIVPrice ?? bidPrice),
+                    _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
+                };
+            }
+            return price;
+        }
+
+        public decimal Position(Symbol symbol)
+        {
+            return Portfolio.ContainsKey(symbol) ? Portfolio[symbol].Quantity : 0m;
+        }
+
+        public decimal PriceOptionPfRiskAdjusted(Option option, PortfolioRisk pfRisk, OrderDirection orderDirection)
         {
             // Move to pricing...
             // Prices options based on portfolio risk, intrinsic value, time value, IV/market bid ask, HV forecasts, dividends, liquidity of contract, interest rate.
+            //
+            Symbol symbol = option.Symbol;
+            decimal price;
+            decimal bidPrice = Securities[symbol].BidPrice;
+            decimal askPrice = Securities[symbol].AskPrice;
+            decimal priceSpread = askPrice - bidPrice;
+            decimal position = Position(symbol);
+            decimal markupToMarket;
+            decimal pricePfRisk = 0m;
+            decimal? priceImplied;
+            OptionContractWrap ocw = OptionContractWrap.E(this, option);
 
-            decimal? fairPrice = fairOptionPrices.GetValueOrDefault(contract, GetFairOptionPrice(contract));
-            if (fairPrice == null)
+            double bidIV = RollingIVBidAsk.ContainsKey(symbol) ? RollingIVBidAsk[symbol].Current?.BidIV ?? 0 : 0;
+            double askIV = RollingIVBidAsk.ContainsKey(symbol) ? RollingIVBidAsk[symbol].Current?.AskIV ?? 0 : 0;
+            double iVSpread = (RollingIVBidAsk[symbol].Current?.AskIV - RollingIVBidAsk[symbol].Current?.BidIV) ?? 0;
+
+            //decimal? priceFair = fairOptionPrices.GetValueOrDefault(option, GetFairOptionPrice(option));            
+
+            if (position != 0)
             {
-                return 0;
-            }
-            decimal price = AdjustPriceForMarket(contract.Symbol, orderDirection, fairPrice ?? 0);
-            
-            // # Adjust theoretical price for portfolio risk
-            double pfDeltaId = pfRisk.PfDeltaIfFilled(contract.Symbol, orderDirection);
-            bool increasesPfDelta = pfDeltaId * pfRisk.Delta > 0;
-            if (increasesPfDelta)
-            {
-                return price; // dont need this deal much
+                // Already in Market. Turnover inventory!
+                pricePfRisk = PricePortfolioRisk(ocw, orderDirection: orderDirection);
+                price = pricePfRisk;
             }
             else
             {
-                // Want this trade much. Currently going up to mid price. Todo, refine this based on how much risk we have. First develop risk model better...
-                // spread_adjustment = self.risk_spread_adjustment(spread, pf_risk, pfDeltaId)
-                decimal spreadAdjustment = 0;  // how much we want this trade in order to, e.g., offset risk
-                price = MidPrice(contract.Symbol);
+                // No position yet. Patiently wait for good entry. Transact on right side of bid ask spread, stay market maker.
+                var spreadFactor = orderDirection switch
+                {
+                    OrderDirection.Buy => 0.2,
+                    OrderDirection.Sell => 0.8,
+                    OrderDirection.Hold => 0,
+                    _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
+                };
+
+                priceImplied = (decimal?)ocw.PriceFair(hv: bidIV + iVSpread * spreadFactor);
+                if (priceImplied == 0) { return 0; }
+                //decimal marketMarkup = MarketMarkup(symbol, orderDirection, priceImplied);
+
+                price = orderDirection switch
+                {
+                    OrderDirection.Buy => Math.Min(bidPrice + (decimal)spreadFactor * priceSpread, priceImplied ?? bidPrice),
+                    OrderDirection.Sell => Math.Max(bidPrice + (decimal)spreadFactor * priceSpread, priceImplied ?? askPrice),
+                    _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
+                };
             }
+            decimal tickSize = TickSize(symbol);
+            decimal deltaNBBO = orderDirection switch
+            {
+                OrderDirection.Buy => option.AskPrice - price,
+                OrderDirection.Sell => price - option.BidPrice,
+                _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
+            };
+
+            QuickLog(new Dictionary<string, string>() { 
+                { "topic", "PRICING" }, 
+                { "Function", "PriceOptionPfRiskAdjusted"},
+                { "Symbol", $"{symbol}" },
+                { "Direction", $"{orderDirection}" },
+                { "IntrinsicValue", $"{ ocw.IntrinsicValue() }" },
+                { "ExtrinsicValue", $"{ocw.ExtrinsicValue() }" },
+                //{ "FairPrice", $"{RoundTick(priceFair ?? 0, tickSize/10m)}" },
+                //{ "PriceImplied", $"{RoundTick(priceImplied, tickSize/10m)}" },
+                //{ "MarketMarkup", $"{marketMarkup}" },
+                { "PricePortfolioRisk", $"{pricePfRisk}" },
+                { "Price", $"{RoundTick(price, tickSize/10m)}" },
+                { "DeltaNBBO", $"{RoundTick(deltaNBBO, tickSize/10m)}" },
+                { "BidPrice", $"{option.BidPrice}" },
+                { "AskPrice", $"{option.AskPrice}" }
+                });
             return price;
+        }
+
+        /// <summary>
+        /// If we have greater then zero order quantity on this price level, may impact oneself recursively. For example, may not want to +/- tick the price.
+        /// </summary>
+        public decimal QuantityLimitOrdersOnPriceLevel(Symbol symbol, decimal quotePrice)
+        {
+            // As per IB cannot be short & long same contract, hence all orders are in same direction
+            return orderTickets.ContainsKey(symbol) ? Math.Abs(orderTickets[symbol].Where(x => x.Get(OrderField.LimitPrice) == quotePrice).Select(x => x.Quantity).Sum()) : 0m;
         }
     }
 }

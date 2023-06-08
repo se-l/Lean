@@ -29,7 +29,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         //Vega100BpUSD
 
 
-        public GreeksPlus(double hv, double delta, double gamma, double deltaDecay, double dPdIV, double dGdP, double gammaDecay, double dGdIV, double theta, double dTdP, double thetaDecay, double dTdIV, double vega, double dIVdP, double vegaDecay, double dIV2, double rho, double theoPrice)
+        public GreeksPlus(double hv=0, double delta = 0, double gamma = 0, double deltaDecay = 0, double dPdIV = 0, double dGdP = 0, double gammaDecay = 0, double dGdIV = 0, double theta = 0, double dTdP = 0, double thetaDecay = 0, double dTdIV = 0, double vega = 0, double dIVdP = 0, double vegaDecay = 0, double dIV2 = 0, double rho = 0, double theoPrice = 0)
         {
             HV = hv;
             Delta = delta;

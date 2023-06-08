@@ -66,7 +66,7 @@ namespace QuantConnect.Data
         /// <summary>
         /// A list of resolutions support by Options
         /// </summary>
-        protected static readonly List<Resolution> OptionResolutions = new List<Resolution> { Resolution.Daily, Resolution.Hour, Resolution.Minute };
+        protected static readonly List<Resolution> OptionResolutions = new List<Resolution> { Resolution.Daily, Resolution.Hour, Resolution.Minute, Resolution.Second, Resolution.Tick };
 
         /// <summary>
         /// Market Data Type of this data - does it come in individual price packets or is it grouped into OHLC.

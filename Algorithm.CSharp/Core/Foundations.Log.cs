@@ -5,6 +5,7 @@ using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Contracts;
 using System.Linq;
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -23,8 +24,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public string QuickLog(Dictionary<string, string> kwargs)
         {
-            kwargs.Add("ts", Time.ToString());
-            string tag = Humanize(kwargs);
+            string tag = Humanize(new Dictionary<string, string>() { { "ts", Time.ToString() } });
+            tag += " " + Humanize(kwargs);
             Log(tag);
             return tag;
         }
@@ -123,6 +124,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "LimitPrice", order_event.LimitPrice.ToString() },
                 { "FillPrice", order_event.FillPrice.ToString() },
                 { "Fee", order_event.OrderFee.ToString() },
+                { "PriceUnderlying", order_event.Symbol.HasUnderlyingSymbol(order_event.Symbol) ? Securities[((Option)security).Symbol.Underlying].Price.ToString() : "" },
                 { "BestBid", security.BidPrice.ToString() },
                 { "BestAsk", security.AskPrice.ToString() }
             });
@@ -140,6 +142,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
             d1 = d1.ToDictionary(x => x.Key, x => x.Value.ToString());
             var d2 = PortfolioRisk.E(this).ToDict().ToDictionary(x => x.Key, x => x.Value.ToString());
             string tag = Humanize(d1.Union(d2));
+            Log(tag);
+            return tag;
+        }
+
+        public string LogPnL()
+        {
+            var d1 = new Dictionary<string, string>
+            {
+                { "ts", Time.ToString() },
+                { "topic", "PnL" },
+                { "TotalPortfolioValueQC", Portfolio.TotalPortfolioValue.ToString() },
+                { "Cash",  Portfolio.Cash.ToString() },
+                //{ "TotalFees", Portfolio.TotalFees.ToString() },
+                { "TotalNetProfit", Portfolio.TotalNetProfit.ToString() },
+                { "TotalUnrealizedProfit", Portfolio.TotalUnrealizedProfit.ToString() },
+        };
+            string tag = Humanize(d1.Union(d1));
             Log(tag);
             return tag;
         }

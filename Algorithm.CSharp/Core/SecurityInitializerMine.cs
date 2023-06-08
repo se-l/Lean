@@ -1,5 +1,7 @@
 using QuantConnect.Algorithm.CSharp.Core.Pricing.Volatility;
 using QuantConnect.Brokerages;
+using QuantConnect.Data.Market;
+using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 
@@ -8,8 +10,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
     public class SecurityInitializerMine : BrokerageModelSecurityInitializer
     {
         public int VolatilitySpan { get; set; }
-        public SecurityInitializerMine(IBrokerageModel brokerageModel, ISecuritySeeder securitySeeder, int volatilitySpan)
+
+        private Foundations algo;
+        public SecurityInitializerMine(IBrokerageModel brokerageModel, Foundations algo, ISecuritySeeder securitySeeder, int volatilitySpan)
         : base(brokerageModel, securitySeeder) {
+            this.algo = algo;
             VolatilitySpan = volatilitySpan;
         }
 
@@ -27,6 +32,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 //security.VolatilityModel = new EstimatorYangZhang(VolatilitySpan);
                 security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(VolatilitySpan, Resolution.Daily);
+                foreach (var tradeBar in algo.HistoryWrap(security.Symbol, VolatilitySpan, Resolution.Daily))
+                {
+                    security.VolatilityModel.Update(security, tradeBar);
+                }
             }
             else
             if (security.Type == SecurityType.Option)

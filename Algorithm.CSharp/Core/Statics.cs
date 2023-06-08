@@ -77,9 +77,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public static double Covariance(double[] x, double[] y, int window)
         {
-            double[] xWindow = x.TakeLast(window).ToArray();
-            double[] yWindow = y.TakeLast(window).ToArray();
-            return Measures.Covariance(xWindow, xWindow.Mean(), y, yWindow.Mean(), true);
+            double[] xWindow = x.Length != window ? x.TakeLast(window).ToArray() : x;
+            double[] yWindow = y.Length != window ? y.TakeLast(window).ToArray() : y;
+            return Measures.Covariance(xWindow, xWindow.Mean(), y, yWindow.Mean(), unbiased: true);
         }
 
         public static int GetBusinessDays(DateTime startDate, DateTime endDate, IEnumerable<DateTime> holidays = null)
@@ -158,7 +158,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return logReturns;
         }
 
-        public static string ObjectToHeader<T>(T obj)
+        public static string ObjectToHeader<T>(T obj, string prefix="")
         {
             if (obj == null) return "";
             if (obj.GetType() == typeof(Dictionary<Symbol, double>))
@@ -167,7 +167,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var header = "";
                 foreach (var key in dict.Keys)
                 {
-                    header += obj.GetType().Name + key.Value + ",";
+                    header += prefix + obj.GetType().Name + key.Value + ",";
                 }
                 return header;
             }
@@ -179,11 +179,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     if (PrimitiveTypes.Contains(prop.PropertyType) || ToStringTypes.Contains(prop.PropertyType))
                     {
-                        header += prop.Name + ",";
+                        header += prefix + prop.Name + ",";
                     }
                     else
                     {
-                        header += ObjectToHeader(prop.GetValue(obj));
+                        header += ObjectToHeader(prop.GetValue(obj), prefix: prefix + prop.Name + ".");
                     }
                 }
                 return header;
@@ -232,7 +232,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public static void ExportToCsv<T>(IEnumerable<T> objects, string filePath)
         {
             if (objects == null || !objects.Any()) return;
-            var header = ObjectToHeader(objects.Last());  // Need to fix that for equity position, Greeks are null, hence no header is returned.
+            var header = ObjectToHeader(objects.First());  // Need to fix that for equity position, Greeks are null, hence no header is returned.
 
             var csv = new StringBuilder();
             csv.AppendLine(header);
@@ -266,12 +266,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }                
                 csv.AppendLine(line);
             }
+
+            var fileExists = File.Exists(filePath);
+            // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
+            if (!fileExists)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+            }
             File.WriteAllText(filePath, csv.ToString());
         }
 
-        public static Func<TArgs, TResult> Cache<TArgs, TResult>(Func<TArgs, TResult> decorated, Func<TArgs, string> genCacheKey)
+        public static Func<TArgs, TResult> Cache<TCacheKey, TArgs, TResult>(Func<TArgs, TResult> decorated, Func<TArgs, TCacheKey> genCacheKey)
         {
-            var cache = new ConcurrentDictionary<string, TResult>();
+            var cache = new ConcurrentDictionary<TCacheKey, TResult>();
             return args =>
             {
                 var key = genCacheKey(args);
@@ -284,9 +291,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return result;
             };
         }
-        public static Func<TArg1, TArg2, TResult> Cache<TArg1, TArg2, TResult>(Func<TArg1, TArg2, TResult> decorated, Func<TArg1, TArg2, string> genCacheKey)
+        public static Func<TArg1, TArg2, TResult> Cache<TCacheKey, TArg1, TArg2, TResult>(Func<TArg1, TArg2, TResult> decorated, Func<TArg1, TArg2, TCacheKey> genCacheKey)
         {
-            var cache = new ConcurrentDictionary<string, TResult>();
+            var cache = new ConcurrentDictionary<TCacheKey, TResult>();
             return (arg1, arg2) =>
             {
                 var key = genCacheKey(arg1, arg2);
@@ -300,9 +307,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
         }
 
-        public static Func<TArg1, TArg2, TArg3, TResult> Cache<TArg1, TArg2, TArg3, TResult>(Func<TArg1, TArg2, TArg3, TResult> decorated, Func<TArg1, TArg2, TArg3, string> genCacheKey)
+        public static Func<TArg1, TArg2, TArg3, TResult> Cache<TCacheKey, TArg1, TArg2, TArg3, TResult>(Func<TArg1, TArg2, TArg3, TResult> decorated, Func<TArg1, TArg2, TArg3, TCacheKey> genCacheKey)
         {
-            var cache = new ConcurrentDictionary<string, TResult>();
+            var cache = new ConcurrentDictionary<TCacheKey, TResult>();
             return (arg1, arg2, arg3) =>
             {
                 var key = genCacheKey(arg1, arg2, arg3);
@@ -316,9 +323,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
         }
 
-        public static Func<TArg1, TArg2, TArg3, TArg4, TResult> Cache<TArg1, TArg2, TArg3, TArg4, TResult>(Func<TArg1, TArg2, TArg3, TArg4, TResult> decorated, Func<TArg1, TArg2, TArg3, TArg4, string> genCacheKey)
+        public static Func<TArg1, TArg2, TArg3, TArg4, TResult> Cache<TCacheKey, TArg1, TArg2, TArg3, TArg4, TResult>(Func<TArg1, TArg2, TArg3, TArg4, TResult> decorated, Func<TArg1, TArg2, TArg3, TArg4, TCacheKey> genCacheKey)
         {
-            var cache = new ConcurrentDictionary<string, TResult>();
+            var cache = new ConcurrentDictionary<TCacheKey, TResult>();
             return (arg1, arg2, arg3, arg4) =>
             {
                 var key = genCacheKey(arg1, arg2, arg3, arg4);
@@ -332,9 +339,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
         }
 
-        public static Func<TArg1, TArg2, TArg3, TArg4, TArg5, TResult> Cache<TArg1, TArg2, TArg3, TArg4, TArg5, TResult>(Func<TArg1, TArg2, TArg3, TArg4, TArg5, TResult> decorated, Func<TArg1, TArg2, TArg3, TArg4, TArg5, string> genCacheKey)
+        public static Func<TArg1, TArg2, TArg3, TArg4, TArg5, TResult> Cache<TCacheKey, TArg1, TArg2, TArg3, TArg4, TArg5, TResult>(Func<TArg1, TArg2, TArg3, TArg4, TArg5, TResult> decorated, Func<TArg1, TArg2, TArg3, TArg4, TArg5, TCacheKey> genCacheKey)
         {
-            var cache = new ConcurrentDictionary<string, TResult>();
+            var cache = new ConcurrentDictionary<TCacheKey, TResult>();
             return (arg1, arg2, arg3, arg4, arg5) =>
             {
                 var key = genCacheKey(arg1, arg2, arg3, arg4, arg5);

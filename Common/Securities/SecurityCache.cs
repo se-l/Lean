@@ -455,5 +455,23 @@ namespace QuantConnect.Securities
             targetToModify._lastTickTrades = sourceToShare._lastTickTrades;
             targetToModify._lastTickQuotes = sourceToShare._lastTickQuotes;
         }
+
+        public SecurityCache Clone()
+        {
+            return new SecurityCache
+            {
+                Price = Price,
+                Open = Open,
+                High = High,
+                Low = Low,
+                Close = Close,
+                BidPrice = BidPrice,
+                BidSize = BidSize,
+                AskPrice = AskPrice,
+                AskSize = AskSize,
+                Volume = Volume,
+                OpenInterest = OpenInterest
+            };
+        }
     }
 }

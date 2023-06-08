@@ -21,7 +21,7 @@ using QuantConnect.Data;
 using QuantConnect.Securities;
 using QuantConnect.Orders;
 using System.Linq;
-using QuantConnect.ToolBox.IQFeed.IQ;
+//using QuantConnect.ToolBox.IQFeed.IQ;
 using QuantConnect.Util;
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
@@ -45,33 +45,20 @@ namespace QuantConnect.Algorithm.CSharp
 
             if (LiveMode)
             {
-                SetOptionChainProvider(new IQOptionChainProvider());
+                //SetOptionChainProvider(new IQOptionChainProvider());
             }
             int volatilitySpan = 10;
 
-            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, new FuncSecuritySeeder(GetLastKnownPrices), volatilitySpan));
+            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilitySpan));
 
             AssignCachedFunctions();
 
-            simulated_missed_gain = 0;
-
             SetWarmUp((int)(volatilitySpan * 1.5), Resolution.Daily);
-            SymbolSodPriceMid = new Dictionary<Symbol, decimal>();
             spy = AddEquity("SPY", Resolution.Daily).Symbol;
         }
 
         public override void OnData(Slice slice)
         {
-            if (IsWarmingUp)
-            {
-                foreach (var symbol in Securities.Keys)
-                {
-                    if (!SymbolSodPriceMid.ContainsKey(symbol))
-                    {
-                        SymbolSodPriceMid[symbol] = MidPrice(symbol);
-                    }
-                }
-            }
         }
 
         public void LogToDisk()
@@ -80,17 +67,12 @@ namespace QuantConnect.Algorithm.CSharp
             ExportToCsv(pfRisk.Positions, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_positions_{Time:yyyyMMdd}.csv"));
             ExportToCsv(Transactions.GetOrders(x => true).ToList(), Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_orders_{Time:yyyyMMdd}.csv"));
 
-            var estimated_position_valuation_gain = pfRisk.Positions.Sum(p => Math.Abs(p.Multiplier * (p.Spread / 2) * p.Quantity));
-            Log($"simulated_missed_gain: {simulated_missed_gain}");
             Log($"Cash: {Portfolio.Cash}");
             Log($"UnsettledCash: {Portfolio.UnsettledCash}");
             Log($"TotalFees: {Portfolio.TotalFees}");
             Log($"TotalNetProfit: {Portfolio.TotalNetProfit}");
             Log($"TotalUnrealizedProfit: {Portfolio.TotalUnrealizedProfit}");
             Log($"TotalPortfolioValue: {Portfolio.TotalPortfolioValue}");
-            var estimated_portfolio_value = Portfolio.TotalPortfolioValue + simulated_missed_gain + estimated_position_valuation_gain;
-            Log($"estimated_position_valuation_gain: {estimated_position_valuation_gain}");
-            Log($"EstimatedPortfolioValue: {estimated_portfolio_value}");
         }
 
         public override void OnWarmupFinished()

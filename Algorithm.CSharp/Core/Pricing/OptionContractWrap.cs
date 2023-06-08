@@ -13,6 +13,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         ///
         public Securities.Option.Option Contract { get; }
         public Symbol UnderlyingSymbol { get; }
+        public Func<decimal?, decimal?, double, double?> IV;
 
         private readonly Foundations algo;
         private static readonly Dictionary<string, OptionContractWrap> instances = new();
@@ -42,6 +43,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public Func<decimal?, double?, GreeksPlus> Greeks;
 
+        private (decimal, decimal, double) GenCacheKeyIV(decimal? spotPriceContract, decimal? spotPriceUnderlying, double accuracy= 0.01)
+        {
+            return (
+                spotPriceContract ?? algo.MidPrice(Contract.Symbol),
+                spotPriceUnderlying ?? algo.MidPrice(UnderlyingSymbol),
+                accuracy
+                );
+        }
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -53,12 +63,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             //algo.Log($"{algo.Time}: OptionContractWrap.constructor called. {contract.Symbol}");
             Contract = contract;
             UnderlyingSymbol = contract.Underlying.Symbol;
+            IV = Cache<(decimal, decimal, double), decimal?, decimal?, double, double?>(GetIVNewtonRaphson, GenCacheKeyIV);
 
             Greeks = Cache(GreeksP,
                 (decimal? spotPrice, double? hv) => {
                     SetSpotQuotePriceUnderlying(spotPrice);
                     SetHistoricalVolatility(hv);
-                    return $"{Contract}{spotQuote.value()}{hvQuote.value()}";
+                    return (spotQuote.value(), hvQuote.value());
                 }
             );
             
@@ -79,7 +90,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             amExercise = new AmericanExercise((Date)settlementDate, maturityDate);
             amOption = new VanillaOption(payoff, amExercise);
             bsmProcess = GetBsm(calculationDate, new Handle<Quote>(spotQuote), new Handle<Quote>(hvQuote), new Handle<Quote>(riskFeeRateQuote));
-            amOption = EnginedOption(amOption, bsmProcess);
+            amOption = EnginedOption(amOption, bsmProcess);            
         }
 
         public static OptionContractWrap E(Foundations algo, Securities.Option.Option contract)
@@ -100,19 +111,26 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             var quote = spotPrice ?? algo.MidPrice(UnderlyingSymbol);            
             spotQuote ??= new SimpleQuote((double)quote);
-            spotQuote?.setValue((double)quote);
+            if ((double)spotQuote.value() != (double)quote)
+            {
+                spotQuote.setValue((double)quote);
+            }
         }
 
         private void SetHistoricalVolatility(double? hv = null)
         {
             hv ??= (double)algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility;
             hvQuote ??= new SimpleQuote(hv);
-            hvQuote?.setValue(hv);
+            if (hvQuote.value() != hv)
+            {
+                hvQuote.setValue(hv);
+            }
             //algo.Log($"{algo.Time} {Contract.Symbol} HV: {algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility}");
         }
 
         public double? PriceFair(decimal? spotPrice = null, double? hv = null, Date calculationDate = null)
         {
+            if (hv == 0) { return null; }
             SetSpotQuotePriceUnderlying(spotPrice);
             SetHistoricalVolatility(hv);
             
@@ -127,10 +145,57 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
-        public double? IV(decimal? spotPriceContract = null)
+        public double? GetIV(decimal? spotPriceContract = null, decimal? spotPriceUnderlying = null, double accuracy = 0.01)
         {
-            decimal _spotPriceContract = spotPriceContract ?? algo.MidPrice(Contract.Symbol);
-            return amOption.impliedVolatility((double)_spotPriceContract, bsmProcess);
+            double _spotPriceContract = (double)(spotPriceContract ?? algo.MidPrice(Contract.Symbol));
+            SetSpotQuotePriceUnderlying(spotPriceUnderlying);
+            try
+            {
+                return amOption.impliedVolatility(_spotPriceContract, bsmProcess, accuracy: accuracy);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public double? GetIVNewtonRaphson(decimal? spotPriceContract = null, decimal? spotPriceUnderlying = null, double accuracy = 0.01)
+        {
+            int maxIterations = 100;
+            double _spotPriceContract = (double)(spotPriceContract ?? algo.MidPrice(Contract.Symbol));
+            spotQuote.setValue((double)spotPriceUnderlying);
+
+            double initialGuess = 0.3; // Initial guess for the implied volatility
+            double epsilon = accuracy;
+            double currentGuess = initialGuess;
+            int iteration = 0;
+
+            while (iteration < maxIterations)
+            {
+                try
+                {
+                    hvQuote.setValue(Math.Min(Math.Max(currentGuess, 0), 4));
+                    double optionPrice = amOption.NPV();
+                    double vega = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "NPV");
+
+                    double difference = optionPrice - _spotPriceContract;
+
+                    if (Math.Abs(difference) < epsilon)
+                    {
+                        return currentGuess;
+                    }
+
+                    currentGuess = currentGuess - difference / vega;
+                    iteration++;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            // If the method did not converge to a solution, return null
+            return null;
         }
 
         public Tuple<double?, double?> IVBidAsk(decimal? bidPrice = null, decimal? askPrice = null)
@@ -164,7 +229,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double dPdP, gamma;
             SetSpotQuotePriceUnderlying(spotPrice);
             SetHistoricalVolatility(hv);
-            algo.Debug($"{algo.Time} - {Contract}.GreeksP(). spotPrice: {spotQuote.value()} and HV: {hvQuote.value()}.");
+            //algo.Debug($"{algo.Time} - {Contract}.GreeksP(). spotPrice: {spotQuote.value()} and HV: {hvQuote.value()}.");
 
             // First order derivatives: dV / dt (Theta) ; dV / dP (Delta) ; dV / dIV (Vega)
             var delta = amOption.delta();
@@ -286,6 +351,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 }
             }
             return (values[0] - values[values.Count - 1]) / nDays;
+        }
+        public decimal IntrinsicValue()
+        {
+            return (Contract.StrikePrice - algo.MidPrice(UnderlyingSymbol)) * OptionRight2Int[Contract.Right];
+        }
+
+        public decimal ExtrinsicValue()
+        {
+            return algo.MidPrice(Contract.Symbol) - IntrinsicValue();
         }
     }
 }

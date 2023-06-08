@@ -387,6 +387,17 @@ namespace QuantConnect
     }
 
     /// <summary>
+    /// Sides of a Quote
+    /// </summary>
+    public enum QuoteSide
+    {
+        /// Bid
+        Bid,
+        /// Ask
+        Ask
+    }
+
+    /// <summary>
     /// Specifies the type of <see cref="QuantConnect.Data.Market.Delisting"/> data
     /// </summary>
     public enum DelistingType

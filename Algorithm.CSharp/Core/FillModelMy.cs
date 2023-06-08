@@ -41,7 +41,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 case OrderDirection.Buy:
                     //Buy limit seeks lowest price
-                    if (prices.Low < limitPrice)
+                    if (prices.Low <= limitPrice)
                     {
                         //Set order fill:
                         fill.Status = OrderStatus.Filled;
@@ -54,7 +54,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     break;
                 case OrderDirection.Sell:
                     //Sell limit seeks highest price possible
-                    if (prices.High > limitPrice)
+                    if (prices.High >= limitPrice)
                     {
                         fill.Status = OrderStatus.Filled;
                         // fill at the worse price this bar or the limit price, this allows far out of the money limits
@@ -84,24 +84,24 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             // Only fill with data types we are subscribed to
-            //var subscriptionTypes = GetSubscribedTypes(asset);
+            var subscriptionTypes = GetSubscribedTypes(asset);
             // Tick
-            //var tick = asset.Cache.GetData<Tick>();
-            //if (tick != null && subscriptionTypes.Contains(typeof(Tick)))
-            //{
-            //    var price = direction == OrderDirection.Sell ? tick.BidPrice : tick.AskPrice;
-            //    if (price != 0m)
-            //    {
-            //        return new Prices(tick.EndTime, price, 0, 0, 0, 0);
-            //    }
+            var tick = asset.Cache.GetData<Tick>();
+            if (tick != null && subscriptionTypes.Contains(typeof(Tick)))
+            {
+                var price = direction == OrderDirection.Sell ? tick.BidPrice : tick.AskPrice;
+                if (price != 0m)
+                {
+                    return new Prices(tick.EndTime, price, 0, 0, 0, 0);
+                }
 
-            //    // If the ask/bid spreads are not available for ticks, try the price
-            //    price = tick.Price;
-            //    if (price != 0m)
-            //    {
-            //        return new Prices(tick.EndTime, price, 0, 0, 0, 0);
-            //    }
-            //}
+                // If the ask/bid spreads are not available for ticks, try the price
+                price = tick.Price;
+                if (price != 0m)
+                {
+                    return new Prices(tick.EndTime, price, 0, 0, 0, 0);
+                }
+            }
 
             // Quote
             var quoteBar = asset.Cache.GetData<QuoteBar>();

@@ -33,6 +33,7 @@ using QuantConnect.ToolBox.RandomDataGenerator;
 using QuantConnect.ToolBox.YahooDownloader;
 using QuantConnect.Util;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using static QuantConnect.Configuration.ApplicationParser;
 
@@ -73,7 +74,6 @@ namespace QuantConnect.ToolBox
                 var fromDate = Parse.DateTimeExact(GetParameterOrExit(optionsObject, "from-date"), "yyyyMMdd-HH:mm:ss");
                 var resolution = optionsObject.ContainsKey("resolution") ? optionsObject["resolution"].ToString() : "";
                 var market = optionsObject.ContainsKey("market") ? optionsObject["market"].ToString() : "";
-                var securityType = optionsObject.ContainsKey("security-type") ? optionsObject["security-type"].ToString() : "";
                 var tickers = ToolboxArgumentParser.GetTickers(optionsObject);
                 var toDate = optionsObject.ContainsKey("to-date")
                     ? Parse.DateTimeExact(optionsObject["to-date"].ToString(), "yyyyMMdd-HH:mm:ss")
@@ -95,7 +95,10 @@ namespace QuantConnect.ToolBox
                         break;
                     case "iqfdl":
                     case "iqfeeddownloader":
-                        IQFeedDownloaderProgram.IQFeedDownloader(tickers, resolution, fromDate, toDate, securityType);
+                        var securityType = optionsObject.ContainsKey("security-type") ? optionsObject["security-type"].ToString() : "";
+                        IList<string> tickTypes = optionsObject.ContainsKey("tick-types") ? ToolboxArgumentParser.GetTickTypes(optionsObject) : new List<string>() { "Trade" };
+                        IList<string> resolutions = optionsObject.ContainsKey("resolutions") ? ToolboxArgumentParser.GetResolutions(optionsObject) : new List<string>();
+                        IQFeedDownloaderProgram.IQFeedDownloader(tickers, resolutions, fromDate, toDate, tickTypes, securityType);
                         break;
                     case "kdl":
                     case "krakendownloader":

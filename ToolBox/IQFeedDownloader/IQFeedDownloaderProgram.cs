@@ -36,25 +36,27 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
     public static class IQFeedDownloaderProgram
     {
         private const int NumberOfClients = 8;
-        private const string option = "Option";
 
         /// <summary>
         /// Primary entry point to the program. This program only supports EQUITY for now.
         /// </summary>
-        public static void IQFeedDownloader(IList<string> tickers, string resolution, DateTime fromDate, DateTime toDate, string securityType = "Equity")
+        public static void IQFeedDownloader(IList<string> tickers, IList<string> resolutions, DateTime fromDate, DateTime toDate, IList<string> tickTypes, string securityType = "Equity")
         {
-            if (resolution.IsNullOrEmpty() || tickers.IsNullOrEmpty())
+            IEnumerable<BaseData> data;
+
+            if (!resolutions.Any() || tickers.IsNullOrEmpty())
             {
                 Console.WriteLine("IQFeedDownloader ERROR: '--tickers=' or '--resolution=' parameter is missing");
                 Console.WriteLine("--tickers=SPY,AAPL");
-                Console.WriteLine("--resolution=Tick/Second/Minute/Hour/Daily/All");
+                Console.WriteLine("--resolutions=Tick/Second/Minute/Hour/Daily");
                 Environment.Exit(1);
             }
             try
             {
                 // Load settings from command line
-                var allResolution = resolution.ToLowerInvariant() == "all";
-                var castResolution = allResolution ? Resolution.Tick : (Resolution)Enum.Parse(typeof(Resolution), resolution);
+                IEnumerable<Resolution> _resolutions = resolutions.Select(resolution => (Resolution)Enum.Parse(typeof(Resolution), resolution));
+                IEnumerable<TickType> _tickTypes = tickTypes.Select(tickType => (TickType)Enum.Parse(typeof(TickType), tickType));
+                SecurityType _securityType = (SecurityType)Enum.Parse(typeof(SecurityType), securityType);
                 var startDate = fromDate.ConvertToUtc(TimeZones.NewYork);
                 var endDate = toDate.ConvertToUtc(TimeZones.NewYork);
                 endDate = endDate.AddDays(1).AddMilliseconds(-1);
@@ -87,13 +89,11 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                 var downloader = new IQFeedDataDownloader(historyProvider);
                 var quoteDownloader = new IQFeedDataDownloader(historyProvider);
 
-                var resolutions = allResolution ? new List<Resolution> { Resolution.Tick, Resolution.Minute, Resolution.Daily } : new List<Resolution> { castResolution };
-
                 var symbols = Enumerable.Empty<Symbol>();
 
-                switch (securityType)
+                switch (_securityType)
                 {
-                    case option:
+                    case SecurityType.Option:
                         // Resolve option tickers
                         foreach (string ticker in tickers)
                         {
@@ -108,31 +108,30 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                             }
                         }
                         break;
-                    default:
+                    case SecurityType.Equity:
                         symbols = symbols.Concat(tickers.Select(t => Symbol.Create(t, SecurityType.Equity, market)));
                         break;
+                    default:
+                        throw new NotImplementedException($"Security type {securityType} is not supported.");
                 }
 
-                var requests = resolutions.SelectMany(r => symbols.Select(s => new { Symbol = s, Resolution = r })).ToList();
+                var requests = _resolutions.SelectMany(r => symbols.Select(s => new { Symbol = s, Resolution = r })).ToList();
 
                 var sw = Stopwatch.StartNew();
-                Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = NumberOfClients }, request =>
-                 {
-                     var writer = new LeanDataWriter(request.Resolution, request.Symbol, dataDirectory);
-                     // Fetch
-                     var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, request.Resolution, startDate, endDate));
-                     // Write
-                     writer.Write(data);
+                foreach (TickType _tickType in _tickTypes)
+                {
+                    Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = NumberOfClients }, request =>
+                    {
+                        var writer = new LeanDataWriter(request.Resolution, request.Symbol, dataDirectory, _tickType);
+                        data = quoteDownloader.Get(new DataDownloaderGetParameters(request.Symbol, request.Resolution, startDate, endDate, _tickType));
+                        writer.Write(data);
 
-                     // Not as of 2023-05-11, IQFeed still does only provide quote ticks when a trade happened. For options, that's especially limiting given most contract don't actually trade througout the day
-                     // while implied volatility is derived from a contracts bid/ask prices.
-                     // https://forums.iqfeed.net/index.cfm?page=topic&topicID=5679
-                     //if (request.Resolution == Resolution.Tick) // To add: Supporting quote requests for higher resolutions.
-                     //{
-                     //    var quoteWriter = new LeanDataWriter(request.Resolution, symbol, dataDirectory, TickType.Quote);
-                     //    quoteWriter.Write(quoteDownloader.Get(new DataDownloaderGetParameters(symbol, request.Resolution, startDate, endDate, TickType.Quote)));
-                     //}
-                 });
+                        // Caution TickType.Quote:
+                        // Still as of 2023-05-11, IQFeed still does only provide quote ticks when a trade happened. For options, that's especially limiting given most contract don't actually trade througout the day
+                        // while implied volatility is derived from a contracts bid/ask prices.
+                        // https://forums.iqfeed.net/index.cfm?page=topic&topicID=5679
+                    });
+                }                
                 sw.Stop();
 
                 Log.Trace($"IQFeedDownloader: Completed successfully in {sw.Elapsed}!");

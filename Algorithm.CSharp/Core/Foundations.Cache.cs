@@ -19,6 +19,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var key = genCacheKey();
                 if (!cache.Contains(key)) {
                     cache.Add(key);
+                    cacheMeta[key] = Time;
                     decorated();
                     if (ttl > 0)
                     {
@@ -49,6 +50,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return result;
                 }
                 result = decorated();
+
+                if (ttl > 0)
+                {
+                    foreach (var cacheKey in cacheMeta.Where(kvp => (Time - kvp.Value).Seconds >= ttl).Select(kvp => kvp.Key))
+                    {
+                        cache.TryRemove(cacheKey, out var value);
+                    }
+                }
+                if (maxKeys > 0 && cache.Count > maxKeys)
+                {
+                    foreach (var cacheKey in cacheMeta.OrderByDescending(kvp => kvp.Value).Skip(maxKeys).Select(kvp => kvp.Key))
+                    {
+                        cache.TryRemove(cacheKey, out var value);
+                    }
+                }
+
                 cache[key] = result;
                 return result;
             };
