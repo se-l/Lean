@@ -209,21 +209,25 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var line = "";
                 foreach (var prop in properties)
                 {
+                    string value;
                     if (PrimitiveTypes.Contains(prop.PropertyType) || ToStringTypes.Contains(prop.PropertyType))
                     {
                         try
                         {
-                            line += prop.GetValue(obj)?.ToString() + ",";
+                            value = prop.GetValue(obj)?.ToString() ?? "";
+                            value = value.Contains(",") ? "\"" + value + "\"" : value;
+                            value += ",";
                         }
                         catch
                         {
-                            line += ",";
+                            value = ",";
                         }
                     }
                     else
                     {
-                        line += ObjectToCsv(prop.GetValue(obj));
+                        value = ObjectToCsv(prop.GetValue(obj));
                     }
+                    line += value;
                 }
                 return line;
             }
@@ -247,21 +251,27 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     var dict = (Dictionary<Symbol, double>)(object)obj;
                     foreach (var key in dict.Keys)
                     {
-                        line += dict[key].ToString() + ",";
+                        string value = dict[key].ToString() ?? "";
+                        value = value.Contains(",") ? "\"" + value + "\"" : value;
+                        line += value + ",";                        
                     }
                 }
                 else
                 {
                     foreach (var prop in properties)
                     {
+                        string value;
                         if (PrimitiveTypes.Contains(prop.PropertyType) || ToStringTypes.Contains(prop.PropertyType))
                         {
-                            line += prop.GetValue(obj)?.ToString() + ",";
+                            value = prop.GetValue(obj)?.ToString() ?? "";
+                            value = value.Contains(",") ? "\"" + value + "\"" : value;
+                            value += ",";
                         }
                         else
                         {
-                            line += ObjectToCsv(prop.GetValue(obj));
+                            value = ObjectToCsv(prop.GetValue(obj));
                         }
+                        line += value;
                     }
                 }                
                 csv.AppendLine(line);

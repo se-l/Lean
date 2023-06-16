@@ -4,6 +4,7 @@ using System;
 using QuantConnect.Orders.Fees;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
+using System.Collections.Generic;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -84,7 +85,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             // Only fill with data types we are subscribed to
-            var subscriptionTypes = GetSubscribedTypes(asset);
+            //var subscriptionTypes = GetSubscribedTypes(asset);
+            HashSet<Type> subscriptionTypes = asset.Type switch
+            {
+                SecurityType.Option => new() { typeof(Tick) },
+                SecurityType.Equity => new() { typeof(QuoteBar), typeof(TradeBar) },
+            };
+            
             // Tick
             var tick = asset.Cache.GetData<Tick>();
             if (tick != null && subscriptionTypes.Contains(typeof(Tick)))
@@ -105,7 +112,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // Quote
             var quoteBar = asset.Cache.GetData<QuoteBar>();
-            if (quoteBar != null)  // && subscriptionTypes.Contains(typeof(QuoteBar)))
+            if (quoteBar != null && subscriptionTypes.Contains(typeof(QuoteBar)))
             {
                 var bar = direction == OrderDirection.Sell ? quoteBar.Bid : quoteBar.Ask;
                 if (bar != null)
@@ -116,7 +123,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // Trade
             var tradeBar = asset.Cache.GetData<TradeBar>();
-            if (tradeBar != null) // && subscriptionTypes.Contains(typeof(TradeBar)))
+            if (tradeBar != null && subscriptionTypes.Contains(typeof(TradeBar)))
             {
                 return new Prices(tradeBar);
             }

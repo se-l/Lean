@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -91,7 +91,7 @@ namespace QuantConnect.Configuration
                 {
                     {"algorithm-type-name", "BasicTemplateAlgorithm"},
                     {"live-mode", false},
-                    {"data-folder", "../../../Data/"},
+                    {"data-folder", "C:/repos/trade/data/"},
                     {"messaging-handler", "QuantConnect.Messaging.Messaging"},
                     {"job-queue-handler", "QuantConnect.Queues.JobQueue"},
                     {"api-handler", "QuantConnect.Api.Api"},

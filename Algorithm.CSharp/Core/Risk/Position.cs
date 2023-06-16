@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using QuantConnect.Securities;
+using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -22,15 +23,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public IEnumerable<Trade> Trades { get; set; }
 
-        public Position(Foundations algo, Symbol symbol, bool setPL = false)
+        public Position(Foundations algo, Symbol symbol)
         {
-            Symbol = symbol;           
+            Symbol = symbol;
             Security = algo.Securities[symbol];
+            if (Security.Type == SecurityType.Option)
+            {
+                UnderlyingSymbol = ((Option)Security).Underlying.Symbol;
+            }
             TimeCreated = algo.Time;
             Symbol = symbol;
             SecurityType = Security.Type;
 
-            Trades = algo.Transactions.GetOrders(x => x.Symbol == symbol && x.Value != 0 && x.CreatedTime >= Since).Select(o => new Trade(algo, o, setPL: setPL));
+            //Trades = algo.Transactions.GetOrders(x => x.Symbol == symbol && x.Value != 0 && x.CreatedTime >= Since).Select(o => new Trade(algo, o));
+            Trades = algo.Transactions.GetOrders(x => x.Symbol == symbol && x.Value != 0).Select(o => new Trade(algo, o));
             TradesCount = Trades.Count();
         }
     }

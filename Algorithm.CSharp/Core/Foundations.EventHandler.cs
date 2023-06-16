@@ -6,7 +6,8 @@ using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
 namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations : QCAlgorithm
-    {        public void PublishEvent<T>(T @event, Func<bool> condition = null)
+    {        
+        public void PublishEvent<T>(T @event, Func<bool> condition = null)
             where T : class
             //
             //Publishes an event to the event queue.
@@ -23,7 +24,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     CancelRiskIncreasingOrderTickets();
                     UpdateLimitPrice(newBidAsk.Symbol);
-                    EmitNewFairOptionPrices(newBidAsk.Symbol);
+                    // EmitNewFairOptionPrices(newBidAsk.Symbol);
                 }
             }
             // (e.Status is OrderStatus.Filled || e.Status is OrderStatus.PartiallyFilled)
@@ -32,7 +33,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (@event is OrderEvent orderEvent && (orderEvent.Status is OrderStatus.Filled or OrderStatus.PartiallyFilled))
             {
                 CancelRiskIncreasingOrderTickets();
-                HedgePortfolioRiskIs();
+                if (orderEvent.Symbol.SecurityType == SecurityType.Option)
+                {
+                    HedgeOptionWithUnderlying(orderEvent.Symbol);
+                }
+                //HedgePortfolioRiskIs();
                 LogRisk();
                 IsRiskBandExceeded();
             }
@@ -40,7 +45,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (@event is EventHighPortfolioRisk)
             {
                 CancelRiskIncreasingOrderTickets();
-                HedgePortfolioRiskIs();
+                //HedgePortfolioRiskIs();
             }
 
             if (@event is EventSignals signals)
@@ -48,7 +53,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 HandleSignals(signals.Signals);
             }
 
-            if (@event is EventNewFairOptionPrice newOptionPrice)
+            if (@event is EventNewFairOptionPrice newOptionPrice)  // not active currently relying on updates in underlying prices.
             {
                 UpdateLimitPrice(newOptionPrice.Symbol);
             }

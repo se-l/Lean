@@ -1,7 +1,5 @@
-using QuantConnect.Algorithm.CSharp.Core.Pricing.Volatility;
+using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Brokerages;
-using QuantConnect.Data.Market;
-using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 
@@ -24,9 +22,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // This method sets the reality models of each security using the default reality models of the brokerage model
             base.Initialize(security);
 
-            // Next, overwrite some of the reality models        
-            security.SetBuyingPowerModel(new NullBuyingPowerModel());
-            security.SetFillModel(new FillModelMy());
+            if (!algo.LiveMode)
+            {
+                // Next, overwrite some of the reality models
+                security.SetBuyingPowerModel(new NullBuyingPowerModel());
+                security.SetFillModel(new FillModelMy());
+            }
 
             if (security.Type == SecurityType.Equity)
             {
@@ -38,12 +39,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
             }
             else
+
             if (security.Type == SecurityType.Option)
             {
-                (security as Option).PriceModel = new CurrentPriceOptionPriceModel();
+                Option option = (Option)security;
+                option.PriceModel = new CurrentPriceOptionPriceModel();
 
                 // No need for particular option contract's volatility.
                 security.VolatilityModel = VolatilityModel.Null;
+                algo.IVBids[option.Symbol] = new IVBid(option, algo);
+                algo.IVAsks[option.Symbol] = new IVAsk(option, algo);
+                algo.RollingIVBid[option.Symbol] = new RollingIVIndicator<IVBid>(150, option.Symbol, 0.15);
+                algo.RollingIVAsk[option.Symbol] = new RollingIVIndicator<IVAsk>(150, option.Symbol, 0.15);
+            }
+
+            if (security.Resolution == Resolution.Tick)
+            {
+                security.SetDataFilter(new OptionTickDataFilter(algo));
             }
         }
     }

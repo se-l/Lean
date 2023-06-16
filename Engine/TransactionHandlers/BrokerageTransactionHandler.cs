@@ -761,6 +761,14 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
 
             // save current security prices
             order.OrderSubmissionData = new OrderSubmissionData(security.BidPrice, security.AskPrice, security.Close);
+            if (security.Type == SecurityType.Option)
+            {
+                Option option = (Option)security;
+                order.OrderSubmissionDataUnderlying = new OrderSubmissionData(option.Underlying.BidPrice, option.Underlying.AskPrice, option.Underlying.Close);
+            } else
+            {
+                order.OrderSubmissionDataUnderlying = new OrderSubmissionData(0, 0, 0);
+            }
 
             // update the ticket's internal storage with this new order reference
             ticket.SetOrder(order);

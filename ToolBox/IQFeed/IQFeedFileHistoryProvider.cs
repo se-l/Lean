@@ -24,8 +24,8 @@ using IQFeed.CSharpApiClient.Lookup.Chains;
 using IQFeed.CSharpApiClient.Lookup.Chains.Equities;
 using IQFeed.CSharpApiClient.Lookup.Historical.Enums;
 using IQFeed.CSharpApiClient.Lookup.Historical.Messages;
-using QLNet;
 using QuantConnect.Brokerages;
+using QuantConnect.Configuration;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Logging;
@@ -43,6 +43,7 @@ namespace QuantConnect.ToolBox.IQFeed
         private readonly ISymbolMapper _symbolMapper;
         private readonly MarketHoursDatabase _marketHoursDatabase;
         private readonly ConcurrentDictionary<string, string> _filesByRequestKeyCache;
+        private readonly string _dataDirectory = Config.Get("data-folder", "../../../Data");
 
         public IQFeedFileHistoryProvider(LookupClient lookupClient, ISymbolMapper symbolMapper, MarketHoursDatabase marketHoursDatabase)
         {
@@ -148,12 +149,12 @@ namespace QuantConnect.ToolBox.IQFeed
             catch (NoDataIQFeedException)
             {
                 Log.Trace($"IQFeedFileHistoryProvider - no data returned for {request.Symbol} {ticker} {startDate} {endDate}");
-                var writer = new LeanDataWriter(request.Resolution, request.Symbol, "C:/repos/trade/data/");
+                var writer = new LeanDataWriter(request.Resolution, request.Symbol, _dataDirectory);
                 // Loop over all dates in between start and end date and write empty files
                 if (request.Resolution != Resolution.Daily) {
                     for (var date = request.StartTimeLocal; date <= request.EndTimeLocal; date = date.AddDays(1))
                     {
-                        writer.WriteEmptyFile(date, request.Symbol);
+                        writer.WriteEmptyFileIfNotExists(date, request.Symbol);
                     }
                 }
             }

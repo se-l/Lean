@@ -172,6 +172,7 @@ namespace QuantConnect.Lean.Engine
                     results.Sample(algorithm.UtcTime);
                 });
 
+            //DateTime lastPassed = _algorithm.Time;
             //Loop over the queues: get a data collection, then pass them all into relevent methods in the algorithm.
             Log.Trace($"AlgorithmManager.Run(): Begin DataStream - Start: {algorithm.StartDate} Stop: {algorithm.EndDate} Time: {algorithm.Time} Warmup: {algorithm.IsWarmingUp}");
             foreach (var timeSlice in Stream(algorithm, synchronizer, results, token))
@@ -300,6 +301,11 @@ namespace QuantConnect.Lean.Engine
 
                 // process fill models on the updated data before entering algorithm, applies to all non-market orders
                 transactions.ProcessSynchronousEvents();
+                //if (time - lastPassed > TimeSpan.FromMilliseconds(1000))
+                //{
+                //    transactions.ProcessSynchronousEvents();
+                //    lastPassed = time;
+                //}
 
                 // fire real time events after we've updated based on the new data
                 realtime.SetTime(timeSlice.Time);

@@ -111,6 +111,7 @@ namespace QuantConnect.ToolBox
                         break;
                     case "pdl":
                     case "polygondownloader":
+                        tickTypes = optionsObject.ContainsKey("tick-types") ? ToolboxArgumentParser.GetTickTypes(optionsObject) : new List<string>() { "Trade", "Quote" };
                         PolygonDownloaderProgram.PolygonDownloader(
                             tickers,
                             GetParameterOrExit(optionsObject, "security-type"),
@@ -118,7 +119,8 @@ namespace QuantConnect.ToolBox
                             resolution,
                             fromDate,
                             toDate,
-                            apiKey);
+                            apiKey,
+                            tickTypes);
                         break;
 
                     case "avdl":

@@ -144,7 +144,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             string tag = Humanize(d1.Union(d2));
             Log(tag);
             return tag;
-        }
+        }        
 
         public string LogPnL()
         {

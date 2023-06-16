@@ -15,8 +15,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using QuantConnect.Data;
 using QuantConnect.Securities;
+using QuantConnect.ToolBox.Polygon.History;
 using QuantConnect.Util;
 
 namespace QuantConnect.ToolBox.Polygon
@@ -41,9 +43,12 @@ namespace QuantConnect.ToolBox.Polygon
             var endUtc = dataDownloaderGetParameters.EndUtc;
             var tickType = dataDownloaderGetParameters.TickType;
 
-            if (symbol.SecurityType != SecurityType.Equity &&
-                symbol.SecurityType != SecurityType.Forex && 
-                symbol.SecurityType != SecurityType.Crypto)
+            if (
+                symbol.SecurityType != SecurityType.Equity &&
+                symbol.SecurityType != SecurityType.Forex &&
+                symbol.SecurityType != SecurityType.Crypto &&
+                symbol.SecurityType != SecurityType.Option
+                )
             {
                 throw new NotSupportedException($"Security type not supported: {symbol.SecurityType}");
             }
@@ -55,7 +60,7 @@ namespace QuantConnect.ToolBox.Polygon
 
             var dataType = LeanData.GetDataType(resolution, tickType);
 
-            var historyRequest = 
+            var historyRequest =
                 new HistoryRequest(startUtc,
                     endUtc,
                     dataType,
@@ -81,6 +86,14 @@ namespace QuantConnect.ToolBox.Polygon
         public void Dispose()
         {
             _historyProvider.DisposeSafely();
+        }
+
+        /// <summary>
+        /// Get Option Contracts for a given symbol and date
+        /// </summary>
+        public IEnumerable<Symbol> GetOptionContracts(Symbol symbol, DateTime asOf)
+        {
+            return _historyProvider.GetOptionContracts(symbol, asOf);
         }
     }
 }

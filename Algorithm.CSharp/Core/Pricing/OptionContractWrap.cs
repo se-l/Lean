@@ -5,6 +5,11 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 {
+    public enum OptionPricingModel
+    {
+        CoxRossRubinstein,
+        AnalyticEuropeanEngine,
+    }
     public class OptionContractWrap
     {
         ///<summary>
@@ -32,7 +37,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private SimpleQuote hvQuote;
         private PlainVanillaPayoff payoff;
         private AmericanExercise amExercise;
+        private EuropeanExercise euExercise;
         private VanillaOption amOption;
+        private VanillaOption euOption;
         private BlackScholesMertonProcess bsmProcess;
         private double riskFreeRate = 0.0433;
 
@@ -43,7 +50,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public Func<decimal?, double?, GreeksPlus> Greeks;
 
-        private (decimal, decimal, double) GenCacheKeyIV(decimal? spotPriceContract, decimal? spotPriceUnderlying, double accuracy= 0.01)
+        private (decimal, decimal, double) GenCacheKeyIV(decimal? spotPriceContract, decimal? spotPriceUnderlying, double accuracy= 0.1)
         {
             return (
                 spotPriceContract ?? algo.MidPrice(Contract.Symbol),
@@ -63,7 +70,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             //algo.Log($"{algo.Time}: OptionContractWrap.constructor called. {contract.Symbol}");
             Contract = contract;
             UnderlyingSymbol = contract.Underlying.Symbol;
-            IV = Cache<(decimal, decimal, double), decimal?, decimal?, double, double?>(GetIVNewtonRaphson, GenCacheKeyIV);
+            IV = Cache<(decimal, decimal, double), decimal?, decimal?, double, double?>(GetIVEngine, GenCacheKeyIV);  // Using fast Analytical BSM for IV
 
             Greeks = Cache(GreeksP,
                 (decimal? spotPrice, double? hv) => {
@@ -88,9 +95,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             payoff = new PlainVanillaPayoff(optionType, (double)strikePrice);
             amExercise = new AmericanExercise((Date)settlementDate, maturityDate);
-            amOption = new VanillaOption(payoff, amExercise);
+            euExercise = new EuropeanExercise(maturityDate);
+
             bsmProcess = GetBsm(calculationDate, new Handle<Quote>(spotQuote), new Handle<Quote>(hvQuote), new Handle<Quote>(riskFeeRateQuote));
-            amOption = EnginedOption(amOption, bsmProcess);            
+            amOption = EnginedOption(new VanillaOption(payoff, amExercise), bsmProcess, optionPricingModel: OptionPricingModel.CoxRossRubinstein);
+            euOption = EnginedOption(new VanillaOption(payoff, euExercise), bsmProcess, optionPricingModel: OptionPricingModel.AnalyticEuropeanEngine);
         }
 
         public static OptionContractWrap E(Foundations algo, Securities.Option.Option contract)
@@ -145,13 +154,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
-        public double? GetIV(decimal? spotPriceContract = null, decimal? spotPriceUnderlying = null, double accuracy = 0.01)
+        public double? GetIVEngine(decimal? spotPriceContract = null, decimal? spotPriceUnderlying = null, double accuracy = 0.1)
         {
             double _spotPriceContract = (double)(spotPriceContract ?? algo.MidPrice(Contract.Symbol));
             SetSpotQuotePriceUnderlying(spotPriceUnderlying);
             try
             {
-                return amOption.impliedVolatility(_spotPriceContract, bsmProcess, accuracy: accuracy);
+                return euOption.impliedVolatility(_spotPriceContract, bsmProcess, accuracy: accuracy);
             }
             catch
             {
@@ -159,7 +168,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
-        public double? GetIVNewtonRaphson(decimal? spotPriceContract = null, decimal? spotPriceUnderlying = null, double accuracy = 0.01)
+        //public double GuessInitialImpliedVolatility(decimal? spotPriceContract = null)
+        //{
+        //    /// By default, it uses the formula from Brenner and Subrahmanyam (1988) as the initial guess for implied volatility. PS2πT−−−√
+        //    /// where P is the Option contract price, S is the underlying price, and T is the time until Option expiration.
+        //    double _spotPriceContract = (double)(spotPriceContract ?? algo.MidPrice(Contract.Symbol));
+        //    return (_spotPriceContract / strikePrice) * Math.Sqrt(2*Math.PI / (double)Contract.TimeUntilExpiry.TotalDays);
+        //}
+
+        public double? GetIVNewtonRaphson(decimal? spotPriceContract = null, decimal? spotPriceUnderlying = null, double accuracy = 0.1)
         {
             int maxIterations = 100;
             double _spotPriceContract = (double)(spotPriceContract ?? algo.MidPrice(Contract.Symbol));
@@ -198,71 +215,97 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return null;
         }
 
-        public Tuple<double?, double?> IVBidAsk(decimal? bidPrice = null, decimal? askPrice = null)
-        {
-            double? bidIV;
-            double? askIV;
-            try
-            {
-                bidIV = Math.Max(amOption.impliedVolatility((double)(bidPrice ?? Contract.BidPrice), bsmProcess), 0.01);
-            }
-            catch (Exception e)
-            {
-                algo.Log($"bid iv error. Bid price is too low to derive IV: {e} - setting IV Bid to 0.001");
-                bidIV = null;
-            }
-            try
-            {
-                askIV = Math.Max(amOption.impliedVolatility((double)(askPrice ?? Contract.AskPrice), bsmProcess), 0.01);
-            }
-            catch (Exception e)
-            {
-                algo.Log($"ask iv error. Ask price is too high to derive IV: {e} - setting IV Ask to None");
-                askIV = null;
-            }
-            return Tuple.Create(bidIV, askIV);
-        }
-
         public GreeksPlus GreeksP(decimal? spotPrice = null, double? hv = null)
         {
             // parameterize that change. Depending on metric, perturbance is different. 1-10BP for price, 100 BP for HV and rho, 1 day for time, 
-            double dPdP, gamma;
             SetSpotQuotePriceUnderlying(spotPrice);
-            SetHistoricalVolatility(hv);
-            //algo.Debug($"{algo.Time} - {Contract}.GreeksP(). spotPrice: {spotQuote.value()} and HV: {hvQuote.value()}.");
+            SetHistoricalVolatility(hv);         
+            return new GreeksPlus(this, hvQuote.value());
+        }
 
-            // First order derivatives: dV / dt (Theta) ; dV / dP (Delta) ; dV / dIV (Vega)
-            var delta = amOption.delta();
+        public double Delta()
+        {
+            return amOption.delta();
             // delta = finite_difference_approx(spot_quote, am_option, 0.01, 'NPV') ; print(delta) ; print(am_option.delta())
+        }
+
+        public double Theta()
+        {
             //var theta = amOption.theta();  // WRONG
-            var theta = -FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "NPV", 1, "forward");
-            var vega = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "NPV") / 100;
+            //amOption.thetaPerDay()
+            //var theta = -FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "NPV", 1, "forward");
+            return euOption.thetaPerDay();  // Different by 0.1 % from FD approach only. Likely much faster though 
+        }
 
-            // Second order derivatives using finite difference
-            dPdP = gamma = amOption.gamma();
-            // gamma = finite_difference_approx(spot_quote, am_option, 0.01, 'delta');
-            var dTdP = FiniteDifferenceApprox(spotQuote, amOption, 0.001, "theta");
-            var dIVdP = FiniteDifferenceApprox(spotQuote, amOption, 0.001, "vega", d1perturbance: hvQuote) / 100;
-            var dGdP = FiniteDifferenceApprox(spotQuote, amOption, 0.001, "gamma");
+        public double Gamma()
+        {
+            // dPdP = gamma = finite_difference_approx(spot_quote, am_option, 0.01, 'delta');
+            return amOption.gamma();
+        }
 
-            // dIV: dV2 / dIVdT (Vega changes towards maturity) ; d2V / dIV2 (Vanna) ; d2V / dIVdP (Vega changes with Delta)
-            // d2V / dPdIV (Delta changes with IV / Color)
-            var dPdIV = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "delta");
-            var dTdIV = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "theta");
-            var dIV2 = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "vega", d1perturbance: hvQuote) / 100;
-            var dGdIV = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "gamma");
+        public double Vega()
+        {
+            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "NPV") / 100;
+        }
 
-            // dP: dV2 / dPdT (Delta decay / Charm) ; d2V / dP2 (Gamma) ; d2V / dPdIV (Delta changes with IV / Color)
-            // probably the more expensive calculation. Given not used for hedging, only calc on request, like EOD position end PF Risk.
-            var deltaDecay = FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "delta", 1, "forward");
-            var thetaDecay = FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "theta", 1, "forward");
-            var vegaDecay = FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "vega", 1, "forward");
-            var gammaDecay = FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "gamma", 1, "forward");
-            var rho = FiniteDifferenceApprox(riskFeeRateQuote, amOption, 0.01, "NPV"); // amOption.rho();  // Errors - Need FD likely.
-            var theoPrice = amOption.NPV();
+        public double DTdP()
+        {
+            return FiniteDifferenceApprox(spotQuote, amOption, 0.001, "theta");
+        }
+        public double DIVdP()
+        {
+            return FiniteDifferenceApprox(spotQuote, amOption, 0.001, "vega", d1perturbance: hvQuote) / 100;
+        }
+        public double DGdP()
+        {
+            return FiniteDifferenceApprox(spotQuote, amOption, 0.001, "gamma");
+        }
 
-            return new GreeksPlus(hvQuote.value(), delta, gamma, deltaDecay, dPdIV, dGdP, gammaDecay, dGdIV, theta, dTdP, thetaDecay, dTdIV, vega, dIVdP, vegaDecay, dIV2, rho, theoPrice);
+        public double DeltaDecay()
+        {
+            return FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "delta", 1, "forward");
+        }
 
+        public double ThetaDecay()
+        {
+            return FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "theta", 1, "forward");
+        }
+        public double VegaDecay()
+       
+        {
+            return FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "vega", 1, "forward");
+        }
+        public double GammaDecay()
+       
+        {
+            return FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "gamma", 1, "forward");
+        }
+        public double Rho()
+       
+        {
+            return FiniteDifferenceApprox(riskFeeRateQuote, amOption, 0.01, "NPV"); // amOption.rho();  // Errors - Need FD likely.
+        }
+
+        public double DPdIV()
+        {
+            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "delta");
+        }
+        public double DTdIV()
+        {
+            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "theta");
+        }
+        public double DIV2()
+        {
+            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "vega", d1perturbance: hvQuote) / 100;
+        }
+        public double DGdIV()
+        {
+            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "gamma");
+        }
+
+        public double TheoreticalPrice()
+        {
+            return amOption.NPV();
         }
 
         public BlackScholesMertonProcess GetBsm(Date calculationDate, Handle<Quote> spotQuote, Handle<Quote> hvQuote, Handle<Quote> rfQuote, double dividendRate = 0)
@@ -274,14 +317,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return new BlackScholesMertonProcess(spotQuote, dividendYield, flatTs, flatVolTs);
         }
 
-        public VanillaOption EnginedOption(VanillaOption option, BlackScholesMertonProcess bsmProcess, int steps = 100)
+        public VanillaOption EnginedOption(VanillaOption option, BlackScholesMertonProcess bsmProcess, int steps = 100, OptionPricingModel optionPricingModel = OptionPricingModel.CoxRossRubinstein)
         {
-            var engine = new BinomialVanillaEngine<CoxRossRubinstein>(bsmProcess, steps);
+            OneAssetOption.Engine engine = optionPricingModel switch
+            {
+                OptionPricingModel.CoxRossRubinstein => new BinomialVanillaEngine<CoxRossRubinstein>(bsmProcess, steps),
+                OptionPricingModel.AnalyticEuropeanEngine => new AnalyticEuropeanEngine(bsmProcess),
+                _ => throw new ArgumentException("OptionPricingModel not supported"),
+            };
+            // var engine = new BinomialVanillaEngine<CoxRossRubinstein>(bsmProcess, steps);  // 59%; vega not provided
+            // var engine = new FDAmericanEngine(bsmProcess, steps, steps - 1);   // 87 %; theta not provided
+            // var engine = new BjerksundStenslandApproximationEngine(bsmProcess);  // delta not provided
+            //var engine = new AnalyticEuropeanEngine(bsmProcess);  // only european options. 0% not showing up as hotpath/bottleneck anymore...
+            // var engine = new BjerksundStenslandApproximationEngine(bsmProcess);  // delta not provided
             option.setPricingEngine(engine);
             return option;
         }
 
-        public double FiniteDifferenceApprox(SimpleQuote quote, Option option, double d_pct = 0.01, string derive = "NPV", SimpleQuote d1perturbance = null, string method = "central")
+        public double FiniteDifferenceApprox(SimpleQuote quote, VanillaOption option, double d_pct = 0.01, string derive = "NPV", SimpleQuote d1perturbance = null, string method = "central")
         {
             // f'(x) ≈ (f(x+h) - f(x-h)) / (2h); h: step size;
             double pPlus;
@@ -297,6 +350,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             {
                 pPlus = FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "NPV", 1, "forward");
             }
+            else if (derive == "NPV")
+            {
+                pPlus = option.NPV();
+            }
             else
             {
                 var methodInfo = option.GetType().GetMethod(derive);
@@ -311,6 +368,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             else if (derive == "theta")
             {
                 pMinus = FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, maturityDate, spotQuote, hvQuote, riskFeeRateQuote, "NPV", 1, "forward");
+            }
+            else if (derive == "NPV")
+            {
+                pMinus = option.NPV();
             }
             else
             {
@@ -337,16 +398,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 // Fix moving this by business date. Dont divide by Sat / Sun. Use the USA calendar ideally.
                 var payoff = new PlainVanillaPayoff(optionType, strikePrice);
                 var amExercise = new AmericanExercise(dt, maturityDate);
-                var option = new VanillaOption(payoff, amExercise);
                 var bsmProcess = GetBsm(dt, new Handle<Quote>(spotQuote), new Handle<Quote>(hvQuote), new Handle<Quote>(rfQuote));
-                var optionDt = EnginedOption(option, bsmProcess);
+                var optionDt = EnginedOption(new VanillaOption(payoff, amExercise), bsmProcess);
                 if (derive == "vega")
                 {
                     values.Add(FiniteDifferenceApprox(hvQuote, optionDt, 0.01)); // VEGA
                 }
+                else if (derive == "NPV")
+                {
+                    values.Add(optionDt.NPV());
+                }
                 else
                 {
-                    var methodInfo = option.GetType().GetMethod(derive);
+                    var methodInfo = optionDt.GetType().GetMethod(derive);
                     values.Add((double)methodInfo.Invoke(optionDt, new object[] { }));
                 }
             }

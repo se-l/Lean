@@ -211,31 +211,37 @@ namespace QuantConnect
         /// </summary>
         /// <param name="url">The url to download data from</param>
         /// <param name="headers">Add custom headers for the request</param>
-        public static string DownloadData(this string url, Dictionary<string, string> headers = null)
+        /// <param name="httpClient">Optionally, pass the HttpClient instance for performance boost.</param>
+        public static string DownloadData(this string url, Dictionary<string, string> headers = null, HttpClient httpClient = null)
         {
-            using (var client = new HttpClient())
+            var client = httpClient ?? new HttpClient();
+            if (headers != null)
             {
-                if (headers != null)
+                foreach (var kvp in headers)
                 {
-                    foreach (var kvp in headers)
+                    client.DefaultRequestHeaders.Add(kvp.Key, kvp.Value);
+                }
+            }
+            try
+            {
+                using (var response = client.GetAsync(url).Result)
+                {
+                    using (var content = response.Content)
                     {
-                        client.DefaultRequestHeaders.Add(kvp.Key, kvp.Value);
+                        return content.ReadAsStringAsync().Result;
                     }
                 }
-                try
+            }
+            catch (WebException ex)
+            {
+                Log.Error(ex, $"DownloadData(): {Messages.Extensions.DownloadDataFailed(url)}");
+                return null;
+            }
+            finally
+            {
+                if (httpClient == null)
                 {
-                    using (var response = client.GetAsync(url).Result)
-                    {
-                        using (var content = response.Content)
-                        {
-                            return content.ReadAsStringAsync().Result;
-                        }
-                    }
-                }
-                catch (WebException ex)
-                {
-                    Log.Error(ex, $"DownloadData(): {Messages.Extensions.DownloadDataFailed(url)}");
-                    return null;
+                    client.Dispose();
                 }
             }
         }
@@ -2692,6 +2698,7 @@ namespace QuantConnect
         /// </summary>
         /// <remarks>This method is a work around for the fact that currently we can not create a delegate which returns
         /// an <see cref="IEnumerable{String}"/> from a python method returning an array, plus the fact that
+        /// <see cref="Universe.Unchanged"/> can not be cast to an array</remarks>
         /// <see cref="Universe.Unchanged"/> can not be cast to an array</remarks>
         public static Func<T, IEnumerable<string>> ConvertToUniverseSelectionStringDelegate<T>(this Func<T, object> selector)
         {

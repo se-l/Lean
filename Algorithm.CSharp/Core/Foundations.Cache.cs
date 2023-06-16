@@ -8,6 +8,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
     public partial class Foundations: QCAlgorithm
     {
         public delegate void VoidFunction();
+        public delegate void VoidArg1Function<TArgs>(TArgs t1);
         public VoidFunction Cache<TCacheKey>(VoidFunction decorated, Func<TCacheKey> genCacheKey, int maxKeys = 0, int ttl = 0)
         {
             // maxKeys or ttl needs would require a meta dict for the keys. {key: key last added}. For max Keys the n most recent keys stay. rest dropped. To avoid 
@@ -21,6 +22,35 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     cache.Add(key);
                     cacheMeta[key] = Time;
                     decorated();
+                    if (ttl > 0)
+                    {
+                        foreach (var cacheKey in cacheMeta.Where(kvp => (Time - kvp.Value).Seconds >= ttl).Select(kvp => kvp.Key))
+                        {
+                            cache.Remove(cacheKey);
+                        }
+                    }
+                    if (maxKeys > 0 && cache.Count > maxKeys)
+                    {
+                        foreach (var cacheKey in cacheMeta.OrderByDescending(kvp => kvp.Value).Skip(maxKeys).Select(kvp => kvp.Key))
+                        {
+                            cache.Remove(cacheKey);
+                        }
+                    }
+                }
+            };
+        }
+        public VoidArg1Function<TArgs> Cache<TCacheKey, TArgs>(VoidArg1Function<TArgs> decorated, Func<TArgs, TCacheKey> genCacheKey, int maxKeys = 0, int ttl = 0)
+        {
+            var cacheMeta = new ConcurrentDictionary<TCacheKey, DateTime>();
+            var cache = new HashSet<TCacheKey>();
+            return args =>
+            {
+                var key = genCacheKey(args);
+                if (!cache.Contains(key))
+                {
+                    cache.Add(key);
+                    cacheMeta[key] = Time;
+                    decorated(args);
                     if (ttl > 0)
                     {
                         foreach (var cacheKey in cacheMeta.Where(kvp => (Time - kvp.Value).Seconds >= ttl).Select(kvp => kvp.Key))

@@ -175,6 +175,12 @@ namespace QuantConnect.Orders
         /// </summary>
         public OrderSubmissionData OrderSubmissionData { get; internal set; }
 
+
+        /// <summary>
+        /// Gets the price data at the time the order was submitted
+        /// </summary>
+        public OrderSubmissionData OrderSubmissionDataUnderlying { get; internal set; }
+
         /// <summary>
         /// Returns true if the order is a marketable order.
         /// </summary>
@@ -355,6 +361,7 @@ namespace QuantConnect.Orders
             order.Tag = Tag;
             order.Properties = Properties.Clone();
             order.OrderSubmissionData = OrderSubmissionData?.Clone();
+            order.OrderSubmissionDataUnderlying = OrderSubmissionDataUnderlying?.Clone();
             order.GroupOrderManager = GroupOrderManager;
         }
 

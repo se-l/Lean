@@ -40,7 +40,7 @@ namespace QuantConnect
         /// </summary>
         public static void Reset ()
         {
-            CacheDataFolder = DataFolder = Config.Get("data-folder", Config.Get("data-directory", "C:/repos/trade/data/"));
+            CacheDataFolder = DataFolder = Config.Get("data-folder", Config.Get("data-directory", "../../../Data/"));
 
             Version = Assembly.GetExecutingAssembly().GetName().Version.ToString();
             var versionid = Config.Get("version-id");

@@ -124,6 +124,15 @@ namespace QuantConnect.Orders
                 order.OrderSubmissionData = new OrderSubmissionData(bidPrice, askPrice, lastPrice);
             }
 
+            var orderSubmissionDataUnderlying = jObject["OrderSubmissionDataUnderlying"];
+            if (orderSubmissionDataUnderlying != null && orderSubmissionDataUnderlying.Type != JTokenType.Null)
+            {
+                var bidPriceUnderlying = orderSubmissionDataUnderlying["BidPrice"].Value<decimal>();
+                var askPriceUnderlying = orderSubmissionDataUnderlying["AskPrice"].Value<decimal>();
+                var lastPriceUnderlying = orderSubmissionDataUnderlying["LastPrice"].Value<decimal>();
+                order.OrderSubmissionData = new OrderSubmissionData(bidPriceUnderlying, askPriceUnderlying, lastPriceUnderlying);
+            }
+
             var lastFillTime = jObject["LastFillTime"];
             var lastUpdateTime = jObject["LastUpdateTime"];
             var canceledTime = jObject["CanceledTime"];

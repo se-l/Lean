@@ -7,7 +7,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using static QuantConnect.Messages;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -62,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         { 
             Symbol symbol = ocw.Contract.Symbol;
             decimal price = 0m;
-            double iVSpread = (RollingIVBidAsk[symbol].Current?.AskIV - RollingIVBidAsk[symbol].Current?.BidIV) ?? 0;
+            double iVSpread = RollingIVBid[symbol].Current - RollingIVAsk[symbol].Current;
             decimal bidPrice = Securities[symbol].BidPrice;
             decimal askPrice = Securities[symbol].BidPrice;
             decimal priceSpread = askPrice - bidPrice;
@@ -76,7 +75,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     OrderDirection.Sell => 0.75,
                     _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
                 };
-                double iv = (RollingIVBidAsk[symbol].Current?.BidIV + iVSpread * spreadFactor) ?? 0;
+                double iv = RollingIVBid[symbol].Current + iVSpread * spreadFactor;
                 // These are smoothed and eventually forecasted IV values. May want to use those as starting point and improve with market.
 
                 decimal? smoothedIVPrice = (decimal?)ocw.PriceFair(hv: iv);
@@ -111,9 +110,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal? priceImplied;
             OptionContractWrap ocw = OptionContractWrap.E(this, option);
 
-            double bidIV = RollingIVBidAsk.ContainsKey(symbol) ? RollingIVBidAsk[symbol].Current?.BidIV ?? 0 : 0;
-            double askIV = RollingIVBidAsk.ContainsKey(symbol) ? RollingIVBidAsk[symbol].Current?.AskIV ?? 0 : 0;
-            double iVSpread = (RollingIVBidAsk[symbol].Current?.AskIV - RollingIVBidAsk[symbol].Current?.BidIV) ?? 0;
+            double bidIV = RollingIVBid.ContainsKey(symbol) ? RollingIVBid[symbol].Current : 0;
+            double askIV = RollingIVAsk.ContainsKey(symbol) ? RollingIVAsk[symbol].Current : 0;
+            double iVSpread = RollingIVAsk[symbol].Current - RollingIVBid[symbol].Current;
 
             //decimal? priceFair = fairOptionPrices.GetValueOrDefault(option, GetFairOptionPrice(option));            
 

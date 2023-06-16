@@ -1,4 +1,5 @@
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
+using QuantConnect.Indicators;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
@@ -62,14 +63,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             //    position.SetPfGreeks();
             //}
             // Refactor below into GreeksPlus
-            Delta = Positions.Sum(x => x.Trades.Sum(t => t.PfDelta));
-            Delta100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfDelta100BpUSD));
-            Gamma = Positions.Sum(x => x.Trades.Sum(t => t.PfGamma));
-            Gamma100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfGamma100BpUSD));
-            Theta = Positions.Sum(x => x.Trades.Sum(t => t.PfTheta));
-            ThetaUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfThetaUSD));
-            Vega = Positions.Sum(x => x.Trades.Sum(t => t.PfVega));
-            Vega100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfVega100BpUSD));
+            Delta = Positions.Sum(x => x.Trades.Sum(t => t.PfDelta()));
+            Delta100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfDelta100BpUSD()));
+            Gamma = Positions.Sum(x => x.Trades.Sum(t => t.PfGamma()));
+            Gamma100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfGamma100BpUSD()));
+            Theta = Positions.Sum(x => x.Trades.Sum(t => t.PfTheta()));
+            ThetaUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfThetaUSD()));
+            Vega = Positions.Sum(x => x.Trades.Sum(t => t.PfVega()));
+            Vega100BpUSD = Positions.Sum(x => x.Trades.Sum(t => t.PfVega100BpUSD()));
 
             //tex:
             //$$ID_i = \Delta_i * \beta_i * \frac{A_i}{I}$$
@@ -87,6 +88,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Rho = 0;
         }
 
+        public static Symbol Underlying(Symbol symbol)
+        {
+            return symbol.SecurityType switch
+            {
+                SecurityType.Option => symbol.ID.Underlying.Symbol,
+                SecurityType.Equity => symbol,
+                _ => throw new NotImplementedException(),
+            };
+        }
+
+        public decimal RiskByUnderlyingUSD(Symbol symbol)
+        {
+            Symbol underlying = Underlying(symbol);
+            var positions = Positions.Where(x => x.Symbol == underlying || x.UnderlyingSymbol == underlying);
+            return positions.Sum(x => x.Trades.Sum(t => t.PfDelta100BpUSD()));
+        }
+
         public double Beta(Symbol symbol, int window=30)
         {
             return Ppi.Beta(symbol, window);
@@ -94,24 +112,32 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public decimal DPfDeltaIfFilled(Symbol symbol, decimal quantity)
         {
+            // Hedging against an entire Portfolio risk not yet reliable enough. For now, just use risk grouped by the underlying.
             // too tricky currently as it only returns a sensitity. not good for estimating what-if-filled.
-            if (symbol.SecurityType == SecurityType.Option)
+            //if (symbol.SecurityType == SecurityType.Option)
+            //{
+            //    Option option = (Option)algo.Securities[symbol];
+            //    var delta = OptionContractWrap.E(algo, option).Greeks(null, null).Delta;
+            //    double betaUnderlying = algo.Beta(algo.spy, option.Underlying.Symbol, 20, Resolution.Daily);
+            //    var deltaSPY = delta * betaUnderlying * (double)option.Underlying.Price / (double)algo.MidPrice(algo.spy);
+            //    decimal deltaSPY100BpUSD = (decimal)deltaSPY * option.ContractMultiplier * quantity * algo.MidPrice(algo.spy);
+            //    return deltaSPY100BpUSD;
+            //}
+            //else if (symbol.SecurityType == SecurityType.Equity)
+            //{
+            //    return (decimal)(Math.Sign(quantity) * Ppi.DeltaIf((Equity)algo.Securities[symbol]));
+            //}
+            //else
+            //{
+            //    throw new NotImplementedException();
+            //}
+            return symbol.SecurityType switch
             {
-                Option option = (Option)algo.Securities[symbol];
-                var delta = OptionContractWrap.E(algo, option).Greeks(null, null).Delta;
-                double betaUnderlying = algo.Beta(algo.spy, option.Underlying.Symbol, 20, Resolution.Daily);
-                var deltaSPY = delta * betaUnderlying * (double)option.Underlying.Price / (double)algo.MidPrice(algo.spy);
-                decimal deltaSPY100BpUSD = (decimal)deltaSPY * option.ContractMultiplier * quantity * algo.MidPrice(algo.spy);
-                return deltaSPY100BpUSD;
-            }
-            else if (symbol.SecurityType == SecurityType.Equity)
-            {
-                return (decimal)(Math.Sign(quantity) * Ppi.DeltaIf((Equity)algo.Securities[symbol]));
-            }
-            else
-            {
-                throw new NotImplementedException();
-            }            
+                // the 100BPUnderlyingMoves risk...
+                SecurityType.Option => quantity * (decimal)OptionContractWrap.E(algo, (Option)algo.Securities[symbol]).Greeks(null, null).Delta * algo.MidPrice(symbol.ID.Underlying.Symbol),
+                SecurityType.Equity => quantity * algo.MidPrice(symbol),
+                _ => throw new NotImplementedException(),
+            };
         }
 
         public decimal PortfolioValue(string method= "Mid")
@@ -174,12 +200,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return positions;
         }
 
-        public static IEnumerable<Position> GetPositionsSince(Foundations algo, DateTime? since = null, bool setPL = false)
+        public static IEnumerable<Position> GetPositionsSince(Foundations algo, DateTime? since = null)
         {
             var positions = new List<Position>();
             if (since == null)
             {
-                return algo.Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).ToHashSet(o => o.Symbol).Select(symbol => new Position(algo, symbol, setPL: true));  // setPL to be deleted.
+                return algo.Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).ToHashSet(o => o.Symbol).Select(symbol => new Position(algo, symbol));  // setPL to be deleted.
             }
             else
             {

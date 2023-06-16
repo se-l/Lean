@@ -26,8 +26,6 @@ using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Configuration;
 using QuantConnect.Data.Auxiliary;
-using System.IO.Compression;
-
 namespace QuantConnect.Data
 {
     /// <summary>
@@ -282,16 +280,16 @@ namespace QuantConnect.Data
             }
         }
 
-        public bool EntryExists(string fileName, string entryName)
+        public bool FileEntryExists(DateTime date, Symbol symbol)
         {
-            using (var stream = _dataCacheProvider.Fetch($"{fileName}#{entryName}"))
-            {
-                if (stream == null)
-                {
-                    return false;
-                }
-                return true;
-            }
+            var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
+            var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+            return File.Exists(filePath) && EntryExists(filePath, entryName);
+        }
+
+        public bool EntryExists(string filePath, string entryName)
+        {
+            return File.Exists(filePath) && _dataCacheProvider.GetZipEntries(filePath).Any(x => x == entryName);
         }
 
         /// <summary>
@@ -373,27 +371,27 @@ namespace QuantConnect.Data
             });
         }
 
-        public void WriteEmptyFile(DateTime date, Symbol symbol)
+        public void WriteEmptyFileIfNotExists(DateTime date, Symbol symbol)
         {
             var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
-            
+
+            // Generate this csv entry name
+            var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+
+            // Check disk once for this file ahead of time, reuse where possible
+            var fileExists = File.Exists(filePath);
+
+            // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
+            if (!fileExists)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+            }
+
             _keySynchronizer.Execute(filePath, singleExecution: false, () =>
             {
-                // Generate this csv entry name
-                var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
-
-                // Check disk once for this file ahead of time, reuse where possible
-                var fileExists = File.Exists(filePath);
-
-                // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
-                if (!fileExists)
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
-                }
-
                 // Handle merging of files
                 // Only merge on files with hour/daily resolution, that exist, and can be loaded
-                if (!EntryExists(filePath, entryName))
+                if (!fileExists || !EntryExists(filePath, entryName))
                 {
                     var bytes = Encoding.UTF8.GetBytes("");
                     _dataCacheProvider.Store($"{filePath}#{entryName}", bytes);
