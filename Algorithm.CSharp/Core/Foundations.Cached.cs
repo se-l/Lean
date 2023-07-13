@@ -3,13 +3,10 @@ using System.Linq;
 using System.Collections.Generic;
 using Accord.Statistics;
 using QuantConnect.Data.Market;
-using QuantConnect.Algorithm.CSharp.Core.Risk;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using QuantConnect.Algorithm.CSharp.Core.Pricing;
-using QuantConnect.Securities.Option;
-using static QLNet.Callability;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Orders;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -32,7 +29,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Beta = Cache(GetBeta, (Symbol symbol1, Symbol symbol2, int periods, Resolution resolution) => (symbol1, symbol2, periods, resolution, Time.Date));  // not correct for resolution < daily
             Correlation = Cache(GetCorrelation, (Symbol symbol1, Symbol symbol2, int periods, Resolution resolution) => (symbol1, symbol2, periods, resolution, Time.Date));  // not correct for resolution < daily
             IsLiquid = Cache(GetIsLiquid, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
-            HedgeWithIndex = Cache(GetHedgeWithIndex, () => Time, maxKeys: 1);
+            //HedgeWithIndex = Cache(GetHedgeWithIndex, () => Time, maxKeys: 1);
             HedgeOptionWithUnderlying = Cache(GetHedgeOptionWithUnderlying, (Symbol symbol) => (Time, symbol));
             HistoryWrap = Cache(GetHistoryWrap, (Symbol symbol, int window, Resolution resolution) => (Time.Date, symbol, window, resolution));  // not correct for resolution < daily
             HistoryWrapQuote = Cache(GetHistoryWrapQuote, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
@@ -94,7 +91,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 return;
             }
-            var pfRisk = PortfolioRisk.E(this);
 
             foreach (Symbol symbol in equities)  // need to add other products, like options..
             {
@@ -110,60 +106,82 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <summary>
         /// Once exceeded, hedge as closely as possible to the desired hedge metric, for now that's delta.
         /// </summary>
-        private void GetHedgeWithIndex()
-        {
-            //tex:
-            //Deriving quantity to hedge
-            //$$\Delta_I=\beta \frac{S_A}{S_I} \Delta_A$$
+        //private void GetHedgeWithIndex()
+        //{
+        //    //tex:
+        //    //Deriving quantity to hedge
+        //    //$$\Delta_I=\beta \frac{S_A}{S_I} \Delta_A$$
 
-            var ticker = spy;
-            var pfRisk = PortfolioRisk.E(this);
-            decimal netSpyDelta = pfRisk.DeltaSPY100BpUSD;
-            if ( netSpyDelta > HedgeBand.DeltaLongUSD || netSpyDelta < HedgeBand.DeltaShortUSD )
-            {
-                var quantity = -1 * Math.Round((netSpyDelta - HedgeBand.DeltaTargetUSD) / MidPrice(ticker), 0);
-                // Call cached HedgeWithIndex to avoid stack overflow with MarketOrder or immediately filled Limit Orders.
-                //LimitOrder(ticker, quantity, RoundTick(MidPrice(ticker), TickSize(ticker)));
-            }
-        }
+        //    var ticker = spy;
+        //    var pfRisk = PortfolioRisk.E(this);
+        //    decimal netSpyDelta = pfRisk.DeltaSPY100BpUSD;
+        //    if ( netSpyDelta > HedgeBand.DeltaLongUSD || netSpyDelta < HedgeBand.DeltaShortUSD )
+        //    {
+        //        var quantity = -1 * Math.Round((netSpyDelta - HedgeBand.DeltaTargetUSD) / MidPrice(ticker), 0);
+        //        // Call cached HedgeWithIndex to avoid stack overflow with MarketOrder or immediately filled Limit Orders.
+        //        //LimitOrder(ticker, quantity, RoundTick(MidPrice(ticker), TickSize(ticker)));
+        //    }
+        //}
 
         /// <summary>
         /// Closely related to GedHedgeWithIndex, but hedges with the underlying instead of the index.
         /// To avoid dynamic over hedging, best used rarely. For example once per fill only.
         /// To be refactored with a more generic hedging function searching for the best hedge given the current portfolio.
         /// </summary>
-        private void GetHedgeOptionWithUnderlying(Symbol symbol) //, string metricToHedge = "Delta")
+        private void GetHedgeOptionWithUnderlying(Symbol symbol)
         {
             if (IsWarmingUp || !IsMarketOpen(spy)) return;
 
-            Option option = Securities[symbol] as Option;
-            Symbol underlying = option.Underlying.Symbol;
-            var pfRisk = PortfolioRisk.E(this);
-            decimal riskUSD = pfRisk.RiskByUnderlyingUSD(symbol);
-            
-            if (riskUSD != 0)
-            {
-                decimal price = GetEquityHedgeLimitOrderPrice(riskUSD, (Equity)option.Underlying);
-                decimal quantity = -1 * Math.Round(riskUSD / price, 0);
+            Symbol underlying = Underlying(symbol);
+            Equity equity = (Equity)Securities[underlying];
+            decimal riskDeltaTotal = pfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
 
-                // Subtract existing limit orders from quantity to avoid over hedging.
-                if (orderTickets.TryGetValue(underlying, out List<OrderTicket> tickets))
+            if (riskDeltaTotal != 0)
+            {
+                List<OrderTicket> tickets;
+                decimal price = GetEquityHedgeLimitOrderPrice(riskDeltaTotal, equity);
+                decimal quantity = -1 * Math.Round(riskDeltaTotal, 0);
+
+                // Below is rather execution concerns and better be moved into another function/handler...
+
+                // subtract pending Market order fills
+                if (orderTickets.TryGetValue(underlying, out tickets))
                 {
-                    decimal orderedQuantity = tickets.Sum(t => t.Quantity);
-                    if (orderedQuantity != 0)
+                    decimal orderedQuantityMarket = tickets.Where(t => t.OrderType == OrderType.Market).Sum(t => t.Quantity);
+                    quantity -= orderedQuantityMarket;
+                }
+
+                if (quantity != 0)
+                {
+                    if (symbol.ID.SecurityType == SecurityType.Option)
                     {
-                        // Update existing orders price and quantity.
-                        UpdateLimitOrderEquity((Equity)option.Underlying, quantity, price);
+                        var volaBias = hedgingVolatilityBias[NUM2DIRECTION[Math.Sign(quantity)]];
+                        riskDeltaTotal = pfRisk.RiskByUnderlying(symbol, Metric.DeltaTotalImplied); //, volatility: IVAtm(symbol) + volaBias);
+                        quantity = -1 * Math.Round(riskDeltaTotal, 0);
                     }
-                }
-                else
-                {
-                    OrderEquity(underlying, quantity, price);
-                }
+
+                    // Subtract existing limit orders from quantity to avoid over hedging.
+                    if (orderTickets.TryGetValue(underlying, out tickets))
+                    {
+                        decimal orderedQuantityLimit = tickets.Where(t => t.OrderType == OrderType.Limit).Sum(t => t.Quantity);
+                        if (orderedQuantityLimit != 0 && orderedQuantityLimit != quantity)
+                        {
+                            // Update existing orders price and quantity.
+                            QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", $"Update Order" }, { "f", $"GetHedgeOptionWithUnderlying" }, { "riskDeltaTotal", riskDeltaTotal.ToString() }, { "Symbol", symbol } });
+                            UpdateLimitOrderEquity(equity, quantity, price);
+                            return;
+                        }
+                    }
+                    if (quantity != 0 && tickets == null || tickets.Count == 0)
+                    {
+                        QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New Order" }, { "f", $"GetHedgeOptionWithUnderlying" }, { "riskDeltaTotal", riskDeltaTotal.ToString() }, { "Symbol", symbol} });
+                        OrderEquity(underlying, quantity, price);
+                    }                    
+                }                
             }
             else 
             {
-                Log($"Fill Event for {option.Symbol}, but cannot no non-zero quantity in Portfolio.");
+                Log($"{Time} GetHedgeOptionWithUnderlying. Fill Event for {symbol}, but cannot no non-zero quantity in Portfolio. Expect this function to be called only when risk is exceeded.");
             }
         }
 

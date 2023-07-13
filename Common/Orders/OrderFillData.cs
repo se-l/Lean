@@ -13,46 +13,62 @@
  * limitations under the License.
 */
 
+using System;
+
 namespace QuantConnect.Orders
 {
     /// <summary>
-    /// The purpose of this class is to store time and price information
-    /// available at the time an order was submitted.
+    /// Stores price data at the time the order was filled
     /// </summary>
-    public class OrderSubmissionData
+    public class OrderFillData
     {
+        /// <summary>
+        /// Time as of Price Snap
+        /// </summary>
+        public DateTime Time { get; }
+
         /// <summary>
         /// The bid price at order submission time
         /// </summary>
         public decimal BidPrice { get; }
+        public decimal? BidPriceUnderlying { get; }
 
         /// <summary>
         /// The ask price at order submission time
         /// </summary>
         public decimal AskPrice { get; }
+        public decimal? AskPriceUnderlying { get; }
 
         /// <summary>
         /// The current price at order submission time
         /// </summary>
-        public decimal LastPrice { get; }
+        public decimal Price { get; }
+        public decimal? PriceUnderlying { get; }
+
+        public decimal Fee { get; } = 0;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="OrderSubmissionData"/> class
         /// </summary>
         /// <remarks>This method is currently only used for testing.</remarks>
-        public OrderSubmissionData(decimal bidPrice, decimal askPrice, decimal lastPrice)
+        public OrderFillData(DateTime time, decimal bidPrice, decimal askPrice, decimal price, decimal? bidPriceUnderlying=null, decimal? askPriceUnderlying=null, decimal? priceUnderlying=null, decimal fee = 0)
         {
+            Time = time;
             BidPrice = bidPrice;
             AskPrice = askPrice;
-            LastPrice = lastPrice;
+            Price = price;
+            BidPriceUnderlying = bidPriceUnderlying;
+            AskPriceUnderlying = askPriceUnderlying;
+            PriceUnderlying = priceUnderlying;
+            Fee = fee;
         }
 
         /// <summary>
         /// Return a new instance clone of this object
         /// </summary>
-        public OrderSubmissionData Clone()
+        public OrderFillData Clone()
         {
-            return (OrderSubmissionData)MemberwiseClone();
+            return (OrderFillData)MemberwiseClone();
         }
     }
 }

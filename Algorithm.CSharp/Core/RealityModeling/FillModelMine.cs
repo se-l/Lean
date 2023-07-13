@@ -6,11 +6,11 @@ using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
 
-namespace QuantConnect.Algorithm.CSharp.Core
+namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
 {
-    public class FillModelMy : ImmediateFillModel
+    public class FillModelMine : ImmediateFillModel
     {
-        public FillModelMy() {}
+        public FillModelMine() { }
 
         public override OrderEvent LimitFill(Security asset, LimitOrder order)
         {
@@ -18,6 +18,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal quantity = order.Quantity;
             //Initialise;
             var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
+            //bool aggressive = order.Time == utcTime;
             var fill = new OrderEvent(order, utcTime, OrderFee.Zero);
 
             //If its cancelled don't need anymore checks:
@@ -48,19 +49,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         fill.Status = OrderStatus.Filled;
                         // fill at the worse price this bar or the limit price, this allows far out of the money limits
                         // to be executed properly
-                        fill.FillPrice = Math.Min(prices.High, limitPrice);
+                        //fill.FillPrice = Math.Min(prices.High, limitPrice);
+                        fill.FillPrice = limitPrice;
                         // assume the order completely filled
                         fill.FillQuantity = quantity;
                     }
                     break;
                 case OrderDirection.Sell:
                     //Sell limit seeks highest price possible
-                    if (prices.High >= limitPrice)
+                    if (prices.High > limitPrice)
                     {
                         fill.Status = OrderStatus.Filled;
                         // fill at the worse price this bar or the limit price, this allows far out of the money limits
                         // to be executed properly
-                        fill.FillPrice = Math.Max(prices.Low, limitPrice);
+                        //fill.FillPrice = Math.Max(prices.Low, limitPrice);
+                        fill.FillPrice = limitPrice;
                         // assume the order completely filled
                         fill.FillQuantity = quantity;
                     }
@@ -88,10 +91,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //var subscriptionTypes = GetSubscribedTypes(asset);
             HashSet<Type> subscriptionTypes = asset.Type switch
             {
-                SecurityType.Option => new() { typeof(Tick) },
+                //SecurityType.Option => new() { typeof(Tick) },
+                SecurityType.Option => new() { typeof(QuoteBar), typeof(TradeBar) },
                 SecurityType.Equity => new() { typeof(QuoteBar), typeof(TradeBar) },
             };
-            
+
             // Tick
             var tick = asset.Cache.GetData<Tick>();
             if (tick != null && subscriptionTypes.Contains(typeof(Tick)))
@@ -125,7 +129,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             var tradeBar = asset.Cache.GetData<TradeBar>();
             if (tradeBar != null && subscriptionTypes.Contains(typeof(TradeBar)))
             {
-                return new Prices(tradeBar);
+                return new Prices(tradeBar);  // getting trade ticks that are better fills than quote bar. unrealistically good fills.
             }
 
             return new Prices(endTime, current, open, high, low, close);

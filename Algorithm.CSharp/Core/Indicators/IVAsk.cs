@@ -5,13 +5,14 @@ using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
-    public class IVAsk : IIVBidAsk
+    public class IVAsk
     {
         public Symbol Symbol { get; }
-        public DateTime Time { get; internal set; }
-        public decimal UnderlyingMidPrice { get; internal set; }
-        public decimal Price { get; internal set; }
-        public double IV { get; internal set; }
+        public DateTime Time { get; set; }
+        public decimal UnderlyingMidPrice { get; set; }
+        public decimal Price { get; set; }
+        public double IV { get; set; }
+        public IVBidAsk Current { get; internal set; }
 
         private Foundations algo { get; }
         private readonly OptionContractWrap ocw;
@@ -23,18 +24,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             ocw = OptionContractWrap.E(algo, option);
         }
 
-        public void Update(QuoteBar quoteBar)
+        public void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null)
         {
-            if (quoteBar == null || quoteBar.Ask == null)
+            if (quoteBar == null || quoteBar.Ask == null || quoteBar.EndTime <= Time)
             {
                 return;
             }
-            decimal underlyingMidPrice = algo.MidPrice(Symbol.Underlying);
-
             Time = quoteBar.EndTime;
-            UnderlyingMidPrice = underlyingMidPrice;
+            UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
             Price = quoteBar.Ask.Close;
-            IV = ocw.IV(Price, underlyingMidPrice, 0.1) ?? 0;
+            IV = ocw.IV(Price, UnderlyingMidPrice, 0.001) ?? 0;
+            Current = new IVBidAsk(Symbol, Time, UnderlyingMidPrice, Price, IV);
         }
     }
 }

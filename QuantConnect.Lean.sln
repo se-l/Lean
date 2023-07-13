@@ -54,6 +54,14 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Optimizer", "O
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Optimizer.Launcher", "Optimizer.Launcher\QuantConnect.Optimizer.Launcher.csproj", "{D46D2A8D-340C-4B40-8EE6-6BAA7B1198AB}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.InteractiveBrokersBrokerage", "..\Lean.Brokerages.InteractiveBrokers\QuantConnect.InteractiveBrokersBrokerage\QuantConnect.InteractiveBrokersBrokerage.csproj", "{2BFCAC76-887A-4281-BEA4-388C9055CAE5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.InteractiveBrokersBrokerage.ToolBox", "..\Lean.Brokerages.InteractiveBrokers\QuantConnect.InteractiveBrokersBrokerage.ToolBox\QuantConnect.InteractiveBrokersBrokerage.ToolBox.csproj", "{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IQFeed.CSharpApiClient", "..\..\IQFeed.CSharpApiClient\src\IQFeed.CSharpApiClient\IQFeed.CSharpApiClient.csproj", "{2D104199-4A3D-4FD7-9682-37DC800B517C}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IQFeed.CSharpApiClient.Examples", "..\..\IQFeed.CSharpApiClient\src\IQFeed.CSharpApiClient.Examples\IQFeed.CSharpApiClient.Examples.csproj", "{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -146,6 +154,22 @@ Global
 		{D46D2A8D-340C-4B40-8EE6-6BAA7B1198AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D46D2A8D-340C-4B40-8EE6-6BAA7B1198AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D46D2A8D-340C-4B40-8EE6-6BAA7B1198AB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2BFCAC76-887A-4281-BEA4-388C9055CAE5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2BFCAC76-887A-4281-BEA4-388C9055CAE5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2BFCAC76-887A-4281-BEA4-388C9055CAE5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2BFCAC76-887A-4281-BEA4-388C9055CAE5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

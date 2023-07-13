@@ -94,6 +94,33 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             return days;
         }
+        public enum RiskLimitScope
+        {
+            Security,
+            Underlying,
+            Portfolio,
+        }
+        public enum RiskLimitType
+        {
+            Delta,
+            Gamma,
+            Theta,
+            Vega
+        }
+        public enum Metric
+        {
+            Delta, // Unit free sensitivity
+            DeltaTotal, // Sensitivity * Quantity * Multiplier
+            DeltaTotalImplied, // Sensitivity * Quantity * Multiplier
+            Delta100BpUSD,  // USD change for every 1% of underlying change
+            Delta100BpUSDImplied,  // USD change for every 1% of underlying change
+            Gamma,
+            Gamma100BpUSD,
+            Theta,
+            Theta1DayUSD,
+            Vega,
+            Vega100BpUSD
+        }
 
         public static decimal RoundTick(decimal x, decimal tickSize, bool? ceil = null, decimal? reference = null)
         {
@@ -233,9 +260,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
-        public static void ExportToCsv<T>(IEnumerable<T> objects, string filePath)
+        public static Symbol Underlying(Symbol symbol)
         {
-            if (objects == null || !objects.Any()) return;
+            return symbol.SecurityType switch
+            {
+                SecurityType.Option => symbol.ID.Underlying.Symbol,
+                SecurityType.Equity => symbol,
+                _ => throw new NotImplementedException(),
+            };
+        }
+
+        public static string ToCsv<T>(IEnumerable<T> objects)
+        {
+            if (objects == null || !objects.Any()) return "";
             var header = ObjectToHeader(objects.First());  // Need to fix that for equity position, Greeks are null, hence no header is returned.
 
             var csv = new StringBuilder();
@@ -253,7 +290,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     {
                         string value = dict[key].ToString() ?? "";
                         value = value.Contains(",") ? "\"" + value + "\"" : value;
-                        line += value + ",";                        
+                        line += value + ",";
                     }
                 }
                 else
@@ -273,17 +310,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         }
                         line += value;
                     }
-                }                
+                }
                 csv.AppendLine(line);
             }
+            return csv.ToString();
+        }
 
+        public static void ExportToCsv<T>(IEnumerable<T> objects, string filePath)
+        {
             var fileExists = File.Exists(filePath);
             // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
             if (!fileExists)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath));
             }
-            File.WriteAllText(filePath, csv.ToString());
+            File.WriteAllText(filePath, ToCsv(objects));
         }
 
         public static Func<TArgs, TResult> Cache<TCacheKey, TArgs, TResult>(Func<TArgs, TResult> decorated, Func<TArgs, TCacheKey> genCacheKey)

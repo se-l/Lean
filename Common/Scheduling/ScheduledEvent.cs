@@ -29,7 +29,7 @@ namespace QuantConnect.Scheduling
         /// <summary>
         /// Gets the default time before market close end of trading day events will fire
         /// </summary>
-        public static readonly TimeSpan SecurityEndOfDayDelta = TimeSpan.FromMinutes(10);
+        public static readonly TimeSpan SecurityEndOfDayDelta = TimeSpan.FromMinutes(2);
 
         /// <summary>
         /// Gets the default time before midnight end of day events will fire

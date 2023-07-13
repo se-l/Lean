@@ -687,10 +687,16 @@ namespace QuantConnect.Algorithm
                 if (resolution.HasValue)
                 {
                     // If the first attempt to get the last know price returns null, it maybe the case of an illiquid security.
-                    // We increase the look-back period for this case accordingly to the resolution to cover 3 trading days
-                    var periods =
-                        resolution.Value == Resolution.Daily ? 3 :
-                        resolution.Value == Resolution.Hour ? 24 : 1440;
+                    // We increase the look-back period for this case accordingly to the resolution to cover 7 trading days
+                    var periods = resolution.Value switch
+                    {
+                        Resolution.Daily => 7,
+                        Resolution.Hour => 7 * 24,
+                        Resolution.Minute => 7 * 24 * 60,
+                        Resolution.Second => 7 * 24 * 60 * 60,
+                        Resolution.Tick => 10000,
+                        _ => 1440 * 7
+                    };
                     requestData(periods);
                 }
                 else

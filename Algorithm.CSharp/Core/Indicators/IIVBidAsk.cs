@@ -10,6 +10,5 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public decimal UnderlyingMidPrice { get; }
         public decimal Price { get; }
         public double IV { get; }
-        public void Update(QuoteBar quoteBar) {}
     }
 }

@@ -289,7 +289,7 @@ namespace QuantConnect.Data
 
         public bool EntryExists(string filePath, string entryName)
         {
-            return File.Exists(filePath) && _dataCacheProvider.GetZipEntries(filePath).Any(x => x == entryName);
+            return File.Exists(filePath) && _keySynchronizer.Execute(filePath, () => _dataCacheProvider.GetZipEntries(filePath).Any(x => x == entryName));
         }
 
         /// <summary>

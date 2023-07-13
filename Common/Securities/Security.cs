@@ -196,6 +196,12 @@ namespace QuantConnect.Securities
             set;
         }
 
+        public SecurityRiskLimit RiskLimit
+        {
+            get;
+            set;
+        }
+
         /// <summary>
         /// Fee model used to compute order fees for this security
         /// </summary>

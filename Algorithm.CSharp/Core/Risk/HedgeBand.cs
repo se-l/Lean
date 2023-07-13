@@ -4,6 +4,9 @@ using System.Linq;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
+    /// <summary>
+    /// Band by Security (Option Contract), Underlying, Portfolio
+    /// </summary>
     public class HedgeBand
     {
         public decimal DeltaLongUSD { get; } = 1_000;

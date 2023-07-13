@@ -1,12 +1,12 @@
 using System;
-using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Orders;
+using QuantConnect.Algorithm.CSharp.Core.Events;
 using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations : QCAlgorithm
-    {        
+    {
         public void PublishEvent<T>(T @event, Func<bool> condition = null)
             where T : class
             //
@@ -22,45 +22,39 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
                 else if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)
                 {
-                    CancelRiskIncreasingOrderTickets();
+                    // LogOnEventNewBidAsk(newBidAsk);  // Because Backtest and LiveTrading differ significantly in price update logs.
                     UpdateLimitPrice(newBidAsk.Symbol);
-                    // EmitNewFairOptionPrices(newBidAsk.Symbol);
+                    pfRisk.IsRiskLimitExceeded(newBidAsk.Symbol);
+                    //EmitNewFairOptionPrices(newBidAsk.Symbol);
                 }
             }
-            // (e.Status is OrderStatus.Filled || e.Status is OrderStatus.PartiallyFilled)
-            // Can you refactor above  using a shorter notation?
 
             if (@event is OrderEvent orderEvent && (orderEvent.Status is OrderStatus.Filled or OrderStatus.PartiallyFilled))
             {
+                pfRisk.ResetPositions();
+                LogOnEventOrderFill(orderEvent);
                 CancelRiskIncreasingOrderTickets();
+                pfRisk.IsRiskLimitExceeded(orderEvent.Symbol);
                 if (orderEvent.Symbol.SecurityType == SecurityType.Option)
                 {
-                    HedgeOptionWithUnderlying(orderEvent.Symbol);
+                    OrderOppositeOrder(orderEvent.Symbol);
                 }
-                //HedgePortfolioRiskIs();
-                LogRisk();
-                IsRiskBandExceeded();
             }
 
-            if (@event is EventHighPortfolioRisk)
-            {
-                CancelRiskIncreasingOrderTickets();
-                //HedgePortfolioRiskIs();
-            }
+            //if (@event is EventNewFairOptionPrice newFairOptionPrice)
+            //{
+            //    UpdateLimitPrice(newFairOptionPrice.Symbol);
+            //}
 
             if (@event is EventSignals signals)
             {
-                HandleSignals(signals.Signals);
+                HandleSignals(signals.Signals);  // just orders all currently...
             }
 
-            if (@event is EventNewFairOptionPrice newOptionPrice)  // not active currently relying on updates in underlying prices.
+            if (@event is EventRiskLimitExceeded riskLimitExceeded)
             {
-                UpdateLimitPrice(newOptionPrice.Symbol);
-            }
-
-            if (@event is EventRiskBandExceeded)
-            {
-                HedgeWithIndex();
+                CancelRiskIncreasingOrderTickets();
+                HedgeOptionWithUnderlying(riskLimitExceeded.Symbol);
             }
         }
     }

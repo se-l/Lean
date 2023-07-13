@@ -1,10 +1,16 @@
-namespace QuantConnect.Algorithm.CSharp.Core.Events
-{
-    public class EventRiskBandExceeded
-    {
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
-        public EventRiskBandExceeded()
+namespace QuantConnect.Algorithm.CSharp.Core.Events
+{    public class EventRiskLimitExceeded
+    {
+        public Symbol Symbol;
+        public RiskLimitType LimitType;
+        public RiskLimitScope LimitScope;
+        public EventRiskLimitExceeded(Symbol symbol, RiskLimitType limitType, RiskLimitScope limitScope)
         {
+            Symbol = symbol;
+            LimitType = limitType;
+            LimitScope = limitScope;
         }
     }
 }

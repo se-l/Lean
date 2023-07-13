@@ -19,6 +19,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using QuantConnect.Brokerages;
+using QuantConnect.Indicators;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Logging;
@@ -767,7 +768,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 order.OrderSubmissionDataUnderlying = new OrderSubmissionData(option.Underlying.BidPrice, option.Underlying.AskPrice, option.Underlying.Close);
             } else
             {
-                order.OrderSubmissionDataUnderlying = new OrderSubmissionData(0, 0, 0);
+                order.OrderSubmissionDataUnderlying = new OrderSubmissionData(0, 0, 0);  // Delete once aligning signature is not necessary...
             }
 
             // update the ticket's internal storage with this new order reference
@@ -1075,7 +1076,18 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
 
                         case OrderStatus.PartiallyFilled:
                         case OrderStatus.Filled:
+                            var security = _algorithm.Securities[orderEvent.Symbol];
+
                             order.LastFillTime = orderEvent.UtcTime;
+                            order.OrderFillData = security.Type switch {
+                                SecurityType.Option => new OrderFillData(
+                                    orderEvent.UtcTime, security.BidPrice, security.AskPrice, security.Price,
+                                    ((Option)security).Underlying.BidPrice,
+                                    ((Option)security).Underlying.AskPrice,
+                                    ((Option)security).Underlying.Price
+                                ),
+                                _ => new OrderFillData(orderEvent.UtcTime, security.BidPrice, security.AskPrice, security.Price)
+                            };
 
                             // append fill message to order tag, for additional information
                             if (orderEvent.Status == OrderStatus.Filled && !string.IsNullOrWhiteSpace(orderEvent.Message))

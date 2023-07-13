@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -41,7 +41,7 @@ namespace QuantConnect
         /// </summary>
         /// <param name="filename">The output zip file name</param>
         /// <param name="zipEntry">The file name in the zip file</param>
-        public ZipStreamWriter(string filename, string zipEntry)
+        public ZipStreamWriter(string filename, string zipEntry, bool overwrite=false)
         {
             if(!File.Exists(filename))
             {
@@ -63,7 +63,14 @@ namespace QuantConnect
                 if (!nonExisting)
                 {
                     // can only seek when it already existed
-                    _writer.BaseStream.Seek(0L, SeekOrigin.End);
+                    if (overwrite)
+                    {
+                        _writer.BaseStream.Seek(0L, SeekOrigin.Begin);
+                    }
+                    else
+                    {
+                        _writer.BaseStream.Seek(0L, SeekOrigin.End);
+                    }
                 }
             }
         }

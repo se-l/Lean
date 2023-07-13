@@ -24,6 +24,7 @@ namespace QuantConnect.Orders
     /// </summary>
     public class MarketOrder : Order
     {
+        public decimal LimitPrice { get => Price; }  // To be deleted. Quick hack to align signature with LimitOrder
         /// <summary>
         /// Added a default constructor for JSON Deserialization:
         /// </summary>

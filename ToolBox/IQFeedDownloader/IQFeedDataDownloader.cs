@@ -52,7 +52,13 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
             if (endUtc < startUtc)
                 throw new ArgumentException("The end date must be greater or equal than the start date.");
 
-            var dataType = resolution == Resolution.Tick ? typeof(Tick) : typeof(TradeBar);
+            var dataType = tickType switch
+            {
+                TickType.Trade => typeof(TradeBar),
+                TickType.Quote => typeof(QuoteBar),  // IQ Feed doesnt sent quote data for intervals. Only ticks. Would need to need to be constrcuted from that.
+                _ => typeof(TradeBar)
+            };
+            dataType = resolution == Resolution.Tick ? typeof(Tick) : dataType;
 
             return _fileHistoryProvider.ProcessHistoryRequests(
                 new HistoryRequest(

@@ -158,6 +158,10 @@ namespace QuantConnect.ToolBox.IQFeed
                 var option = new EquityOption(symbol.Underlying.Value, symbol.Underlying.Value, (double)symbol.ID.StrikePrice, symbol.ID.Date, optionSide);
                 return $"{option.EquitySymbol}{option.Expiration.ToStringInvariant("yydd")}{Encode(new EquityOptionMonthCode(symbol.ID.Date.Month, option.Side))}{option.StrikePrice}";
             }
+            else if (string.IsNullOrEmpty(leanSymbol) && symbol.ID.SecurityType == SecurityType.Equity)
+            {
+                return symbol.ToString().Split(" ").First();
+            }
             else
             {
                 return leanSymbol;

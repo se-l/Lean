@@ -12,60 +12,55 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
 */
-
-using System;
-using System.IO;
 using System.Collections.Generic;
 using QuantConnect.Brokerages;
-using QuantConnect.Data;
 using QuantConnect.Securities;
 using QuantConnect.Orders;
 using System.Linq;
-//using QuantConnect.ToolBox.IQFeed.IQ;
-using QuantConnect.Util;
+using QuantConnect.ToolBox.IQFeed.IQ;
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp
 {
-    public partial class SnapBrokerageAccount : Foundations
+    public partial class ASnapBrokerageAccount : Foundations
     {
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
         /// </summary>
         public override void Initialize()
         {
-            UniverseSettings.Resolution = resolution = Resolution.Minute;
-            SetStartDate(2023, 5, 17);
-            SetEndDate(2023, 5, 18);
-            SetCash(100000);
+            UniverseSettings.Resolution = resolution = Resolution.Second;
+            //SetStartDate(2023, 5, 17);
+            //SetEndDate(2023, 5, 18);
+            //SetCash(100000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
 
             if (LiveMode)
             {
-                //SetOptionChainProvider(new IQOptionChainProvider());
+                SetOptionChainProvider(new IQOptionChainProvider());
             }
-            int volatilitySpan = 10;
+            int volatilitySpan = 30;
 
             SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilitySpan));
 
             AssignCachedFunctions();
 
-            SetWarmUp((int)(volatilitySpan * 1.5), Resolution.Daily);
             spy = AddEquity("SPY", Resolution.Daily).Symbol;
-        }
+            pfRisk = PortfolioRisk.E(this);
 
-        public override void OnData(Slice slice)
-        {
+            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, spy, SecurityType.Equity);
+            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
+            Log($"WarmUp TimeSpan: {timeSpan}");
+            SetWarmUp(timeSpan);
         }
 
         public void LogToDisk()
         {
-            var pfRisk = PortfolioRisk.E(this);
-            ExportToCsv(pfRisk.Positions, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_positions_{Time:yyyyMMdd}.csv"));
-            ExportToCsv(Transactions.GetOrders(x => true).ToList(), Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_orders_{Time:yyyyMMdd}.csv"));
+            //var pfRisk = PortfolioRisk.E(this);
+            //ExportToCsv(pfRisk.Trades, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_{Time:yyyyMMdd}.csv"));
+            //ExportToCsv(Transactions.GetOrders(x => true).ToList(), Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_orders_{Time:yyyyMMdd}.csv"));
 
             Log($"Cash: {Portfolio.Cash}");
             Log($"UnsettledCash: {Portfolio.UnsettledCash}");
@@ -77,29 +72,40 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void OnWarmupFinished()
         {
-            IEnumerable<OrderTicket> openOrderTickets = Transactions.GetOpenOrderTickets();
-            IEnumerable<OrderTicket> allOrderTickets = Transactions.GetOrderTickets();
-            Log($"Adding Open Transactions to open OrderTickets: {openOrderTickets.Count()}");
-            Log($"Adding Open Transactions to all OrderTickets: {allOrderTickets.Count()}");
-
-            foreach (OrderTicket ticket in openOrderTickets)
+            IEnumerable<OrderTicket> openTransactions = Transactions.GetOpenOrderTickets();
+            Log($"Adding Open Transactions to OrderTickets: {openTransactions.Count()}");
+            foreach (OrderTicket ticket in openTransactions)
             {
-                if (!orderTickets.ContainsKey(ticket.Symbol)) {
+                if (!orderTickets.ContainsKey(ticket.Symbol))
+                {
                     orderTickets[ticket.Symbol] = new List<OrderTicket>();
                 }
                 orderTickets[ticket.Symbol].Add(ticket);
             }
 
+            pfRisk.ResetPositions();
+
             PopulateOptionChains();
 
-            Log($"Transactions Orders Count: {Transactions.GetOrders().Count()}");
-            Log($"Transactions Open Orders Count: {Transactions.GetOpenOrders().Count}");
-
             LogRisk();
+            LogPnL();
+
+            foreach (var indicator in RollingIVBid.Values)
+            {
+                if (!indicator.IsReadyLongMean)
+                {
+                    Log($"RollingIVBid {indicator.Symbol} Bid not ready at startup. Samples {indicator.Samples}");
+                }
+            }
+            foreach (var indicator in RollingIVAsk.Values)
+            {
+                if (!indicator.IsReadyLongMean)
+                {
+                    Log($"RollingIVAsk {indicator.Symbol} Ask not ready at startup. Samples {indicator.Samples}");
+                }
+            }
 
             LogToDisk();
-
-            throw new Exception("OnWarmupFinished executed. Stopping Account Snap.");
         }
     }
 }

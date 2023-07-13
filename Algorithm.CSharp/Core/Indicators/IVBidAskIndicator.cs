@@ -5,11 +5,10 @@ using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
 using QuantConnect.Securities.Option;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
-    public class IVBidAsk
+    public class IVBidAskIndicator
     {
         public DateTime Time { get; }
         public decimal UnderlyingMidPrice { get; }
@@ -18,7 +17,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public double BidIV { get; }
         public double AskIV { get; }
 
-        public IVBidAsk(DateTime time, decimal underlyingMidPrice, decimal bidPrice, decimal askPrice, double bidIV, double askIV)
+        public IVBidAskIndicator(DateTime time, decimal underlyingMidPrice, decimal bidPrice, decimal askPrice, double bidIV, double askIV)
         {
             Time = time;
             UnderlyingMidPrice = underlyingMidPrice;
@@ -30,9 +29,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
     }
     public class IVBidIndicator : IndicatorBase<Tick>, IIndicatorWarmUpPeriodProvider
     {
-        public new IVBidAsk Current { get; protected set; }
+        public new IVBidAskIndicator Current { get; protected set; }
         public Symbol Symbol { get; }
-        public List<IVBidAsk> Window { get; }
+        public List<IVBidAskIndicator> Window { get; }
         public override bool IsReady => Window.Any();
         public int WarmUpPeriod => 1;
 
@@ -43,7 +42,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public IVBidIndicator(Symbol symbol, Foundations algo, Option option) : base(symbol.Value + "IVBidAsk")
         {
             Symbol = symbol;
-            Window = new List<IVBidAsk>();
+            Window = new List<IVBidAskIndicator>();
             this.algo = algo;
             ocw = OptionContractWrap.E(algo, option);
         }
@@ -61,13 +60,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             }
             decimal underlyingMidPrice = algo.MidPrice(Symbol.Underlying);
 
-            Window.Add(new IVBidAsk(
+            Window.Add(new IVBidAskIndicator(
                 tick.Time,
                 underlyingMidPrice,
                 tick.BidPrice,
                 tick.AskPrice,
-                bidIV: ocw.IV(tick.BidPrice, underlyingMidPrice, 0.1) ?? 0,
-                askIV: ocw.IV(tick.AskPrice, underlyingMidPrice, 0.1) ?? 0
+                bidIV: ocw.IV(tick.BidPrice, underlyingMidPrice, 0.001) ?? 0,
+                askIV: ocw.IV(tick.AskPrice, underlyingMidPrice, 0.001) ?? 0
             )
                 );
             lastUpated = tick.Time.RoundUp(TimeSpan.FromSeconds(1));
@@ -82,13 +81,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             }
             decimal underlyingMidPrice = algo.MidPrice(Symbol.Underlying);
 
-            Window.Add(new IVBidAsk(
+            Window.Add(new IVBidAskIndicator(
                 quoteBar.EndTime,
                 underlyingMidPrice,
                 quoteBar.Bid.Close,
                 quoteBar.Ask.Close,
-                bidIV: ocw.IV(quoteBar.Bid.Close, underlyingMidPrice, 0.1) ?? 0,
-                askIV: ocw.IV(quoteBar.Ask.Close, underlyingMidPrice, 0.1) ?? 0
+                bidIV: ocw.IV(quoteBar.Bid.Close, underlyingMidPrice, 0.001) ?? 0,
+                askIV: ocw.IV(quoteBar.Ask.Close, underlyingMidPrice, 0.001) ?? 0
             )
                 );
             Current = Window.Last();

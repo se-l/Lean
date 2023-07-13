@@ -1,12 +1,15 @@
+using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Data;
 using QuantConnect.Orders;
+using QuantConnect.Orders.Fees;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Contracts;
+using System.IO;
 using System.Linq;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -21,9 +24,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             return string.Join(", ", kwargs.Select(kv => $"{kv.Key}={kv.Value}"));
         }
-
         public string QuickLog(Dictionary<string, string> kwargs)
         {
+            // Consider having class Log<Topic> for every topic where log fetched neccessary info. QuickLog(new Log<Topic>(necessary params would be enough to log...)) 
             string tag = Humanize(new Dictionary<string, string>() { { "ts", Time.ToString() } });
             tag += " " + Humanize(kwargs);
             Log(tag);
@@ -101,82 +104,96 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return tag;
         }
 
-        public string LogOrderEvent(OrderEvent order_event)
+        public string LogOnEventNewBidAsk(EventNewBidAsk @event)
         {
-            if (order_event.Status == OrderStatus.UpdateSubmitted)
+            var security = Securities[@event.Symbol];
+            var d1 = new Dictionary<string, string>
+            {
+                { "ts", Time.ToString() },
+                { "topic", "EventNewBidAsk" },
+                { "symbol", @event.Symbol.ToString() },
+                { "Bid", security.BidPrice.ToString() },
+                { "Ask", security.AskPrice.ToString() },
+                { "Mid", MidPrice(@event.Symbol).ToString() },
+                { "Last", security.Price.ToString() },
+            };
+            string tag = Humanize(d1);
+            Log(tag);
+            return tag;
+        }
+
+        public void LogOnEventOrderFill(OrderEvent @event)
+        {
+            LogRisk(@event.Symbol);
+            LogPnL(@event.Symbol);
+            var trades = Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).Select(order => new Trade(this, order));
+            ExportToCsv(trades, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_{Time:yyyyMMddHHmmss}.csv"));
+        }
+
+        public string LogOrderEvent(OrderEvent orderEvent)
+        {
+            if (orderEvent.Status == OrderStatus.UpdateSubmitted)
             {
                 return null;
             }
-            Security security = Securities[order_event.Symbol];
-            string order_status_nm = order_event.Status.ToString();
-            string order_direction_nm = order_event.Direction.ToString();
+            Security security = Securities[orderEvent.Symbol];
+            string order_status_nm = orderEvent.Status.ToString();
+            string order_direction_nm = orderEvent.Direction.ToString();
             string security_type_nm = security.Type.ToString();
-            string symbol = order_event.Symbol.ToString();
+            string symbol = orderEvent.Symbol.ToString();
             string tag = Humanize(new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },
                 { "topic", "ORDER EVENT" },
+                { "ID", orderEvent.OrderId.ToString() },
                 { "OrderDirection", order_direction_nm },
                 { "OrderStatus", order_status_nm },
                 { "SecurityType", security_type_nm },
                 { "Symbol", symbol },
-                { "FillQuantity", order_event.FillQuantity.ToString() },
-                { "LimitPrice", order_event.LimitPrice.ToString() },
-                { "FillPrice", order_event.FillPrice.ToString() },
-                { "Fee", order_event.OrderFee.ToString() },
-                { "PriceUnderlying", order_event.Symbol.HasUnderlyingSymbol(order_event.Symbol) ? Securities[((Option)security).Symbol.Underlying].Price.ToString() : "" },
+                { "Quantity", orderEvent.Quantity.ToString() },
+                { "FillQuantity", orderEvent.FillQuantity.ToString() },
+                { "LimitPrice", orderEvent.LimitPrice.ToString() },
+                { "FillPrice", orderEvent.FillPrice.ToString() },
+                { "Fee", orderEvent.OrderFee.ToString() },
+                { "PriceUnderlying", orderEvent.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[orderEvent.Symbol]).Underlying.Price.ToString() : "" },
                 { "BestBid", security.BidPrice.ToString() },
-                { "BestAsk", security.AskPrice.ToString() }
+                { "BestAsk", security.AskPrice.ToString() },
+                { "Delta2Mean", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.FillPrice : orderEvent.FillPrice - MidPrice(symbol)).ToString() }
             });
             Log(tag);
             return tag;
         }
 
-        public string LogRisk()
+        public string LogRisk(Symbol symbol = null)
         {
             var d1 = new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },
                 { "topic", "RISK" },
+                { "Symbol", $"{symbol ?? "Portfolio"}" },
             };
             d1 = d1.ToDictionary(x => x.Key, x => x.Value.ToString());
-            var d2 = PortfolioRisk.E(this).ToDict().ToDictionary(x => x.Key, x => x.Value.ToString());
+            var d2 = pfRisk.ToDict(symbol).ToDictionary(x => x.Key, x => x.Value.ToString());
             string tag = Humanize(d1.Union(d2));
             Log(tag);
             return tag;
         }        
 
-        public string LogPnL()
+        public string LogPnL(Symbol symbol = null)
         {
             var d1 = new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },
                 { "topic", "PnL" },
+                { "Symbol", $"{symbol ?? "Portfolio"}" },
                 { "TotalPortfolioValueQC", Portfolio.TotalPortfolioValue.ToString() },
+                { "TotalPortfolioValueQCSinceStart", (Portfolio.TotalPortfolioValue - TotalPortfolioValueSinceStart).ToString() },
                 { "Cash",  Portfolio.Cash.ToString() },
-                //{ "TotalFees", Portfolio.TotalFees.ToString() },
-                { "TotalNetProfit", Portfolio.TotalNetProfit.ToString() },
-                { "TotalUnrealizedProfit", Portfolio.TotalUnrealizedProfit.ToString() },
+                { "TotalFeesQC", Portfolio.TotalFees.ToString() },
+                { "TotalNetProfitQC", Portfolio.TotalNetProfit.ToString() },
+                { "TotalUnrealizedProfitQC", Portfolio.TotalUnrealizedProfit.ToString() },
         };
             string tag = Humanize(d1.Union(d1));
-            Log(tag);
-            return tag;
-        }
-
-        public string LogPL(Symbol symbol, decimal? price = null, decimal? holdings = null, decimal? portfolio = null, decimal? unrealized = null, decimal? realized = null, decimal? fees = null)
-        {
-            string tag = Humanize(new Dictionary<string, string>
-            {
-                { "ts", Time.ToString() },
-                { "topic", "PL" },
-                { "symbol", symbol.ToString() },
-                { "Price", price.ToString() },
-                { "Holdings", holdings.ToString() },
-                { "Portfolio", portfolio.ToString() },
-                { "Unrealized", unrealized.ToString() },
-                { "Realized", realized.ToString() },
-                { "Fees", fees.ToString() }
-            });
             Log(tag);
             return tag;
         }

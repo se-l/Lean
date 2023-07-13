@@ -456,7 +456,6 @@ namespace QuantConnect.Securities
                         _isTotalPortfolioValueValid = true;
                     }
                 }
-
                 return _totalPortfolioValue;
             }
         }

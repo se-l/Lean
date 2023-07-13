@@ -37,6 +37,13 @@ namespace QuantConnect.ToolBox.Polygon
             public Resolution Resolution { get; set; }
             public TickType TickType { get; set; }
         }
+
+        public static IEnumerable<DateTime> TradeDates(string market, MarketHoursDatabase marketHoursDatabase, Symbol symbol, DateTime startDate, DateTime endDate)
+        {
+            var securityExchangeHours = marketHoursDatabase.GetExchangeHours(market, symbol, symbol.ID.SecurityType);
+            return Time.EachTradeableDay(securityExchangeHours, startDate, endDate);  // typically requesting midnight of T+1
+        }
+
         /// <summary>
         /// Primary entry point to the program. This program only supports SecurityType.Equity
         /// </summary>
@@ -52,6 +59,7 @@ namespace QuantConnect.ToolBox.Polygon
                 Console.WriteLine("--tick-types=Trade/Quote");
                 Environment.Exit(1);
             }
+            DiskDataCacheProvider _diskDataCacheProvider = new();
 
             try
             {
@@ -84,93 +92,106 @@ namespace QuantConnect.ToolBox.Polygon
                 // Load settings from config.json
                 var dataDirectory = Config.Get("data-folder", "../../../Data");
                 var startDate = fromDate.ConvertToUtc(TimeZones.NewYork);
-                var endDate = toDate.ConvertToUtc(TimeZones.NewYork);
+                var endDate = toDate.ConvertToUtc(TimeZones.NewYork);  // turns UTC midnight into T-1 EST
 
                 var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
 
                 // Create an instance of the downloader
                 using var downloader = new PolygonDataDownloader();
                 IEnumerable<Symbol> symbols = tickers.Select(x => Symbol.Create(x, securityType, market));
+
+                var tradeDates = TradeDates(market, marketHoursDatabase, symbols.First(), startDate, endDate);
+                Dictionary<Symbol, IEnumerable<DateTime>> symbolDates = new();  // Dont request options for dates where option was not issued yet
+
+                IEnumerable<Request> requests;
                 if (securityType == SecurityType.Option)
                 {
-                    Log.Error($"Resolving Requity Ticker to OptionContracts...");
-                    symbols = symbols.Select(sym => downloader.GetOptionContracts(sym.Underlying, endDate)).SelectMany(list => list);
-                    symbols.GroupBy(sym => sym.Underlying).ToList().ForEach(group =>
+                    Log.Trace($"Resolving Requity Ticker to OptionContracts...");
+                    foreach (DateTime dt in tradeDates)
                     {
-                        Log.Error($"For Underlying: {group.Key.Value} fetched {group.Count()} OptionContracts");
-                    });
-                }
-                var requests = symbols.SelectMany(symbol => tickTypes.Select(tickType => new Request
-                {
-                    Symbol = symbol,
-                    Start = startDate,
-                    End = endDate,
-                    Resolution = resolution,
-                    TickType = tickType
-                })).ToList();
-
-                Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = NumberOfClients }, request =>
-                {
-                    var securityExchangeHours = marketHoursDatabase.GetExchangeHours(market, request.Symbol, securityType);
-                    var exchangeTimeZone = securityExchangeHours.TimeZone;
-                    var dataTimeZone = marketHoursDatabase.GetDataTimeZone(market, request.Symbol, securityType);
-
-                    var writer = new LeanDataWriter(resolution, request.Symbol, dataDirectory, request.TickType);
-
-                    // Download the data
-                    //var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, startDate, endDate, request.TickType))
-                    //    .Select(x =>
-                    //    {
-                    //        x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);
-                    //        return x;
-                    //    }
-                    //    );
-                    //writer.Write(data);  // Save the data
-
-                    //// For options, many contracts will have no data, primarily trades, so we need to write an empty file for these
-                    //foreach (var date in Time.EachTradeableDay(securityExchangeHours, startDate, endDate.AddDays(-1)))  // typically requesting midnight of T+1
-                    //{
-                    //    // loop over dates in between startDate and endDate
-                    //    writer.WriteEmptyFileIfNotExists(date, request.Symbol);
-                    //}
-
-
-                    foreach (var date in Time.EachTradeableDay(securityExchangeHours, startDate, endDate.AddDays(-1)))  // typically requesting midnight of T+1
-                    {
-                        if (skipExisting == "Y" && writer.FileEntryExists(date, request.Symbol))
+                        // Log.Trace($"Requesting {symbols.Count()} symbols for {dt}...");
+                        var optionSymbols = symbols.Select(sym => downloader.GetOptionContracts(sym.Underlying, dt)).SelectMany(list => list).OrderBy(s => s.ID.Date);
+                        Log.Trace($"{dt}: {optionSymbols.Count()} Contracts from {symbols.Count()} underlyings");
+                        foreach (var optionSymbol in optionSymbols)
                         {
-                            continue;
-                        }
-                        else
-                        {
-                            // Download the data
-                            var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, date, date.AddDays(1), request.TickType))
-                                .Select(x =>
-                                {
-                                    x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);
-                                    return x;
-                                }
-                                );
-
-                            // For options, many contracts will have no data, primarily trades, so we need to write an empty file for these
-                            if (data.Any())
+                            if (!symbolDates.ContainsKey(optionSymbol))
                             {
-                                writer.Write(data);
+                                symbolDates.Add(optionSymbol, new List<DateTime> { dt });
                             }
                             else
                             {
-                                // loop over dates in between startDate and endDate
-                                writer.WriteEmptyFileIfNotExists(date, request.Symbol);
+                                ((List<DateTime>)symbolDates[optionSymbol]).Add(dt);
                             }
                         }
                     }
+                    symbolDates.Keys.GroupBy(sym => sym.Underlying).ToList().ForEach(group =>
+                    {
+                        Log.Trace($"For Underlying: {group.Key.Value} fetched {group.Count()} OptionContracts");
+                    });
 
+                    requests = symbolDates.SelectMany(kvp => tickTypes.Select(tickType => new Request
+                    {
+                        Symbol = kvp.Key,
+                        Start = kvp.Value.Min(),
+                        End = kvp.Value.Max(),
+                        Resolution = resolution,
+                        TickType = tickType
+                    })).ToList();
+                }    
+                else
+                {
+                    requests = symbols.SelectMany(symbol => tickTypes.Select(tickType => new Request
+                    {
+                        Symbol = symbol,
+                        Start = startDate,
+                        End = endDate,
+                        Resolution = resolution,
+                        TickType = tickType
+                    })).ToList();
+                }
 
+                Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = NumberOfClients }, request =>
+                {
+                    var writer = new LeanDataWriter(resolution, request.Symbol, dataDirectory, request.TickType, _diskDataCacheProvider);
+                    var tradeDates = TradeDates(market, marketHoursDatabase, request.Symbol, request.Start, request.End);
+
+                    if (skipExisting == "Y" && tradeDates.All(date => writer.FileEntryExists(date, request.Symbol)))
+                    {
+                        return;
+                    }
+
+                    var securityExchangeHours = marketHoursDatabase.GetExchangeHours(market, symbols.First(), securityType);
+                    var exchangeTimeZone = securityExchangeHours.TimeZone;
+                    var dataTimeZone = marketHoursDatabase.GetDataTimeZone(market, request.Symbol, securityType);
+                    
+
+                    // Download the data
+                    var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, request.Start, request.End, request.TickType))
+                        .Select(x =>
+                        {
+                            x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);
+                            return x;
+                        }
+                        );
+                    if (data.Any())
+                    {
+                        writer.Write(data); ;  // Save the data across a date range.
+                    }
+
+                    // For options, many contracts will have no data, primarily trades, so we need to write an empty file for these
+                    tradeDates.DoForEach(date =>
+                    {
+                        writer.WriteEmptyFileIfNotExists(date, request.Symbol);
+                    });
                 });
             }
             catch (Exception err)
             {
                 Log.Error(err);
+            }
+            finally
+            {
+                _diskDataCacheProvider.DisposeSafely();
             }
         }
     }

@@ -9,18 +9,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         where T : IIVBidAsk
     {
         public Symbol Symbol { get; }
-        public double Current { get; protected set; } = 0;
+        public double Current { get => GetCurrent(); }
+        public double LongMean { get => totalIV / Window.Count; }
         public T Last { get; protected set; }
 
-        private readonly List<T> Window = new();
-        public bool IsReady => Window.Count == _size;
+        public readonly List<T> Window = new();
+        private IEnumerable<T> WindowExOutliers;
+        private readonly int _sizeCurrent = 100;
+        public bool IsReady => Window.Count >= 1;// _sizeCurrent;
+        public bool IsReadyLongMean => Window.Count >= 1;// _size;
         public int WarmUpPeriod => _size;
+        public int Samples { get; internal set; }
 
         private readonly int _size;
         private readonly double _threshold;
-        private T _mostRecentlyRemoved;
         private double currentTotalIV { get; set; }
-        private int _tail;
+        private double totalIV { get; set; }
 
         public RollingIVIndicator(int size, Symbol symbol, double threshold = 0.15)
         {
@@ -29,43 +33,64 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             _threshold = threshold;
         }
 
-        public double Update(T item)
+        private double GetCurrent()
         {
-            if (item == null) return Current;
-
-            currentTotalIV += item.IV;
-            Add(item);
-            if (IsReady)
-            {
-                currentTotalIV -= _mostRecentlyRemoved?.IV ?? 0;
-                double meanBidIV = currentTotalIV / _size;
-                var exOutliers = Window.Where(x =>
-                    x.IV != 0 && 
-                    Math.Abs(x.IV - meanBidIV) / meanBidIV < _threshold
-                );
-                if (exOutliers.Any())
-                {
-                    // To be revised. EWMA. zero Call/Put arbitrage => more samples.                   
-                    Current = exOutliers.Select(x => x.IV).Average();
-                }
-            }
-            return Current;
+            return Window.Last().IV;
         }
 
-        public void Add(T item)
+        public double GetCurrentExOutlier()
         {
-            if (Window.Count == _size)
+            if (IsReady)
             {
-                // keep track of what's the last element
-                // so we can reindex on this[ int ]
-                _mostRecentlyRemoved = Window[_tail];
-                Window[_tail] = item;
-                _tail = (_tail + 1) % _size;
+                double meanBidIV = currentTotalIV / _sizeCurrent;
+                WindowExOutliers = Window.TakeLast(_sizeCurrent).Where(x =>
+                    x.IV != 0 &&
+                    Math.Abs(x.IV - meanBidIV) / meanBidIV < _threshold
+                );
+                if (WindowExOutliers.Any())
+                {
+                    // To be revised. EWMA. zero Call/Put arbitrage => more samples.                   
+                    return WindowExOutliers.Select(x => x.IV).Average();
+                }
             }
-            else
+            return Last.IV;
+        }
+
+        public void Update(T item)
+        {
+            if (item == null || item.Time <= Last?.Time || item.IV == 0) return;
+            Add(item);
+        }
+
+        public bool Add(T item)
+        {
+            // Sampling events, delta IV of > 1%
+            if (Math.Abs(item.IV - (Last?.IV ?? 0)) < 0.001) return false;
+
+            if (Samples >= _sizeCurrent)
             {
-                Window.Add(item);
+                currentTotalIV -= Window.First().IV;
             }
+
+            if (Samples >= _size)
+            {
+                totalIV -= Window.First().IV;
+                Window.RemoveAt(0);
+            }
+            Last = item;
+            Window.Add(item);
+            currentTotalIV += item.IV;
+            totalIV += item.IV;
+            Samples += 1;
+            return true;
+        }
+
+        public void Reset()
+        {
+            Window.Clear();
+            Samples = 0;
+            currentTotalIV = 0;
+            totalIV = 0;
         }
     }
 }

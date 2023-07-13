@@ -171,6 +171,11 @@ namespace QuantConnect.Orders
         public decimal Value => Quantity * Price;
 
         /// <summary>
+        /// Gets price data at the time the order was filled
+        /// </summary>
+        public OrderFillData OrderFillData { get; internal set; }
+
+        /// <summary>
         /// Gets the price data at the time the order was submitted
         /// </summary>
         public OrderSubmissionData OrderSubmissionData { get; internal set; }
@@ -363,6 +368,7 @@ namespace QuantConnect.Orders
             order.OrderSubmissionData = OrderSubmissionData?.Clone();
             order.OrderSubmissionDataUnderlying = OrderSubmissionDataUnderlying?.Clone();
             order.GroupOrderManager = GroupOrderManager;
+            order.OrderFillData = OrderFillData?.Clone();
         }
 
         /// <summary>

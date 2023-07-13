@@ -87,7 +87,6 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                 var universeProvider = new IQFeedDataQueueUniverseProvider();
                 var historyProvider = new IQFeedFileHistoryProvider(lookupClient, universeProvider, MarketHoursDatabase.FromDataFolder());
                 var downloader = new IQFeedDataDownloader(historyProvider);
-                var quoteDownloader = new IQFeedDataDownloader(historyProvider);
 
                 var symbols = Enumerable.Empty<Symbol>();
 
@@ -123,7 +122,7 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                     Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = NumberOfClients }, request =>
                     {
                         var writer = new LeanDataWriter(request.Resolution, request.Symbol, dataDirectory, _tickType);
-                        data = quoteDownloader.Get(new DataDownloaderGetParameters(request.Symbol, request.Resolution, startDate, endDate, _tickType));
+                        data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, request.Resolution, startDate, endDate, _tickType));
                         writer.Write(data);
 
                         // Caution TickType.Quote:

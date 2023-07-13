@@ -930,7 +930,7 @@ namespace QuantConnect.ToolBox.Polygon
             Log.Debug($"GetOptionContracts(): Fetching contracts for symbol: {symbol} as of date {asOf:yyyy-MM-dd};");
 
             var url = $"{HistoryBaseUrl}/v3/reference/options/contracts?" +
-                              $"underlying_ticker={symbol.Value}&apiKey={_apiKey}&limit={ResponseSizeLimitOptionContracts}";
+                              $"underlying_ticker={symbol.Value}&as_of={asOf.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&apiKey={_apiKey}&limit={ResponseSizeLimitOptionContracts}";
 
             var response = DownloadAndParseData(typeof(OptionContractResponse[]), url, "results") as OptionContractResponse[];
 

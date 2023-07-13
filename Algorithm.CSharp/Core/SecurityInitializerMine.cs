@@ -1,7 +1,11 @@
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
+using QuantConnect.Algorithm.CSharp.Core.RealityModeling;
 using QuantConnect.Brokerages;
+using QuantConnect.Data.Market;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
+using System.Collections.Generic;
+
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -24,9 +28,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (!algo.LiveMode)
             {
-                // Next, overwrite some of the reality models
+                // Margin Model
+                security.MarginModel = SecurityMarginModel.Null;
                 security.SetBuyingPowerModel(new NullBuyingPowerModel());
-                security.SetFillModel(new FillModelMy());
+
+                // Fill Model
+                security.SetFillModel(new FillModelMine());
             }
 
             if (security.Type == SecurityType.Equity)
@@ -37,6 +44,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     security.VolatilityModel.Update(security, tradeBar);
                 }
+
+                // Initialize a Security Specific Hedge Band or Risk Limit object. Constitutes underlying, hence risk limit not just by security but also its derivatives.
+                security.RiskLimit = new SecurityRiskLimit(security, deltaLongUSD:10, deltaShortUSD:-10);
             }
             else
 
@@ -47,15 +57,67 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 // No need for particular option contract's volatility.
                 security.VolatilityModel = VolatilityModel.Null;
+
+                // Initialize a Security Specific Hedge Band or Risk Limit object.
+                option.RiskLimit = new SecurityRiskLimit(option);
+
                 algo.IVBids[option.Symbol] = new IVBid(option, algo);
                 algo.IVAsks[option.Symbol] = new IVAsk(option, algo);
-                algo.RollingIVBid[option.Symbol] = new RollingIVIndicator<IVBid>(150, option.Symbol, 0.15);
-                algo.RollingIVAsk[option.Symbol] = new RollingIVIndicator<IVAsk>(150, option.Symbol, 0.15);
+                algo.RollingIVBid[option.Symbol] = new RollingIVIndicator<IVBidAsk>(1000, option.Symbol, 0.15);
+                algo.RollingIVAsk[option.Symbol] = new RollingIVIndicator<IVBidAsk>(1000, option.Symbol, 0.15);
             }
 
             if (security.Resolution == Resolution.Tick)
             {
                 security.SetDataFilter(new OptionTickDataFilter(algo));
+            }
+
+            WarmUpSecurity(security);
+        }
+
+        public void WarmUpSecurity(Security security)
+        {
+            QuoteBar quoteBar;
+            QuoteBar quoteBarUnderlying;
+            Symbol symbol;
+
+            algo.Log($"SecurityInitializer.WarmUpSecurity: {security}");
+
+
+            if (security.Type == SecurityType.Option)
+            {
+                var option = (Option)security;
+
+                if (option.Underlying == null) return;
+                if (option.Underlying.Price == 0) return;
+                if (option.Underlying.HasData)
+                {
+                    symbol = option.Symbol;
+                    var history = algo.History<QuoteBar>(new List<Symbol>() { symbol, option.Symbol.Underlying }, 60 * 7 * 5, Resolution.Minute, fillForward: false);
+
+                    // Loop over symbols, determine time frontier, use latest among iterators until finished.
+                    decimal underlyingMidPrice = 0;
+                    foreach (DataDictionary<QuoteBar> data in history)
+                    {
+                        if (data.TryGetValue(option.Symbol.Underlying, out quoteBarUnderlying))
+                        {
+                            underlyingMidPrice = (quoteBarUnderlying.Bid.Close + quoteBarUnderlying.Ask.Close) / 2;
+                        }
+
+                        if (data.TryGetValue(option.Symbol, out quoteBar) && underlyingMidPrice != 0)
+                        {
+                            algo.IVBids[symbol].Update(quoteBar, underlyingMidPrice);
+                            algo.IVAsks[symbol].Update(quoteBar, underlyingMidPrice);
+                            algo.RollingIVBid[symbol].Update(algo.IVBids[symbol].Current);
+                            algo.RollingIVAsk[symbol].Update(algo.IVAsks[symbol].Current);
+                        }   
+                    }
+                }
+                algo.Log($"RollingIVBid.IsReady {option.Symbol}: {algo.RollingIVBid[option.Symbol].IsReadyLongMean} Samples: {algo.RollingIVBid[option.Symbol].Samples}");
+            }
+            else if (security.Type == SecurityType.Equity)
+            {
+
             }
         }
     }
