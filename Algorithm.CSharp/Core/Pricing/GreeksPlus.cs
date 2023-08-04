@@ -11,11 +11,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         // dP: dV2 / dPdT (Delta decay / Charm) ; d2V / dP2 (Gamma) ; d2V / dPdIV (Delta changes with IV / Color)
         // probably the more expensive calculation. Given not used for hedging, only calc on request, like EOD position end PF Risk.
         public double HV { get => (double)(OCW?.HistoricalVolatility() ?? 0); }  // historical volatility
-        public double IVAnalytical { get => OCW?.IV(null, null, 0.001) ?? 0; }
-        public double IVNR { get => OCW?.GetIVNewtonRaphson() ?? 0; }
+        //public double IVAnalytical { get => OCW?.IV(null, null, 0.001) ?? 0; }
+        //public double IVNR { get => OCW?.GetIVNewtonRaphson() ?? 0; }
 
         // First order derivatives: dV / dt (Theta) ; dV / dP (Delta) ; dV / dIV (Vega)
         public double Delta { get => OCW?.Delta() ?? 1; }  // dP ; sensitivity to underlying price
+        public double DeltaZM(int? direction) {  // Adjusted Delta
+            return OCW?.DeltaZM(direction) ?? 1;
+        }
+        public double BandZMLower(int direction)
+        {  // Adjusted Delta
+            return OCW?.BandZMLower(direction) ?? 1;
+        }
+        public double BandZMUpper(int direction)
+        {  // Adjusted Delta
+            return OCW?.BandZMUpper(direction) ?? 1;
+        }
         public double Gamma { get => OCW?.Gamma() ?? 0; }  // dP2
 
         // Second order derivatives using finite difference
@@ -29,9 +40,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double ThetaDecay { get => OCW?.ThetaDecay() ?? 0; }  // dT2
         public double DTdIV { get => OCW?.DTdIV() ?? 0; }  // dTdIV
         public double Vega { get => OCW?.Vega() ?? 0; }  // dIV ; sensitivity to volatility
-        public double DIVdP { get => OCW?.DIVdP() ?? 0; }  // dIVdP ; vanna
+        public double DVegadP { get => OCW?.DVegadP() ?? 0; }  // dVegadP ; vanna
         public double VegaDecay { get => OCW?.VegaDecay() ?? 0; }  // dIVdT
-        public double DIV2 { get => OCW?.DIV2() ?? 0; }  // dIV2 ; vomma
+        public double DVegadIV { get => OCW?.DVegadIV() ?? 0; }  // vomma
         public double Rho { get => OCW?.Rho() ?? 0; }  // dR ; sensitivity to interest rate
         public double TheoreticalPrice { get => OCW?.TheoreticalPrice() ?? 0; }  // theoretical price
 

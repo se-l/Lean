@@ -7,7 +7,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
     public class IVAsk
     {
-        public Symbol Symbol { get; }
+        public Symbol Symbol { get => Option.Symbol; }
+        public Option Option { get; }
         public DateTime Time { get; set; }
         public decimal UnderlyingMidPrice { get; set; }
         public decimal Price { get; set; }
@@ -15,13 +16,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public IVBidAsk Current { get; internal set; }
 
         private Foundations algo { get; }
-        private readonly OptionContractWrap ocw;
 
         public IVAsk(Option option, Foundations algo)
         {
             this.algo = algo;
-            Symbol = option.Symbol;
-            ocw = OptionContractWrap.E(algo, option);
+            Option = option;
         }
 
         public void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null)
@@ -33,7 +32,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Time = quoteBar.EndTime;
             UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
             Price = quoteBar.Ask.Close;
-            IV = ocw.IV(Price, UnderlyingMidPrice, 0.001) ?? 0;
+            IV = OptionContractWrap.E(algo, Option, 1, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
             Current = new IVBidAsk(Symbol, Time, UnderlyingMidPrice, Price, IV);
         }
     }

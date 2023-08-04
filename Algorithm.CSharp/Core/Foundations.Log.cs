@@ -1,15 +1,12 @@
 using QuantConnect.Algorithm.CSharp.Core.Events;
-using QuantConnect.Algorithm.CSharp.Core.Risk;
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Data;
 using QuantConnect.Orders;
-using QuantConnect.Orders.Fees;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -126,8 +123,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             LogRisk(@event.Symbol);
             LogPnL(@event.Symbol);
-            var trades = Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).Select(order => new Trade(this, order));
-            ExportToCsv(trades, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_{Time:yyyyMMddHHmmss}.csv"));
+            //var trades = Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).Select(order => new Trade(this, order));
+            //ExportToCsv(trades, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_{Time:yyyyMMddHHmmss}.csv"));
         }
 
         public string LogOrderEvent(OrderEvent orderEvent)
@@ -140,6 +137,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             string order_status_nm = orderEvent.Status.ToString();
             string order_direction_nm = orderEvent.Direction.ToString();
             string security_type_nm = security.Type.ToString();
+            Symbol underlying = orderEvent.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[orderEvent.Symbol]).Underlying.Symbol : orderEvent.Symbol;
             string symbol = orderEvent.Symbol.ToString();
             string tag = Humanize(new Dictionary<string, string>
             {
@@ -158,7 +156,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "PriceUnderlying", orderEvent.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[orderEvent.Symbol]).Underlying.Price.ToString() : "" },
                 { "BestBid", security.BidPrice.ToString() },
                 { "BestAsk", security.AskPrice.ToString() },
-                { "Delta2Mean", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.FillPrice : orderEvent.FillPrice - MidPrice(symbol)).ToString() }
+                { "Delta2Mean", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.FillPrice : orderEvent.FillPrice - MidPrice(symbol)).ToString() },
+                { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001).ToString() : "" },
+                { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001).ToString() : "" },
+                { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001).ToString() : "" },
+                { "IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVBid[symbol].EWMA.ToString() : "" },
+                { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVAsk[symbol].EWMA.ToString() : "" },
             });
             Log(tag);
             return tag;
@@ -187,10 +190,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "topic", "PnL" },
                 { "Symbol", $"{symbol ?? "Portfolio"}" },
                 { "TotalPortfolioValueQC", Portfolio.TotalPortfolioValue.ToString() },
-                { "TotalPortfolioValueQCSinceStart", (Portfolio.TotalPortfolioValue - TotalPortfolioValueSinceStart).ToString() },
+                { "PnLClose", (Portfolio.TotalPortfolioValue - TotalPortfolioValueSinceStart).ToString() },
                 { "Cash",  Portfolio.Cash.ToString() },
                 { "TotalFeesQC", Portfolio.TotalFees.ToString() },
-                { "TotalNetProfitQC", Portfolio.TotalNetProfit.ToString() },
                 { "TotalUnrealizedProfitQC", Portfolio.TotalUnrealizedProfit.ToString() },
         };
             string tag = Humanize(d1.Union(d1));

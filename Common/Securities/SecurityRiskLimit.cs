@@ -24,11 +24,16 @@ namespace QuantConnect.Securities
         /// Gets the security related to this event
         /// </summary>
         public Security Security { get; }
+        public decimal Delta100BpLong { get; }
         public decimal DeltaLongUSD { get; } = 1_000;
+        public decimal Delta100BpShort { get; }
         public decimal DeltaShortUSD { get; } = -200;
+        public decimal DeltaTarget { get => deltaTarget ?? (Delta100BpLong + Delta100BpShort) / 2; }
+        // if composed of individual deltsa below 0.5 (OTM) and assuming flat underlying, Delta will turn to 0 vs. 1 for deltas slightly above 0.5 (ITM).
         public decimal DeltaTargetUSD { get => deltaTargetUSD ?? (DeltaLongUSD + DeltaShortUSD) / 2; }
 
-        private decimal? deltaTargetUSD { get; set; } = null;
+        private decimal? deltaTarget { get; set; } = null;  // default to MidLong
+        private decimal? deltaTargetUSD { get; set; } = null;  // default to MidLong
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SecurityRiskLimit"/> class
@@ -36,13 +41,20 @@ namespace QuantConnect.Securities
         /// <param name="security">The security</param>
         public SecurityRiskLimit(
             Security security,
+            decimal delta100BpLong = 1,
+            decimal delta100BpShort = -1,
             decimal deltaLongUSD = 1_000,
             decimal deltaShortUSD = -200,
-            decimal? deltaTargetUSD = null)
+            decimal? deltaTarget = null,  // depends on OTM vs ITM.
+            decimal? deltaTargetUSD = null
+            )
         {
             Security = security;
+            Delta100BpLong = delta100BpLong;
             DeltaLongUSD = deltaLongUSD;
+            Delta100BpShort = delta100BpShort;
             DeltaShortUSD = deltaShortUSD;
+            this.deltaTarget = deltaTarget;
             this.deltaTargetUSD = deltaTargetUSD;
         }
     }

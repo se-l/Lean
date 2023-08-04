@@ -41,28 +41,29 @@ namespace QuantConnect.Algorithm.CSharp
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
             SetStartDate(2023, 5, 5);
-            SetEndDate(2023, 7, 7);
+            SetEndDate(2023, 7, 28);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
 
-            int volatilitySpan = 30;
+            int volatilityPeriodDays = 5;
 
-            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilitySpan));
+            SetSecurityInitializer(new SecurityInitializerIVExporter(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), volatilityPeriodDays));
 
             AssignCachedFunctions();
 
             // Subscriptions
             spy = AddEquity("SPY", resolution).Symbol;
             hedgeTicker = new List<string> { "SPY" };
-            //optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH", "PFE" };
-            optionTicker = new List<string> { "AES" };
+            optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH", "PFE" };
+            optionTicker = new List<string> { "HPE" };
             ticker = optionTicker.Concat(hedgeTicker).ToList();
+
 
             int subscriptions = 0;
             foreach (string ticker in ticker)
             {
-                var equity = AddEquity(ticker, resolution: Resolution.Second, fillForward: false);
+                var equity = AddEquity(ticker, resolution: resolution, fillForward: false);
 
                 subscriptions++;
                 equities.Add(equity.Symbol);
@@ -91,11 +92,14 @@ namespace QuantConnect.Algorithm.CSharp
         }
         public override void OnData(Slice data)
         {
+            // Add another instance of IVAsk Bid Windows trade trade only and save to disk under iv_deals. Trades better be stored in Tick data, not second data!!!!
+            // Generate Tick  iv trades.
             if (IsWarmingUp) return;
+            Symbol symbol;
 
             foreach (KeyValuePair<Symbol, QuoteBar> kvp in data.QuoteBars)
             {
-                Symbol symbol = kvp.Key;
+                symbol = kvp.Key;
                 if (symbol.SecurityType == SecurityType.Option && kvp.Value != null)
                 {
                     IVBids[symbol].Update(kvp.Value);
@@ -104,43 +108,16 @@ namespace QuantConnect.Algorithm.CSharp
                     RollingIVAsk[symbol].Update(IVAsks[symbol].Current);
                 }
             }
-        }
 
-        /// <summary>
-        /// For a given Symbol, warmup Underlying MidPrices and Option Bid/Ask to calculate implied volatility primarily. Add other indicators where necessary. 
-        /// Required for scoping new options as part of the dynamic universe.
-        /// Consider moving this into the SecurityInitializer.
-        /// </summary>
-        public void WarmUpSecurities(ICollection<Security> securities)
-        {
-            QuoteBar quoteBar;
-            Symbol symbol;
-            Dictionary<Symbol, decimal> underlyingMidPrice = new();
-
-            var history = History<QuoteBar>(securities.Select(sec => sec.Symbol), 60 * 7 * 5, Resolution.Minute, fillForward: false);
-
-            foreach (DataDictionary<QuoteBar> data in history)
+            foreach (KeyValuePair<Symbol, TradeBar> kvp in data.Bars)
             {
-                foreach (KeyValuePair<Symbol, QuoteBar> kvp in data)
+                symbol = kvp.Key;
+                if (symbol.SecurityType == SecurityType.Option && kvp.Value != null)
                 {
-                    symbol = kvp.Key;
-                    quoteBar = kvp.Value;
-                    if (quoteBar.Symbol.SecurityType == SecurityType.Equity)
-                    {
-                        underlyingMidPrice[symbol] = (quoteBar.Bid.Close + quoteBar.Ask.Close) / 2;
-                    }
-                    else if (quoteBar.Symbol.SecurityType == SecurityType.Option)
-                    {
-                        if (underlyingMidPrice.TryGetValue(quoteBar.Symbol.Underlying, out decimal underlyingMidPriceValue))
-                        {
-                            IVBids[symbol].Update(quoteBar, underlyingMidPriceValue);
-                            IVAsks[symbol].Update(quoteBar, underlyingMidPriceValue);
-                            RollingIVBid[symbol].Update(IVBids[symbol].Current);
-                            RollingIVAsk[symbol].Update(IVAsks[symbol].Current);
-                        }
-                    }
+                    IVTrades[symbol].Update(kvp.Value);
+                    RollingIVTrade[symbol].Update(IVTrades[symbol].Current);
                 }
-            };
+            }
         }
 
         public bool ContractInScope(Symbol symbol, decimal? priceUnderlying = null)
@@ -152,6 +129,68 @@ namespace QuantConnect.Algorithm.CSharp
                 //&& symbol.ID.StrikePrice >= midPriceUnderlying * 0.9m
                 //&& symbol.ID.StrikePrice <= midPriceUnderlying * 1.1m
                 ;
+        }
+
+        public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
+        {
+            Symbol symbol = security.Symbol;
+            if (!HistoryRequestValid(symbol) || HistoryProvider == null)
+            {
+                return Enumerable.Empty<BaseData>();
+            }
+
+            var result = new Dictionary<TickType, BaseData>();
+            Resolution? resolution = null;
+            Func<int, bool> requestData = period =>
+            {
+                var historyRequests = CreateBarCountHistoryRequests(new[] { symbol }, period)
+                    .Select(request =>
+                    {
+                        // For speed and memory usage, use Resolution.Minute as the minimum resolution
+                        request.Resolution = (Resolution)Math.Max((int)Resolution.Minute, (int)request.Resolution);
+                        // force no fill forward behavior
+                        request.FillForwardResolution = null;
+
+                        resolution = request.Resolution;
+                        return request;
+                    })
+                    // request only those tick types we didn't get the data we wanted
+                    .Where(request => !result.ContainsKey(request.TickType))
+                    .ToList();
+                foreach (var slice in History(historyRequests))
+                {
+                    for (var i = 0; i < historyRequests.Count; i++)
+                    {
+                        var historyRequest = historyRequests[i];
+                        var data = slice.Get(historyRequest.DataType);
+                        if (data.ContainsKey(symbol))
+                        {
+                            // keep the last data point per tick type
+                            result[historyRequest.TickType] = (BaseData)data[symbol];
+                        }
+                    }
+                }
+                // true when all history requests tick types have a data point
+                return historyRequests.All(request => result.ContainsKey(request.TickType));
+            };
+
+            if (!requestData(5))
+            {
+                if (resolution.HasValue)
+                {
+                    // If the first attempt to get the last know price returns null, it maybe the case of an illiquid security.
+                    // Use Quote data to return MidPrice
+                    var periods = Periods(security.Resolution, days: 5);
+                    requestData(periods);
+                }
+                else
+                {
+                    // this shouldn't happen but just in case
+                    Error($"QCAlgorithm.GetLastKnownPrices(): no history request was created for symbol {symbol} at {Time}");
+                }
+            }
+            // return the data ordered by time ascending
+            return result.Values.OrderBy(data => data.Time);
         }
 
         public int AddOptionIfScoped(Symbol option)
@@ -169,7 +208,7 @@ namespace QuantConnect.Algorithm.CSharp
                     decimal lastClose = historyUnderlying.Last().Close;
                     if (ContractInScope(symbol, lastClose))
                     {
-                        var optionContract = AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false);
+                        var optionContract = AddOptionContract(symbol, resolution: resolution, fillForward: false);
                         QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
                         susbcriptions++;
                     }
@@ -232,12 +271,11 @@ namespace QuantConnect.Algorithm.CSharp
                 Symbol symbol = option.Symbol;
                 
                 var dataDirectory = @"C:\repos\trade\data";
-                var filePath = LeanData.GenerateZipFilePath(dataDirectory, symbol, Time, option.Resolution, TickType.Quote);
-                filePath = filePath.ToString();
-                filePath = filePath.Replace("quote", "iv");
+                var filePath = LeanData.GenerateZipFilePath(dataDirectory, symbol, Time, option.Resolution, TickType.Quote).ToString();
+                string filePathQuote = filePath.Replace("quote", "iv_quote");
                 if (!File.Exists(filePath))
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePathQuote));
                 }
 
                 var bid = RollingIVBid[symbol].Window.Where(o => o.Time.Date == Time.Date);
@@ -257,7 +295,7 @@ namespace QuantConnect.Algorithm.CSharp
                         
                     });
 
-                string csv = ToCsv(outerJoin);
+                string csv = ToCsv(outerJoin, new List<string>() { "Time", "UnderlyingMidPrice", "BidPrice", "BidIV", "AskPrice", "AskIV" });
                 // remove first header line of csv
                 if (!string.IsNullOrEmpty(csv)) 
                 {
@@ -265,15 +303,48 @@ namespace QuantConnect.Algorithm.CSharp
                 }                
 
                 string underlying = symbol.ID.Underlying.Symbol.ToString();
-                string entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_american_{symbol.ID.OptionRight}_{symbol.ID.StrikePrice * 10000m}_{symbol.ID.Date:yyyyMMdd}.csv".ToLower();
-                using (streamWriter = new ZipStreamWriter(filePath, entryName, overwrite:true))
+                string entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_quote_american_{symbol.ID.OptionRight}_{symbol.ID.StrikePrice * 10000m}_{symbol.ID.Date:yyyyMMdd}.csv".ToLower();
+                using (streamWriter = new ZipStreamWriter(filePathQuote, entryName, overwrite:true))
                 {
                     streamWriter.WriteLine(csv);
                 }
                 RollingIVBid[symbol].Reset();
                 RollingIVAsk[symbol].Reset();
 
+
+                string filePathTrade = filePath.Replace("quote", "iv_trade");
+                var trade = RollingIVTrade[symbol].Window.Where(o => o.Time.Date == Time.Date);
+                var csvLines = trade.Select(t => new
+                {
+                    Time = (int)(t.Time.TimeOfDay.TotalSeconds * 1000),
+                    t.UnderlyingMidPrice,
+                    t.Price,
+                    t.IV
+                });
+                csv = ToCsv(csvLines, new List<string>() { "Time", "UnderlyingMidPrice", "Price", "IV" });
+                // remove first header line of csv
+                if (!string.IsNullOrEmpty(csv))
+                {
+                    csv = csv.Substring(csv.IndexOf(Environment.NewLine) + Environment.NewLine.Length);
+                }
+
+                entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_trade_american_{symbol.ID.OptionRight}_{symbol.ID.StrikePrice * 10000m}_{symbol.ID.Date:yyyyMMdd}.csv".ToLower();
+                using (streamWriter = new ZipStreamWriter(filePathTrade, entryName, overwrite: true))
+                {
+                    streamWriter.WriteLine(csv);
+                }
+                RollingIVTrade[symbol].Reset();
             }
+        }
+
+        public override void OnEndOfDay(Symbol symbol)
+        {
+            if (IsWarmingUp)
+            {
+                return;
+            }
+
+            Log($"Time: {Time}");
         }
     }
 }

@@ -1,18 +1,15 @@
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
+using QuantConnect.Data.Market;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
-    public partial class Foundations: QCAlgorithm
+    public partial class Foundations : QCAlgorithm
     {
-        private Dictionary<Option, decimal?> fairOptionPrices = new();
         public double GetLimitPrice()
         {
             // Intrinsice value
@@ -29,25 +26,90 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         public void TimeValue() { }
-        public decimal? GetFairOptionPrice(Option contract)
-        {
-            return (decimal)OptionContractWrap.E(this, contract).AnalyticalIVToPrice();
-        }
+        //public decimal? GetFairOptionPrice(Option contract)
+        //{
+        //    return (decimal)OptionContractWrap.E(this, contract).AnalyticalIVToPrice();
+        //}
 
         public decimal Position(Symbol symbol)
         {
             return Portfolio.ContainsKey(symbol) ? Portfolio[symbol].Quantity : 0m;
         }
 
+        public double SpreadFactor(decimal position, OrderDirection orderDirection)
+        {
+            if (position != 0)  // Already in Market. Turnover inventory!
+            {
+                /// Looking to offer a better price for contracts that reduce portfolio risk.
+                /// 1) If contract is in my inventory - try get rid of it earning the spread!
+                return orderDirection switch
+                {
+                    OrderDirection.Buy => -0.05,
+                    OrderDirection.Sell => 1,
+                    _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
+                };
+            }
+            else
+            {
+                // No position yet. Patiently wait for good entry. Transact on right side of bid ask spread, stay market maker.
+                // Selling Straddles till expiry strategy. Keeping it, only sell if very good exit.
+                return orderDirection switch
+                {
+                    OrderDirection.Buy => -0.05,
+                    OrderDirection.Sell => 1.05,
+                    _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
+                };
+            }
+        }
+
+        public decimal? SmoothedIVPrice(OptionContractWrap ocw, OrderDirection orderDirection, double spreadFactor)
+        {
+            // Bid IV is quote often 0, hence Price would come back as null.
+            // The IV Spread gets becomes considerably larger for Bid IV 0, going from suddenly ~20% to 0%. Therefore a Mid IV of ~25% can quickly be ~15%.
+            // Hence in the presence of 0, may want to price without any spreadFactor.
+            Symbol symbol = ocw.Contract.Symbol;
+            decimal? smoothedIVPrice;
+
+            double bidIV = RollingIVBid[symbol].GetCurrentExOutlier(); // Using Current IV over ExOutlier improved cumulative annual return by ~2 USD per trade (~200 trades).
+            double askIV = RollingIVAsk[symbol].GetCurrentExOutlier(); // ExOutlier is a moving average of the last 100IVs. Doesnt explain why I quoted Selling at less than 90% of bid ask spread.
+            double iVSpread = (double)askIV - (double)bidIV;
+
+            smoothedIVPrice = orderDirection switch
+            {
+                OrderDirection.Buy => (decimal?)ocw.AnalyticalIVToPrice(hv: bidIV + iVSpread * spreadFactor),
+                OrderDirection.Sell => (decimal?)ocw.AnalyticalIVToPrice(hv: askIV - iVSpread * (1 - spreadFactor)),
+                _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
+            };
+            return smoothedIVPrice;
+        }
+
+        public decimal? SmoothedIVEWMAPrice(OptionContractWrap ocw, OrderDirection orderDirection, double spreadFactor)
+        {
+            Symbol symbol = ocw.Contract.Symbol;
+            decimal? smoothedIVPrice;
+            double bidIV = RollingIVBid[symbol].EWMA; // Using Current IV over ExOutlier improved cumulative annual return by ~2 USD per trade (~200 trades).
+            double askIV = RollingIVAsk[symbol].EWMA; // ExOutlier is a moving average of the last 100IVs. Doesnt explain why I quoted Selling at less than 90% of bid ask spread.
+            double iVSpread = (double)askIV - (double)bidIV;
+            // Log(symbol.ToString() + " " + bidIV.ToString() + " " + askIV.ToString() + " " + iVSpread.ToString() + " " + spreadFactor.ToString());
+            smoothedIVPrice = orderDirection switch
+            {
+                OrderDirection.Buy => (decimal?)ocw.AnalyticalIVToPrice(hv: bidIV + iVSpread * spreadFactor),
+                OrderDirection.Sell => (decimal?)ocw.AnalyticalIVToPrice(hv: askIV - iVSpread * (1 - spreadFactor)),
+                _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
+            };
+            return smoothedIVPrice;
+        }
+
         /// <summary>
         /// Consider making spreadfactor a function of the forecasted volatility (long mean) and current volatility (short mean). all implied. Then hold until vega earned.
         /// </summary>
-        public decimal PriceOptionPfRiskAdjusted(Option option, OrderDirection orderDirection)
+        public decimal PriceOptionPfRiskAdjusted(Option option, OrderDirection orderDirection, bool ewmaBased = true)
         {
             // Move to pricing...
             // Prices options based on portfolio risk, intrinsic value, time value, IV/market bid ask, HV forecasts, dividends, liquidity of contract, interest rate.
-            //
+            
             Symbol symbol = option.Symbol;
+            decimal? smoothedIVPrice;
             decimal price;
             decimal bidPrice = Securities[symbol].BidPrice;
             decimal askPrice = Securities[symbol].AskPrice;
@@ -63,9 +125,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             decimal priceSpread = askPrice - bidPrice;
             decimal position = Position(symbol);
-            decimal? smoothedIVPrice;
-            double spreadFactor;
-            OptionContractWrap ocw = OptionContractWrap.E(this, option);
+            
+            double spreadFactor = SpreadFactor(position, orderDirection);
+            OptionContractWrap ocw = OptionContractWrap.E(this, option, 1);
 
             if (!RollingIVBid.ContainsKey(symbol) || !RollingIVAsk.ContainsKey(symbol))
             {
@@ -73,59 +135,24 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return 0;
             }
 
-            double bidIV = RollingIVBid[symbol].GetCurrentExOutlier();
-            double askIV = RollingIVAsk[symbol].GetCurrentExOutlier();
-            double iVSpread = askIV - bidIV;
-
-            if (position != 0)  // Already in Market. Turnover inventory!
+            if (ewmaBased)
             {
-                /// Looking to offer a better price for contracts that reduce portfolio risk.
-                /// 1) If contract is in my inventory - try get rid of it earning the spread!
-                spreadFactor = orderDirection switch
-                {
-                    OrderDirection.Buy => 0.2,
-                    OrderDirection.Sell => 0.8,
-                    _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
-                };
+                // EWMA
+                smoothedIVPrice = SmoothedIVEWMAPrice(ocw, orderDirection, spreadFactor);
+                price = smoothedIVPrice ?? 0;
             }
             else
             {
-                // No position yet. Patiently wait for good entry. Transact on right side of bid ask spread, stay market maker.
-                
-                spreadFactor = orderDirection switch
+                // BBA -  Pricing at or worse than bid ask
+                smoothedIVPrice = SmoothedIVPrice(ocw, orderDirection, spreadFactor);
+                if (smoothedIVPrice == null) { return 0; }
+                price = orderDirection switch
                 {
-                    OrderDirection.Buy => 0.15,
-                    OrderDirection.Sell => 0.85,
+                    OrderDirection.Buy => Math.Min(bidPrice + (decimal)spreadFactor * priceSpread, (decimal)smoothedIVPrice),
+                    OrderDirection.Sell => Math.Max(askPrice - (1 - (decimal)spreadFactor) * priceSpread, (decimal)smoothedIVPrice),
                     _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
                 };
             }
-
-            //double bidIVLong = RollingIVBid[symbol].LongMean;
-            //double askIVLong = RollingIVAsk[symbol].LongMean;
-            //double iVSpreadLong = askIV - bidIV;
-            //var longMeanIVPrice = orderDirection switch
-            //{
-            //    OrderDirection.Buy => (decimal?)ocw.AnalyticalIVToPrice(hv: bidIVLong + iVSpreadLong * spreadFactor),
-            //    OrderDirection.Sell => (decimal?)ocw.AnalyticalIVToPrice(hv: askIVLong - iVSpreadLong * (1 - spreadFactor)),
-            //    _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
-            //};
-
-            smoothedIVPrice = orderDirection switch
-            {
-                OrderDirection.Buy => (decimal?)ocw.AnalyticalIVToPrice(hv: bidIV + iVSpread * spreadFactor),
-                OrderDirection.Sell => (decimal?)ocw.AnalyticalIVToPrice(hv: askIV - iVSpread * (1 - spreadFactor)),
-                _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
-            };
-
-            if (smoothedIVPrice == 0) { return 0; }
-
-            //price = (decimal)smoothedIVPrice;
-            price = orderDirection switch
-            {
-                OrderDirection.Buy => Math.Min(bidPrice + (decimal)spreadFactor * priceSpread, smoothedIVPrice ?? bidPrice),
-                OrderDirection.Sell => Math.Max(askPrice - (1 - (decimal)spreadFactor) * priceSpread, smoothedIVPrice ?? askPrice),
-                _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
-            };
 
             //QuickLog(new Dictionary<string, string>() { 
             //    { "topic", "PRICING" }, 

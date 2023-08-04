@@ -32,7 +32,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             //}
             //Get the range of prices in the last bar:
             var orderDirection = order.Direction;
-            var prices = GetPricesCheckingPythonWrapper(asset, orderDirection);
+            var prices = GetPrices(asset, orderDirection);
             var pricesEndTime = prices.EndTime.ConvertToUtc(asset.Exchange.TimeZone);
 
             // do not fill on stale data
@@ -42,7 +42,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             switch (orderDirection)
             {
                 case OrderDirection.Buy:
-                    //Buy limit seeks lowest price
+                    
                     if (prices.Low <= limitPrice)
                     {
                         //Set order fill:
@@ -56,8 +56,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
                     }
                     break;
                 case OrderDirection.Sell:
-                    //Sell limit seeks highest price possible
-                    if (prices.High > limitPrice)
+                    
+                    if (prices.High > limitPrice || (prices.High == limitPrice && asset.AskPrice > limitPrice))  // better: if AskPrice was lowered after my limitPrice, I should be filled, first in order book.
                     {
                         fill.Status = OrderStatus.Filled;
                         // fill at the worse price this bar or the limit price, this allows far out of the money limits
@@ -116,7 +116,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
 
             // Quote
             var quoteBar = asset.Cache.GetData<QuoteBar>();
-            if (quoteBar != null && subscriptionTypes.Contains(typeof(QuoteBar)))
+            var tradeBar = asset.Cache.GetData<TradeBar>();
+
+            if (tradeBar != null && quoteBar != null && tradeBar.EndTime == quoteBar.EndTime && subscriptionTypes.Contains(typeof(TradeBar)) && subscriptionTypes.Contains(typeof(QuoteBar)))
+            {
+                var bar = direction == OrderDirection.Sell ? quoteBar.Bid : quoteBar.Ask;
+                if (bar != null)
+                {
+                    open = bar.Open;
+                    high = Math.Max(bar.High, tradeBar.High);
+                    low = Math.Min(bar.Low, tradeBar.Low);
+                    close = bar.Close;
+                }
+            }
+
+            else if (quoteBar != null && subscriptionTypes.Contains(typeof(QuoteBar)))
             {
                 var bar = direction == OrderDirection.Sell ? quoteBar.Bid : quoteBar.Ask;
                 if (bar != null)
@@ -126,8 +140,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             }
 
             // Trade
-            var tradeBar = asset.Cache.GetData<TradeBar>();
-            if (tradeBar != null && subscriptionTypes.Contains(typeof(TradeBar)))
+            else if (tradeBar != null && subscriptionTypes.Contains(typeof(TradeBar)))
             {
                 return new Prices(tradeBar);  // getting trade ticks that are better fills than quote bar. unrealistically good fills.
             }

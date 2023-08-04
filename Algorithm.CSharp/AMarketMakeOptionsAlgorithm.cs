@@ -28,12 +28,13 @@ using QuantConnect.Util;
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Algorithm.CSharp.Core.Events;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
 using QuantConnect.Configuration;
 using QuantConnect.Securities.Option;
 using QuantConnect.Scheduling;
-using Newtonsoft.Json;
+using QuantConnect.Securities.Equity;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
+using System.Globalization;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -49,7 +50,7 @@ namespace QuantConnect.Algorithm.CSharp
         private DateTime endOfDay;
         DiskDataCacheProvider _diskDataCacheProvider = new();
         string dataDirectory = Config.Get("C:\\repos\\trade\\dataLive");
-        Dictionary <(Resolution, Symbol, TickType), LeanDataWriter> writers = new();
+        Dictionary<(Resolution, Symbol, TickType), LeanDataWriter> writers = new();
 
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
@@ -58,10 +59,11 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 5, 15);
-            //SetStartDate(2023, 6, 30);
-            SetEndDate(2023, 7, 7);
-            SetCash(10_000);
+            SetStartDate(2023, 5, 16);
+            SetEndDate(2023, 5, 28);
+            //SetStartDate(2023, 7, 5);
+            //SetEndDate(2023, 7, 13);
+            SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             UniverseSettings.Leverage = 5;
@@ -72,25 +74,24 @@ namespace QuantConnect.Algorithm.CSharp
             }
 
             mmWindow = new MMWindow(new TimeSpan(9, 30, 15), new TimeSpan(16, 00, 0) - ScheduledEvent.SecurityEndOfDayDelta);
-            int volatilitySpan = 30;
+            int volatilityPeriodDays = 5;
             orderType = OrderType.Limit;
 
-            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilitySpan));
+            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), volatilityPeriodDays));
 
             AssignCachedFunctions();
 
-            string path = @"C:\repos\quantconnect\Lean\Algorithm.CSharp\Core\IVBounds.json";
-            string json = File.ReadAllText(path);
-
-            IVBounds = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<DateTime, List<List<Dictionary<DateTime, double>>>>>>(json);
+            //string path = @"C:\repos\quantconnect\Lean\Algorithm.CSharp\Core\IVBounds.json";
+            //string json = File.ReadAllText(path);
+            //IVBounds = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<DateTime, List<List<Dictionary<DateTime, double>>>>>>(json);
 
             // Subscriptions
             spy = AddEquity("SPY", resolution).Symbol;
             hedgeTicker = new List<string> { "SPY" };
             // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
-            optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH", "PFE" };
-            optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "FL", "AES", "LNT", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH", "PFE" };
-            optionTicker = new List<string> { "HPE", "AKAM", "IPG", "AOS" };
+            //optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH", "PFE" };
+            optionTicker = new List<string> { "AKAM", "HPE", "IPG", "AKAM", "AOS", "FL", "AES", "LNT", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH", "PFE" };
+            optionTicker = new List<string> { "HPE" };
             ticker = optionTicker.Concat(hedgeTicker).ToList();
 
             int subscriptions = 0;
@@ -119,22 +120,25 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(mmWindow.Start), RunSignals);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(mmWindow.End), CancelOpenTickets);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);            
+            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // too late. need to put liquidating order right after fill.
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), LogHealth);
+            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), RecordRisk);
 
             securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, spy, SecurityType.Equity);
             var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
             Log($"WarmUp TimeSpan: {timeSpan}");
             SetWarmUp(timeSpan);
 
-            foreach (var kvp in IVBounds)
-            {
-                foreach (var kvp2 in kvp.Value)
-                {
-                    SymbolBounds[Tuple.Create(kvp.Key, kvp2.Key)] = new Bounds(kvp2.Value[1][0], kvp2.Value[1][1], kvp2.Value[1][2]);
-                }
-            }
+            pathRiskRecords = Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_risk_records_{DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)}.csv");
+
+            //foreach (var kvp in IVBounds)
+            //{
+            //    foreach (var kvp2 in kvp.Value)
+            //    {
+            //        SymbolBounds[Tuple.Create(kvp.Key, kvp2.Key)] = new Bounds(kvp2.Value[1][0], kvp2.Value[1][1], kvp2.Value[1][2]);
+            //    }
+            //}
         }
         /// <summary>
         /// For a given Symbol, warmup Underlying MidPrices and Option Bid/Ask to calculate implied volatility primarily. Add other indicators where necessary. 
@@ -168,6 +172,10 @@ namespace QuantConnect.Algorithm.CSharp
                             IVAsks[symbol].Update(quoteBar, underlyingMidPriceValue);
                             RollingIVBid[symbol].Update(IVBids[symbol].Current);
                             RollingIVAsk[symbol].Update(IVAsks[symbol].Current);
+                            //if (symbol == "HPE   230818P00016000")
+                            //{
+                            //    Log($"{Time} {symbol} IVBids: {IVBids[symbol].Current} IVAsks: {IVAsks[symbol].Current} RollingIVBid: {RollingIVBid[symbol].EWMA} RollingIVAsk: {RollingIVAsk[symbol].EWMA}");
+                            //}
                         }
                     }
                 }
@@ -205,6 +213,17 @@ namespace QuantConnect.Algorithm.CSharp
                 PriceCache[symbol] = Securities[symbol].Cache.Clone();
             }
 
+            // Logging Fills
+            //foreach (KeyValuePair<Symbol, TradeBar> kvp in data.Bars)
+            //{
+            //    Symbol symbol = kvp.Key;
+            //    if (symbol.ID.SecurityType == SecurityType.Option)
+            //    {
+            //        Log($"{Time} OnData.FILL Detected: symbol: {symbol} Time: {kvp.Value.Time} Close: {kvp.Value.Close} Volume: {kvp.Value.Volume} RollingIVBid: {RollingIVBid[symbol].EWMA} RollingIVAsk: {RollingIVAsk[symbol].EWMA}" +
+            //            $"Best Bid: {Securities[symbol].BidPrice} Best Ask: {Securities[symbol].AskPrice}");
+            //    }
+            //}
+
             // Record data for next day comparison with history
 
             if (LiveMode)
@@ -216,7 +235,7 @@ namespace QuantConnect.Algorithm.CSharp
 
                     var writer = writers.TryGetValue((resolution, symbol, TickType.Quote), out LeanDataWriter dataWriter)
                         ? dataWriter
-                        : writers[(resolution, symbol, TickType.Quote)] = new LeanDataWriter(Resolution.Minute, symbol, dataDirectory, TickType.Quote, _diskDataCacheProvider);
+                        : writers[(resolution, symbol, TickType.Quote)] = new LeanDataWriter(resolution, symbol, dataDirectory, TickType.Quote, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
                     writer.Write(dataW);
                 }
 
@@ -227,7 +246,7 @@ namespace QuantConnect.Algorithm.CSharp
 
                     var writer = writers.TryGetValue((resolution, symbol, TickType.Trade), out LeanDataWriter dataWriter)
                         ? dataWriter
-                        : writers[(resolution, symbol, TickType.Quote)] = new LeanDataWriter(Resolution.Minute, symbol, dataDirectory, TickType.Trade, _diskDataCacheProvider);
+                        : writers[(resolution, symbol, TickType.Quote)] = new LeanDataWriter(resolution, symbol, dataDirectory, TickType.Trade, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
                     writer.Write(dataW);
                 }
             }
@@ -257,18 +276,80 @@ namespace QuantConnect.Algorithm.CSharp
                         orderEvent.UtcTime, PriceCache[symbol].BidPrice, PriceCache[symbol].AskPrice, PriceCache[symbol].Price,
                         ((Option)security).Underlying.Cache.BidPrice,
                         ((Option)security).Underlying.Cache.AskPrice,
-                        ((Option)security).Underlying.Cache.Price, 
+                        ((Option)security).Underlying.Cache.Price,
                         orderEvent.OrderFee
                         ),
-                        _ => new OrderFillData(Time, PriceCache[symbol].BidPrice, PriceCache[symbol].AskPrice, PriceCache[symbol].Price, fee: orderEvent.OrderFee) // Time is off.
+                    _ => new OrderFillData(Time, PriceCache[symbol].BidPrice, PriceCache[symbol].AskPrice, PriceCache[symbol].Price, fee: orderEvent.OrderFee) // Time is off.
                 };
             }
             PublishEvent(orderEvent);
         }
 
+        public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
+        {
+            Symbol symbol = security.Symbol;
+            if (!HistoryRequestValid(symbol) || HistoryProvider == null)
+            {
+                return Enumerable.Empty<BaseData>();
+            }
+
+            var result = new Dictionary<TickType, BaseData>();
+            Resolution? resolution = null;
+            Func<int, bool> requestData = period =>
+            {
+                var historyRequests = CreateBarCountHistoryRequests(new[] { symbol }, period)
+                    .Select(request =>
+                    {
+                        // For speed and memory usage, use Resolution.Minute as the minimum resolution
+                        request.Resolution = (Resolution)Math.Max((int)Resolution.Minute, (int)request.Resolution);
+                        // force no fill forward behavior
+                        request.FillForwardResolution = null;
+
+                        resolution = request.Resolution;
+                        return request;
+                    })
+                    // request only those tick types we didn't get the data we wanted
+                    .Where(request => !result.ContainsKey(request.TickType))
+                    .ToList();
+                foreach (var slice in History(historyRequests))
+                {
+                    for (var i = 0; i < historyRequests.Count; i++)
+                    {
+                        var historyRequest = historyRequests[i];
+                        var data = slice.Get(historyRequest.DataType);
+                        if (data.ContainsKey(symbol))
+                        {
+                            // keep the last data point per tick type
+                            result[historyRequest.TickType] = (BaseData)data[symbol];
+                        }
+                    }
+                }
+                // true when all history requests tick types have a data point
+                return historyRequests.All(request => result.ContainsKey(request.TickType));
+            };
+
+            if (!requestData(5))
+            {
+                if (resolution.HasValue)
+                {
+                    // If the first attempt to get the last know price returns null, it maybe the case of an illiquid security.
+                    // Use Quote data to return MidPrice
+                    var periods = Periods(security.Resolution, days: 5);
+                    requestData(periods);
+                }
+                else
+                {
+                    // this shouldn't happen but just in case
+                    Error($"QCAlgorithm.GetLastKnownPrices(): no history request was created for symbol {symbol} at {Time}");
+                }
+            }
+            // return the data ordered by time ascending
+            return result.Values.OrderBy(data => data.Time);
+        }
+
         public void RunSignals()
         {
-            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0]) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
             if (!OnWarmupFinishedCalled)
             {
                 OnWarmupFinished();
@@ -320,7 +401,8 @@ namespace QuantConnect.Algorithm.CSharp
             if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
 
             // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
-            Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec => {
+            Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
+            {
                 RemoveUniverseSecurity(sec);
             });
 
@@ -378,7 +460,7 @@ namespace QuantConnect.Algorithm.CSharp
                 string tag = Humanize(d1.Union(d2));
 
                 Log(tag);
-            }            
+            }
         }
 
         public override void OnEndOfDay(Symbol symbol)
@@ -396,21 +478,25 @@ namespace QuantConnect.Algorithm.CSharp
             Log($"TotalUnrealizedProfitQC: {Portfolio.TotalUnrealizedProfit}");
 
             Log($"TotalPortfolioValueMid: {pfRisk.PortfolioValue("Mid")}");
-            Log($"TotalPortfolioValueClose: {pfRisk.PortfolioValue("Close")}");
-            Log($"TotalPortfolioValueQC: {pfRisk.PortfolioValue("QC")}");
+            Log($"TotalPortfolioValueQC/Close: {pfRisk.PortfolioValue("QC")}");
             Log($"TotalPortfolioValueWorst: {pfRisk.PortfolioValue("Worst")}");
             Log($"TotalUnrealizedProfitMineExFees: {pfRisk.PortfolioValue("UnrealizedProfit")}");
-            Log($"AvgTradePnLMid: {pfRisk.PortfolioValue("AvgTradePnLMid")}");
+            Log($"PnLClose: {Portfolio.TotalPortfolioValue - TotalPortfolioValueSinceStart}");
             endOfDay = Time.Date;
 
-            var trades = Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).Select(order => new Trade(this, order));
-            ExportToCsv(trades, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_{Time:yyyyMMdd}.csv"));
-            ExportToCsv(TradesCumulative.Cumulative(this), Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_positions_{Time:yyMMdd}.csv"));
+            var positions = TradesCumulative.Cumulative(this);
+            //var trades = Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).Select(order => new Trade(this, order));
+            //ExportToCsv(trades, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_{Time:yyyyMMdd}.csv"));
+            ExportToCsv(positions, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_cumulative_{Time:yyMMdd}.csv"));
+            Log($"PnLMid: {positions.Select(p => p.PL).Sum()}");
+            Log($"PnlMidPerPosition: {pfRisk.PortfolioValue("AvgPositionPnLMid")}");
+            Log($"PnlMidPerOptionAbsQuantity: {pfRisk.PortfolioValue("PnlMidPerOptionAbsQuantity")}");
         }
 
         public override void OnEndOfAlgorithm()
         {
             OnEndOfDay();
+            fileHandleRiskRecords.Close();
             base.OnEndOfAlgorithm();
             _diskDataCacheProvider.DisposeSafely();
         }
@@ -424,7 +510,7 @@ namespace QuantConnect.Algorithm.CSharp
             foreach (Security security in Securities.Values)
             {
                 PublishEvent(new EventNewBidAsk(security.Symbol));
-                pfRisk.IsRiskLimitExceeded(security.Symbol);
+                pfRisk.IsRiskLimitExceededZM(security.Symbol);
             }
 
             // Get all Securities with non-zero position
@@ -459,16 +545,17 @@ namespace QuantConnect.Algorithm.CSharp
             Log($"Adding Open Transactions to OrderTickets: {openTransactions.Count()}");
             foreach (OrderTicket ticket in openTransactions)
             {
-                if (!orderTickets.ContainsKey(ticket.Symbol)) {
+                if (!orderTickets.ContainsKey(ticket.Symbol))
+                {
                     orderTickets[ticket.Symbol] = new List<OrderTicket>();
                 }
                 orderTickets[ticket.Symbol].Add(ticket);
             }
-            
+
             TotalPortfolioValueSinceStart = Portfolio.TotalPortfolioValue;
 
             pfRisk.ResetPositions();
-            
+
             CancelRiskIncreasingOrderTickets();
 
             LogRisk();
@@ -477,6 +564,26 @@ namespace QuantConnect.Algorithm.CSharp
             OnMarketOpen();
 
             OnWarmupFinishedCalled = true;
+        }
+        /// <summary>
+        /// Dumpy portfolio risk metrics by underlying to csv for outside plotting
+        /// </summary>
+        public void RecordRisk()
+        {
+            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
+
+            if (fileHandleRiskRecords == null)
+            {
+                fileHandleRiskRecords = new StreamWriter(pathRiskRecords, true);
+                fileHandleRiskRecords.AutoFlush = true;
+                fileHandleRiskRecords.Write(string.Join(",", riskRecordsHeader));
+            }
+            foreach (string ticker in optionTicker)
+            {
+                var riskRecords = new List<RiskRecord>() { pfRisk.GetRiskRecord((Equity)Securities[ticker]) };
+                string csv = ToCsv(riskRecords, riskRecordsHeader, skipHeader: true);
+                fileHandleRiskRecords.Write(csv);
+            }
         }
     }
 }
