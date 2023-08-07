@@ -91,8 +91,8 @@ namespace QuantConnect.ToolBox.Polygon
 
                 // Load settings from config.json
                 var dataDirectory = Config.Get("data-folder", "../../../Data");
-                var startDate = fromDate.ConvertToUtc(TimeZones.NewYork);
-                var endDate = toDate.ConvertToUtc(TimeZones.NewYork);  // turns UTC midnight into T-1 EST
+                var startDate = fromDate;  // .ConvertToUtc(TimeZones.NewYork);
+                var endDate = toDate;  // .ConvertToUtc(TimeZones.NewYork);  // midnight in command prompt in HK turns into midight +4 hours EST.
 
                 var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
 
@@ -100,7 +100,7 @@ namespace QuantConnect.ToolBox.Polygon
                 using var downloader = new PolygonDataDownloader();
                 IEnumerable<Symbol> symbols = tickers.Select(x => Symbol.Create(x, securityType, market));
 
-                var tradeDates = TradeDates(market, marketHoursDatabase, symbols.First(), startDate, endDate);
+                var tradeDates = TradeDates(market, marketHoursDatabase, symbols.First(), startDate, endDate.AddDays(-1));
                 Dictionary<Symbol, IEnumerable<DateTime>> symbolDates = new();  // Dont request options for dates where option was not issued yet
 
                 IEnumerable<Request> requests;
@@ -166,7 +166,7 @@ namespace QuantConnect.ToolBox.Polygon
                     
 
                     // Download the data
-                    var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, request.Start, request.End, request.TickType))
+                    var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, request.Start, request.End.AddDays(1), request.TickType))
                         .Select(x =>
                         {
                             x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);

@@ -182,7 +182,7 @@ namespace QuantConnect.ToolBox.IQFeed
         {
             Symbol symbol = _tickers.ContainsKey(ticker) ? _tickers[ticker] : Symbol.Empty;
 
-            if (symbol == Symbol.Empty && securityType == SecurityType.Option)
+            if (symbol == Symbol.Empty && ( securityType == SecurityType.Option || securityType == SecurityType.Base ))
             {
                 var equityOption = EquityOption.Parse(ticker);
                 OptionRight _optionRight = equityOption.Side switch
@@ -191,7 +191,9 @@ namespace QuantConnect.ToolBox.IQFeed
                     OptionSide.Put => OptionRight.Put,
                     _ => throw new NotImplementedException()
                 };
-                return Symbol.CreateOption(equityOption.EquitySymbol, market, OptionStyle.American, _optionRight, (decimal)equityOption.StrikePrice, equityOption.Expiration);
+                var parsedSymbol = Symbol.CreateOption(equityOption.EquitySymbol, market ?? Market.USA, OptionStyle.American, _optionRight, (decimal)equityOption.StrikePrice, equityOption.Expiration);
+                _tickers[ticker] = parsedSymbol;
+                return parsedSymbol;
             }
             else
             {
@@ -447,6 +449,25 @@ namespace QuantConnect.ToolBox.IQFeed
                             symbolCache[canonicalSymbol].EndPosition = currentPosition;
                         }
 
+                        //var optionContract = Symbol.CreateOption(optionUnderlying, Market.USA, OptionStyle.American, result.OptionRight, (decimal)result.OptionStrike, result.ExpirationDate);
+                        //if (!symbolCache.ContainsKey(optionContract))
+                        //{
+                        //    var placeholderSymbolData = new SymbolData
+                        //    {
+                        //        Symbol = optionContract,
+                        //        SecurityCurrency = Currencies.USD,
+                        //        SecurityExchange = Market.USA,
+                        //        StartPosition = prevPosition,
+                        //        EndPosition = currentPosition
+                        //    };
+
+                        //    symbolCache.Add(optionContract, placeholderSymbolData);
+                        //}
+                        //else
+                        //{
+                        //    symbolCache[optionContract].EndPosition = currentPosition;
+                        //}
+
                         break;
 
                     case "FOREX":
@@ -517,6 +538,19 @@ namespace QuantConnect.ToolBox.IQFeed
                             symbolCache[canonicalSymbol].EndPosition = currentPosition;
                         }
 
+                        break;
+
+                    case "STRIP":
+                        break;
+                    case "COMBINED_FUTURE":
+                        break;
+                    case "COMBINED_FOPTION":
+                        break;
+                    case "SPREAD":
+                        break;
+                    case "FOPTION":
+                        break;
+                    case "OPTION":
                         break;
 
                     default:

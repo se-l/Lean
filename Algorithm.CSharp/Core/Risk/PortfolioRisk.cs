@@ -282,6 +282,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal PositionOptions { get; internal set; }
         public decimal PositionOptionsUSD { get; internal set; }
 
+        public decimal PnL { get; internal set; }
+        public decimal MidPriceUnderlying { get; internal set; }
         public RiskRecord(Foundations algo, PortfolioRisk pfRisk, Equity equity)
         {
             Time = algo.Time;
@@ -298,6 +300,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             var optionHoldings = algo.Securities.Where(kvp => kvp.Key.SecurityType == SecurityType.Option && kvp.Key.Underlying == Symbol).Select(kvp => kvp.Value.Holdings);
             PositionOptions = optionHoldings.Select(h => h.Quantity).Sum();
             PositionOptionsUSD = optionHoldings.Select(h => h.HoldingsValue).Sum();
+
+            PnL = TradesCumulative.Cumulative(algo).Where(t => t.UnderlyingSymbol == Symbol).Select(t => t.PL).Sum();
+            MidPriceUnderlying = algo.MidPrice(Symbol);
         }
     }
 }

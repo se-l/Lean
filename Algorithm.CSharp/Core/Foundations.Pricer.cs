@@ -1,5 +1,4 @@
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
-using QuantConnect.Data.Market;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
@@ -36,16 +35,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return Portfolio.ContainsKey(symbol) ? Portfolio[symbol].Quantity : 0m;
         }
 
-        public double SpreadFactor(decimal position, OrderDirection orderDirection)
+        public double SpreadFactor(Option option, decimal position, OrderDirection orderDirection)
         {
+            // During embargo, may want to get out fast. Factor 0.5.
+            if (EarningsAnnouncements.Where(ea => ea.Symbol == option.Symbol && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any())
+            {
+                return 0.5;
+            }
+
             if (position != 0)  // Already in Market. Turnover inventory!
             {
                 /// Looking to offer a better price for contracts that reduce portfolio risk.
                 /// 1) If contract is in my inventory - try get rid of it earning the spread!
                 return orderDirection switch
                 {
-                    OrderDirection.Buy => -0.05,
-                    OrderDirection.Sell => 1,
+                    OrderDirection.Buy =>  0.05,
+                    OrderDirection.Sell => 0.95,
                     _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
                 };
             }
@@ -55,8 +60,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Selling Straddles till expiry strategy. Keeping it, only sell if very good exit.
                 return orderDirection switch
                 {
-                    OrderDirection.Buy => -0.05,
-                    OrderDirection.Sell => 1.05,
+                    OrderDirection.Buy =>  0.05,
+                    OrderDirection.Sell => 0.95,
                     _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
                 };
             }
@@ -126,7 +131,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal priceSpread = askPrice - bidPrice;
             decimal position = Position(symbol);
             
-            double spreadFactor = SpreadFactor(position, orderDirection);
+            double spreadFactor = SpreadFactor(option, position, orderDirection);
             OptionContractWrap ocw = OptionContractWrap.E(this, option, 1);
 
             if (!RollingIVBid.ContainsKey(symbol) || !RollingIVAsk.ContainsKey(symbol))

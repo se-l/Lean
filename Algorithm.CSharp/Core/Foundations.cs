@@ -10,6 +10,7 @@ using QuantConnect.Securities.Option;
 using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using System.IO;
+using Accord.Math;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -122,7 +123,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<OrderDirection, double> hedgingVolatilityBias = new() { { OrderDirection.Buy, 0.01 }, { OrderDirection.Sell, -0.01 } };
         public string pathRiskRecords;
         public StreamWriter fileHandleRiskRecords = null;
-        public readonly List<string> riskRecordsHeader = new() { "Time", "Symbol", "Delta", "DeltaOptions", "Gamma", "Vega", "Theta", "PositionUSD", "PositionUnderlying", "PositionUnderlyingUSD", "PositionOptions", "PositionOptionsUSD", };
+        public readonly List<string> riskRecordsHeader = new() { "Time", "Symbol", "Delta", "DeltaOptions", "Gamma", "Vega", "Theta", "PositionUSD", "PositionUnderlying", "PositionUnderlyingUSD", "PositionOptions", "PositionOptionsUSD", "PnL", "MidPriceUnderlying" };
+        public EarningsAnnouncement[] EarningsAnnouncements;
 
         public record MMWindow(TimeSpan Start, TimeSpan End);
 
@@ -280,6 +282,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Only 1 deal per contract. At the moment. IB wouldnt allow opposite orders.
                 // Without any position. Buy comes first here and sell gets rejected. That's bad. Skews delta towards Buy.
                 if (signals_out.Any(x => x.Symbol == signal.Symbol))
+                {
+                    continue;
+                }
+
+                // Respect trade regime embargo around earnings announcements. No new trade signals. Reducing risk still goes on in other functions!
+                if (EarningsAnnouncements.Where(ea => ea.Symbol == contract.Symbol && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any())
                 {
                     continue;
                 }

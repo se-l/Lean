@@ -58,9 +58,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.InteractiveBro
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.InteractiveBrokersBrokerage.ToolBox", "..\Lean.Brokerages.InteractiveBrokers\QuantConnect.InteractiveBrokersBrokerage.ToolBox\QuantConnect.InteractiveBrokersBrokerage.ToolBox.csproj", "{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IQFeed.CSharpApiClient", "..\..\IQFeed.CSharpApiClient\src\IQFeed.CSharpApiClient\IQFeed.CSharpApiClient.csproj", "{2D104199-4A3D-4FD7-9682-37DC800B517C}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IQFeed.CSharpApiClient.Examples", "..\..\IQFeed.CSharpApiClient\src\IQFeed.CSharpApiClient.Examples\IQFeed.CSharpApiClient.Examples.csproj", "{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IQFeed.CSharpApiClient", "..\IQFeed.CSharpApiClient\src\IQFeed.CSharpApiClient\IQFeed.CSharpApiClient.csproj", "{D755D1F7-846A-425A-97B4-2981DBDAD10F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -162,14 +160,10 @@ Global
 		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Release|Any CPU.Build.0 = Release|Any CPU
-		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D755D1F7-846A-425A-97B4-2981DBDAD10F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D755D1F7-846A-425A-97B4-2981DBDAD10F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D755D1F7-846A-425A-97B4-2981DBDAD10F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D755D1F7-846A-425A-97B4-2981DBDAD10F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

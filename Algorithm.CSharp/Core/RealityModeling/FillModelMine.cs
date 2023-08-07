@@ -124,7 +124,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
                 if (bar != null)
                 {
                     open = bar.Open;
-                    high = Math.Max(bar.High, tradeBar.High);
+                    high = Math.Max(bar.High, tradeBar.High);  // no mention whether it's a sell or buy trade. Needs better logic.
                     low = Math.Min(bar.Low, tradeBar.Low);
                     close = bar.Close;
                 }

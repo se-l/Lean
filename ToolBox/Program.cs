@@ -112,6 +112,7 @@ namespace QuantConnect.ToolBox
                     case "pdl":
                     case "polygondownloader":
                         tickTypes = optionsObject.ContainsKey("tick-types") ? ToolboxArgumentParser.GetTickTypes(optionsObject) : new List<string>() { "Trade", "Quote" };
+                        string skipExisting = optionsObject.TryGetValue("skip-existing", out var skipExistingObject) ? skipExistingObject.ToString() : "Y";
                         PolygonDownloaderProgram.PolygonDownloader(
                             tickers,
                             GetParameterOrExit(optionsObject, "security-type"),
@@ -120,7 +121,8 @@ namespace QuantConnect.ToolBox
                             fromDate,
                             toDate,
                             apiKey,
-                            tickTypes);
+                            tickTypes,
+                            skipExisting);
                         break;
 
                     case "avdl":
