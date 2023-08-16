@@ -197,7 +197,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             // delta/gamma gamma is unitless sensitivity. No scaling here.
             Option contract = (Option)Security;
-            return contract.ContractMultiplier * Quantity * Mid1Underlying;
+            return contract.ContractMultiplier * Mid1Underlying;
         }
 
         public virtual decimal DeltaImpliedTotal(double? volatility = null)
@@ -214,8 +214,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return SecurityType switch
             {
                 // Scaled price into a 1% change / 100BP. That changes times delta and position is risk of position moving by 1%. That's a hundreth of IB's 'Delta Dollar' metric.
-                SecurityType.Equity => (decimal)DeltaImplied(volatility) * Quantity * P1 * 100 * BP,
-                SecurityType.Option => (decimal)DeltaImplied(volatility) * TaylorTerm() * 100 * BP
+                SecurityType.Equity => (decimal)DeltaImplied(volatility) * Quantity * Mid1Underlying * 100 * BP,
+                SecurityType.Option => (decimal)DeltaImplied(volatility) * TaylorTerm() * 100 * BP * Quantity
             };
         }
 
@@ -227,14 +227,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 SecurityType.Option => (decimal)Delta() * ((Option)Security).ContractMultiplier * Quantity
             };
         }
+        public virtual decimal Delta100BpTotal()
+        {
+            return SecurityType switch
+            {
+                SecurityType.Equity => (decimal)Delta() * Mid1Underlying * 100 * BP * Quantity,
+                SecurityType.Option => (decimal)Delta() * Mid1Underlying * 100 * BP * ((Option)Security).ContractMultiplier * Quantity
+            };
+        }
 
-        public virtual decimal Delta100BpUSD() 
+        public virtual decimal Delta100BpUSDTotal()
         { 
             return SecurityType switch
                 {
                     // Scaled price into a 1% change / 100BP. That changes times delta and position is risk of position moving by 1%. That's a hundreth of IB's 'Delta Dollar' metric.
-                    SecurityType.Equity => (decimal)Delta() * Quantity * P1 * 100 * BP,
-                    SecurityType.Option => (decimal)Delta() * TaylorTerm() * 100 * BP
+                    SecurityType.Equity => (decimal)Delta() * Quantity * 100 * BP * Mid1Underlying,
+                    SecurityType.Option => (decimal)Delta() * TaylorTerm() * 100 * BP * Mid1Underlying * Quantity
                 };
         }
 
@@ -242,23 +250,31 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return GetGreeks1().Gamma;
         }
-        public virtual decimal Gamma100BpUSD 
+        public virtual decimal Gamma100BpTotal()
         {
-            get => SecurityType switch
+            return SecurityType switch
             {
-                SecurityType.Equity => 0,
-                SecurityType.Option => (decimal)(0.5 * Math.Pow((double)TaylorTerm(), 2) * Gamma() * Math.Pow((double)(100 * BP), 2))
+                SecurityType.Option => (decimal)Gamma() * Mid1Underlying * 100 * BP * Quantity,
+                _ => 0
+            };
+        }
+        public virtual decimal Gamma100BpUSDTotal()
+        {
+            return SecurityType switch
+            {
+                SecurityType.Option => (decimal)(0.5 * Math.Pow((double)TaylorTerm() * (double)(100 * BP), 2) * Gamma()) * Quantity,
+                _ => 0
             };
         }
 
-        public virtual decimal GammaTotal 
+        public virtual decimal GammaTotal()
         { 
-            get => SecurityType switch
-        {
-                SecurityType.Equity => 0,
-                SecurityType.Option => (decimal)Gamma() * ((Option)Security).ContractMultiplier * Quantity
+            return SecurityType switch
+            {
+                SecurityType.Option => (decimal)Gamma() * ((Option)Security).ContractMultiplier * Quantity,
+                _ => 0
             };
-               }
+        }
 
         // Below 2 simplifications assuming a pure options portfolio.
         public virtual double Theta() 
@@ -270,39 +286,35 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             get => SecurityType switch
             {
-                SecurityType.Equity => (decimal)Theta() * Quantity,
-                SecurityType.Option => (decimal)Theta() * ((Option)Security).ContractMultiplier * Quantity
+                SecurityType.Option => (decimal)Theta() * ((Option)Security).ContractMultiplier * Quantity,
+                _ => 0,
             };
         }
         public virtual decimal Theta1DayUSD() 
         {
-            return SecurityType switch
-            {
-                SecurityType.Equity => 0,
-                SecurityType.Option => (decimal)GetGreeks1().Theta * TaylorTerm() * 100*BP
-            };
+            return ThetaTotal * Mid1Underlying;
         }
 
         // Summing up individual vegas. Only applicable to Ppi constructed from options, not for Ppi(SPY or any index)
         public virtual double Vega() 
         {
-            return GetGreeks1().Vega;
+            return SecurityType switch
+            {
+                SecurityType.Option => GetGreeks1().Vega,
+                _ => 0
+            };
         }
         public virtual decimal Vega100BpUSD 
         { 
-            get => SecurityType switch
-            {
-                SecurityType.Equity => 0,
-                SecurityType.Option => (decimal)GetGreeks1().Vega * TaylorTerm() * 100*BP
-            };
+            get => VegaTotal * Mid1Underlying;
         }
 
         public virtual decimal VegaTotal
         { 
             get => SecurityType switch
             {
-                SecurityType.Equity => 0,
-                SecurityType.Option => (decimal)GetGreeks1().Vega * ((Option)Security).ContractMultiplier * Quantity
+                SecurityType.Option => (decimal)GetGreeks1().Vega * ((Option)Security).ContractMultiplier * Quantity,
+                _ => 0
             };
         }
 

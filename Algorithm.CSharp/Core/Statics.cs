@@ -56,6 +56,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
             typeof(Symbol), typeof(Security), typeof(SecurityType), typeof(SecurityType?)
         };
         public static decimal BP = 1m / 10_000m;
+        public static OrderDirection Num2Direction(decimal num)
+        {
+            if (num > 0)
+            {
+                return OrderDirection.Buy;
+            }
+            if (num < 0)
+            {
+                return OrderDirection.Sell;
+            }
+            if (num == 0)
+            {
+                return OrderDirection.Hold;
+            }
+            throw new Exception("Unknown direction");
+        }
         public static Dictionary<int, OrderDirection> NUM2DIRECTION = new()
         {
                 { 1, OrderDirection.Buy },
@@ -111,21 +127,40 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             Delta, // Unit free sensitivity
             DeltaTotal, // Sensitivity * Quantity * Multiplier
+            Delta100Bp, // Sensitivity * UnderlyingPrice / 100
+            Delta100BpTotal, // Sensitivity * (UnderlyingPrice / 100) * Quantity * Multiplier
+            Delta100BpUSDTotal, // Sensitivity * (UnderlyingPrice / 100) * Quantity * Multiplier
             DeltaMeanImplied, // Sensitivity * Quantity * Multiplier / n_OptionPositions
             DeltaTotalImplied, // Sensitivity * Quantity * Multiplier
             DeltaTotalZM, // Delta Zakamulin adjusted
             Delta100BpUSD,  // USD change for every 1% of underlying change
             Delta100BpUSDImplied,  // USD change for every 1% of underlying change
             Delta100BpUSDTotalImplied,
-            Gamma,
             EquityDeltaTotal,
+
+            Gamma,
+            GammaTotal,
+            Gamma100BpTotal,
+            Gamma100BpUSDTotal,
             Gamma100BpUSD,
+
             Theta,
+            ThetaTotal,
+            ThetaUSDTotal,
             Theta1DayUSD,
+
             Vega,
+            VegaTotal,
+            VegaUSDTotal,
             Vega100BpUSD,
+
+            // Bands
             BandZMLower,
             BandZMUpper,
+            GammaUpperStopBuying,
+            GammaLowerStopSelling,
+            GammaUpperContinuousHedge,
+            GammaLowerContinuousHedge,
         }
 
         public static decimal RoundTick(decimal x, decimal tickSize, bool? ceil = null, decimal? reference = null)

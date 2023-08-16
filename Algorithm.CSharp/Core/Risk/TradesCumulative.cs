@@ -2,6 +2,7 @@ using QuantConnect.Orders;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -34,7 +35,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public static IEnumerable<TradesCumulative> Cumulative(Foundations algo)
         {
             List<TradesCumulative> cumulativePositions = new();
-            var orders = algo.Transactions.GetOrders().Where(o => o.Status == OrderStatus.PartiallyFilled || o.Status == OrderStatus.Filled);
+            var orders = algo.Transactions.GetOrders().Where(o => o.Status == OrderStatus.PartiallyFilled || o.Status == OrderStatus.Filled).ToList();
+
+            //var dummyOrders = new List<Order>();
+            //foreach (Order order in orders.Where(o => o.Tag.Contains("Assignment")))
+            //{
+            //    // Add dummy trade to account for receiving stock after assignment
+            //    var dummyQuantity = -1 * OptionRight2Int[order.Symbol.ID.OptionRight] * order.Quantity * 100;
+            //    OptionExerciseOrder dummyEquityOrder = new(order.Symbol.ID.Underlying.Symbol, dummyQuantity, order.LastFillTime ?? order.Time, "Dummy Order Equity")
+            //    {
+            //        Status = OrderStatus.Filled
+            //    };
+            //    dummyOrders.Add(dummyEquityOrder);
+            //}
+            //orders.AddRange(dummyOrders);
+
+            //orders.Sort((Order o1, Order o2) => (int)((o1.LastFillTime ?? o1.Time) - (o2.LastFillTime ?? o2.Time)).TotalSeconds);
+
             foreach (var group in orders.GroupBy(o => o.Symbol))
             {
                 decimal position = 0;
@@ -44,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     position += order.Quantity;
                     if (prevOrder == null)
                     {
-                        // Starting deal                            
+                        // Starting deal
                         cumulativePositions.Add(new TradesCumulative(algo, order));
                     }
                     else

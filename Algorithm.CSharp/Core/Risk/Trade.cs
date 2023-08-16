@@ -173,11 +173,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             return Greeks1;
         }
-        public decimal Premium
+        public decimal ExtrinsicValue
         {
             get => SecurityType switch
             {
-                SecurityType.Option => PriceFillAvg - GetGreeks0().OCW.IntrinsicValue(Mid0Underlying),
+                SecurityType.Option => PriceFillAvg - ((Option)Security).GetPayOff(Mid0Underlying),
                 _ => 0
             };
         }

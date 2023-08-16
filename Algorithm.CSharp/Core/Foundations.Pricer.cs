@@ -4,6 +4,7 @@ using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System;
 using System.Linq;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -23,13 +24,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Option Liquidity
             return 0;
         }
-
-        public void TimeValue() { }
-        //public decimal? GetFairOptionPrice(Option contract)
-        //{
-        //    return (decimal)OptionContractWrap.E(this, contract).AnalyticalIVToPrice();
-        //}
-
         public decimal Position(Symbol symbol)
         {
             return Portfolio.ContainsKey(symbol) ? Portfolio[symbol].Quantity : 0m;
@@ -37,20 +31,24 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public double SpreadFactor(Option option, decimal position, OrderDirection orderDirection)
         {
-            // During embargo, may want to get out fast. Factor 0.5.
-            if (EarningsAnnouncements.Where(ea => ea.Symbol == option.Symbol && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any())
+            // Trade Embargo pricing.
+            if (
+                EarningsAnnouncements.Where(ea => ea.Symbol == option.Symbol && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()
+                || (option.Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
+                )
             {
                 return 0.5;
             }
+            // Gamma Hedge pricing. How does the pricer know this is a gamma hedge. Same calcs again???
 
-            if (position != 0)  // Already in Market. Turnover inventory!
+            if (position != 0)  // Already in Market. Turnover inventory! Get rid of this. Fairly rare, irrelevant starting conditions. Evetually alway gonna be in marketl...
             {
                 /// Looking to offer a better price for contracts that reduce portfolio risk.
                 /// 1) If contract is in my inventory - try get rid of it earning the spread!
                 return orderDirection switch
                 {
-                    OrderDirection.Buy =>  0.05,
-                    OrderDirection.Sell => 0.95,
+                    OrderDirection.Buy =>  1,
+                    OrderDirection.Sell => 1,
                     _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
                 };
             }
@@ -60,8 +58,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Selling Straddles till expiry strategy. Keeping it, only sell if very good exit.
                 return orderDirection switch
                 {
-                    OrderDirection.Buy =>  0.05,
-                    OrderDirection.Sell => 0.95,
+                    OrderDirection.Buy =>  1,
+                    OrderDirection.Sell => 1,
                     _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
                 };
             }
@@ -81,7 +79,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             smoothedIVPrice = orderDirection switch
             {
-                OrderDirection.Buy => (decimal?)ocw.AnalyticalIVToPrice(hv: bidIV + iVSpread * spreadFactor),
+                OrderDirection.Buy => (decimal?)ocw.AnalyticalIVToPrice(hv: bidIV + iVSpread * (1 - spreadFactor)),
                 OrderDirection.Sell => (decimal?)ocw.AnalyticalIVToPrice(hv: askIV - iVSpread * (1 - spreadFactor)),
                 _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
             };
@@ -98,40 +96,61 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Log(symbol.ToString() + " " + bidIV.ToString() + " " + askIV.ToString() + " " + iVSpread.ToString() + " " + spreadFactor.ToString());
             smoothedIVPrice = orderDirection switch
             {
-                OrderDirection.Buy => (decimal?)ocw.AnalyticalIVToPrice(hv: bidIV + iVSpread * spreadFactor),
+                OrderDirection.Buy => (decimal?)ocw.AnalyticalIVToPrice(hv: bidIV + iVSpread * (1 - spreadFactor)),
                 OrderDirection.Sell => (decimal?)ocw.AnalyticalIVToPrice(hv: askIV - iVSpread * (1 - spreadFactor)),
                 _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
             };
             return smoothedIVPrice;
         }
 
+        public double RiskSpreadDiscount(Symbol symbol, decimal quantity, double slope = 1)
+        {
+            double currentRisk = (double)pfRisk.DerivativesRiskByUnderlying(symbol, Metric.Gamma100BpTotal);
+            if (Math.Abs(currentRisk) < 0.2) { return 0; }
+
+            double riskIfFilled = (double)pfRisk.RiskAddedIfFilled(symbol, quantity, Metric.Gamma100BpTotal);
+            // the higher the absolute risk, the more discount towards reducing the risk.
+            double discount = Math.Max(-0.7, Math.Min(0.4, Math.Abs(currentRisk) * (1  - (currentRisk + riskIfFilled) / currentRisk)));
+            if (currentRisk < -0.7)
+            {
+                Log($"RiskSpreadDiscount. {symbol} {quantity} CurrentRisk: {currentRisk} riskIfFilled: {currentRisk + riskIfFilled} - Discount: {discount}");  // too much discount might depress the IVBuy into 0 price.
+            }
+            return discount;
+        }
+
         /// <summary>
         /// Consider making spreadfactor a function of the forecasted volatility (long mean) and current volatility (short mean). all implied. Then hold until vega earned.
         /// </summary>
-        public decimal PriceOptionPfRiskAdjusted(Option option, OrderDirection orderDirection, bool ewmaBased = true)
+        public decimal PriceOptionPfRiskAdjusted(Option option, decimal quantity, bool ewmaBased = true)
         {
-            // Move to pricing...
-            // Prices options based on portfolio risk, intrinsic value, time value, IV/market bid ask, HV forecasts, dividends, liquidity of contract, interest rate.
+            // Prices options based on portfolio risk (delta - just dont trade); gamma (higher price for bad gamma), extrinsic value (better price if much is captured), IV/market bid ask, HV forecasts, dividends, liquidity of contract, interest rate.
+
+            // Risk reduction
+            // Options with detrimental delta dont arrive here at the moment
+            // Gamma: (gamma pf + gammaIfFilled) -> 0 best price -1/1 worse prices. 0: 0.5 of spread. intercepting spreadfactor 1 at (tune: 0.5 gamma). beyond which spreadfactor is larger than 1.
+            // correction: form rewards trades, not where in portfolio we'end up, hence:   (gammaPfNow - gammaPfIfFilled) -> 0 best price -1/1 worse prices. 0: 0.5 of spread. intercepting spreadfactor 1 at (tune: 0.5 gamma). beyond which spreadfactor is larger than 1.
+
+            // Profit maximization
+            // For contracts where I expect higher volume, reduce the spread in order to maximise volume * spread. Usually spread covers hedging costs. So just for very liquid contracts, can offer better rates. Try for selected ones and plot! Fees more
+            // relevant then. Might only work at NasdaqQM.
             
             Symbol symbol = option.Symbol;
             decimal? smoothedIVPrice;
             decimal price;
-            decimal bidPrice = Securities[symbol].BidPrice;
-            decimal askPrice = Securities[symbol].AskPrice;
 
             // Need to avoid impacting myself... otherwise race to bottom pricing wise....
-            if (QuantityLimitOrdersOnPriceLevel(symbol, bidPrice) - Securities[symbol].BidSize == 0){
-                bidPrice -= TickSize(symbol);
-            }
-            if (QuantityLimitOrdersOnPriceLevel(symbol, askPrice) - Securities[symbol].AskSize == 0)
-            {
-                askPrice += TickSize(symbol);
-            }
+            //if (QuantityLimitOrdersOnPriceLevel(symbol, bidPrice) - Securities[symbol].BidSize == 0){
+            //    bidPrice -= TickSize(symbol);
+            //}
+            //if (QuantityLimitOrdersOnPriceLevel(symbol, askPrice) - Securities[symbol].AskSize == 0)
+            //{
+            //    askPrice += TickSize(symbol);
+            //}
 
-            decimal priceSpread = askPrice - bidPrice;
             decimal position = Position(symbol);
-            
-            double spreadFactor = SpreadFactor(option, position, orderDirection);
+            var orderDirection = Num2Direction(quantity);
+
+            double spreadFactor = SpreadFactor(option, position, orderDirection) - RiskSpreadDiscount(symbol, quantity);
             OptionContractWrap ocw = OptionContractWrap.E(this, option, 1);
 
             if (!RollingIVBid.ContainsKey(symbol) || !RollingIVAsk.ContainsKey(symbol))
@@ -148,6 +167,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             else
             {
+                decimal bidPrice = Securities[symbol].BidPrice;
+                decimal askPrice = Securities[symbol].AskPrice;
+                decimal priceSpread = askPrice - bidPrice;
                 // BBA -  Pricing at or worse than bid ask
                 smoothedIVPrice = SmoothedIVPrice(ocw, orderDirection, spreadFactor);
                 if (smoothedIVPrice == null) { return 0; }

@@ -9,6 +9,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public decimal UnderlyingMidPrice { get; }
         public decimal Price { get; }
         public double IV { get; }
+        public double? Delta { get; set; }
 
 
         public IVBidAsk(Symbol symbol, DateTime time, decimal underlyingMidPrice, decimal price, double iv)

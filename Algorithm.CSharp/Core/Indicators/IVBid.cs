@@ -23,7 +23,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Option = option;
         }
 
-        public void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null)
+        public void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null, bool calcDelta = false)
         {
             if (quoteBar == null || quoteBar.Bid == null || quoteBar.EndTime <= Time)
             {
@@ -34,6 +34,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Price = quoteBar.Bid.Close;
             IV = OptionContractWrap.E(algo, Option, 1, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
             Current = new IVBidAsk(Symbol, Time, UnderlyingMidPrice, Price, IV);
+        }
+        public void Update(IVBidAsk bar)
+        {
+            Time = bar.Time;
+            UnderlyingMidPrice = bar.UnderlyingMidPrice;
+            Price = bar.Price;
+            IV = bar.IV;
+            Current = bar;
+        }
+
+        public void SetDelta(double? delta = null)
+        {
+            Current.Delta = delta == null ? OptionContractWrap.E(algo, Option, 1, Time.Date).Delta() : delta;
         }
     }
 }

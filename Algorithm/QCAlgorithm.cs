@@ -1524,8 +1524,8 @@ namespace QuantConnect.Algorithm
             }
 
             //Validate:
-            //2. Check Range:
-            var yesterdayInAlgorithmTimeZone = DateTime.UtcNow.ConvertFromUtc(TimeZone).Date.AddDays(-1);
+            //2. Check Range:  Not correct
+            var yesterdayInAlgorithmTimeZone = DateTime.UtcNow.ConvertFromUtc(TimeZone).Date;
             if (end > yesterdayInAlgorithmTimeZone)
             {
                 end = yesterdayInAlgorithmTimeZone;

@@ -26,8 +26,8 @@ using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Algorithm.Framework.Selection;
 using QuantConnect.Data.Market;
 using QuantConnect.Scheduling;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Securities.Option;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -40,25 +40,26 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 5, 5);
-            SetEndDate(2023, 7, 28);
+            //SetStartDate(2023, 5, 5);
+            SetStartDate(2023, 8, 14);
+            SetEndDate(2023, 8, 15);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
 
             int volatilityPeriodDays = 5;
 
-            SetSecurityInitializer(new SecurityInitializerIVExporter(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), volatilityPeriodDays));
+            SetSecurityInitializer(new SecurityInitializerIVExporter(BrokerageModel, this, new FuncSecuritySeeder(DontSeedSecurity), volatilityPeriodDays));
 
             AssignCachedFunctions();
 
             // Subscriptions
             spy = AddEquity("SPY", resolution).Symbol;
             hedgeTicker = new List<string> { "SPY" };
-            optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH", "PFE" };
-            optionTicker = new List<string> { "HPE" };
+            optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
+            //optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE" };
+            optionTicker = new List<string> { "HPE", "IPG", "AKAM" };
             ticker = optionTicker.Concat(hedgeTicker).ToList();
-
 
             int subscriptions = 0;
             foreach (string ticker in ticker)
@@ -103,7 +104,9 @@ namespace QuantConnect.Algorithm.CSharp
                 if (symbol.SecurityType == SecurityType.Option && kvp.Value != null)
                 {
                     IVBids[symbol].Update(kvp.Value);
+                    IVBids[symbol].SetDelta();
                     IVAsks[symbol].Update(kvp.Value);
+                    IVAsks[symbol].SetDelta();
                     RollingIVBid[symbol].Update(IVBids[symbol].Current);
                     RollingIVAsk[symbol].Update(IVAsks[symbol].Current);
                 }
@@ -115,6 +118,7 @@ namespace QuantConnect.Algorithm.CSharp
                 if (symbol.SecurityType == SecurityType.Option && kvp.Value != null)
                 {
                     IVTrades[symbol].Update(kvp.Value);
+                    IVTrades[symbol].SetDelta();
                     RollingIVTrade[symbol].Update(IVTrades[symbol].Current);
                 }
             }
@@ -131,66 +135,9 @@ namespace QuantConnect.Algorithm.CSharp
                 ;
         }
 
-        public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
+        public IEnumerable<BaseData> DontSeedSecurity(Security security)
         {
-            Symbol symbol = security.Symbol;
-            if (!HistoryRequestValid(symbol) || HistoryProvider == null)
-            {
-                return Enumerable.Empty<BaseData>();
-            }
-
-            var result = new Dictionary<TickType, BaseData>();
-            Resolution? resolution = null;
-            Func<int, bool> requestData = period =>
-            {
-                var historyRequests = CreateBarCountHistoryRequests(new[] { symbol }, period)
-                    .Select(request =>
-                    {
-                        // For speed and memory usage, use Resolution.Minute as the minimum resolution
-                        request.Resolution = (Resolution)Math.Max((int)Resolution.Minute, (int)request.Resolution);
-                        // force no fill forward behavior
-                        request.FillForwardResolution = null;
-
-                        resolution = request.Resolution;
-                        return request;
-                    })
-                    // request only those tick types we didn't get the data we wanted
-                    .Where(request => !result.ContainsKey(request.TickType))
-                    .ToList();
-                foreach (var slice in History(historyRequests))
-                {
-                    for (var i = 0; i < historyRequests.Count; i++)
-                    {
-                        var historyRequest = historyRequests[i];
-                        var data = slice.Get(historyRequest.DataType);
-                        if (data.ContainsKey(symbol))
-                        {
-                            // keep the last data point per tick type
-                            result[historyRequest.TickType] = (BaseData)data[symbol];
-                        }
-                    }
-                }
-                // true when all history requests tick types have a data point
-                return historyRequests.All(request => result.ContainsKey(request.TickType));
-            };
-
-            if (!requestData(5))
-            {
-                if (resolution.HasValue)
-                {
-                    // If the first attempt to get the last know price returns null, it maybe the case of an illiquid security.
-                    // Use Quote data to return MidPrice
-                    var periods = Periods(security.Resolution, days: 5);
-                    requestData(periods);
-                }
-                else
-                {
-                    // this shouldn't happen but just in case
-                    Error($"QCAlgorithm.GetLastKnownPrices(): no history request was created for symbol {symbol} at {Time}");
-                }
-            }
-            // return the data ordered by time ascending
-            return result.Values.OrderBy(data => data.Time);
+            return Enumerable.Empty<BaseData>();
         }
 
         public int AddOptionIfScoped(Symbol option)
@@ -291,11 +238,12 @@ namespace QuantConnect.Algorithm.CSharp
                         BidPrice = bidItem?.Price,
                         BidIV = bidItem?.IV,
                         AskPrice = askItem?.Price,
-                        AskIV = askItem?.IV
-                        
+                        AskIV = askItem?.IV,
+                        BidDelta = bidItem?.Delta,
+                        AskDelta = askItem?.Delta
                     });
 
-                string csv = ToCsv(outerJoin, new List<string>() { "Time", "UnderlyingMidPrice", "BidPrice", "BidIV", "AskPrice", "AskIV" });
+                string csv = ToCsv(outerJoin, new List<string>() { "Time", "UnderlyingMidPrice", "BidPrice", "BidIV", "AskPrice", "AskIV", "BidDelta", "AskDelta" });
                 // remove first header line of csv
                 if (!string.IsNullOrEmpty(csv)) 
                 {
@@ -319,9 +267,10 @@ namespace QuantConnect.Algorithm.CSharp
                     Time = (int)(t.Time.TimeOfDay.TotalSeconds * 1000),
                     t.UnderlyingMidPrice,
                     t.Price,
-                    t.IV
+                    t.IV,
+                    t.Delta
                 });
-                csv = ToCsv(csvLines, new List<string>() { "Time", "UnderlyingMidPrice", "Price", "IV" });
+                csv = ToCsv(csvLines, new List<string>() { "Time", "UnderlyingMidPrice", "Price", "IV", "Delta" });
                 // remove first header line of csv
                 if (!string.IsNullOrEmpty(csv))
                 {

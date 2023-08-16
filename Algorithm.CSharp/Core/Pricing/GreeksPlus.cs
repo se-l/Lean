@@ -44,7 +44,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double VegaDecay { get => OCW?.VegaDecay() ?? 0; }  // dIVdT
         public double DVegadIV { get => OCW?.DVegadIV() ?? 0; }  // vomma
         public double Rho { get => OCW?.Rho() ?? 0; }  // dR ; sensitivity to interest rate
-        public double TheoreticalPrice { get => OCW?.TheoreticalPrice() ?? 0; }  // theoretical price
+        public double NPV { get => OCW?.NPV() ?? 0; }  // theoretical price
 
         //Delta100BpUSD = Positions.Sum(x => x.PfDelta100BpUSD);
         //Gamma100BpUSD = Positions.Sum(x => x.PfGamma100BpUSD);

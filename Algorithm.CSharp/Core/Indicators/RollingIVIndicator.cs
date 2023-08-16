@@ -39,8 +39,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         //public int halfLife = 2 * 6.5 * 60 * 60;
         // Count in events. HalfLife of 1,000 IV changes.
         // private double alpha = Math.Exp(Math.Log((0.5) / 1000));
-        private double alpha = 0.005;
-        private double gamma = 0.0001;
+        private double alpha = 0.005;  // HPE
+        private double gamma = 0.0001;  // HPE
+        //private double gamma = 0.00005;  // IPG
         private double eps;
 
         private double alphaSlow = 0.001;

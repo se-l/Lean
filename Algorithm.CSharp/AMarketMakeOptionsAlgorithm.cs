@@ -28,7 +28,6 @@ using QuantConnect.Util;
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Algorithm.CSharp.Core.Events;
-using QuantConnect.Configuration;
 using QuantConnect.Securities.Option;
 using QuantConnect.Scheduling;
 using QuantConnect.Securities.Equity;
@@ -36,6 +35,7 @@ using System.Globalization;
 using Newtonsoft.Json;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
+using QuantConnect.Configuration;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -50,7 +50,7 @@ namespace QuantConnect.Algorithm.CSharp
     {
         private DateTime endOfDay;
         DiskDataCacheProvider _diskDataCacheProvider = new();
-        string dataDirectory = Config.Get("C:\\repos\\trade\\dataLive");
+        string dataDirectory = Config.Get("data-folder");
         Dictionary<(Resolution, Symbol, TickType), LeanDataWriter> writers = new();
 
         /// <summary>
@@ -60,10 +60,11 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 6, 21);
-            //SetEndDate(2023, 6, 6);
-            //SetStartDate(2023, 7, 5);
-            SetEndDate(2023, 8, 1);
+            SetStartDate(2023, 6, 16);
+            //SetStartDate(2023, 7, 19);
+            //SetEndDate(2023, 7, 21);
+            SetEndDate(2023, 6, 16);
+            //SetEndDate(2023, 8, 11);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -82,22 +83,21 @@ namespace QuantConnect.Algorithm.CSharp
 
             AssignCachedFunctions();
 
-            //string path = @"C:\repos\quantconnect\Lean\Algorithm.CSharp\Core\IVBounds.json";
-            //string json = File.ReadAllText(path);
-            //IVBounds = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<DateTime, List<List<Dictionary<DateTime, double>>>>>>(json);
-
             // Subscriptions
             spy = AddEquity("SPY", resolution).Symbol;
             hedgeTicker = new List<string> { "SPY" };
             // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
-            //optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH", "PFE" };
-            optionTicker = new List<string> { "HPE" };
+            //optionTicker = new() { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
+            //optionTicker = new() { "HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" };  // Too much for 2 cores on a t3 instance.
+            optionTicker = new() { "HPE", "IPG", "AKAM" };
+            liquidateTicker = new() { };
+
             ticker = optionTicker.Concat(hedgeTicker).ToList();
 
             int subscriptions = 0;
             foreach (string ticker in ticker)
             {
-                var equity = AddEquity(ticker, resolution: Resolution.Second, fillForward: false);
+                var equity = AddEquity(ticker, resolution: resolution, fillForward: false);
 
                 subscriptions++;
                 equities.Add(equity.Symbol);
@@ -106,7 +106,8 @@ namespace QuantConnect.Algorithm.CSharp
                 {
                     var option = QuantConnect.Symbol.CreateCanonicalOption(equity.Symbol, Market.USA, $"?{equity.Symbol}");
                     options.Add(option);
-                    subscriptions += AddOptionIfScoped(option);
+                    var subscribedSymbols = AddOptionIfScoped(option);
+                    subscriptions += subscribedSymbols.Count;
                 }
             }
 
@@ -175,7 +176,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void OnData(Slice data)
         {
-            if (IsWarmingUp) return;
+            if (IsWarmingUp || Time.Date == new DateTime(2023, 8, 6)) return;
 
             // Likely want to replace WarmUp with history calls for RollingIV
             foreach (KeyValuePair<Symbol, QuoteBar> kvp in data.QuoteBars)
@@ -275,10 +276,19 @@ namespace QuantConnect.Algorithm.CSharp
             PublishEvent(orderEvent);
         }
 
+        public override void OnAssignmentOrderEvent(OrderEvent assignmentEvent)
+        {
+            Log(assignmentEvent.ToString());
+        }
+
         public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
         {
             Symbol symbol = security.Symbol;
-            if (!HistoryRequestValid(symbol) || HistoryProvider == null)
+            if (
+                security.Symbol.ID.Symbol.Contains("VolatilityBar")
+                || !HistoryRequestValid(symbol) 
+                || HistoryProvider == null
+                )
             {
                 return Enumerable.Empty<BaseData>();
             }
@@ -358,10 +368,11 @@ namespace QuantConnect.Algorithm.CSharp
             }
         }
 
-        public int AddOptionIfScoped(Symbol option)
+        public List<Symbol> AddOptionIfScoped(Symbol option)
         {
             int susbcriptions = 0;
             var contractSymbols = OptionChainProvider.GetOptionContractList(option, Time);
+            List<Symbol> subscribedSymbol = new();
             foreach (var symbol in contractSymbols)
             {
                 if (Securities.ContainsKey(symbol) && Securities[symbol].IsTradable) continue;  // already subscribed
@@ -373,9 +384,12 @@ namespace QuantConnect.Algorithm.CSharp
                     decimal lastClose = historyUnderlying.Last().Close;
                     if (ContractInScope(symbol, lastClose))
                     {
+                        var item = AddData<VolatilityBar>(symbol, resolution: Resolution.Second, fillForward: false);
+                        item.IsTradable = false;
+
                         var optionContract = AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false);
                         QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
-                        susbcriptions++;
+                        subscribedSymbol.Add(symbol);
                     }
                 }
                 else
@@ -383,7 +397,7 @@ namespace QuantConnect.Algorithm.CSharp
                     QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"No history for {symbolUnderlying}. Not subscribing to its options." } });
                 }
             }
-            return susbcriptions;
+            return subscribedSymbol;
         }
 
         public void UpdateUniverseSubscriptions()
@@ -503,11 +517,14 @@ namespace QuantConnect.Algorithm.CSharp
 
         public void OnMarketOpen()
         {
+            if (IsWarmingUp) { return; }
+
             PopulateOptionChains();
-            CancelRiskIncreasingOrderTickets();
+            CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
+            CancelGammaHedgeBeyondScope();
 
             // Trigger events
-            foreach (Security security in Securities.Values)
+            foreach (Security security in Securities.Values.Where(s => s.Type == SecurityType.Equity))  // because risk is hedged by underlying
             {
                 PublishEvent(new EventNewBidAsk(security.Symbol));
                 pfRisk.IsRiskLimitExceededZM(security.Symbol);
@@ -515,21 +532,6 @@ namespace QuantConnect.Algorithm.CSharp
 
             LogRisk();
             LogPnL();
-
-            foreach (var indicator in RollingIVBid.Values)
-            {
-                if (!indicator.IsReadyLongMean)
-                {
-                    Log($"RollingIVBid {indicator.Symbol} Bid not ready at startup. Samples {indicator.Samples}");
-                }
-            }
-            foreach (var indicator in RollingIVAsk.Values)
-            {
-                if (!indicator.IsReadyLongMean)
-                {
-                    Log($"RollingIVAsk {indicator.Symbol} Ask not ready at startup. Samples {indicator.Samples}");
-                }
-            }
         }
 
         public override void OnWarmupFinished()
@@ -549,7 +551,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             pfRisk.ResetPositions();
 
-            CancelRiskIncreasingOrderTickets();
+            CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
 
             LogRisk();
             LogPnL();
@@ -569,7 +571,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 fileHandleRiskRecords = new StreamWriter(pathRiskRecords, true);
                 fileHandleRiskRecords.AutoFlush = true;
-                fileHandleRiskRecords.Write(string.Join(",", riskRecordsHeader) + @"\r\n");
+                fileHandleRiskRecords.Write(string.Join(",", riskRecordsHeader) + "\r\n");
             }
             foreach (string ticker in optionTicker)
             {

@@ -90,7 +90,10 @@ namespace QuantConnect.Securities
 
                     if (!gotData)
                     {
-                        Log.Trace("FuncSecuritySeeder.SeedSecurity(): " + Messages.FuncSecuritySeeder.UnableToSeedSecurity(security));
+                        if (!security.Symbol.ID.Symbol.Contains("VolatilityBar"))
+                        {
+                            Log.Trace("FuncSecuritySeeder.SeedSecurity(): " + Messages.FuncSecuritySeeder.UnableToSeedSecurity(security));
+                        }
                         return false;
                     }
                 }

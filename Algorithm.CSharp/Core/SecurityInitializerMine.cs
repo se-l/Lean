@@ -6,6 +6,8 @@ using QuantConnect.Data.Market;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System.Collections.Generic;
+using System.Linq;
+using QuantConnect.Indicators;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -48,7 +50,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 };
                 security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: algo.Periods(days: VolatilityPeriodDays) / samplePeriods, algo.resolution, TimeSpan.FromSeconds(samplePeriods));
                 
-                foreach (var tradeBar in algo.HistoryWrap(security.Symbol, algo.Periods(days: VolatilityPeriodDays + 1), algo.resolution))
+                foreach (var tradeBar in algo.HistoryWrap(security.Symbol, algo.Periods(days: VolatilityPeriodDays + 2), algo.resolution))
                 {
                     security.VolatilityModel.Update(security, tradeBar);
                 }
@@ -84,12 +86,57 @@ namespace QuantConnect.Algorithm.CSharp.Core
             WarmUpSecurity(security);
         }
 
+        public void WarmUpSecurity(Security security)
+        {
+            VolatilityBar volBar;
+            Symbol symbol;
+
+            algo.Log($"SecurityInitializer.WarmUpSecurity: {security}");
+
+
+            if (security.Type == SecurityType.Option)
+            {
+                var option = (Option)security;
+
+                if (option.Underlying == null) return;
+                symbol = option.Symbol;
+                var volaSyms = algo.Securities.Keys.Where(s => s.Underlying == symbol);
+                var history = algo.History<VolatilityBar>(volaSyms, algo.Periods(days: 5), algo.resolution, fillForward: false);
+                foreach (DataDictionary<VolatilityBar> data in history)
+                {
+                    if (data.TryGetValue(volaSyms.First(), out volBar))
+                    {
+                        algo.RollingIVBid[symbol].Update(new IVBidAsk(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceBid.Close, (double)volBar.Bid.Close));
+                        algo.RollingIVAsk[symbol].Update(new IVBidAsk(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceAsk.Close, (double)volBar.Ask.Close));
+                    }
+                }
+                if (algo.RollingIVBid[symbol].Last != null)
+                {
+                    algo.IVBids[symbol].Update(algo.RollingIVBid[symbol].Last);
+                    algo.Log($"WarmUpSecurity.RollingIVBid {option.Symbol}: Samples: {algo.RollingIVBid[option.Symbol].Samples}");
+                }
+                else
+                {
+                    algo.Error($"WarmUpSecurity.RollingIVBid {symbol}. Missing IV Bid data. Not Warmed up. {algo.Periods(days: 7)} - {algo.resolution}");
+                }
+                if (algo.RollingIVAsk[symbol].Last != null)
+                {
+                    algo.IVAsks[symbol].Update(algo.RollingIVAsk[symbol].Last);
+                    algo.Log($"WarmUpSecurity.RollingIVAsk {option.Symbol}: Samples: {algo.RollingIVAsk[option.Symbol].Samples}");
+                }
+                else
+                {
+                    algo.Error($"WarmUpSecurity.RollingIVAsk {symbol}. Missing IV Ask data. Not Warmed up. {algo.Periods(days: 7)} - {algo.resolution}");
+                }
+            }
+        }
+
         /// <summary>
         /// Taking too long. May want to load historical IVs from list. Then just calculate EWMA load IV method... Loadings IVs requires much set up work... shortcut?
         /// Works for 1 day of testing securities....
         /// </summary>
         /// <param name="security"></param>
-        public void WarmUpSecurity(Security security)
+        public void WarmUpSecurityOnTheFlyIV(Security security)
         {
             QuoteBar quoteBar;
             QuoteBar quoteBarUnderlying;
@@ -123,7 +170,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         algo.IVAsks[symbol].Update(quoteBar, underlyingMidPrice);
                         algo.RollingIVBid[symbol].Update(algo.IVBids[symbol].Current);
                         algo.RollingIVAsk[symbol].Update(algo.IVAsks[symbol].Current);
-                    }   
+                    }
                 }
                 
                 algo.Log($"WarmUpSecurity.RollingIVBid {option.Symbol}: Samples: {algo.RollingIVBid[option.Symbol].Samples}");

@@ -596,6 +596,11 @@ namespace QuantConnect.Data
                         symbolData.AuxilliaryData.Add(datum);
                         break;
 
+                    case MarketDataType.VolatilityBar:
+                        symbolData.Type = SubscriptionType.Custom;
+                        symbolData.Custom = (VolatilityBar)datum;
+                        break;
+
                     default:
                         throw new ArgumentOutOfRangeException();
                 }
