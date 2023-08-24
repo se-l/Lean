@@ -56,6 +56,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
             typeof(Symbol), typeof(Security), typeof(SecurityType), typeof(SecurityType?)
         };
         public static decimal BP = 1m / 10_000m;
+        public static OrderDirection Num2Direction(decimal num)
+        {
+            if (num > 0)
+            {
+                return OrderDirection.Buy;
+            }
+            if (num < 0)
+            {
+                return OrderDirection.Sell;
+            }
+            if (num == 0)
+            {
+                return OrderDirection.Hold;
+            }
+            throw new Exception("Unknown direction");
+        }
         public static Dictionary<int, OrderDirection> NUM2DIRECTION = new()
         {
                 { 1, OrderDirection.Buy },
@@ -111,15 +127,40 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             Delta, // Unit free sensitivity
             DeltaTotal, // Sensitivity * Quantity * Multiplier
+            Delta100Bp, // Sensitivity * UnderlyingPrice / 100
+            Delta100BpTotal, // Sensitivity * (UnderlyingPrice / 100) * Quantity * Multiplier
+            Delta100BpUSDTotal, // Sensitivity * (UnderlyingPrice / 100) * Quantity * Multiplier
+            DeltaMeanImplied, // Sensitivity * Quantity * Multiplier / n_OptionPositions
             DeltaTotalImplied, // Sensitivity * Quantity * Multiplier
+            DeltaTotalZM, // Delta Zakamulin adjusted
             Delta100BpUSD,  // USD change for every 1% of underlying change
             Delta100BpUSDImplied,  // USD change for every 1% of underlying change
+            Delta100BpUSDTotalImplied,
+            EquityDeltaTotal,
+
             Gamma,
+            GammaTotal,
+            Gamma100BpTotal,
+            Gamma100BpUSDTotal,
             Gamma100BpUSD,
+
             Theta,
+            ThetaTotal,
+            ThetaUSDTotal,
             Theta1DayUSD,
+
             Vega,
-            Vega100BpUSD
+            VegaTotal,
+            VegaUSDTotal,
+            Vega100BpUSD,
+
+            // Bands
+            BandZMLower,
+            BandZMUpper,
+            GammaUpperStopBuying,
+            GammaLowerStopSelling,
+            GammaUpperContinuousHedge,
+            GammaLowerContinuousHedge,
         }
 
         public static decimal RoundTick(decimal x, decimal tickSize, bool? ceil = null, decimal? reference = null)
@@ -171,6 +212,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public static PropertyInfo[] GetProperties<T>(T obj) 
         {
             // typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);  Didnt work for GreeksPlus & PLExplain
+            if (obj is QCAlgorithm) {
+                return new PropertyInfo[0];
+            }
             return obj == null ? new PropertyInfo[0] : obj.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
         }
 
@@ -185,81 +229,40 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return logReturns;
         }
 
-        public static string ObjectToHeader<T>(T obj, string prefix="")
+        public static HashSet<string> ObjectsToHeaderNames<T>(T obj, string prefix = "")
         {
-            if (obj == null) return "";
+            if (obj == null || obj is QCAlgorithm)
+            {
+                return new HashSet<string>();
+            }
             if (obj.GetType() == typeof(Dictionary<Symbol, double>))
             {
                 var dict = (Dictionary<Symbol, double>)(object)obj;
-                var header = "";
+                var header = new HashSet<string>();
                 foreach (var key in dict.Keys)
                 {
-                    header += prefix + obj.GetType().Name + key.Value + ",";
+                    header.Add(prefix + obj.GetType().Name + key.Value);
                 }
                 return header;
             }
             else
             {
                 var properties = GetProperties(obj);
-                var header = "";
+                var header = new HashSet<string>();
                 foreach (var prop in properties)
                 {
                     if (PrimitiveTypes.Contains(prop.PropertyType) || ToStringTypes.Contains(prop.PropertyType))
                     {
-                        header += prefix + prop.Name + ",";
+                        header.Add(prefix + prop.Name);
                     }
                     else
                     {
-                        header += ObjectToHeader(prop.GetValue(obj), prefix: prefix + prop.Name + ".");
+                        header.UnionWith(ObjectsToHeaderNames(prop.GetValue(obj), prefix: prefix + prop.Name + "."));
                     }
                 }
                 return header;
             }
         }
-
-        public static string ObjectToCsv<T>(T obj)
-        {
-            if (obj == null) return "";
-            if (obj.GetType() == typeof(Dictionary<Symbol, double>))
-            {
-                var dict = (Dictionary<Symbol, double>)(object)obj;
-                var line = "";
-                foreach (var key in dict.Keys)
-                {
-                    line += dict[key] + ",";
-                }
-                return line;
-            }
-            else
-            {
-                var properties = GetProperties(obj);
-                var line = "";
-                foreach (var prop in properties)
-                {
-                    string value;
-                    if (PrimitiveTypes.Contains(prop.PropertyType) || ToStringTypes.Contains(prop.PropertyType))
-                    {
-                        try
-                        {
-                            value = prop.GetValue(obj)?.ToString() ?? "";
-                            value = value.Contains(",") ? "\"" + value + "\"" : value;
-                            value += ",";
-                        }
-                        catch
-                        {
-                            value = ",";
-                        }
-                    }
-                    else
-                    {
-                        value = ObjectToCsv(prop.GetValue(obj));
-                    }
-                    line += value;
-                }
-                return line;
-            }
-        }
-
         public static Symbol Underlying(Symbol symbol)
         {
             return symbol.SecurityType switch
@@ -270,48 +273,68 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
         }
 
-        public static string ToCsv<T>(IEnumerable<T> objects)
+        public static string ValueFromPropSequence<T>(T obj, string[] propSequence)
         {
-            if (objects == null || !objects.Any()) return "";
-            var header = ObjectToHeader(objects.First());  // Need to fix that for equity position, Greeks are null, hence no header is returned.
-
-            var csv = new StringBuilder();
-            csv.AppendLine(header);
-
-            var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            foreach (var obj in objects)
+            object val = null;
+            for (int i = 0; i < propSequence.Length; i++)
             {
-                if (obj == null) continue;
-                string line = "";
-                if (obj.GetType() == typeof(Dictionary<Symbol, double>))
+                if (i == 0)
                 {
-                    var dict = (Dictionary<Symbol, double>)(object)obj;
-                    foreach (var key in dict.Keys)
+                    if (obj.GetType() == typeof(Dictionary<Symbol, double>))  // && ((Dictionary<Symbol, double>)(object)obj).ContainsKey(propSequence[i])
                     {
-                        string value = dict[key].ToString() ?? "";
-                        value = value.Contains(",") ? "\"" + value + "\"" : value;
-                        line += value + ",";
+                        return "";
+                        //var dict = (Dictionary<Symbol, double>)(object)obj;
+                        //val = dict[propSequence[i]].ToString() ?? "";
+                    }
+                    else
+                    {
+                        val = obj.GetType().GetProperty(propSequence[i]).GetValue(obj);
                     }
                 }
                 else
                 {
-                    foreach (var prop in properties)
+                    if (val == null || val.GetType() == typeof(Dictionary<Symbol, double>))  // && ((Dictionary<Symbol, double>)(object)val).ContainsKey(propSequence[i])
                     {
-                        string value;
-                        if (PrimitiveTypes.Contains(prop.PropertyType) || ToStringTypes.Contains(prop.PropertyType))
-                        {
-                            value = prop.GetValue(obj)?.ToString() ?? "";
-                            value = value.Contains(",") ? "\"" + value + "\"" : value;
-                            value += ",";
-                        }
-                        else
-                        {
-                            value = ObjectToCsv(prop.GetValue(obj));
-                        }
-                        line += value;
+                        return "";
+                        //var dict = (Dictionary<Symbol, double>)(object)val;
+                        //val = dict[propSequence[i]].ToString() ?? "";
                     }
+                    else
+                    {
+                        try
+                        {
+                            val = val.GetType().GetProperty(propSequence[i]).GetValue(val);
+                        }
+                        catch
+                        {
+                            return "";
+                        }
+                    }                    
                 }
-                csv.AppendLine(line);
+            }
+            string value = val?.ToString() ?? "";
+            value = value.Contains(",") ? "\"" + value + "\"" : value;
+            return value;
+        }
+
+        public static string ToCsv<T>(IEnumerable<T> objects, List<string>? header = null, bool skipHeader = false)
+        {
+            if (objects == null || !objects.Any()) return "";
+            
+            List<string> headerNames = header ?? objects.ToList().SelectMany(x => ObjectsToHeaderNames(x)).Distinct().OrderBy(x => x).ToList();
+
+            var csv = new StringBuilder();
+            if (!skipHeader)
+            {
+                csv.AppendLine(string.Join(",", headerNames));
+            }
+
+            var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+            foreach (var obj in objects)
+            {
+                if (obj == null) continue;
+                csv.AppendLine(string.Join(",", headerNames.Select(name => ValueFromPropSequence(obj, name.Split(".")))));
             }
             return csv.ToString();
         }

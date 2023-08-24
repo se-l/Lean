@@ -108,7 +108,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             // Delta(OptionContract, Underlying) * Delta(Equity, Portfolio) / PortfolioQuantity(Equity)
             // This somehow presumes all underlying I have in my portfolio are perfectly correlated. A 1% change in PF implies a 1% change in all constituents. That's not realistic.
             Equity equity = (Equity)option.Underlying;
-            double optionDelta = OptionContractWrap.E(algo, option).Greeks(null, null).Delta;
+            double optionDelta = OptionContractWrap.E(algo, option, 1).Greeks(null, null).Delta;
             decimal quantityUnderlying = !Constituents.Any() ? Constituents?.FirstOrDefault(c => c.Symbol == equity.Symbol, null)?.Weight ?? 1 : 1;
             return optionDelta * Delta(equity) / (double)quantityUnderlying;
         }
@@ -117,7 +117,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             // Review. Delta(OptionContract, Underlying) * Delta(Equity, Portfolio) / PortfolioQuantity(Equity)
             Equity equity = (Equity)option.Underlying;
-            double optionGamma = OptionContractWrap.E(algo, option).Greeks(null, null).Gamma;
+            double optionGamma = OptionContractWrap.E(algo, option, 1).Greeks(null, null).Gamma;
             decimal quantityUnderlying = !Constituents.Any() ? Constituents?.FirstOrDefault(c => c.Symbol == equity.Symbol, null)?.Weight ?? 1 : 1;
             return optionGamma * Delta(equity) / (double)quantityUnderlying;
         }

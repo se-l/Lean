@@ -1,5 +1,4 @@
 using System;
-using QuantConnect.Data.Market;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {

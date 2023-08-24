@@ -278,7 +278,11 @@ Research/Notebooks
 #Docker result files
 Results/
 /Launcher/config.json
-/Report/config.json
+/Launcher/config.json
 /ToolBox/Properties/launchSettings.json
-/Launcher/Properties
+/Report/config.json
+/Launcher/Properties/Resources.Designer.cs
+/Launcher/Properties/Resources.resx
+/Launcher/config.json
 /Algorithm.CSharp/config.json
+/Launcher/Properties/launchSettings.json

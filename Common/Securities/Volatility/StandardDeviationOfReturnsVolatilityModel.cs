@@ -38,6 +38,7 @@ namespace QuantConnect.Securities
         private TimeSpan _periodSpan;
         private readonly object _sync = new object();
         private RollingWindow<double> _window;
+        private double _samplesPerDay;
 
         /// <summary>
         /// Gets the volatility of the security as a percentage
@@ -57,12 +58,35 @@ namespace QuantConnect.Securities
                     {
                         _needsUpdate = false;
                         var std = _window.StandardDeviation().SafeDecimalCast();
-                        _volatility = std * (decimal)Math.Sqrt(252.0);
+                        _volatility = std * (decimal)Math.Sqrt(252.0 * _samplesPerDay);
                     }
                 }
 
                 return _volatility;
             }
+        }
+
+        public double SamplesPerDay()
+        {
+            double nSamples;
+            switch (_resolution)
+            {
+                //case Resolution.Tick:
+                //    nSamples = (double)_window.Samples; // divide by number of days sampled over
+                case Resolution.Second:
+                    nSamples = 6.5 * 60 * 60 / _periodSpan.TotalSeconds;
+                    break;
+                case Resolution.Minute:
+                    nSamples = 6.5 * 60 / (_periodSpan.TotalSeconds / 60);
+                    break;
+                case Resolution.Hour:
+                    nSamples = 6.5 / (_periodSpan.TotalSeconds / (60*60));
+                    break;
+                default:
+                    nSamples = 1;
+                    break;
+            }
+            return nSamples;
         }
 
         /// <summary>
@@ -97,6 +121,7 @@ namespace QuantConnect.Securities
             _window = new RollingWindow<double>(periods);
             _resolution = resolution;
             _periodSpan = updateFrequency ?? resolution?.ToTimeSpan() ?? TimeSpan.FromDays(1);
+            _samplesPerDay = SamplesPerDay();
         }
 
         /// <summary>
@@ -132,6 +157,7 @@ namespace QuantConnect.Securities
         public override void Update(Security security, BaseData data)
         {
             var timeSinceLastUpdate = data.EndTime - _lastUpdate;
+            //decimal midPrice = (data.BidPrice + data.AskPrice) / 2m;
             if (timeSinceLastUpdate >= _periodSpan && data.Price > 0)
             {
                 lock (_sync)

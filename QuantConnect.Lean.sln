@@ -7,11 +7,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Lean.Launcher"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Lean.Engine", "Engine\QuantConnect.Lean.Engine.csproj", "{12156F46-D07E-4E3D-AD2B-7409E82AB62F}"
 	ProjectSection(ProjectDependencies) = postProject
-		{C5D44209-49A0-4505-A870-043C5EF5FDDF} = {C5D44209-49A0-4505-A870-043C5EF5FDDF}
-		{39A81C16-A1E8-425E-A8F2-1433ADB80228} = {39A81C16-A1E8-425E-A8F2-1433ADB80228}
-		{F2E90E2D-BA25-40E2-B39A-0BA31E68F7F8} = {F2E90E2D-BA25-40E2-B39A-0BA31E68F7F8}
-		{D6633172-1368-4DF6-9444-825C3E00C819} = {D6633172-1368-4DF6-9444-825C3E00C819}
 		{3240ACA4-BDD4-4D24-AC36-BBB651C39212} = {3240ACA4-BDD4-4D24-AC36-BBB651C39212}
+		{39A81C16-A1E8-425E-A8F2-1433ADB80228} = {39A81C16-A1E8-425E-A8F2-1433ADB80228}
+		{C5D44209-49A0-4505-A870-043C5EF5FDDF} = {C5D44209-49A0-4505-A870-043C5EF5FDDF}
+		{D6633172-1368-4DF6-9444-825C3E00C819} = {D6633172-1368-4DF6-9444-825C3E00C819}
+		{F2E90E2D-BA25-40E2-B39A-0BA31E68F7F8} = {F2E90E2D-BA25-40E2-B39A-0BA31E68F7F8}
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Algorithm", "Algorithm\QuantConnect.Algorithm.csproj", "{3240ACA4-BDD4-4D24-AC36-BBB651C39212}"
@@ -54,13 +54,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Optimizer", "O
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Optimizer.Launcher", "Optimizer.Launcher\QuantConnect.Optimizer.Launcher.csproj", "{D46D2A8D-340C-4B40-8EE6-6BAA7B1198AB}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.InteractiveBrokersBrokerage", "..\Lean.Brokerages.InteractiveBrokers\QuantConnect.InteractiveBrokersBrokerage\QuantConnect.InteractiveBrokersBrokerage.csproj", "{2BFCAC76-887A-4281-BEA4-388C9055CAE5}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IQFeed.CSharpApiClient", "..\IQFeed.CSharpApiClient\src\IQFeed.CSharpApiClient\IQFeed.CSharpApiClient.csproj", "{D755D1F7-846A-425A-97B4-2981DBDAD10F}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.InteractiveBrokersBrokerage.ToolBox", "..\Lean.Brokerages.InteractiveBrokers\QuantConnect.InteractiveBrokersBrokerage.ToolBox\QuantConnect.InteractiveBrokersBrokerage.ToolBox.csproj", "{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.IBAutomater", "..\IBAutomater\QuantConnect.IBAutomater\QuantConnect.IBAutomater.csproj", "{B820032D-7FA1-4BC9-83E8-3F4BF518F991}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IQFeed.CSharpApiClient", "..\..\IQFeed.CSharpApiClient\src\IQFeed.CSharpApiClient\IQFeed.CSharpApiClient.csproj", "{2D104199-4A3D-4FD7-9682-37DC800B517C}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IQFeed.CSharpApiClient.Examples", "..\..\IQFeed.CSharpApiClient\src\IQFeed.CSharpApiClient.Examples\IQFeed.CSharpApiClient.Examples.csproj", "{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.InteractiveBrokersBrokerage", "..\Lean.Brokerages.InteractiveBrokers\QuantConnect.InteractiveBrokersBrokerage\QuantConnect.InteractiveBrokersBrokerage.csproj", "{2624D793-1884-404B-B34A-164B98E34689}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -154,22 +152,18 @@ Global
 		{D46D2A8D-340C-4B40-8EE6-6BAA7B1198AB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D46D2A8D-340C-4B40-8EE6-6BAA7B1198AB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D46D2A8D-340C-4B40-8EE6-6BAA7B1198AB}.Release|Any CPU.Build.0 = Release|Any CPU
-		{2BFCAC76-887A-4281-BEA4-388C9055CAE5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2BFCAC76-887A-4281-BEA4-388C9055CAE5}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2BFCAC76-887A-4281-BEA4-388C9055CAE5}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2BFCAC76-887A-4281-BEA4-388C9055CAE5}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A02D7C26-44F3-49A8-9D51-E26F7BA3D4CC}.Release|Any CPU.Build.0 = Release|Any CPU
-		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2D104199-4A3D-4FD7-9682-37DC800B517C}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7F3BB51E-1A39-4D08-B376-8C551A8AF47C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D755D1F7-846A-425A-97B4-2981DBDAD10F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D755D1F7-846A-425A-97B4-2981DBDAD10F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D755D1F7-846A-425A-97B4-2981DBDAD10F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D755D1F7-846A-425A-97B4-2981DBDAD10F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B820032D-7FA1-4BC9-83E8-3F4BF518F991}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B820032D-7FA1-4BC9-83E8-3F4BF518F991}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B820032D-7FA1-4BC9-83E8-3F4BF518F991}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B820032D-7FA1-4BC9-83E8-3F4BF518F991}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2624D793-1884-404B-B34A-164B98E34689}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2624D793-1884-404B-B34A-164B98E34689}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2624D793-1884-404B-B34A-164B98E34689}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2624D793-1884-404B-B34A-164B98E34689}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

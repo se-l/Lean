@@ -26,8 +26,8 @@ using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Algorithm.Framework.Selection;
 using QuantConnect.Data.Market;
 using QuantConnect.Scheduling;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Securities.Option;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -40,29 +40,30 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 5, 5);
-            SetEndDate(2023, 7, 7);
+            SetStartDate(2023, 8, 21);
+            SetEndDate(2023, 8, 22);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
 
-            int volatilitySpan = 30;
+            int volatilityPeriodDays = 5;
 
-            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilitySpan));
+            SetSecurityInitializer(new SecurityInitializerIVExporter(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilityPeriodDays));
 
             AssignCachedFunctions();
 
             // Subscriptions
             spy = AddEquity("SPY", resolution).Symbol;
             hedgeTicker = new List<string> { "SPY" };
-            //optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH", "PFE" };
-            optionTicker = new List<string> { "AES" };
+            optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
+            //optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE" };
+            optionTicker = new List<string> { "HPE", "IPG", "AKAM" };
             ticker = optionTicker.Concat(hedgeTicker).ToList();
 
             int subscriptions = 0;
             foreach (string ticker in ticker)
             {
-                var equity = AddEquity(ticker, resolution: Resolution.Second, fillForward: false);
+                var equity = AddEquity(ticker, resolution: resolution, fillForward: false);
 
                 subscriptions++;
                 equities.Add(equity.Symbol);
@@ -85,73 +86,46 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
 
             securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, spy, SecurityType.Equity);
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(1).First();
+            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(2).First();
             Log($"WarmUp TimeSpan: {timeSpan}");
             SetWarmUp(timeSpan);
         }
         public override void OnData(Slice data)
         {
+            // Add another instance of IVAsk Bid Windows trade trade only and save to disk under iv_deals. Trades better be stored in Tick data, not second data!!!!
+            // Generate Tick  iv trades.
             if (IsWarmingUp) return;
+            Symbol symbol;
 
             foreach (KeyValuePair<Symbol, QuoteBar> kvp in data.QuoteBars)
             {
-                Symbol symbol = kvp.Key;
+                symbol = kvp.Key;
                 if (symbol.SecurityType == SecurityType.Option && kvp.Value != null)
                 {
                     IVBids[symbol].Update(kvp.Value);
+                    IVBids[symbol].SetDelta();
                     IVAsks[symbol].Update(kvp.Value);
+                    IVAsks[symbol].SetDelta();
                     RollingIVBid[symbol].Update(IVBids[symbol].Current);
                     RollingIVAsk[symbol].Update(IVAsks[symbol].Current);
                 }
             }
-        }
 
-        /// <summary>
-        /// For a given Symbol, warmup Underlying MidPrices and Option Bid/Ask to calculate implied volatility primarily. Add other indicators where necessary. 
-        /// Required for scoping new options as part of the dynamic universe.
-        /// Consider moving this into the SecurityInitializer.
-        /// </summary>
-        public void WarmUpSecurities(ICollection<Security> securities)
-        {
-            QuoteBar quoteBar;
-            Symbol symbol;
-            Dictionary<Symbol, decimal> underlyingMidPrice = new();
-
-            var history = History<QuoteBar>(securities.Select(sec => sec.Symbol), 60 * 7 * 5, Resolution.Minute, fillForward: false);
-
-            foreach (DataDictionary<QuoteBar> data in history)
+            foreach (KeyValuePair<Symbol, TradeBar> kvp in data.Bars)
             {
-                foreach (KeyValuePair<Symbol, QuoteBar> kvp in data)
+                symbol = kvp.Key;
+                if (symbol.SecurityType == SecurityType.Option && kvp.Value != null)
                 {
-                    symbol = kvp.Key;
-                    quoteBar = kvp.Value;
-                    if (quoteBar.Symbol.SecurityType == SecurityType.Equity)
-                    {
-                        underlyingMidPrice[symbol] = (quoteBar.Bid.Close + quoteBar.Ask.Close) / 2;
-                    }
-                    else if (quoteBar.Symbol.SecurityType == SecurityType.Option)
-                    {
-                        if (underlyingMidPrice.TryGetValue(quoteBar.Symbol.Underlying, out decimal underlyingMidPriceValue))
-                        {
-                            IVBids[symbol].Update(quoteBar, underlyingMidPriceValue);
-                            IVAsks[symbol].Update(quoteBar, underlyingMidPriceValue);
-                            RollingIVBid[symbol].Update(IVBids[symbol].Current);
-                            RollingIVAsk[symbol].Update(IVAsks[symbol].Current);
-                        }
-                    }
+                    IVTrades[symbol].Update(kvp.Value);
+                    IVTrades[symbol].SetDelta();
+                    RollingIVTrade[symbol].Update(IVTrades[symbol].Current);
                 }
-            };
+            }
         }
 
         public bool ContractInScope(Symbol symbol, decimal? priceUnderlying = null)
         {
-            decimal midPriceUnderlying = priceUnderlying ?? MidPrice(symbol.ID.Underlying.Symbol);
-            return midPriceUnderlying > 0
-                //&& symbol.ID.Date > Time + TimeSpan.FromDays(0)
-                && symbol.ID.OptionStyle == OptionStyle.American
-                //&& symbol.ID.StrikePrice >= midPriceUnderlying * 0.9m
-                //&& symbol.ID.StrikePrice <= midPriceUnderlying * 1.1m
-                ;
+            return symbol.ID.Date > Time.Date && symbol.ID.OptionStyle == OptionStyle.American;
         }
 
         public int AddOptionIfScoped(Symbol option)
@@ -163,33 +137,22 @@ namespace QuantConnect.Algorithm.CSharp
                 if (Securities.ContainsKey(symbol) && Securities[symbol].IsTradable) continue;  // already subscribed
 
                 Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
-                var historyUnderlying = HistoryWrap(symbolUnderlying, 30, Resolution.Daily).ToList();
-                if (historyUnderlying.Any())
+                if (ContractInScope(symbol))
                 {
-                    decimal lastClose = historyUnderlying.Last().Close;
-                    if (ContractInScope(symbol, lastClose))
-                    {
-                        var optionContract = AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false);
-                        QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
-                        susbcriptions++;
-                    }
+                    var optionContract = AddOptionContract(symbol, resolution: resolution, fillForward: false);
+                    QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
+                    susbcriptions++;
                 }
                 else
                 {
-                    QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"No history for {symbolUnderlying}. Not subscribing to its options." } });
+                    QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $" Not scoped {symbol}." } });
                 }
             }
             return susbcriptions;
         }
-
         public void UpdateUniverseSubscriptions()
         {
             if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
-
-            // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
-            Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec => {
-                RemoveUniverseSecurity(sec);
-            });
 
             // Add options that have moved into scope
             options.ForEach(s => AddOptionIfScoped(s));
@@ -227,17 +190,16 @@ namespace QuantConnect.Algorithm.CSharp
 
             foreach (var security in Securities.Values)
             {
-                if (security.Type != SecurityType.Option) continue;
+                if (security.Type != SecurityType.Option || security.IsDelisted) continue;
                 Option option = security as Option;
                 Symbol symbol = option.Symbol;
                 
                 var dataDirectory = @"C:\repos\trade\data";
-                var filePath = LeanData.GenerateZipFilePath(dataDirectory, symbol, Time, option.Resolution, TickType.Quote);
-                filePath = filePath.ToString();
-                filePath = filePath.Replace("quote", "iv");
+                var filePath = LeanData.GenerateZipFilePath(dataDirectory, symbol, Time, option.Resolution, TickType.Quote).ToString();
+                string filePathQuote = filePath.Replace("quote", "iv_quote");
                 if (!File.Exists(filePath))
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePathQuote));
                 }
 
                 var bid = RollingIVBid[symbol].Window.Where(o => o.Time.Date == Time.Date);
@@ -253,11 +215,12 @@ namespace QuantConnect.Algorithm.CSharp
                         BidPrice = bidItem?.Price,
                         BidIV = bidItem?.IV,
                         AskPrice = askItem?.Price,
-                        AskIV = askItem?.IV
-                        
+                        AskIV = askItem?.IV,
+                        BidDelta = bidItem?.Delta,
+                        AskDelta = askItem?.Delta
                     });
 
-                string csv = ToCsv(outerJoin);
+                string csv = ToCsv(outerJoin, new List<string>() { "Time", "UnderlyingMidPrice", "BidPrice", "BidIV", "AskPrice", "AskIV", "BidDelta", "AskDelta" });
                 // remove first header line of csv
                 if (!string.IsNullOrEmpty(csv)) 
                 {
@@ -265,15 +228,48 @@ namespace QuantConnect.Algorithm.CSharp
                 }                
 
                 string underlying = symbol.ID.Underlying.Symbol.ToString();
-                string entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_american_{symbol.ID.OptionRight}_{symbol.ID.StrikePrice * 10000m}_{symbol.ID.Date:yyyyMMdd}.csv".ToLower();
-                using (streamWriter = new ZipStreamWriter(filePath, entryName, overwrite:true))
+                string entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_quote_american_{symbol.ID.OptionRight}_{symbol.ID.StrikePrice * 10000m}_{symbol.ID.Date:yyyyMMdd}.csv".ToLower();
+                using (streamWriter = new ZipStreamWriter(filePathQuote, entryName, overwrite:true))
                 {
                     streamWriter.WriteLine(csv);
                 }
                 RollingIVBid[symbol].Reset();
                 RollingIVAsk[symbol].Reset();
 
+
+                string filePathTrade = filePath.Replace("quote", "iv_trade");
+                var trade = RollingIVTrade[symbol].Window.Where(o => o.Time.Date == Time.Date);
+                var csvLines = trade.Select(t => new
+                {
+                    Time = (int)(t.Time.TimeOfDay.TotalSeconds * 1000),
+                    t.UnderlyingMidPrice,
+                    t.Price,
+                    t.IV,
+                    t.Delta
+                });
+                csv = ToCsv(csvLines, new List<string>() { "Time", "UnderlyingMidPrice", "Price", "IV", "Delta" });
+                // remove first header line of csv
+                if (!string.IsNullOrEmpty(csv))
+                {
+                    csv = csv.Substring(csv.IndexOf(Environment.NewLine) + Environment.NewLine.Length);
+                }
+
+                entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_trade_american_{symbol.ID.OptionRight}_{symbol.ID.StrikePrice * 10000m}_{symbol.ID.Date:yyyyMMdd}.csv".ToLower();
+                using (streamWriter = new ZipStreamWriter(filePathTrade, entryName, overwrite: true))
+                {
+                    streamWriter.WriteLine(csv);
+                }
+                RollingIVTrade[symbol].Reset();
             }
+        }
+
+        public override void OnEndOfDay(Symbol symbol)
+        {
+            if (IsWarmingUp)
+            {
+                return;
+            }
+            Log($"Time: {Time}");
         }
     }
 }

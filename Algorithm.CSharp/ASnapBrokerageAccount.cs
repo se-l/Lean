@@ -17,7 +17,7 @@ using QuantConnect.Brokerages;
 using QuantConnect.Securities;
 using QuantConnect.Orders;
 using System.Linq;
-using QuantConnect.ToolBox.IQFeed.IQ;
+//using QuantConnect.ToolBox.IQFeed.IQ;
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 
@@ -37,10 +37,10 @@ namespace QuantConnect.Algorithm.CSharp
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
 
-            if (LiveMode)
-            {
-                SetOptionChainProvider(new IQOptionChainProvider());
-            }
+            //if (LiveMode)
+            //{
+            //    SetOptionChainProvider(new IQOptionChainProvider());
+            //}
             int volatilitySpan = 30;
 
             SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilitySpan));
@@ -89,22 +89,6 @@ namespace QuantConnect.Algorithm.CSharp
 
             LogRisk();
             LogPnL();
-
-            foreach (var indicator in RollingIVBid.Values)
-            {
-                if (!indicator.IsReadyLongMean)
-                {
-                    Log($"RollingIVBid {indicator.Symbol} Bid not ready at startup. Samples {indicator.Samples}");
-                }
-            }
-            foreach (var indicator in RollingIVAsk.Values)
-            {
-                if (!indicator.IsReadyLongMean)
-                {
-                    Log($"RollingIVAsk {indicator.Symbol} Ask not ready at startup. Samples {indicator.Samples}");
-                }
-            }
-
             LogToDisk();
         }
     }

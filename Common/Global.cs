@@ -342,7 +342,9 @@ namespace QuantConnect
         /// Option chain data (5)
         OptionChain,
         /// Futures chain data (6)
-        FuturesChain
+        FuturesChain,
+        /// Implied Volatilty
+        VolatilityBar
     }
 
     /// <summary>
@@ -383,7 +385,10 @@ namespace QuantConnect
         /// Quote type tick object (1)
         Quote,
         /// Open Interest type tick object (for options, futures) (2)
-        OpenInterest
+        OpenInterest,
+        IV_Quote,
+        IV_Trade
+
     }
 
     /// <summary>

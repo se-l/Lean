@@ -1,7 +1,9 @@
 using System;
+using System.Linq;
 using QuantConnect.Orders;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -23,8 +25,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 else if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)
                 {
                     // LogOnEventNewBidAsk(newBidAsk);  // Because Backtest and LiveTrading differ significantly in price update logs.
+                    RollingIVStrikeBid[newBidAsk.Symbol].RefreshSurface();
+                    RollingIVStrikeAsk[newBidAsk.Symbol].RefreshSurface();
+                    var scopedTickets = orderTickets.Keys.Where(k => k.SecurityType == SecurityType.Option && k.Underlying == newBidAsk.Symbol && orderTickets[k].Count > 0).ToList();  // ToList, avoid concurrent modification error
+                    foreach (Symbol symbol in scopedTickets)
+                    {
+                        UpdateLimitPrice(symbol);
+                    }
                     UpdateLimitPrice(newBidAsk.Symbol);
-                    pfRisk.IsRiskLimitExceeded(newBidAsk.Symbol);
+                    pfRisk.IsRiskLimitExceededZM(newBidAsk.Symbol);
+                    pfRisk.IsRiskLimitExceededGamma(newBidAsk.Symbol);
                     //EmitNewFairOptionPrices(newBidAsk.Symbol);
                 }
             }
@@ -33,8 +43,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 pfRisk.ResetPositions();
                 LogOnEventOrderFill(orderEvent);
-                CancelRiskIncreasingOrderTickets();
-                pfRisk.IsRiskLimitExceeded(orderEvent.Symbol);
+                CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
+                pfRisk.IsRiskLimitExceededZM(orderEvent.Symbol);
+                pfRisk.IsRiskLimitExceededGamma(orderEvent.Symbol);
+                
                 if (orderEvent.Symbol.SecurityType == SecurityType.Option)
                 {
                     OrderOppositeOrder(orderEvent.Symbol);
@@ -53,8 +65,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (@event is EventRiskLimitExceeded riskLimitExceeded)
             {
-                CancelRiskIncreasingOrderTickets();
-                HedgeOptionWithUnderlying(riskLimitExceeded.Symbol);
+                switch (riskLimitExceeded.LimitType)
+                {
+                    case RiskLimitType.Delta:
+                        CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
+                        HedgeOptionWithUnderlyingZM(riskLimitExceeded.Symbol);
+                        break;
+                    case RiskLimitType.Gamma:
+                        CancelRiskIncreasingOrderTickets(RiskLimitType.Gamma);
+                        HedgeGammaRisk(riskLimitExceeded.Symbol);
+                        break;
+                }
             }
         }
     }

@@ -103,6 +103,11 @@ namespace QuantConnect.Orders.Fees
                     break;
 
                 case SecurityType.Option:
+                    var a = 1;
+                    var _feeRatePerContract = new CashAmount(0.65m, "USD");
+                    feeResult = quantity * _feeRatePerContract.Amount;
+                    feeCurrency = _feeRatePerContract.Currency;
+                    break;
                 case SecurityType.IndexOption:
                     Func<decimal, decimal, CashAmount> optionsCommissionFunc;
                     if (!_optionFee.TryGetValue(market, out optionsCommissionFunc))
@@ -142,7 +147,7 @@ namespace QuantConnect.Orders.Fees
                     switch (market)
                     {
                         case Market.USA:
-                            equityFee = new EquityFee(Currencies.USD, feePerShare: 0.005m, minimumFee: 1, maximumFeeRate: 0.005m);
+                            equityFee = new EquityFee(Currencies.USD, feePerShare: 0.005m, minimumFee: 1.05m, maximumFeeRate: 0.01m);
                             break;
                         case Market.India:
                             equityFee = new EquityFee(Currencies.INR, feePerShare: 0.01m, minimumFee: 6, maximumFeeRate: 20);
@@ -220,7 +225,7 @@ namespace QuantConnect.Orders.Fees
                 optionsCommissionFunc = (orderSize, premium) =>
                 {
                     var commissionRate = premium >= 0.1m ?
-                                            0.7m :
+                                            0.65m :
                                             (0.05m <= premium && premium < 0.1m ? 0.5m : 0.25m);
                     return new CashAmount(Math.Max(orderSize * commissionRate, 1.0m), Currencies.USD);
                 };

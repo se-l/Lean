@@ -243,6 +243,7 @@ namespace QuantConnect.Brokerages.Backtesting
                 }
 
                 var stillNeedsScan = false;
+                Log.Debug($"{Algorithm.Time} - BacktestingBrokerage.Scan(): Starting scan...");
 
                 // process each pending order to produce fills/fire events
                 foreach (var kvp in _pending.OrderBySafe(x => x.Key))
@@ -289,23 +290,30 @@ namespace QuantConnect.Brokerages.Backtesting
                         continue;
                     }
 
-                    // verify sure we have enough cash to perform the fill
                     HasSufficientBuyingPowerForOrderResult hasSufficientBuyingPowerResult;
-                    try
+                    // verify sure we have enough cash to perform the fill
+                    if (false)
                     {
-                        var group = Algorithm.Portfolio.Positions.CreatePositionGroup(orders);
-                        hasSufficientBuyingPowerResult = group.BuyingPowerModel.HasSufficientBuyingPowerForOrder(
-                            new HasSufficientPositionGroupBuyingPowerForOrderParameters(Algorithm.Portfolio, group, orders)
-                        );
-                    }
-                    catch (Exception err)
-                    {
-                        // if we threw an error just mark it as invalid and remove the order from our pending list
-                        RemoveOrders(orders, OrderStatus.Invalid, err.Message);
+                        try
+                        {
+                            var group = Algorithm.Portfolio.Positions.CreatePositionGroup(orders);
+                            hasSufficientBuyingPowerResult = group.BuyingPowerModel.HasSufficientBuyingPowerForOrder(
+                                new HasSufficientPositionGroupBuyingPowerForOrderParameters(Algorithm.Portfolio, group, orders)
+                            );
+                        }
+                        catch (Exception err)
+                        {
+                            // if we threw an error just mark it as invalid and remove the order from our pending list
+                            RemoveOrders(orders, OrderStatus.Invalid, err.Message);
 
-                        Log.Error(err);
-                        Algorithm.Error($"Order Error: ids: [{string.Join(",", orders.Select(o => o.Id))}], Error executing margin models: {err.Message}");
-                        continue;
+                            Log.Error(err);
+                            Algorithm.Error($"Order Error: ids: [{string.Join(",", orders.Select(o => o.Id))}], Error executing margin models: {err.Message}");
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        hasSufficientBuyingPowerResult = new HasSufficientBuyingPowerForOrderResult(true, string.Empty);
                     }
 
                     var fills = new List<OrderEvent>();
