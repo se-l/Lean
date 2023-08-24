@@ -123,10 +123,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Metric.BandZMUpper => algo.CastGracefully(positions.Select(p => Math.Sign(p.Quantity) * p.BandZMUpper(volatility) * (double)p.Quantity * ((Option)p.Security).ContractMultiplier).Average()),
 
                 // To be tuned. Instead of hard ceiling on limit/-no-limit, rather adapt the prices.
-                Metric.GammaUpperStopBuying => 0.9m,
-                Metric.GammaLowerStopSelling => -0.9m,
-                Metric.GammaUpperContinuousHedge => 0.1m,
-                Metric.GammaLowerContinuousHedge => -0.00001m,
+                Metric.GammaUpperStopBuying => algo.GammaUpperStopBuying,
+                Metric.GammaLowerStopSelling => algo.GammaLowerStopSelling,
+                Metric.GammaUpperContinuousHedge => algo.GammaUpperContinuousHedge,
+                Metric.GammaLowerContinuousHedge => algo.GammaLowerContinuousHedge,
                 _ => throw new NotImplementedException(metric.ToString()),
             };
         }

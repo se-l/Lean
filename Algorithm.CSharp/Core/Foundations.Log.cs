@@ -165,6 +165,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVStrikeAsk[underlying].IV(symbol).ToString() : "" },
             });
             Log(tag);
+
+            if (orderStatusFilled.Contains(orderEvent.Status))
+            {
+                DiscordClient.Send(tag, DiscordChannel.Trades, LiveMode);
+            }
             return tag;
         }
 
@@ -179,6 +184,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             var d2 = pfRisk.ToDict(symbol).ToDictionary(x => x.Key, x => Math.Round(x.Value, 2).ToString());
             string tag = Humanize(d1.Union(d2));
             Log(tag);
+
+            DiscordClient.Send(tag, DiscordChannel.Status, LiveMode);
             return tag;
         }        
 
@@ -197,6 +204,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         };
             string tag = Humanize(d1.Union(d1));
             Log(tag);
+            DiscordClient.Send(tag, DiscordChannel.Status, LiveMode);
             return tag;
         }
     }
