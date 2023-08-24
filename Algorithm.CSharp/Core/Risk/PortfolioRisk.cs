@@ -123,8 +123,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Metric.BandZMUpper => algo.CastGracefully(positions.Select(p => Math.Sign(p.Quantity) * p.BandZMUpper(volatility) * (double)p.Quantity * ((Option)p.Security).ContractMultiplier).Average()),
 
                 // To be tuned. Instead of hard ceiling on limit/-no-limit, rather adapt the prices.
-                Metric.GammaUpperStopBuying => 1.3m,
-                Metric.GammaLowerStopSelling => -1.3m,
+                Metric.GammaUpperStopBuying => 0.9m,
+                Metric.GammaLowerStopSelling => -0.9m,
                 Metric.GammaUpperContinuousHedge => 0.1m,
                 Metric.GammaLowerContinuousHedge => -0.00001m,
                 _ => throw new NotImplementedException(metric.ToString()),
@@ -133,6 +133,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public decimal RiskAddedIfFilled(Symbol symbol, decimal quantity, Metric riskMetric)
         {
+            if (symbol.SecurityType == SecurityType.Option)
+            {
+                OptionContractWrap.E(algo, (Option)algo.Securities[symbol], 1).GreeksP();
+            }
             return (symbol.SecurityType, riskMetric) switch
             {
                 // Delta
@@ -200,7 +204,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             else if (method == "PnlMidPerOptionAbsQuantity")
             {
-                return Positions.Any() ? (algo.Portfolio.TotalPortfolioValue - algo.TotalPortfolioValueSinceStart) / Positions.Where(p => p.SecurityType == SecurityType.Option).Select(p=>Math.Abs(p.Quantity)).Sum() : 0;
+                return (Positions.Any() && Positions.Where(p => p.SecurityType == SecurityType.Option).Select(p => Math.Abs(p.Quantity)).Sum() > 0) ? (algo.Portfolio.TotalPortfolioValue - algo.TotalPortfolioValueSinceStart) / Positions.Where(p => p.SecurityType == SecurityType.Option).Select(p=>Math.Abs(p.Quantity)).Sum() : 0;
             }
             else
             {

@@ -429,6 +429,8 @@ namespace QuantConnect.Data.Market
             volBar.Bid.Open = volBar.Bid.High = volBar.Bid.Low = volBar.Bid.Close = streamReader.GetDecimal();
             volBar.PriceAsk.Open = volBar.PriceAsk.High = volBar.PriceAsk.Low = streamReader.GetDecimal();
             volBar.Ask.Open = volBar.Ask.High = volBar.Ask.Low = volBar.Ask.Close = streamReader.GetDecimal();
+            var BidDelta = streamReader.GetDecimal();
+            var AskDelta = streamReader.GetDecimal();
 
             volBar.Value = volBar.Close;
 

@@ -13,10 +13,26 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public override decimal Quantity { get => Order.Status == OrderStatus.Filled ? Order.Quantity : 0; }  // Ignore PartialFill for now. Likely need to reference ticket....
         public decimal Fee { get => Algo.orderFillDataTN1.TryGetValue(Order.Id, out OrderFillData ofd) ? -ofd.Fee : -1; }                
         public Order? Order { get; }
-        public decimal PriceFillAvg { get => Order?.Price ?? Security.Price; }
+        public decimal PriceFillAvg { get
+            {
+                if (Order.Type == OrderType.OptionExercise && Security.Type == SecurityType.Option)
+                {
+                    return 0;
+                }
+                else if (Order.Type == OrderType.OptionExercise && Security.Type == SecurityType.Equity)
+                {
+                    return Order?.OrderFillData.Price ?? Security.Price; // Should be strike price of the option and in Order.Price!
+                }
+                else
+                {
+                    return Order?.Price ?? Security.Price;
+                }
+                            }
+        }
         public DateTime FirstFillTime { get => (DateTime)(Order?.LastFillTime?.ConvertFromUtc(Algo.TimeZone) ?? Order?.Time); }
         public DateTime Ts0 { get => FirstFillTime; }
         public decimal P0 { get => PriceFillAvg; }
+        public override decimal P1 { get => (Order.Type == OrderType.OptionExercise && Security.Type == SecurityType.Option) ? 0 : Mid1; }
         public decimal BidTN1 { get; internal set; } = 0;
         public decimal AskTN1 { get; internal set; } = 0;
         public decimal MidTN1 { get => (BidTN1 + AskTN1) / 2; }
@@ -28,7 +44,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal AskTN1Underlying { get; } = 0;
         public decimal MidTN1Underlying { get => (BidTN1Underlying + AskTN1Underlying) / 2; }
         public decimal DPUnderlying { get => Mid1Underlying - Mid0Underlying; }
-        public decimal PL { get => (P1 - P0) * Quantity * Multiplier + Fee; }
+        public decimal PL {
+            get  
+                {
+                var pl = (P1 - P0) * Quantity * Multiplier + Fee;
+                return pl;
+            }
+        }
         public decimal UnrealizedProfit { get => TotalUnrealizedProfit(); }
         public PLExplain PLExplain { get => GetPLExplain(); }
         public Dictionary<Symbol, double> BetaUnderlying { get => new() { { Algo.spy, Algo.Beta(Algo.spy, UnderlyingSymbol, 20, Resolution.Daily) } }; }
@@ -103,14 +125,25 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 AskTN1Underlying = Algo.orderFillDataTN1[order.Id]?.AskPriceUnderlying ?? AskTN1;
             }
 
-            Bid0 = Order.OrderFillData.BidPrice;
-            Ask0 = Order.OrderFillData.AskPrice;
-            // Data issue. In rare instance. OrderFillData.Bid/MidPrice is 0. Filling with TN1
-            if (Bid0 == 0) Bid0 = BidTN1;
-            if (Ask0 == 0) Ask0 = AskTN1;
+            if (Order.Type == OrderType.OptionExercise && Security.Type == SecurityType.Option)
+            {
+                Bid0 = 0;
+                Ask0 = 0;
 
-            Bid0Underlying = SecurityType == SecurityType.Option ? Order.OrderFillData.BidPriceUnderlying ?? Bid0 : Bid0;
-            Ask0Underlying = SecurityType == SecurityType.Option ? Order.OrderFillData.AskPriceUnderlying ?? Ask0 : Ask0;
+                Bid0Underlying = Bid1Underlying;
+                Ask0Underlying = Ask1Underlying;
+            }
+            else
+            {
+                Bid0 = Order.OrderFillData.BidPrice;
+                Ask0 = Order.OrderFillData.AskPrice;
+                // Data issue. In rare instance. OrderFillData.Bid/MidPrice is 0. Filling with TN1
+                if (Bid0 == 0) Bid0 = BidTN1;
+                if (Ask0 == 0) Ask0 = AskTN1;
+
+                Bid0Underlying = SecurityType == SecurityType.Option ? Order.OrderFillData.BidPriceUnderlying ?? Bid0 : Bid0;
+                Ask0Underlying = SecurityType == SecurityType.Option ? Order.OrderFillData.AskPriceUnderlying ?? Ask0 : Ask0;
+            }
 
             GetGreeks0();
             GetGreeks1();

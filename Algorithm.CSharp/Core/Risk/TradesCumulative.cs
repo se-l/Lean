@@ -1,8 +1,9 @@
+using QuantConnect.Interfaces;
 using QuantConnect.Orders;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using System.Transactions;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -14,6 +15,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public override decimal Quantity { get => Position; }
         public override DateTime Ts1 { get => closingTrade?.Ts0 ?? base.Ts1; }
         public override decimal P1 { get => closingTrade?.P0 ?? base.P1; }
+        public override decimal Mid1 { get => closingTrade?.Mid0 ?? base.Mid1; }
         public override double IVPrice1 { get => closingTrade?.IVPrice0 ?? base.IVPrice1; }
         public override decimal Bid1 { get => closingTrade?.Bid0 ?? base.Bid1; }
         public override decimal Ask1 { get => closingTrade?.Ask0 ?? base.Ask1; }
@@ -34,23 +36,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         
         public static IEnumerable<TradesCumulative> Cumulative(Foundations algo)
         {
+            Func<Order, decimal> Strike = (Order o) => o.Symbol.ID.StrikePrice;
+            Func<int, Order> GetOrder = (int orderId) => algo.Transactions.GetOrderById(orderId);
+            Func<OptionExerciseOrder, Order> NewEquityExerciseOrder = (OptionExerciseOrder o) => new EquityExerciseOrder(o, new OrderFillData(o.Time, Strike(o), Strike(o), Strike(o), Strike(o), Strike(o), Strike(o)))
+            {
+                Status = OrderStatus.Filled
+            };
             List<TradesCumulative> cumulativePositions = new();
             var orders = algo.Transactions.GetOrders().Where(o => o.Status == OrderStatus.PartiallyFilled || o.Status == OrderStatus.Filled).ToList();
 
-            //var dummyOrders = new List<Order>();
-            //foreach (Order order in orders.Where(o => o.Tag.Contains("Assignment")))
-            //{
-            //    // Add dummy trade to account for receiving stock after assignment
-            //    var dummyQuantity = -1 * OptionRight2Int[order.Symbol.ID.OptionRight] * order.Quantity * 100;
-            //    OptionExerciseOrder dummyEquityOrder = new(order.Symbol.ID.Underlying.Symbol, dummyQuantity, order.LastFillTime ?? order.Time, "Dummy Order Equity")
-            //    {
-            //        Status = OrderStatus.Filled
-            //    };
-            //    dummyOrders.Add(dummyEquityOrder);
-            //}
-            //orders.AddRange(dummyOrders);
+            var equityExerciseOrders = orders.Where(o => o.Type == OrderType.OptionExercise).Select(o => NewEquityExerciseOrder((OptionExerciseOrder)o)).ToList();
+            orders.AddRange(equityExerciseOrders);
 
-            //orders.Sort((Order o1, Order o2) => (int)((o1.LastFillTime ?? o1.Time) - (o2.LastFillTime ?? o2.Time)).TotalSeconds);
+            orders.Sort((Order o1, Order o2) => (int)((o1.LastFillTime ?? o1.Time) - (o2.LastFillTime ?? o2.Time)).TotalSeconds);
 
             foreach (var group in orders.GroupBy(o => o.Symbol))
             {

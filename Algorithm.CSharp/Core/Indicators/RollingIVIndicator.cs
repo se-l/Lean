@@ -7,7 +7,7 @@ using QuantConnect.Indicators;
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
     public class RollingIVIndicator<T> : IIndicatorWarmUpPeriodProvider
-        where T : IIVBidAsk
+        where T : IVBidAsk, IIVBidAsk
     {
         public Symbol Symbol { get; }
         public T Current { get => GetCurrent(); }

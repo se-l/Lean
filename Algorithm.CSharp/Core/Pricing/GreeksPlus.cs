@@ -15,7 +15,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         //public double IVNR { get => OCW?.GetIVNewtonRaphson() ?? 0; }
 
         // First order derivatives: dV / dt (Theta) ; dV / dP (Delta) ; dV / dIV (Vega)
-        public double Delta { get => OCW?.Delta() ?? 1; }  // dP ; sensitivity to underlying price
+        public double Delta { get => OCW?.Delta() ?? 1; }  // dP ; sensitivity to underlying price}
         public double DeltaZM(int? direction) {  // Adjusted Delta
             return OCW?.DeltaZM(direction) ?? 1;
         }

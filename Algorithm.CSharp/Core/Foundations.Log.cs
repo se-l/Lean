@@ -139,6 +139,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             string security_type_nm = security.Type.ToString();
             Symbol underlying = orderEvent.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[orderEvent.Symbol]).Underlying.Symbol : orderEvent.Symbol;
             string symbol = orderEvent.Symbol.ToString();
+
             string tag = Humanize(new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },
@@ -156,12 +157,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "PriceUnderlying", orderEvent.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[orderEvent.Symbol]).Underlying.Price.ToString() : "" },
                 { "BestBid", security.BidPrice.ToString() },
                 { "BestAsk", security.AskPrice.ToString() },
-                { "Delta2Mean", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.FillPrice : orderEvent.FillPrice - MidPrice(symbol)).ToString() },
+                { "Delta2Mean", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.LimitPrice : orderEvent.LimitPrice - MidPrice(symbol)).ToString() },
                 { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001).ToString() : "" },
                 { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001).ToString() : "" },
                 { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001).ToString() : "" },
-                { "IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVBid[symbol].EWMA.ToString() : "" },
-                { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVAsk[symbol].EWMA.ToString() : "" },
+                { "IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVStrikeBid[underlying].IV(symbol).ToString() : "" },
+                { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVStrikeAsk[underlying].IV(symbol).ToString() : "" },
             });
             Log(tag);
             return tag;

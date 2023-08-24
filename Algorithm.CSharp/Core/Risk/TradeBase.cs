@@ -3,6 +3,7 @@ using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Orders;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -72,13 +73,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             get => SecurityType switch
             {
-                SecurityType.Option => Algo.RollingIVBid[Symbol].Current.IV,
+                SecurityType.Option => Algo.IVBids[Symbol].Current.IV,
                 _ => 0
             };
         }
         public virtual double IVAsk1 { get => SecurityType switch
         {
-            SecurityType.Option => Algo.RollingIVAsk[Symbol].Current.IV,
+            SecurityType.Option => Algo.IVAsks[Symbol].Current.IV,
             _ => 0
         };}
         public virtual double IVMid1 { get => (IVBid1 + IVAsk1) / 2; }

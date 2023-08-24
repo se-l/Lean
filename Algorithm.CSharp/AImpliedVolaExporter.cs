@@ -40,16 +40,15 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            //SetStartDate(2023, 5, 5);
-            SetStartDate(2023, 8, 14);
-            SetEndDate(2023, 8, 15);
+            SetStartDate(2023, 8, 21);
+            SetEndDate(2023, 8, 22);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
 
             int volatilityPeriodDays = 5;
 
-            SetSecurityInitializer(new SecurityInitializerIVExporter(BrokerageModel, this, new FuncSecuritySeeder(DontSeedSecurity), volatilityPeriodDays));
+            SetSecurityInitializer(new SecurityInitializerIVExporter(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilityPeriodDays));
 
             AssignCachedFunctions();
 
@@ -87,7 +86,7 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
 
             securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, spy, SecurityType.Equity);
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(1).First();
+            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(2).First();
             Log($"WarmUp TimeSpan: {timeSpan}");
             SetWarmUp(timeSpan);
         }
@@ -126,18 +125,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         public bool ContractInScope(Symbol symbol, decimal? priceUnderlying = null)
         {
-            decimal midPriceUnderlying = priceUnderlying ?? MidPrice(symbol.ID.Underlying.Symbol);
-            return midPriceUnderlying > 0
-                //&& symbol.ID.Date > Time + TimeSpan.FromDays(0)
-                && symbol.ID.OptionStyle == OptionStyle.American
-                //&& symbol.ID.StrikePrice >= midPriceUnderlying * 0.9m
-                //&& symbol.ID.StrikePrice <= midPriceUnderlying * 1.1m
-                ;
-        }
-
-        public IEnumerable<BaseData> DontSeedSecurity(Security security)
-        {
-            return Enumerable.Empty<BaseData>();
+            return symbol.ID.Date > Time.Date && symbol.ID.OptionStyle == OptionStyle.American;
         }
 
         public int AddOptionIfScoped(Symbol option)
@@ -149,33 +137,22 @@ namespace QuantConnect.Algorithm.CSharp
                 if (Securities.ContainsKey(symbol) && Securities[symbol].IsTradable) continue;  // already subscribed
 
                 Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
-                var historyUnderlying = HistoryWrap(symbolUnderlying, 30, Resolution.Daily).ToList();
-                if (historyUnderlying.Any())
+                if (ContractInScope(symbol))
                 {
-                    decimal lastClose = historyUnderlying.Last().Close;
-                    if (ContractInScope(symbol, lastClose))
-                    {
-                        var optionContract = AddOptionContract(symbol, resolution: resolution, fillForward: false);
-                        QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
-                        susbcriptions++;
-                    }
+                    var optionContract = AddOptionContract(symbol, resolution: resolution, fillForward: false);
+                    QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
+                    susbcriptions++;
                 }
                 else
                 {
-                    QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"No history for {symbolUnderlying}. Not subscribing to its options." } });
+                    QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $" Not scoped {symbol}." } });
                 }
             }
             return susbcriptions;
         }
-
         public void UpdateUniverseSubscriptions()
         {
             if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
-
-            // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
-            Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec => {
-                RemoveUniverseSecurity(sec);
-            });
 
             // Add options that have moved into scope
             options.ForEach(s => AddOptionIfScoped(s));
@@ -213,7 +190,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             foreach (var security in Securities.Values)
             {
-                if (security.Type != SecurityType.Option) continue;
+                if (security.Type != SecurityType.Option || security.IsDelisted) continue;
                 Option option = security as Option;
                 Symbol symbol = option.Symbol;
                 
@@ -292,7 +269,6 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 return;
             }
-
             Log($"Time: {Time}");
         }
     }

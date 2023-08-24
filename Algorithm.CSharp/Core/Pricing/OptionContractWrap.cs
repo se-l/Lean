@@ -312,7 +312,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 _ => throw new NotImplementedException(),
             };
         }
-
+            
         public double Delta()
         {
             double delta;
@@ -432,7 +432,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             catch  (Exception e)
             {
-                algo.Error($"OptionContractWrap.Gamma. Attempting FD {e}");
+                algo.Error($"OptionContractWrap.Gamma. HV: {hvQuote.value()} Attempting FD {e}");
                 return FDApprox2ndDerivative(spotQuote, amOption, 0.01, "NPV");
             }
             
@@ -485,9 +485,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             //return FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, spotQuote, hvQuote, riskFreeRateQuote, "gamma");
         }
         public double Rho()
-       
+
         {
-            return FiniteDifferenceApprox(riskFreeRateQuote, amOption, 0.01, "NPV"); // amOption.rho();  // Errors - Need FD likely.
+            return FiniteDifferenceApprox(riskFreeRateQuote, amOption, 0.01, "NPV");
         }
 
         public double DPdIV()
@@ -595,15 +595,29 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return (pPlus - 2 * pZero + pMinus) / Math.Pow(q0 * d_pct, 2);
         }
 
+        public void PerturbQuote(SimpleQuote quote, double q0, double d_pct = 0.01)
+        {
+            if (q0 == 0)            {
+                // Percentage perturbance will result in NaN / 0 division error, hence using absolute value
+                quote.setValue(d_pct);
+            }
+            else
+            {
+                quote.setValue(q0 * (1 + d_pct));
+            }
+        }
+
         public double FiniteDifferenceApprox(SimpleQuote quote, VanillaOption option, double d_pct = 0.01, string derive = "NPV", SimpleQuote d1perturbance = null, string method = "central")
         {
             // f'(x) ≈ (f(x+h) - f(x-h)) / (2h); h: step size;
+            double result;
             double? pPlus;
             double? pMinus;
 
             SetEvaluationDateToCalcDate();
             var q0 = quote.value();
-            quote.setValue(q0 * (1 + d_pct));
+            PerturbQuote(quote, q0, d_pct);
+            
             if (derive == "vega" && d1perturbance != null)
             {
                 pPlus = FiniteDifferenceApprox(d1perturbance, option, d_pct); // VEGA
@@ -628,7 +642,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 pPlus = (double)methodInfo.Invoke(option, new object[] { });
             }
 
-            quote.setValue(q0 * (1 - d_pct));
+            PerturbQuote(quote, q0, -d_pct);
+
             if (derive == "vega" && d1perturbance != null)
             {
                 pMinus = FiniteDifferenceApprox(d1perturbance, option, d_pct); // VEGA
@@ -658,33 +673,34 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             if (method == "central" && pPlus != null && pMinus != null)
             {
                 // placeholder for left / right
-                return ((double)pPlus - (double)pMinus) / (2 * q0 * d_pct);
+                var stepSize = q0 == 0 ? 2 * d_pct : 2 * q0 * d_pct;
+                result = ((double)pPlus - (double)pMinus) / stepSize;
             } 
-            else if (pPlus != null)
+            else if (pPlus != null || method=="forward")
             {
-                pMinus = GetIVEngine(spotPriceUnderlying: (decimal)q0);
-                if (pMinus == null)
-                {
-                    algo.Log("Approximating IV with 0 for FD");
-                    pMinus ??= 0;
-                }
-                return ((double)pPlus - (double)pMinus) / (q0 * d_pct);
+                var methodInfo = option.GetType().GetMethod(derive);
+                var p0 = (double)methodInfo.Invoke(option, new object[] { });
+                var stepSize = q0 == 0 ? d_pct : q0 * d_pct;
+                result = ((double)pPlus - (double)p0) / stepSize;
             }
-            else if (pMinus != null)
+            else if (pMinus != null || method=="backward")
             {
-                pPlus = GetIVEngine(spotPriceUnderlying: (decimal)q0);
-                if (pPlus == null)
-                { 
-                    algo.Log("Approximating IV with 0 for FD");
-                    pPlus ??= 0;
-                }
-                return ((double)pPlus - (double)pMinus) / (q0 * d_pct);
+                var methodInfo = option.GetType().GetMethod(derive);
+                var p0 = (double)methodInfo.Invoke(option, new object[] { });
+                var stepSize = q0 == 0 ? d_pct : q0 * d_pct;
+                result = ((double)p0 - (double)pMinus) / stepSize;
             }
             else
             {
-                algo.Error($"FiniteDifferenceApprox failed due to failing IVEngine");
-                return 0;
+                algo.Error($"FiniteDifferenceApprox failed. pPlus {pPlus}, pMinus {pMinus}, method {method}");
+                result = 0;
             }
+            if (double.IsNaN(result) || double.IsInfinity(result))
+            {
+                algo.Log($"FiniteDifferenceApprox. Warning: Result is NaN or Infinity. {result}. Defaulting to 0");
+                result = 0;
+            }
+            return result;
         }
 
         public double FiniteDifferenceApproxTime(Date calculationDate, VanillaOption option, string derive = "NPV", int nDays = 1, string method = "forward")

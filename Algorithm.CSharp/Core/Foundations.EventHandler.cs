@@ -25,6 +25,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 else if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)
                 {
                     // LogOnEventNewBidAsk(newBidAsk);  // Because Backtest and LiveTrading differ significantly in price update logs.
+                    RollingIVStrikeBid[newBidAsk.Symbol].RefreshSurface();
+                    RollingIVStrikeAsk[newBidAsk.Symbol].RefreshSurface();
                     var scopedTickets = orderTickets.Keys.Where(k => k.SecurityType == SecurityType.Option && k.Underlying == newBidAsk.Symbol && orderTickets[k].Count > 0).ToList();  // ToList, avoid concurrent modification error
                     foreach (Symbol symbol in scopedTickets)
                     {
