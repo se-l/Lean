@@ -3475,7 +3475,14 @@ namespace QuantConnect
             exception = StackExceptionInterpreter.Instance.Value.Interpret(exception);
             algorithm.RunTimeError = exception;
             algorithm.SetStatus(AlgorithmStatus.RuntimeError);
+
             DiscordClient.Send($"LIVE:{algorithm.LiveMode}-IBTradingMode:{Config.Get("ib-trading-mode")}. RunTimeError: {exception}.", DiscordChannel.Emergencies, algorithm.LiveMode);
+
+            // RunTimeError on Live live account warrant a phone call!
+            if (true)//algorithm.LiveMode && Config.Get("ib-trading-mode") == "live")
+            {
+                Twilio.Call();
+            }
         }
 
         /// <summary>
