@@ -161,6 +161,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             GammaLowerStopSelling,
             GammaUpperContinuousHedge,
             GammaLowerContinuousHedge,
+
+            Events
         }
 
         public static decimal RoundTick(decimal x, decimal tickSize, bool? ceil = null, decimal? reference = null)

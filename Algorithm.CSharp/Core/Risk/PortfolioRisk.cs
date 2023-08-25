@@ -102,7 +102,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
 
         /// <summary>
-        /// Excludes position of derivative's respective underlying
+        /// CACHE THIS! Excludes position of derivative's respective underlying
         /// </summary>
         public decimal DerivativesRiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null)
         {

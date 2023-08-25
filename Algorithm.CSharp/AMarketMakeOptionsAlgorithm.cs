@@ -60,8 +60,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 8, 21);
-            SetEndDate(2023, 8, 24);
+            SetStartDate(2023, 7, 14);
+            SetEndDate(2023, 8, 25);
             SetCash(10_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -101,6 +101,13 @@ namespace QuantConnect.Algorithm.CSharp
                     options.Add(option);
                     var subscribedSymbols = AddOptionIfScoped(option);
                     subscriptions += subscribedSymbols.Count;
+
+                    foreach (string t in optionTicker)
+                    {
+                        DeltaDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Delta100BpTotal);
+                        GammaDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Gamma100BpTotal);
+                        EventDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Events);
+                    }
                 }
             }
 

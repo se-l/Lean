@@ -74,10 +74,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public decimal GammaUpperStopBuying = JsonConvert.DeserializeObject<decimal>(Config.Get("GammaUpperStopBuying"));
         public decimal GammaLowerStopSelling = JsonConvert.DeserializeObject<decimal>(Config.Get("GammaLowerStopSelling"));
         public decimal GammaUpperContinuousHedge = JsonConvert.DeserializeObject<decimal>(Config.Get("GammaUpperContinuousHedge"));
-        public decimal GammaLowerContinuousHedge = JsonConvert.DeserializeObject<decimal>(Config.Get("GammaLowerContinuousHedge"));        
+        public decimal GammaLowerContinuousHedge = JsonConvert.DeserializeObject<decimal>(Config.Get("GammaLowerContinuousHedge"));
+        public Dictionary<Symbol, RiskDiscount> DeltaDiscounts = new();
+        public Dictionary<Symbol, RiskDiscount> GammaDiscounts = new();
+        public Dictionary<Symbol, RiskDiscount> EventDiscounts = new();
 
         public HashSet<OrderStatus> orderStatusFilled = new() { OrderStatus.Filled, OrderStatus.PartiallyFilled };
-
         public record MMWindow(TimeSpan Start, TimeSpan End);
 
         public int Periods(Resolution? thisResolution = null, int days = 5)
