@@ -60,12 +60,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 7, 15);
-            //SetStartDate(2023, 7, 19);
-            //SetEndDate(2023, 6, 20);
-            //SetEndDate(2023, 5, 20);
-            //SetEndDate(2023, 7, 31);
-            SetEndDate(2023, 8, 22);
+            SetStartDate(2023, 7, 14);
+            SetEndDate(2023, 8, 25);
             SetCash(10_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -86,13 +82,9 @@ namespace QuantConnect.Algorithm.CSharp
 
             // Subscriptions
             spy = AddEquity("SPY", resolution).Symbol;
-            hedgeTicker = new List<string> { "SPY" };
-            // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
-            //optionTicker = new() { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
-            //optionTicker = new() { "HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" };  // Too much for 2 cores on a t3 instance.
-            optionTicker = new() { "HPE" };
-            liquidateTicker = new() { };
-
+            hedgeTicker = JsonConvert.DeserializeObject<List<string>>(Config.Get("hedge-ticker"));
+            optionTicker = JsonConvert.DeserializeObject<List<string>>(Config.Get("option-ticker"));
+            liquidateTicker = JsonConvert.DeserializeObject<List<string>>(Config.Get("liquidate-ticker"));
             ticker = optionTicker.Concat(hedgeTicker).ToList();
 
             int subscriptions = 0;
@@ -109,6 +101,13 @@ namespace QuantConnect.Algorithm.CSharp
                     options.Add(option);
                     var subscribedSymbols = AddOptionIfScoped(option);
                     subscriptions += subscribedSymbols.Count;
+
+                    foreach (string t in optionTicker)
+                    {
+                        DeltaDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Delta100BpTotal);
+                        GammaDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Gamma100BpTotal);
+                        EventDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Events);
+                    }
                 }
             }
 
@@ -281,15 +280,6 @@ namespace QuantConnect.Algorithm.CSharp
         public override void OnAssignmentOrderEvent(OrderEvent assignmentEvent)
         {
             Log(assignmentEvent.ToString());
-
-            // Adding a corresponding Equity Transactions Order to a cache for TradeCumulative and PnL Analysis.
-            Equity equity = Securities[assignmentEvent.Symbol.Underlying] as Equity;
-            var order = (OptionExerciseOrder)Transactions.GetOrderById(assignmentEvent.OrderId);
-            var strike = assignmentEvent.Symbol.ID.StrikePrice;
-            equityExerciseOrders[assignmentEvent.OrderId] = new EquityExerciseOrder(order, new OrderFillData(order.Time, strike, strike, strike, strike, strike, strike))
-            {
-                Status = OrderStatus.Filled
-            };
         }
 
         public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
@@ -515,7 +505,10 @@ namespace QuantConnect.Algorithm.CSharp
         public override void OnEndOfAlgorithm()
         {
             OnEndOfDay();
-            fileHandleRiskRecords.Close();
+            if (fileHandleRiskRecords != null)
+            {
+                fileHandleRiskRecords.Close();
+            }            
             fileHandlesIVSurface.Values.DoForEach(fh => fh.Close());
             base.OnEndOfAlgorithm();
             _diskDataCacheProvider.DisposeSafely();

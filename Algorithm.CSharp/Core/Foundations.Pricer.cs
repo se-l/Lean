@@ -1,10 +1,12 @@
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
+using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -28,60 +30,69 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             return Portfolio.ContainsKey(symbol) ? Portfolio[symbol].Quantity : 0m;
         }
+        public double Discount(RiskDiscount riskDiscount, double risk)
+        {
+            return riskDiscount.X0 + riskDiscount.X1 * Math.Abs(risk) + riskDiscount.X2 * Math.Pow(risk, 2);
+        }
+        public double DiscountMetric(Option option, decimal quantity, Metric metric)
+        {
+            Symbol symbol = option.Symbol;
+            RiskDiscount riskDiscount = DeltaDiscounts[option.Underlying.Symbol];
 
-        public double SpreadFactor(Option option, decimal position, OrderDirection orderDirection, decimal quantity)
+            double riskCurrent = (double)pfRisk.DerivativesRiskByUnderlying(symbol, metric);
+            double riskIfFilled = riskCurrent + (double)pfRisk.RiskAddedIfFilled(symbol, quantity, metric);
+
+            // x0 is targetRisk in 100BpUnderlying Price Change
+
+            // So the discount for a hypotheical trade that sets risk to target minus the trade discussed. That is meant to account for 
+            // different discount in high-risk (more disc/punishment) vs low-risk (free tradin) regimes as well as risk reversals (eg -low-risk to +high-risk).
+            double discountToZeroRisk = Discount(riskDiscount, (riskCurrent - riskDiscount.TargetRisk));
+            double discountToRiskIfFilled = Discount(riskDiscount, (riskIfFilled - riskDiscount.TargetRisk));
+            double discount = discountToZeroRisk - discountToRiskIfFilled;
+
+            //double riskIfFilled = (double)pfRisk.RiskAddedIfFilled(symbol, quantity, Metric.Gamma100BpTotal);
+            //// the higher the absolute risk, the more discount towards reducing the risk.
+            //discount = Math.Max(-0.7, Math.Min(0.3, Math.Abs(currentGammaRisk) * (1 - (currentGammaRisk + riskIfFilled) / currentGammaRisk)));
+            //if (currentGammaRisk < -0.7 && !LiveMode)
+            //{
+            //    Log($"RiskSpreadDiscount. Gamma too low. Expect discount or increase {symbol} {quantity} CurrentRisk: {currentGammaRisk} riskIfFilled: {currentGammaRisk + riskIfFilled} - Discount: {discount}");  // too much discount might depress the IVBuy into 0 price.
+            //}
+
+            return Math.Min(Math.Max(riskDiscount.CapMin, discount), riskDiscount.CapMax);
+        }
+
+        public double DiscountEvents(Option option, decimal quantity)
         {
             double discount = 0;
-            Symbol symbol = option.Symbol;
-
-            double currentGammaRisk = (double)pfRisk.DerivativesRiskByUnderlying(symbol, Metric.Gamma100BpTotal);
-            if (Math.Abs(currentGammaRisk) < 0.2) {
-                discount = 0; 
-            }
-            else
-            {
-                double riskIfFilled = (double)pfRisk.RiskAddedIfFilled(symbol, quantity, Metric.Gamma100BpTotal);
-                // the higher the absolute risk, the more discount towards reducing the risk.
-                discount = Math.Max(-0.7, Math.Min(0.3, Math.Abs(currentGammaRisk) * (1 - (currentGammaRisk + riskIfFilled) / currentGammaRisk)));
-                if (currentGammaRisk < -0.7 && !LiveMode)
-                {
-                    Log($"RiskSpreadDiscount. Gamma too low. Expect discount or increase {symbol} {quantity} CurrentRisk: {currentGammaRisk} riskIfFilled: {currentGammaRisk + riskIfFilled} - Discount: {discount}");  // too much discount might depress the IVBuy into 0 price.
-                }
-            }
-
+            // Get out / Liquidate Discount (e.g. earnings release, rollover/assignments/expiry, etc.) to be refined.
             // Trade Embargo pricing. and avoid assignments
+
+            RiskDiscount riskDiscount = DeltaDiscounts[option.Underlying.Symbol];
+            
             if (
                 //EarningsAnnouncements.Where(ea => ea.Symbol == option.Symbol && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()
                 (option.Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
                 )
             {
-                discount = 0.4;
+                //double discount = riskDiscount.X0 + riskDiscount.X1 * deltaTargetRisk + riskDiscount.X2 * Math.Pow(deltaTargetRisk, 2);
+                discount = riskDiscount.X0;
             }
-            // Gamma Hedge pricing. How does the pricer know this is a gamma hedge. Same calcs again???
+            return Math.Min(Math.Max(riskDiscount.CapMin, discount), riskDiscount.CapMax);
+        }
 
-            //if (position != 0)  // Already in Market. Turnover inventory! Get rid of this. Fairly rare, irrelevant starting conditions. Evetually alway gonna be in marketl...
-            //{
-            //    /// Looking to offer a better price for contracts that reduce portfolio risk.
-            //    /// 1) If contract is in my inventory - try get rid of it earning the spread!
-            //    discount = orderDirection switch
-            //    {
-            //        OrderDirection.Buy =>  0,
-            //        OrderDirection.Sell => 0,
-            //        _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
-            //    };
-            //}
-            //else
-            //{
-            //    // No position yet. Patiently wait for good entry. Transact on right side of bid ask spread, stay market maker.
-            //    // Selling Straddles till expiry strategy. Keeping it, only sell if very good exit.
-            //    discount =  orderDirection switch
-            //    {
-            //        OrderDirection.Buy =>  0,
-            //        OrderDirection.Sell => 0,
-            //        _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}"),
-            //    };
-            //}
-            return discount;
+        public double SpreadFactor(Option option, decimal position, decimal quantity)
+        {
+            /// For every metric that should influence the price, 3 params are configurable for a quadratic / progressive discount. 0,1,2.
+            /// The discounts are summed up and min/max capped (configurable).
+            /// targetRisk is absolute, while x0,x1 and x2 are relative to the precentage deviation off absoltue target risk.
+            /// Need to punish/incentivize how much a trade changes risk profile, but also how urgent it is....
+            /// Big negative delta while pf is pos, great, but only if whole portfolio is not worse off afterwards. Essentially need the area where nothing changes.
+
+            double discountDelta = DiscountMetric(option, quantity, Metric.Delta100BpTotal);
+            double discountGamma = DiscountMetric(option, quantity, Metric.Gamma100BpTotal);
+            double discountEvents = DiscountEvents(option, quantity);
+
+            return discountDelta + discountGamma + discountEvents;
         }
 
         public decimal? IVStrikePrice(OptionContractWrap ocw, OrderDirection orderDirection, double spreadFactor)
@@ -137,7 +148,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal position = Position(symbol);
             var orderDirection = Num2Direction(quantity);
 
-            double spreadFactor = SpreadFactor(option, position, orderDirection, quantity);
+            double spreadFactor = SpreadFactor(option, position, quantity);
             OptionContractWrap ocw = OptionContractWrap.E(this, option, 1);
 
             if (!RollingIVStrikeBid.ContainsKey(underlying) || !RollingIVStrikeAsk.ContainsKey(underlying))

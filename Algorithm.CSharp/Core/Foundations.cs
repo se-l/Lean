@@ -11,6 +11,8 @@ using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Option;
 using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using Newtonsoft.Json;
+using QuantConnect.Configuration;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -42,29 +44,42 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, IVTrade> IVTrades = new();
         public Dictionary<Symbol, RollingIVIndicator<IVBidAsk>> RollingIVTrade = new();
 
-        public double IVLongShortBand = 10.005;
-        public double IVLongShortBandCancel = 10.01;
-
         public TickCounter TickCounterFilter;
-        public TickCounter TickCounterOnData;
+        
         public PortfolioRisk pfRisk;
         public bool OnWarmupFinishedCalled = false;
         public decimal TotalPortfolioValueSinceStart = 0m;
         public Dictionary<int, OrderFillData> orderFillDataTN1 = new();
-        public Dictionary<OrderDirection, double> hedgingVolatilityBias = new() { { OrderDirection.Buy, 0.01 }, { OrderDirection.Sell, -0.01 } };
+
         public string pathRiskRecords;
-        public StreamWriter fileHandleRiskRecords = null;
+        public StreamWriter fileHandleRiskRecords;
         public Dictionary<(Symbol, string), StreamWriter> fileHandlesIVSurface = new();
+        // Refactor this into the an object. Ideally inferred from object attributes.
         public readonly List<string> riskRecordsHeader = new() { "Time", "Symbol",
             "Delta100BpTotal", "Delta100BpUSDTotal", "Delta100BpOptionsTotal", "Gamma100BpTotal", "Gamma100BpUSDTotal",
             "VegaTotal", "ThetaTotal", "PositionUSD", "PositionUnderlying", "PositionUnderlyingUSD", "PositionOptions", "PositionOptionsUSD", "PnL", "MidPriceUnderlying", };
 
         public EarningsAnnouncement[] EarningsAnnouncements;
-        public int OptionOrderQuantityDflt = 5;
-        public decimal delta100BpTotalUpperBandStopSelling = 50;
-        public decimal delta100BpTotalLowerBandStopSelling = -50;
-        public Dictionary<int, EquityExerciseOrder> equityExerciseOrders= new();
+        
+        public int OptionOrderQuantityDflt = JsonConvert.DeserializeObject<int>(Config.Get("OptionOrderQuantityDflt"));
+        public decimal delta100BpTotalUpperBandStopSelling = JsonConvert.DeserializeObject<decimal>(Config.Get("delta100BpTotalUpperBandStopSelling"));
+        public decimal delta100BpTotalLowerBandStopSelling = JsonConvert.DeserializeObject<decimal>(Config.Get("delta100BpTotalLowerBandStopSelling"));
+        public decimal scopeContractStrikeOverUnderlyingMax = JsonConvert.DeserializeObject<decimal>(Config.Get("scopeContractStrikeOverUnderlyingMax"));
+        public decimal scopeContractStrikeOverUnderlyingMin = JsonConvert.DeserializeObject<decimal>(Config.Get("scopeContractStrikeOverUnderlyingMin"));
+        public decimal scopeContractStrikeOverUnderlyingMargin = JsonConvert.DeserializeObject<decimal>(Config.Get("scopeContractStrikeOverUnderlyingMargin"));
+        public int scopeContractMinDTE = JsonConvert.DeserializeObject<int>(Config.Get("scopeContractMinDTE"));
+        public int scopeContractMaxDTE = JsonConvert.DeserializeObject<int>(Config.Get("scopeContractMaxDTE"));
+        public int scopeContractIsLiquidDays = JsonConvert.DeserializeObject<int>(Config.Get("scopeContractIsLiquidDays"));
 
+        public decimal GammaUpperStopBuying = JsonConvert.DeserializeObject<decimal>(Config.Get("GammaUpperStopBuying"));
+        public decimal GammaLowerStopSelling = JsonConvert.DeserializeObject<decimal>(Config.Get("GammaLowerStopSelling"));
+        public decimal GammaUpperContinuousHedge = JsonConvert.DeserializeObject<decimal>(Config.Get("GammaUpperContinuousHedge"));
+        public decimal GammaLowerContinuousHedge = JsonConvert.DeserializeObject<decimal>(Config.Get("GammaLowerContinuousHedge"));
+        public Dictionary<Symbol, RiskDiscount> DeltaDiscounts = new();
+        public Dictionary<Symbol, RiskDiscount> GammaDiscounts = new();
+        public Dictionary<Symbol, RiskDiscount> EventDiscounts = new();
+
+        public HashSet<OrderStatus> orderStatusFilled = new() { OrderStatus.Filled, OrderStatus.PartiallyFilled };
         public record MMWindow(TimeSpan Start, TimeSpan End);
 
         public int Periods(Resolution? thisResolution = null, int days = 5)
@@ -132,7 +147,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     Symbol symbol = sec.Symbol;
 
-                    var permittedOrderDirectionsFromVolatility = PermittedOrderDirectionsFromVolatility(symbol, IVLongShortBand);
+                    var permittedOrderDirectionsFromVolatility = PermittedOrderDirectionsFromVolatility(symbol);
                     var permittedOrderDirectionsFromPortfolio = PermittedOrderDirectionsFromPortfolio(symbol);
                     var permittedOrderDirections = permittedOrderDirectionsFromVolatility.Intersect(permittedOrderDirectionsFromPortfolio);
 
@@ -288,15 +303,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             decimal midPriceUnderlying = priceUnderlying ?? MidPrice(symbol.ID.Underlying.Symbol);
             return midPriceUnderlying > 0
-                //&& symbol.ID.Date == new DateTime(2023, 6, 16, 0, 0, 0).Date
-                //&& symbol.ID.StrikePrice >= 13.0m
-                //&& symbol.ID.StrikePrice <= 16.0m
-                && symbol.ID.Date > Time + TimeSpan.FromDays(0)
-                && symbol.ID.Date < Time + TimeSpan.FromDays(180)
+                && symbol.ID.Date > Time + TimeSpan.FromDays(scopeContractMinDTE)
+                && symbol.ID.Date < Time + TimeSpan.FromDays(scopeContractMaxDTE)
                 && symbol.ID.OptionStyle == OptionStyle.American
-                && symbol.ID.StrikePrice >= midPriceUnderlying * (0.75m - margin)
-                && symbol.ID.StrikePrice <= midPriceUnderlying * (1.25m + margin)
-                && IsLiquid(symbol, 5, Resolution.Daily)
+                && symbol.ID.StrikePrice >= midPriceUnderlying * (scopeContractStrikeOverUnderlyingMin - margin)
+                && symbol.ID.StrikePrice <= midPriceUnderlying * (scopeContractStrikeOverUnderlyingMax + margin)
+                && IsLiquid(symbol, scopeContractIsLiquidDays, Resolution.Daily)
                 ;
                 //&& symbol.ID.StrikePrice % 0.05m != 0m;  // This condition is somewhat strange here. Revise and move elsewhere. Beware of not buying those 5 Cent options. Should have been previously filtered out. Yet another check
         }
@@ -307,7 +319,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (
                     (
                     Securities[symbol].IsTradable
-                    && !ContractInScope(symbol, margin: 0.1m)
+                    && !ContractInScope(symbol, margin: scopeContractStrikeOverUnderlyingMargin)
                     && Portfolio[symbol].Quantity == 0
                     && Securities[symbol].IsTradable
                     )
@@ -506,7 +518,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <summary>
         /// Overridden by flipping ticket. Need to compare ATM IVs with ATM IVs, not cross expiry or cross strikes...
         /// </summary>
-        public HashSet<OrderDirection> PermittedOrderDirectionsFromVolatility(Symbol symbol, double band)
+        public HashSet<OrderDirection> PermittedOrderDirectionsFromVolatility(Symbol symbol)
         {
             return new HashSet<OrderDirection>() { OrderDirection.Sell };
             var permittedOrderDirections = new HashSet<OrderDirection>();
