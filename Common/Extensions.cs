@@ -3479,7 +3479,7 @@ namespace QuantConnect
             DiscordClient.Send($"LIVE:{algorithm.LiveMode}-IBTradingMode:{Config.Get("ib-trading-mode")}. RunTimeError: {exception}.", DiscordChannel.Emergencies, algorithm.LiveMode);
 
             // RunTimeError on Live live account warrant a phone call!
-            if (true)//algorithm.LiveMode && Config.Get("ib-trading-mode") == "live")
+            if (algorithm.LiveMode && Config.Get("ib-trading-mode") == "live")
             {
                 Twilio.Call();
             }
