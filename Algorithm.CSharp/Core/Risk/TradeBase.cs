@@ -227,14 +227,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 SecurityType.Option => (decimal)Delta() * Multiplier * Quantity
             };
         }
-        public virtual decimal Delta100BpUSDTotal()
+        public virtual decimal DeltaXBpUSDTotal(double x = 100)
         {
             return SecurityType switch
             {
                 SecurityType.Equity => Mid1Underlying * 100 * BP * Quantity,
-                SecurityType.Option => GetGreeks1().Delta100Bp * Multiplier * Quantity
+                SecurityType.Option => (decimal)(Delta() * x) * Mid1Underlying * BP * Multiplier * Quantity
             };
         }
+        public virtual decimal Delta100BpUSDTotal() => DeltaXBpUSDTotal(100);
 
         public virtual double Gamma()
         {
@@ -248,14 +249,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _ => 0
             }; ;
         }
-        public virtual decimal Gamma100BpUSDTotal()
-        {
-            return SecurityType switch
-            {
-                SecurityType.Option => Multiplier * Quantity * GetGreeks1().Gamma100Bp,
-                _ => 0
-            };
-        }
 
         public virtual decimal GammaXBpUSDTotal(double x = 100)
         {
@@ -265,6 +258,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _ => 0
             };
         }
+        public virtual decimal Gamma100BpUSDTotal() => GammaXBpUSDTotal(100);
 
         // Below 2 simplifications assuming a pure options portfolio.
         public virtual double Theta() 
@@ -272,9 +266,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return GetGreeks1().Theta;
         }
 
-        public virtual decimal ThetaTotal 
+        public virtual decimal ThetaTotal()
         {
-            get => SecurityType switch
+            return SecurityType switch
             {
                 SecurityType.Option => (decimal)Theta() * ((Option)Security).ContractMultiplier * Quantity,
                 _ => 0,
@@ -282,7 +276,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public virtual decimal Theta1DayUSD() 
         {
-            return ThetaTotal * Mid1Underlying;
+            return ThetaTotal() * Mid1Underlying;
         }
 
         // Summing up individual vegas. Only applicable to Ppi constructed from options, not for Ppi(SPY or any index)

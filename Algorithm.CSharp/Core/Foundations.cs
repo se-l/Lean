@@ -56,7 +56,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<(Symbol, string), StreamWriter> fileHandlesIVSurface = new();
         // Refactor this into the an object. Ideally inferred from object attributes.
         public readonly List<string> riskRecordsHeader = new() { "Time", "Symbol",
-            "DeltaTotal", "Delta100BpUSDTotal", "Delta100BpUSDOptionsTotal", "GammaTotal", "Gamma100BpUSDTotal",
+            "DeltaTotal", "Delta100BpUSDTotal", "Delta100BpUSDOptionsTotal", "GammaTotal", "Gamma100BpUSDTotal","Gamma500BpUSDTotal",
             "VegaTotal", "ThetaTotal", "PositionUSD", "PositionUnderlying", "PositionUnderlyingUSD", "PositionOptions", "PositionOptionsUSD", "PnL", "MidPriceUnderlying", };
 
         public EarningsAnnouncement[] EarningsAnnouncements;
@@ -717,7 +717,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 OrderTicket tg = ticketsByUnderlying.First();
                 derivativesRiskByUnderlying = riskLimitType switch 
                 {
-                    RiskLimitType.Delta => pfRisk.DerivativesRiskByUnderlying(tg.Symbol, Metric.DeltaTotal),
+                    RiskLimitType.Delta => pfRisk.DerivativesRiskByUnderlying(tg.Symbol, Metric.Delta100BpUSDTotal),
                     RiskLimitType.Gamma => pfRisk.DerivativesRiskByUnderlying(tg.Symbol, Metric.Gamma100BpUSDTotal),
                     _ => throw new NotImplementedException(riskLimitType.ToString()),
                 };

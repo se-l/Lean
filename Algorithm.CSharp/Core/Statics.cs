@@ -128,6 +128,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Delta, // Unit free sensitivity
             DeltaTotal,
             Delta100BpUSDTotal,
+            Delta500BpUSDTotal,
             DeltaMeanImplied, // Sensitivity * Quantity * Multiplier / n_OptionPositions
             DeltaTotalImplied, // Sensitivity * Quantity * Multiplier
             DeltaTotalZM, // Delta Zakamulin adjusted

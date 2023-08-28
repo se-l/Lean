@@ -59,7 +59,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 5, 15);
+            SetStartDate(2023, 8, 20);
             SetEndDate(2023, 8, 25);
             SetCash(10_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
