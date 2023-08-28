@@ -23,7 +23,6 @@ using QuantConnect.Data;
 using QuantConnect.Securities;
 using QuantConnect.Orders;
 using QuantConnect.Data.Market;
-using QuantConnect.ToolBox.IQFeed.IQ;
 using QuantConnect.Util;
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
@@ -66,11 +65,6 @@ namespace QuantConnect.Algorithm.CSharp
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             UniverseSettings.Leverage = 1;
-
-            if (LiveMode)
-            {
-                SetOptionChainProvider(new IQOptionChainProvider());
-            }
 
             mmWindow = new MMWindow(new TimeSpan(9, 30, 15), new TimeSpan(16, 00, 0) - ScheduledEvent.SecurityEndOfDayDelta);
             int volatilityPeriodDays = 5;

@@ -80,7 +80,7 @@ namespace QuantConnect.ToolBox.IQFeed
             LookupClient lookupClient = LookupClientFactory.CreateNew(NumberOfClients);
             lookupClient.Connect();
             IQFeedDataQueueUniverseProvider universeProvider = new IQFeedDataQueueUniverseProvider();
-            _historyProvider = new IQFeedFileHistoryProvider(lookupClient, universeProvider, MarketHoursDatabase.FromDataFolder());
+            _historyProvider = new IQFeedFileHistoryProvider(lookupClient, universeProvider, MarketHoursDatabase.FromDataFolder());            
             _subscriptionManager.SubscribeImpl += (s, t) =>
             {
                 Subscribe(s);
@@ -397,17 +397,6 @@ namespace QuantConnect.ToolBox.IQFeed
             _symbolUniverse.DisposeSafely();
         }
 
-        ///// <summary>
-        ///// Creates a new instance
-        ///// </summary>
-        ///// <param name="dataCacheProvider">The data cache provider instance to use</param>
-        ///// <param name="mapFileProvider">The map file provider instance to use</param>
-        //public IQOptionChainProvider(IMapFileProvider mapFileProvider)
-        //{
-        //    _mapFileProvider = mapFileProvider;
-
-        //}
-
         /// <summary>
         /// Gets the list of option contracts for a given underlying symbol
         /// </summary>
@@ -423,7 +412,7 @@ namespace QuantConnect.ToolBox.IQFeed
                 // we got an option
                 if (symbol.SecurityType.IsOption() && symbol.Underlying != null)
                 {
-                    canonicalSymbol = GetCanonical(symbol, date);
+                    canonicalSymbol = symbol.Canonical; // GetCanonical(symbol, date);
                 }
                 else
                 {
@@ -434,8 +423,8 @@ namespace QuantConnect.ToolBox.IQFeed
             else
             {
                 // we got the underlying
-                var mappedUnderlyingSymbol = MapUnderlyingSymbol(symbol, date);
-                canonicalSymbol = Symbol.CreateCanonicalOption(mappedUnderlyingSymbol);
+                //var mappedUnderlyingSymbol = MapUnderlyingSymbol(symbol, date);
+                canonicalSymbol = Symbol.CreateCanonicalOption(symbol);
             }
             IEnumerable<EquityOption> optionChain = _historyProvider.GetIndexEquityOptionChain(canonicalSymbol, date, date);
 
