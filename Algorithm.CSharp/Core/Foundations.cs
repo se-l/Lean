@@ -31,7 +31,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public List<Symbol> options = new();  // Canonical symbols
         public Dictionary<Symbol, HashSet<Option>> optionChains = new();
         public MMWindow mmWindow;
-        public Symbol spy;
+        public Symbol equity1;
         public Dictionary<Symbol, SecurityCache> PriceCache = new();
         public SecurityExchangeHours securityExchangeHours;
 
@@ -56,7 +56,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<(Symbol, string), StreamWriter> fileHandlesIVSurface = new();
         // Refactor this into the an object. Ideally inferred from object attributes.
         public readonly List<string> riskRecordsHeader = new() { "Time", "Symbol",
-            "Delta100BpTotal", "Delta100BpUSDTotal", "Delta100BpOptionsTotal", "Gamma100BpTotal", "Gamma100BpUSDTotal",
+            "DeltaTotal", "Delta100BpUSDTotal", "Delta100BpUSDOptionsTotal", "GammaTotal", "Gamma100BpUSDTotal",
             "VegaTotal", "ThetaTotal", "PositionUSD", "PositionUnderlying", "PositionUnderlyingUSD", "PositionOptions", "PositionOptionsUSD", "PnL", "MidPriceUnderlying", };
 
         public EarningsAnnouncement[] EarningsAnnouncements;
@@ -216,8 +216,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 // Exclude contracts that would increase absolute risk. Means we're already long/short and let the liquidating ticket through.
                 // Not feasible for fast market making. Need to turn over captital. Only stop selling when delta is beyond some threshold..
-                decimal dPfDeltaIf = pfRisk.RiskAddedIfFilled(contract.Symbol, DIRECTION2NUM[signal.OrderDirection], Metric.Delta100BpTotal);
-                decimal pfRiskIfFilled = dPfDeltaIf + pfRisk.DerivativesRiskByUnderlying(contract.Symbol, Metric.Delta100BpTotal);
+                decimal dPfDeltaIf = pfRisk.RiskAddedIfFilled(contract.Symbol, DIRECTION2NUM[signal.OrderDirection], Metric.Delta100BpUSDTotal);
+                decimal pfRiskIfFilled = dPfDeltaIf + pfRisk.DerivativesRiskByUnderlying(contract.Symbol, Metric.Delta100BpUSDTotal);
                 if (pfRiskIfFilled < delta100BpTotalLowerBandStopSelling || pfRiskIfFilled > delta100BpTotalUpperBandStopSelling)
                 //if (dPfDeltaIf * derivativesRiskByUnderlying > 0)  // same sign, risk would grow. dont signal.
                 // rather want o manage this via pricing logic. risk increasing trades are progressively priced worse...
@@ -498,7 +498,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
         public HashSet<OrderDirection> PermittedOrderDirectionsFromGamma(Symbol symbol)
         {
-            decimal total100BpGamma = pfRisk.RiskByUnderlying(Underlying(symbol), Metric.Gamma100BpTotal); // Called way too often...
+            decimal total100BpGamma = pfRisk.RiskByUnderlying(Underlying(symbol), Metric.Gamma100BpUSDTotal); // Called way too often...
 
             decimal lowerBand = pfRisk.RiskBandByUnderlying(symbol, Metric.GammaLowerStopSelling);
             decimal upperBand = pfRisk.RiskBandByUnderlying(symbol, Metric.GammaUpperStopBuying);
@@ -718,7 +718,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 derivativesRiskByUnderlying = riskLimitType switch 
                 {
                     RiskLimitType.Delta => pfRisk.DerivativesRiskByUnderlying(tg.Symbol, Metric.DeltaTotal),
-                    RiskLimitType.Gamma => pfRisk.DerivativesRiskByUnderlying(tg.Symbol, Metric.Gamma100BpTotal),
+                    RiskLimitType.Gamma => pfRisk.DerivativesRiskByUnderlying(tg.Symbol, Metric.Gamma100BpUSDTotal),
                     _ => throw new NotImplementedException(riskLimitType.ToString()),
                 };
                 if (  // Only cancel when risk limit are so high, that no buy/sell signals follow.
@@ -734,8 +734,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     switch (riskLimitType)
                     {
                         case RiskLimitType.Delta:
-                            riskAddedIfFilled = pfRisk.RiskAddedIfFilled(t.Symbol, t.Quantity, Metric.Delta100BpTotal);
-                            decimal pfRiskIfFilled = riskAddedIfFilled + pfRisk.DerivativesRiskByUnderlying(t.Symbol, Metric.Delta100BpTotal);
+                            riskAddedIfFilled = pfRisk.RiskAddedIfFilled(t.Symbol, t.Quantity, Metric.Delta100BpUSDTotal);
+                            decimal pfRiskIfFilled = riskAddedIfFilled + pfRisk.DerivativesRiskByUnderlying(t.Symbol, Metric.Delta100BpUSDTotal);
                             if (!IsFlippingTicket(t) && (pfRiskIfFilled < delta100BpTotalLowerBandStopSelling || pfRiskIfFilled > delta100BpTotalUpperBandStopSelling))
                             {
                                 QuickLog(new Dictionary<string, string>() { { "topic", "CANCEL" }, { "msg", $"CancelRiskIncreasingOrderTickets {t.Symbol}, riskLimitType={riskLimitType}, riskAddedIfFilled={riskAddedIfFilled}, derivativesRiskByUnderlying={derivativesRiskByUnderlying}" } });
@@ -743,7 +743,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                             }
                             break;
                         case RiskLimitType.Gamma:
-                            riskAddedIfFilled = pfRisk.RiskAddedIfFilled(t.Symbol, t.Quantity, Metric.Gamma100BpTotal);
+                            riskAddedIfFilled = pfRisk.RiskAddedIfFilled(t.Symbol, t.Quantity, Metric.Gamma100BpUSDTotal);
                             if (riskAddedIfFilled * derivativesRiskByUnderlying > 0)  // same sign; non-null
                             {
                                 QuickLog(new Dictionary<string, string>() { { "topic", "CANCEL" }, { "msg", $"CancelRiskIncreasingOrderTickets {t.Symbol}, riskLimitType={riskLimitType}, riskAddedIfFilled={riskAddedIfFilled}, derivativesRiskByUnderlying={derivativesRiskByUnderlying}" } });

@@ -18,12 +18,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public IEnumerable<Position> Positions { get; protected set; }
 
         // Refactor below into GreeksPlus
-        public double Delta { get => Positions.Sum(t => t.Delta()); }  // sensitivity to the Portfolio's value.
         public decimal DeltaTotal { get => Positions.Sum(t => t.DeltaTotal()); }
-        public decimal Delta100BpTotal { get => Positions.Sum(t => t.Delta100BpTotal()); }
         public decimal Delta100BpUSDTotal { get => Positions.Sum(t => t.Delta100BpUSDTotal()); }
-        public decimal Gamma100BpTotal { get => Positions.Sum(t => t.Gamma100BpTotal()); }
+        public decimal GammaTotal { get => Positions.Sum(t => t.GammaTotal()); }
         public decimal Gamma100BpUSDTotal { get => Positions.Sum(t => t.Gamma100BpUSDTotal()); }
+        public decimal Gamma500BpUSDTotal { get => Positions.Sum(t => t.GammaXBpUSDTotal(500)); }
         public double ThetaTotal { get => Positions.Sum(t => t.Theta()); }
         public decimal ThetaUSDTotal { get => Theta1DayUSD; }
         public decimal Theta1DayUSD { get => Positions.Sum(t => t.Theta1DayUSD()); }
@@ -68,7 +67,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             TimeLastUpdated = algo.Time;
         }
 
-        public decimal RiskByUnderlying(Symbol symbol, Metric metric = Metric.DeltaTotal, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null)
+        public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null)
         {
             Symbol underlying = Underlying(symbol);
             var positions = Positions.Where(x => x.UnderlyingSymbol == underlying);
@@ -77,8 +76,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             return metric switch
             {
-                Metric.DeltaTotal => positions.Sum(t => t.DeltaTotal()),
-                Metric.Delta100BpTotal => positions.Sum(t => t.Delta100BpTotal()),
                 Metric.Delta100BpUSDTotal => positions.Sum(t => t.Delta100BpUSDTotal()),
                 Metric.Delta100BpUSDTotalImplied => positions.Sum(t => t.DeltaImpliedTotal(volatility)),
                 Metric.EquityDeltaTotal => positions.Where(p => p.SecurityType == SecurityType.Equity).Sum(t => t.DeltaTotal()),
@@ -86,9 +83,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Metric.DeltaTotalImplied => positions.Sum(t => t.DeltaImpliedTotal(volatility)),
                 Metric.DeltaTotalZM => positions.Sum(t => t.DeltaZMTotal(volatility)),
                 Metric.Gamma => (decimal)positions.Sum(t => t.Gamma()),
-                Metric.Gamma100BpTotal => positions.Sum(t => t.Gamma100BpTotal()),
+                Metric.GammaTotal => (decimal)positions.Sum(t => t.Gamma()),
                 Metric.Gamma100BpUSDTotal => positions.Sum(t => t.Gamma100BpUSDTotal()),
-                Metric.GammaTotal => positions.Sum(t => t.GammaTotal()),
+                Metric.Gamma500BpUSDTotal => positions.Sum(t => t.GammaXBpUSDTotal(500)),
                 Metric.Vega => (decimal)positions.Sum(t => t.Vega()),
                 Metric.VegaTotal => positions.Sum(t => t.VegaTotal),
                 Metric.VegaUSDTotal => positions.Sum(t => t.Vega100BpUSD),
@@ -109,7 +106,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return RiskByUnderlying(symbol, metric, volatility, filter: positions => positions.Where(p => p.SecurityType == SecurityType.Option));
         }
 
-        public decimal RiskBandByUnderlying(Symbol symbol, Metric metric = Metric.DeltaTotal, double? volatility = null)
+        public decimal RiskBandByUnderlying(Symbol symbol, Metric metric, double? volatility = null)
         {
             Symbol underlying = Underlying(symbol);
             var positions = Positions.Where(p => p.UnderlyingSymbol == underlying && p.SecurityType == SecurityType.Option);
@@ -140,14 +137,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return (symbol.SecurityType, riskMetric) switch
             {
                 // Delta
-                (SecurityType.Option, Metric.DeltaTotal) => quantity * (decimal)OptionContractWrap.E(algo, (Option)algo.Securities[symbol], 1).Delta() * 100,
+                (SecurityType.Option, Metric.DeltaTotal) => 100 * quantity * (decimal)OptionContractWrap.E(algo, (Option)algo.Securities[symbol], 1).Delta(),
                 (SecurityType.Equity, Metric.DeltaTotal) => quantity * algo.MidPrice(symbol),
-                (SecurityType.Option, Metric.Delta100BpTotal) => quantity * OptionContractWrap.E(algo, (Option)algo.Securities[symbol], 1).Delta100Bp() * 100,
-                (SecurityType.Equity, Metric.Delta100BpTotal) => quantity * algo.MidPrice(symbol),
+                (SecurityType.Option, Metric.Delta100BpUSDTotal) => 100 * quantity * OptionContractWrap.E(algo, (Option)algo.Securities[symbol], 1).Delta100Bp(),
+                (SecurityType.Equity, Metric.Delta100BpUSDTotal) => quantity * algo.MidPrice(symbol),
 
                 // Gamma
-                (SecurityType.Option, Metric.Gamma100BpTotal) => quantity * (decimal)OptionContractWrap.E(algo, (Option)algo.Securities[symbol], 1).Gamma100Bp(),
-                (SecurityType.Equity, Metric.Gamma100BpTotal) => 0,
+                (SecurityType.Option, Metric.Gamma100BpUSDTotal) => 100 * quantity * OptionContractWrap.E(algo, (Option)algo.Securities[symbol], 1).Gamma100Bp(),
+                (SecurityType.Equity, Metric.Gamma100BpUSDTotal) => 0,
                 _ => throw new NotImplementedException(riskMetric.ToString()),
             };
         }
@@ -214,7 +211,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public double Correlation(Symbol symbol)
         {
-            return algo.Correlation(algo.spy, symbol, 20, Resolution.Daily);
+            return algo.Correlation(algo.equity1, symbol, 20, Resolution.Daily);
         }
 
 
@@ -222,16 +219,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {            
             return new Dictionary<string, decimal>()
             {
-                { "Delta100BpTotal", symbol == null ? Delta100BpTotal : RiskByUnderlying(symbol, Metric.Delta100BpTotal) },
-                { "Delta100BpUSDTotal", symbol == null ? Delta100BpUSDTotal  : RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal) },
-                { "Gamma100BpTotal", symbol == null ? Gamma100BpTotal : RiskByUnderlying(symbol, Metric.Gamma100BpTotal) },
+                { "DeltaTotal", symbol == null ? DeltaTotal : RiskByUnderlying(symbol, Metric.DeltaTotal) },
+                { "Delta100BpUSDTotal", symbol == null ? Delta100BpUSDTotal : RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal) },
+                { "GammaTotal", symbol == null ? GammaTotal : RiskByUnderlying(symbol, Metric.GammaTotal) },
                 { "Gamma100BpUSDTotal", symbol == null ? Gamma100BpUSDTotal : RiskByUnderlying(symbol, Metric.Gamma100BpUSDTotal) },
+                { "Gamma500BpUSDTotal", symbol == null ? Gamma500BpUSDTotal : RiskByUnderlying(symbol, Metric.Gamma500BpUSDTotal) },
                 { "VegaTotal", symbol == null ? (decimal)VegaTotal: RiskByUnderlying(symbol, Metric.VegaTotal) },
                 { "VegaUSDTotal", symbol == null ? VegaUSDTotal : RiskByUnderlying(symbol, Metric.VegaUSDTotal) },
                 { "ThetaTotal", symbol == null ? (decimal)ThetaTotal: RiskByUnderlying(symbol, Metric.ThetaTotal) },
                 { "ThetaUSDTotal", symbol == null ? ThetaUSDTotal : RiskByUnderlying(symbol, Metric.ThetaUSDTotal) },
-                //{"Rho", symbol == null ? Rho : RiskByUnderlying(symbol, Metric.DeltaTotal)},
-                //{"Ppi", symbol == null ? Ppi : RiskByUnderlying(symbol, Metric.DeltaTotal)}
             };
         }
 
@@ -242,7 +238,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Security security = algo.Securities[symbol];
             Symbol underlying = Underlying(symbol);
 
-            decimal total100BpGamma = RiskByUnderlying(symbol, Metric.Gamma100BpTotal);
+            decimal total100BpGamma = RiskByUnderlying(symbol, Metric.Gamma100BpUSDTotal);
             decimal lowerBand = RiskBandByUnderlying(symbol, Metric.GammaLowerContinuousHedge);
             decimal upperBand = RiskBandByUnderlying(symbol, Metric.GammaUpperContinuousHedge);
 
@@ -314,10 +310,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public DateTime Time { get; internal set; }
         public Symbol Symbol { get; internal set; }
         
-        public decimal Delta100BpTotal { get; internal set; }
+        public decimal DeltaTotal { get; internal set; }
         public decimal Delta100BpUSDTotal { get; internal set; }
-        public decimal Delta100BpOptionsTotal { get; internal set; }
-        public decimal Gamma100BpTotal { get; internal set; }
+        public decimal Delta100BpUSDOptionsTotal { get; internal set; }
+        public decimal GammaTotal { get; internal set; }
         public decimal Gamma100BpUSDTotal { get; internal set; }
         public decimal VegaTotal { get; internal set; }
         public decimal ThetaTotal { get; internal set; }
@@ -337,10 +333,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             PositionUnderlying = algo.Securities[Symbol].Holdings.Quantity;
             PositionUnderlyingUSD = algo.Securities[Symbol].Holdings.HoldingsValue;
 
-            Delta100BpTotal = pfRisk.RiskByUnderlying(Symbol, Metric.Delta100BpTotal);
+            DeltaTotal = pfRisk.RiskByUnderlying(Symbol, Metric.DeltaTotal);
             Delta100BpUSDTotal = pfRisk.RiskByUnderlying(Symbol, Metric.Delta100BpUSDTotal);
-            Delta100BpOptionsTotal = Delta100BpTotal - PositionUnderlying;
-            Gamma100BpTotal = pfRisk.RiskByUnderlying(Symbol, Metric.Gamma100BpTotal);
+            Delta100BpUSDOptionsTotal = Delta100BpUSDTotal - PositionUnderlying;
+            GammaTotal = pfRisk.RiskByUnderlying(Symbol, Metric.GammaTotal);
             Gamma100BpUSDTotal = pfRisk.RiskByUnderlying(Symbol, Metric.Gamma100BpUSDTotal);
             VegaTotal = pfRisk.RiskByUnderlying(Symbol, Metric.VegaTotal);
             ThetaTotal = pfRisk.RiskByUnderlying(Symbol, Metric.ThetaTotal);

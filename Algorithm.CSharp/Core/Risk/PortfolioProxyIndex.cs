@@ -158,7 +158,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         private IEnumerable<IndexConstituent> SPYConstituents()
         {
-            var constituentWeight = new Dictionary<Symbol, decimal>() { { algo.spy, 1 } };
+            var constituentWeight = new Dictionary<Symbol, decimal>() { { algo.equity1, 1 } };
             return constituentWeight.Select(kv => new IndexConstituent(kv.Key, algo, kv.Value));
         }
     }

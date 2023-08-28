@@ -47,10 +47,10 @@ namespace QuantConnect.Algorithm.CSharp
 
             AssignCachedFunctions();
 
-            spy = AddEquity("SPY", Resolution.Daily).Symbol;
+            equity1 = AddEquity("SPY", Resolution.Daily).Symbol;
             pfRisk = PortfolioRisk.E(this);
 
-            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, spy, SecurityType.Equity);
+            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
             var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
             Log($"WarmUp TimeSpan: {timeSpan}");
             SetWarmUp(timeSpan);

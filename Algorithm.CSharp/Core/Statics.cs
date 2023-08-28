@@ -126,10 +126,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public enum Metric
         {
             Delta, // Unit free sensitivity
-            DeltaTotal, // Sensitivity * Quantity * Multiplier
-            Delta100Bp, // Sensitivity * UnderlyingPrice / 100
-            Delta100BpTotal, // Sensitivity * (UnderlyingPrice / 100) * Quantity * Multiplier
-            Delta100BpUSDTotal, // Sensitivity * (UnderlyingPrice / 100) * Quantity * Multiplier
+            DeltaTotal,
+            Delta100BpUSDTotal,
             DeltaMeanImplied, // Sensitivity * Quantity * Multiplier / n_OptionPositions
             DeltaTotalImplied, // Sensitivity * Quantity * Multiplier
             DeltaTotalZM, // Delta Zakamulin adjusted
@@ -140,9 +138,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             Gamma,
             GammaTotal,
-            Gamma100BpTotal,
             Gamma100BpUSDTotal,
-            Gamma100BpUSD,
+            Gamma500BpUSDTotal,
 
             Theta,
             ThetaTotal,

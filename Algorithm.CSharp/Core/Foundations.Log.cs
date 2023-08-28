@@ -158,9 +158,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "BestBid", security.BidPrice.ToString() },
                 { "BestAsk", security.AskPrice.ToString() },
                 { "Delta2Mean", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.LimitPrice : orderEvent.LimitPrice - MidPrice(symbol)).ToString() },
-                { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001).ToString() : "" },
-                { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001).ToString() : "" },
-                { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001).ToString() : "" },
+                { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001), 2).ToString() : "" },
+                { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001), 2).ToString() : "" },
+                { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001), 2).ToString() : "" },
                 { "IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVStrikeBid[underlying].IV(symbol).ToString() : "" },
                 { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVStrikeAsk[underlying].IV(symbol).ToString() : "" },
             });

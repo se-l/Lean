@@ -53,7 +53,7 @@ namespace QuantConnect.Algorithm.CSharp
             AssignCachedFunctions();
 
             // Subscriptions
-            spy = AddEquity("SPY", resolution).Symbol;
+            equity1 = AddEquity("SPY", resolution).Symbol;
             hedgeTicker = new List<string> { "SPY" };
             optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
             //optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE" };
@@ -85,7 +85,7 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(new TimeSpan(1, 0, 0)), UpdateUniverseSubscriptions);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
 
-            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, spy, SecurityType.Equity);
+            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
             var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(2).First();
             Log($"WarmUp TimeSpan: {timeSpan}");
             SetWarmUp(timeSpan);

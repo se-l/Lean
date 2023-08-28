@@ -53,8 +53,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public decimal UnrealizedProfit { get => TotalUnrealizedProfit(); }
         public PLExplain PLExplain { get => GetPLExplain(); }
-        public Dictionary<Symbol, double> BetaUnderlying { get => new() { { Algo.spy, Algo.Beta(Algo.spy, UnderlyingSymbol, 20, Resolution.Daily) } }; }
-        public Dictionary<Symbol, double> Correlations { get => new() { { Algo.spy, Algo.Correlation(Algo.spy, UnderlyingSymbol, 20, Resolution.Daily) } }; }        
+        public Dictionary<Symbol, double> BetaUnderlying { get => new() { { Algo.equity1, Algo.Beta(Algo.equity1, UnderlyingSymbol, 20, Resolution.Daily) } }; }
+        public Dictionary<Symbol, double> Correlations { get => new() { { Algo.equity1, Algo.Correlation(Algo.equity1, UnderlyingSymbol, 20, Resolution.Daily) } }; }        
         public bool FilledByQuoteBarMove { get => (Quantity > 0) switch
         {
             true => Ask0 <= PriceFillAvg && AskTN1 > PriceFillAvg,

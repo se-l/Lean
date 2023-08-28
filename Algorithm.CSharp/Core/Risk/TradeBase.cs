@@ -3,7 +3,6 @@ using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using QuantConnect.Orders;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -205,7 +204,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return SecurityType switch
             {
-                SecurityType.Equity => (decimal)DeltaImplied(volatility) * Quantity,
+                SecurityType.Equity => Quantity,
                 SecurityType.Option => (decimal)DeltaImplied(volatility) * ((Option)Security).ContractMultiplier * Quantity
             };
         }
@@ -215,8 +214,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return SecurityType switch
             {
                 // Scaled price into a 1% change / 100BP. That changes times delta and position is risk of position moving by 1%. That's a hundreth of IB's 'Delta Dollar' metric.
-                SecurityType.Equity => (decimal)DeltaImplied(volatility) * Quantity * Mid1Underlying * 100 * BP,
-                SecurityType.Option => (decimal)DeltaImplied(volatility) * TaylorTerm() * 100 * BP * Quantity
+                SecurityType.Equity => Mid1Underlying * 100 * BP * Quantity,
+                SecurityType.Option => (decimal)DeltaImplied(volatility) * Mid1Underlying * 100 * BP * Quantity * Multiplier
             };
         }
 
@@ -224,55 +223,45 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return SecurityType switch
             {
-                SecurityType.Equity => (decimal)Delta() * Quantity,
-                SecurityType.Option => (decimal)Delta() * ((Option)Security).ContractMultiplier * Quantity
+                SecurityType.Equity => Quantity,
+                SecurityType.Option => (decimal)Delta() * Multiplier * Quantity
             };
         }
-        public virtual decimal Delta100BpTotal()
+        public virtual decimal Delta100BpUSDTotal()
         {
             return SecurityType switch
             {
-                SecurityType.Equity => (decimal)Delta() * Mid1Underlying * 100 * BP * Quantity,
-                SecurityType.Option => (decimal)Delta() * Mid1Underlying * 100 * BP * ((Option)Security).ContractMultiplier * Quantity
+                SecurityType.Equity => Mid1Underlying * 100 * BP * Quantity,
+                SecurityType.Option => GetGreeks1().Delta100Bp * Multiplier * Quantity
             };
-        }
-
-        public virtual decimal Delta100BpUSDTotal()
-        { 
-            return SecurityType switch
-                {
-                    // Scaled price into a 1% change / 100BP. That changes times delta and position is risk of position moving by 1%. That's a hundreth of IB's 'Delta Dollar' metric.
-                    SecurityType.Equity => (decimal)Delta() * Quantity * 100 * BP * Mid1Underlying,
-                    SecurityType.Option => (decimal)Delta() * TaylorTerm() * 100 * BP * Mid1Underlying * Quantity
-                };
         }
 
         public virtual double Gamma()
         {
             return GetGreeks1().Gamma;
         }
-        public virtual decimal Gamma100BpTotal()
+        public virtual decimal GammaTotal()
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)Gamma() * Mid1Underlying * 100 * BP * Quantity,
+                SecurityType.Option => (decimal)Gamma() * Multiplier * Quantity,
                 _ => 0
-            };
+            }; ;
         }
         public virtual decimal Gamma100BpUSDTotal()
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)(0.5 * Math.Pow((double)TaylorTerm() * (double)(100 * BP), 2) * Gamma()) * Quantity,
+                SecurityType.Option => Multiplier * Quantity * GetGreeks1().Gamma100Bp,
                 _ => 0
             };
         }
 
-        public virtual decimal GammaTotal()
-        { 
+        public virtual decimal GammaXBpUSDTotal(double x = 100)
+        {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)Gamma() * ((Option)Security).ContractMultiplier * Quantity,
+                SecurityType.Option => (decimal)(0.5 * Gamma() * Math.Pow((double)Mid1Underlying * x * (double)BP, 2)) * Multiplier * Quantity,
                 _ => 0
             };
         }

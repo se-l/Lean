@@ -440,7 +440,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public decimal Gamma100Bp()
         {
-            return (decimal)Gamma() * algo.MidPrice(UnderlyingSymbol) * 100 * BP;
+            return (decimal)(0.5 * Gamma() * Math.Pow((double)algo.MidPrice(UnderlyingSymbol) * 100 * (double)BP, 2));
         }
 
         public double Vega()

@@ -114,13 +114,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             // This method triggers limit orders for a range of securities, does not price them. Some may get blocked on last-mile check. Need better flow from order scan through various checks and placement.
 
-            if (IsWarmingUp || !IsMarketOpen(spy) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+            if (IsWarmingUp || !IsMarketOpen(equity1) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
 
             List<Option> optionContracts = new();
 
             Symbol underlying = Underlying(symbol);
 
-            decimal total100BpGamma = pfRisk.RiskByUnderlying(symbol, Metric.Gamma100BpTotal);
+            decimal total100BpGamma = pfRisk.RiskByUnderlying(symbol, Metric.Gamma100BpUSDTotal);
             double totalOptionsDelta = (double)pfRisk.DerivativesRiskByUnderlying(symbol, Metric.DeltaTotal);
 
             decimal lowerBand = pfRisk.RiskBandByUnderlying(symbol, Metric.GammaLowerContinuousHedge);
@@ -129,6 +129,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             optionChains.TryGetValue(underlying, out var options);
             var records = options.Where(o => 
                     o.Symbol.ID.Date > Time + TimeSpan.FromDays(30) 
+                    && o.BidPrice > 0.05m  // No units
                     && Portfolio[o.Symbol].Quantity <= 0  // Get rid of this criteria eventually. Must be able to modify existing positions and adjust hedge.
                 ).Select(o => new
             {
@@ -201,7 +202,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
         private void GetHedgeOptionWithUnderlyingZM(Symbol symbol)
         {
-            if (IsWarmingUp || !IsMarketOpen(spy) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+            if (IsWarmingUp || !IsMarketOpen(equity1) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
             
             Symbol underlying = Underlying(symbol);
 
@@ -214,10 +215,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (equityHedge > upperBand || equityHedge < lowerBand)
             {
-                if (Math.Abs((upperBand + lowerBand) / 2 - equityHedge) < 5)
-                {
-                    var a = 1;
-                }
                 ExecuteHedge(underlying, (upperBand + lowerBand) / 2 - equityHedge);
             }
             else
@@ -233,7 +230,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             /// </summary>
             private void GetHedgeOptionWithUnderlying(Symbol symbol)
         {
-            if (IsWarmingUp || !IsMarketOpen(spy) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+            if (IsWarmingUp || !IsMarketOpen(equity1) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
 
             Symbol underlying = Underlying(symbol);
 

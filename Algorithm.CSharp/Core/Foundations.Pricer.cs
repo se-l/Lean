@@ -88,8 +88,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             /// Need to punish/incentivize how much a trade changes risk profile, but also how urgent it is....
             /// Big negative delta while pf is pos, great, but only if whole portfolio is not worse off afterwards. Essentially need the area where nothing changes.
 
-            double discountDelta = DiscountMetric(option, quantity, Metric.Delta100BpTotal);
-            double discountGamma = DiscountMetric(option, quantity, Metric.Gamma100BpTotal);
+            double discountDelta = DiscountMetric(option, quantity, Metric.Delta100BpUSDTotal);
+            double discountGamma = DiscountMetric(option, quantity, Metric.Gamma100BpUSDTotal);
             double discountEvents = DiscountEvents(option, quantity);
 
             return discountDelta + discountGamma + discountEvents;

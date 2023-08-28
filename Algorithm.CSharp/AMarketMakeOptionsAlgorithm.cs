@@ -59,7 +59,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 7, 14);
+            SetStartDate(2023, 5, 15);
             SetEndDate(2023, 8, 25);
             SetCash(10_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
@@ -74,10 +74,10 @@ namespace QuantConnect.Algorithm.CSharp
 
             AssignCachedFunctions();
 
-            // Subscriptions
-            spy = AddEquity("SPY", resolution).Symbol;
-            hedgeTicker = JsonConvert.DeserializeObject<List<string>>(Config.Get("hedge-ticker"));
+            // Subscriptions            
             optionTicker = JsonConvert.DeserializeObject<List<string>>(Config.Get("option-ticker"));
+            hedgeTicker = new() { optionTicker.First() };
+            equity1 = AddEquity(optionTicker.First(), resolution).Symbol;
             liquidateTicker = JsonConvert.DeserializeObject<List<string>>(Config.Get("liquidate-ticker"));
             ticker = optionTicker.Concat(hedgeTicker).ToList();
 
@@ -98,8 +98,8 @@ namespace QuantConnect.Algorithm.CSharp
 
                     foreach (string t in optionTicker)
                     {
-                        DeltaDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Delta100BpTotal);
-                        GammaDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Gamma100BpTotal);
+                        DeltaDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Delta100BpUSDTotal);
+                        GammaDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Gamma100BpUSDTotal);
                         EventDiscounts[equity.Symbol] = new RiskDiscount(equity.Symbol, Metric.Events);
                     }
                 }
@@ -122,7 +122,8 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), RecordRisk);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(60)), ExportIVSurface);
 
-            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, spy, SecurityType.Equity);
+            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
+            // first digit ensure looking byeond past holidays. Second digit is days of trading days to warm up.
             var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(1).First();
             Log($"WarmUp TimeSpan: {timeSpan} starting on {StartDate - timeSpan}");
             SetWarmUp(timeSpan);
