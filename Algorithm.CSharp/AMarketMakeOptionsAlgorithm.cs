@@ -210,9 +210,8 @@ namespace QuantConnect.Algorithm.CSharp
             //    }
             //}
 
-            // Record data for next day comparison with history
-
-            if (LiveMode)
+            // Record data for restarts and next day comparison with history. Avoid conflict with Paper on same instance by running this for live mode only.
+            if (LiveMode && Config.Get("ib-trading-mode") == "live")
             {
                 foreach (KeyValuePair<Symbol, QuoteBar> kvp in data.QuoteBars)
                 {
