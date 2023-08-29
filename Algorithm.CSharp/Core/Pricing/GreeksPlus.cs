@@ -16,23 +16,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         // First order derivatives: dV / dt (Theta) ; dV / dP (Delta) ; dV / dIV (Vega)
         public double Delta { get => OCW?.Delta() ?? 1; }  // dP ; sensitivity to underlying price}
-        public double DeltaZM(int? direction) {  // Adjusted Delta
-            return OCW?.DeltaZM(direction) ?? 1;
+        public double DeltaZM(int direction) {  // Adjusted Delta
+            return OCW?.DeltaZM(direction) ?? 0;
         }
-        public double BandZMLower(int direction)
+        public double DeltaZMOffset(int direction)  // Zakamulin bands are made of option deltas only, hence no default 1 for equity.
         {  // Adjusted Delta
-            return OCW?.BandZMLower(direction) ?? 1;
+            return OCW?.DeltaZMOffset(direction) ?? 0;  // Zakamulin bands are made of option deltas only, hence no default 1 for equity.
         }
-        public double BandZMUpper(int direction)
-        {  // Adjusted Delta
-            return OCW?.BandZMUpper(direction) ?? 1;
-        }
+        
         public double Gamma { get => OCW?.Gamma() ?? 0; }  // dP2
-        public decimal Gamma100Bp { get => OCW?.Gamma100Bp() ?? 0; }  // dP2
+        public decimal Gamma100Bp { get => OCW?.GammaXBp(100) ?? 0; }  // dP2
 
         // Second order derivatives using finite difference
         public double DeltaDecay { get => OCW?.DeltaDecay() ?? 0; }  // dPdT
-        public double DPdIV { get => OCW?.DPdIV() ?? 0; }  // dPdIV
+        public double DPdIV { get => OCW?.DDeltadIV() ?? 0; }  // dPdIV
         public double DGdP { get => OCW?.DGdP() ?? 0; }  // dP3
         public double GammaDecay { get => OCW?.GammaDecay() ?? 0; }  // dP2dT
         public double DGdIV { get => OCW?.DGdIV() ?? 0; }  // dP2dIV

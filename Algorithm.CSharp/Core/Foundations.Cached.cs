@@ -112,6 +112,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         private void GetHedgeGammaRisk(Symbol symbol)
         {
+            // Need to unify this with Signal functions. Scoped should be ALL options. Whether to Buy or Sell based on relative prices, events, inventory and current risk profile.
             // This method triggers limit orders for a range of securities, does not price them. Some may get blocked on last-mile check. Need better flow from order scan through various checks and placement.
 
             if (IsWarmingUp || !IsMarketOpen(equity1) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
@@ -120,7 +121,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             Symbol underlying = Underlying(symbol);
 
-            decimal total100BpGamma = pfRisk.RiskByUnderlying(symbol, Metric.Gamma100BpUSDTotal);
+            decimal total500BpGamma = pfRisk.RiskByUnderlying(symbol, Metric.Gamma500BpUSDTotal);
             double totalOptionsDelta = (double)pfRisk.DerivativesRiskByUnderlying(symbol, Metric.DeltaTotal);
 
             decimal lowerBand = pfRisk.RiskBandByUnderlying(symbol, Metric.GammaLowerContinuousHedge);
@@ -128,14 +129,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             optionChains.TryGetValue(underlying, out var options);
             var records = options.Where(o => 
-                    o.Symbol.ID.Date > Time + TimeSpan.FromDays(30) 
+                    o.Symbol.ID.Date > Time + TimeSpan.FromDays(60) 
                     && o.BidPrice > 0.05m  // No units
                     && Portfolio[o.Symbol].Quantity <= 0  // Get rid of this criteria eventually. Must be able to modify existing positions and adjust hedge.
                 ).Select(o => new
             {
                 Option = o,
                 Delta = OptionContractWrap.E(this, o, 1).Delta(),
-                Gamma100Bp = OptionContractWrap.E(this, o, 1).Gamma100Bp()
+                Gamma100Bp = OptionContractWrap.E(this, o, 1).GammaXBp(100)
             });
 
             //if (total100BpGamma > upperBand)
@@ -157,11 +158,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             
             foreach (var record in records.Where(r => 
                 r.Gamma100Bp > 0.05m 
-                && r.Gamma100Bp < Math.Abs(total100BpGamma)
+                && r.Gamma100Bp < Math.Abs(total500BpGamma)
                 && r.Delta * totalOptionsDelta <= 0  // Only hedge with options that dont increase existing delta.
             ))
             {
-                decimal quantity = -Math.Round(total100BpGamma / record.Gamma100Bp, 0);
+                decimal quantity = -Math.Round(total500BpGamma / record.Gamma100Bp, 0);
 
                 // Subtract existing limit orders from quantity to avoid over hedging. No Market orders on options yet
                 // decimal orderedQuantityMarket = ticketsUnderlying.Where(t => t.OrderType == OrderType.Market).Sum(t => t.Quantity);
@@ -209,12 +210,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal equityHedge = pfRisk.RiskByUnderlying(symbol, Metric.EquityDeltaTotal);  // Normalized risk of an assets 1% change in price for band breach check.
             decimal lowerBand = pfRisk.RiskBandByUnderlying(symbol, Metric.BandZMLower);
             decimal upperBand = pfRisk.RiskBandByUnderlying(symbol, Metric.BandZMUpper);
+
             // Bands inverted. Need to understand better. Likely overall switches from neg. to pos. and vv.
             //decimal lowerBand = Math.Min(band1, band2);
             //decimal upperBand = Math.Max(band1, band2);
 
             if (equityHedge > upperBand || equityHedge < lowerBand)
             {
+                Log($"{Time} GetHedgeOptionWithUnderlyingZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, DeltaEquityTotal={equityHedge}.");
                 ExecuteHedge(underlying, (upperBand + lowerBand) / 2 - equityHedge);
             }
             else
@@ -230,17 +233,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
             /// </summary>
             private void GetHedgeOptionWithUnderlying(Symbol symbol)
         {
-            if (IsWarmingUp || !IsMarketOpen(equity1) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+            if (IsWarmingUp || !IsMarketOpen(equity1)) return;
 
             Symbol underlying = Underlying(symbol);
 
-            decimal riskDeltaTotal = pfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);  // Normalized risk of an assets 1% change in price for band breach check.
+            decimal riskDelta100BpUSDTotal = pfRisk.RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal);
             SecurityRiskLimit riskLimit = Securities[underlying].RiskLimit;
 
 
-            if (riskDeltaTotal > riskLimit.Delta100BpLong || riskDeltaTotal < riskLimit.Delta100BpShort)
+            if (riskDelta100BpUSDTotal > riskLimit.Delta100BpLong || riskDelta100BpUSDTotal < riskLimit.Delta100BpShort)
             {
-                riskDeltaTotal = pfRisk.RiskByUnderlying(symbol, Metric.DeltaTotalImplied);
+                var riskDeltaTotal = pfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
                 ExecuteHedge(underlying, -riskDeltaTotal);
             }
             else 

@@ -131,7 +131,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Delta500BpUSDTotal,
             DeltaMeanImplied, // Sensitivity * Quantity * Multiplier / n_OptionPositions
             DeltaTotalImplied, // Sensitivity * Quantity * Multiplier
-            DeltaTotalZM, // Delta Zakamulin adjusted
             Delta100BpUSD,  // USD change for every 1% of underlying change
             Delta100BpUSDImplied,  // USD change for every 1% of underlying change
             Delta100BpUSDTotalImplied,

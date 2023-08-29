@@ -55,19 +55,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             PL_dVegadIV = position * 0.5 * g.DVegadIV * Math.Pow(dIVPct, 2);  // Vomma
             PL_ThetaDecay = position * 0.5 * g.ThetaDecay * Math.Pow(dT, 2);
 
-            PL_dPdIV = position * g.DPdIV * dP * dIVPct;
+            PL_dPdIV = position * g.DPdIV * dIV * dP;
 
             PL_DeltaDecay = position * g.DeltaDecay * dP * dT;
             PL_VegaDecay = position * g.VegaDecay * dIVPct * dT;   
             PL_GammaDecay = position * 0.5 * g.GammaDecay * Math.Pow(dP, 2) * dT;  // Color
 
             PL_dTdP = position * g.DTdP * dP * dT;
-            PL_dTdIV = position * g.DTdIV * dIVPct * dT;
+            PL_dTdIV = position * g.DTdIV * dIV * dT;
             
             PL_dVegadP = position * g.DVegadP * dIVPct * dP;
 
             PL_dGdP = position * (1.0 / 6.0) * g.DGdP * Math.Pow(dP, 3);
-            PL_dGdIV = position * 0.5 * g.DGdIV * Math.Pow(dP, 2) * dIVPct;
+            PL_dGdIV = position * 0.5 * g.DGdIV * dIV * Math.Pow(dP, 2);
 
             PL_Fee = fee;
 

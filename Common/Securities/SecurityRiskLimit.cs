@@ -46,12 +46,12 @@ namespace QuantConnect.Securities
         /// <param name="security">The security</param>
         public SecurityRiskLimit(
             Security security,
-            decimal delta100BpLong = 1,
-            decimal delta100BpShort = -1,
-            decimal gamma100BpLong = 1,
-            decimal gamma100BpShort = -1,
-            decimal deltaLongUSD = 1_000,
-            decimal deltaShortUSD = -200,
+            decimal delta100BpLong = 5,
+            decimal delta100BpShort = -5,
+            decimal gamma100BpLong = 5,
+            decimal gamma100BpShort = -5,
+            decimal deltaLongUSD = 5,
+            decimal deltaShortUSD = -5,
             decimal? deltaTarget = null,  // depends on OTM vs ITM.
             decimal? deltaTargetUSD = null
             )

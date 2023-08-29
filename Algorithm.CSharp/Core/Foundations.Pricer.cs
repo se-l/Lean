@@ -34,14 +34,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             return riskDiscount.X0 + riskDiscount.X1 * Math.Abs(risk) + riskDiscount.X2 * Math.Pow(risk, 2);
         }
-        public double DiscountMetric(Option option, decimal quantity, Metric metric)
+        public double DiscountMetric(Option option, decimal quantity, Metric metric, RiskDiscount riskDiscount)
         {
+            // Distinguish between urgent risk (high absolute risk including equity) and non-urgent risk (high abs. delta summing derivatives only).
+            // In order to maintain good cash book, want to keep stocks low, but no need to give up much spread for that.
+
             Symbol symbol = option.Symbol;
-            RiskDiscount riskDiscount = DeltaDiscounts[option.Underlying.Symbol];
 
             double riskCurrent = (double)pfRisk.DerivativesRiskByUnderlying(symbol, metric);
             double riskIfFilled = riskCurrent + (double)pfRisk.RiskAddedIfFilled(symbol, quantity, metric);
-
             // x0 is targetRisk in 100BpUnderlying Price Change
 
             // So the discount for a hypotheical trade that sets risk to target minus the trade discussed. That is meant to account for 
@@ -49,14 +50,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             double discountToZeroRisk = Discount(riskDiscount, (riskCurrent - riskDiscount.TargetRisk));
             double discountToRiskIfFilled = Discount(riskDiscount, (riskIfFilled - riskDiscount.TargetRisk));
             double discount = discountToZeroRisk - discountToRiskIfFilled;
-
-            //double riskIfFilled = (double)pfRisk.RiskAddedIfFilled(symbol, quantity, Metric.Gamma100BpTotal);
-            //// the higher the absolute risk, the more discount towards reducing the risk.
-            //discount = Math.Max(-0.7, Math.Min(0.3, Math.Abs(currentGammaRisk) * (1 - (currentGammaRisk + riskIfFilled) / currentGammaRisk)));
-            //if (currentGammaRisk < -0.7 && !LiveMode)
-            //{
-            //    Log($"RiskSpreadDiscount. Gamma too low. Expect discount or increase {symbol} {quantity} CurrentRisk: {currentGammaRisk} riskIfFilled: {currentGammaRisk + riskIfFilled} - Discount: {discount}");  // too much discount might depress the IVBuy into 0 price.
-            //}
 
             return Math.Min(Math.Max(riskDiscount.CapMin, discount), riskDiscount.CapMax);
         }
@@ -67,11 +60,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Get out / Liquidate Discount (e.g. earnings release, rollover/assignments/expiry, etc.) to be refined.
             // Trade Embargo pricing. and avoid assignments
 
-            RiskDiscount riskDiscount = DeltaDiscounts[option.Underlying.Symbol];
+            RiskDiscount riskDiscount = EventDiscounts[option.Underlying.Symbol];
             
             if (
-                //EarningsAnnouncements.Where(ea => ea.Symbol == option.Symbol && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()
-                (option.Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
+                EarningsAnnouncements.Where(ea => ea.Symbol == option.Symbol.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()
+                || (option.Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
                 )
             {
                 //double discount = riskDiscount.X0 + riskDiscount.X1 * deltaTargetRisk + riskDiscount.X2 * Math.Pow(deltaTargetRisk, 2);
@@ -80,18 +73,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return Math.Min(Math.Max(riskDiscount.CapMin, discount), riskDiscount.CapMax);
         }
 
-        public double SpreadFactor(Option option, decimal position, decimal quantity)
+        public double SpreadFactor(Option option, decimal quantity)
         {
-            /// For every metric that should influence the price, 3 params are configurable for a quadratic / progressive discount. 0,1,2.
-            /// The discounts are summed up and min/max capped (configurable).
-            /// targetRisk is absolute, while x0,x1 and x2 are relative to the precentage deviation off absoltue target risk.
-            /// Need to punish/incentivize how much a trade changes risk profile, but also how urgent it is....
-            /// Big negative delta while pf is pos, great, but only if whole portfolio is not worse off afterwards. Essentially need the area where nothing changes.
+            // Refactor to send this through as object, so it can be logged if actually filled.
+            // For every metric that should influence the price, 3 params are configurable for a quadratic / progressive discount. 0,1,2.
+            // The discounts are summed up and min/max capped (configurable).
+            // targetRisk is absolute, while x0,x1 and x2 are relative to the precentage deviation off absoltue target risk.
+            // Need to punish/incentivize how much a trade changes risk profile, but also how urgent it is....
+            // Big negative delta while pf is pos, great, but only if whole portfolio is not worse off afterwards. Essentially need the area where nothing changes.
 
-            double discountDelta = DiscountMetric(option, quantity, Metric.Delta100BpUSDTotal);
-            double discountGamma = DiscountMetric(option, quantity, Metric.Gamma100BpUSDTotal);
+            double discountDelta = DiscountMetric(option, quantity, Metric.Delta100BpUSDTotal, DeltaDiscounts[option.Underlying.Symbol]);
+            double discountGamma = DiscountMetric(option, quantity, Metric.Gamma500BpUSDTotal, GammaDiscounts[option.Underlying.Symbol]);
             double discountEvents = DiscountEvents(option, quantity);
-
+            //Log($"SpreadFactor. {quantity} {option.Symbol}, discountDelta={discountDelta}, discountGamma={discountGamma}, discountEvents=,{discountEvents}");
             return discountDelta + discountGamma + discountEvents;
         }
 
@@ -105,7 +99,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             double? bidIV = RollingIVStrikeBid[symbol.Underlying].IV(symbol); // Using Current IV over ExOutlier improved cumulative annual return by ~2 USD per trade (~200 trades).
             double? askIV = RollingIVStrikeAsk[symbol.Underlying].IV(symbol); // ExOutlier is a moving average of the last 100IVs. Doesnt explain why I quoted Selling at less than 90% of bid ask spread.
-            double iVSpread = (askIV - bidIV) ?? 0.1 * (askIV ?? 0);  // presuinng default 10 % spread.
+            if (askIV == null || bidIV == null) { return null; } // No IV, no price. This is a problem. Need to default to something. (e.g. 10% spread
+            //double iVSpread = (askIV - bidIV) ?? 0.1 * (askIV ?? 0);  // presuinng default 10 % spread.
 
             // Issue here. Bid IV is often null, impacting selling due to missing IV Spread. I could default to a kind
             // of default spread. Whenever BidIV is null, it's very low. < ~20%.
@@ -113,6 +108,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (orderDirection == OrderDirection.Buy && bidIV == null) { return null; }
             if (orderDirection == OrderDirection.Sell && askIV == null) { return null; }
+
+            double iVSpread = ((double)askIV - (double)bidIV);  // presuinng default 10 % spread.
 
             smoothedIVPrice = orderDirection switch
             {
@@ -145,10 +142,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal? smoothedIVPrice;
             decimal price;
 
-            decimal position = Position(symbol);
+            //decimal position = Position(symbol);
             var orderDirection = Num2Direction(quantity);
 
-            double spreadFactor = SpreadFactor(option, position, quantity);
+            double spreadFactor = SpreadFactor(option, quantity);
             OptionContractWrap ocw = OptionContractWrap.E(this, option, 1);
 
             if (!RollingIVStrikeBid.ContainsKey(underlying) || !RollingIVStrikeAsk.ContainsKey(underlying))

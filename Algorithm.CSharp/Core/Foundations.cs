@@ -9,10 +9,10 @@ using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Option;
-using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using Newtonsoft.Json;
 using QuantConnect.Configuration;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -62,8 +62,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public EarningsAnnouncement[] EarningsAnnouncements;
         
         public int OptionOrderQuantityDflt = JsonConvert.DeserializeObject<int>(Config.Get("OptionOrderQuantityDflt"));
-        public decimal delta100BpTotalUpperBandStopSelling = JsonConvert.DeserializeObject<decimal>(Config.Get("delta100BpTotalUpperBandStopSelling"));
-        public decimal delta100BpTotalLowerBandStopSelling = JsonConvert.DeserializeObject<decimal>(Config.Get("delta100BpTotalLowerBandStopSelling"));
         public decimal scopeContractStrikeOverUnderlyingMax = JsonConvert.DeserializeObject<decimal>(Config.Get("scopeContractStrikeOverUnderlyingMax"));
         public decimal scopeContractStrikeOverUnderlyingMin = JsonConvert.DeserializeObject<decimal>(Config.Get("scopeContractStrikeOverUnderlyingMin"));
         public decimal scopeContractStrikeOverUnderlyingMargin = JsonConvert.DeserializeObject<decimal>(Config.Get("scopeContractStrikeOverUnderlyingMargin"));
@@ -78,6 +76,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, RiskDiscount> DeltaDiscounts = new();
         public Dictionary<Symbol, RiskDiscount> GammaDiscounts = new();
         public Dictionary<Symbol, RiskDiscount> EventDiscounts = new();
+
+        public double ZMRiskAversion = JsonConvert.DeserializeObject<double>(Config.Get("ZMRiskAversion"));
+        public double ZMProportionalTransactionCost = JsonConvert.DeserializeObject<double>(Config.Get("ZMProportionalTransactionCost"));
 
         public HashSet<OrderStatus> orderStatusFilled = new() { OrderStatus.Filled, OrderStatus.PartiallyFilled };
         public record MMWindow(TimeSpan Start, TimeSpan End);
@@ -147,25 +148,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     Symbol symbol = sec.Symbol;
 
-                    var permittedOrderDirectionsFromVolatility = PermittedOrderDirectionsFromVolatility(symbol);
+                    //var permittedOrderDirectionsFromVolatility = PermittedOrderDirectionsFromVolatility(symbol);
                     var permittedOrderDirectionsFromPortfolio = PermittedOrderDirectionsFromPortfolio(symbol);
-                    var permittedOrderDirections = permittedOrderDirectionsFromVolatility.Intersect(permittedOrderDirectionsFromPortfolio);
+                    var permittedOrderDirections = permittedOrderDirectionsFromPortfolio;//.Intersect(permittedOrderDirectionsFromPortfolio);
 
                     // Only vega short!
                     if (permittedOrderDirections.Contains(OrderDirection.Sell))
                     {
-                        //if (RollingIVAsk[symbol].EWMASlow > RollingIVAsk[symbol].EWMA)
-                        //{
-                        //    continue;
-                        //}
                         signals.Add(new Signal(symbol, OrderDirection.Sell));
                     }
                     if (permittedOrderDirections.Contains(OrderDirection.Buy))
                     {
-                        //if (RollingIVBid[symbol].EWMASlow < RollingIVBid[symbol].EWMA * 1.2)
-                        //{
-                        //    continue;
-                        //}
                         signals.Add(new Signal(symbol, OrderDirection.Buy));
                     }
                 }
@@ -202,6 +195,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
 
             List<Signal> signals_out = new List<Signal>();
+            // perhaps grou by Symbol, hence having both directions to compare directly. Compare spread discount
             foreach (var signal in signals)
             {
                 Option contract = Securities[signal.Symbol] as Option;
@@ -218,31 +212,28 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Not feasible for fast market making. Need to turn over captital. Only stop selling when delta is beyond some threshold..
                 decimal dPfDeltaIf = pfRisk.RiskAddedIfFilled(contract.Symbol, DIRECTION2NUM[signal.OrderDirection], Metric.Delta100BpUSDTotal);
                 decimal pfRiskIfFilled = dPfDeltaIf + pfRisk.DerivativesRiskByUnderlying(contract.Symbol, Metric.Delta100BpUSDTotal);
-                if (pfRiskIfFilled < delta100BpTotalLowerBandStopSelling || pfRiskIfFilled > delta100BpTotalUpperBandStopSelling)
-                //if (dPfDeltaIf * derivativesRiskByUnderlying > 0)  // same sign, risk would grow. dont signal.
+
+                // Commented because preferring to pick direction based on inventory, events and risk profile, not JUST ALWAYS SELL
                 // rather want o manage this via pricing logic. risk increasing trades are progressively priced worse...
-                // reason for keeping this is IBs restriction to trade on both sides of limit order... Cannot hedge with this 
-                {
-                    continue;
-                }
+                //if (pfRiskIfFilled < delta100BpTotalLowerBandStopSelling || pfRiskIfFilled > delta100BpTotalUpperBandStopSelling)
+                ////if (dPfDeltaIf * derivativesRiskByUnderlying > 0)  // same sign, risk would grow. dont signal.
+                //{
+                //    continue;
+                //}
 
                 // if both sell and buy is allow given current risk profile, prefer selling ovre buying for near maturities.
 
-                // At the moment, dont trade contracts without Bid or Ask
-                if (contract.BidPrice == 0 || contract.AskPrice == 0)
-                {
-                    continue;
-                }
-
                 // Only 1 deal per contract. At the moment. IB wouldnt allow opposite orders. Preferring Sells, hence those comes first after the delta check.
                 // Without any position. Buy comes first here and sell gets rejected. That's bad. Skews delta towards Buy.
+                
                 if (signals_out.Any(x => x.Symbol == signal.Symbol))
                 {
                     continue;
                 }
 
                 // Respect trade regime embargo around earnings announcements. No new trade signals. Reducing risk still goes on in other functions!
-                if (EarningsAnnouncements.Where(ea => ea.Symbol == contract.Symbol && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any())
+                // Also in pricer. Remove
+                if (EarningsAnnouncements.Where(ea => ea.Symbol == contract.Symbol.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any())
                 {
                     continue;
                 }
@@ -258,7 +249,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return signals_out;
         }
 
-        public void CancelOpenTickets()
+        public void CancelOpenOptionTickets()
         {
             if (IsWarmingUp)
             {
@@ -266,7 +257,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             foreach (var tickets in orderTickets.Values)
             {
-                foreach (var t in tickets.Where(t => t.Status != OrderStatus.Invalid))
+                foreach (var t in tickets.Where(t => t.Status != OrderStatus.Invalid && t.Symbol.SecurityType == SecurityType.Option).ToList())
                 {
                     QuickLog(new Dictionary<string, string>() { { "topic", "CANCEL" }, { "action", $"CancelOpenTickets. Canceling {t.Symbol}. EndOfDay" } });
                     t.Cancel();
@@ -735,8 +726,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     {
                         case RiskLimitType.Delta:
                             riskAddedIfFilled = pfRisk.RiskAddedIfFilled(t.Symbol, t.Quantity, Metric.Delta100BpUSDTotal);
-                            decimal pfRiskIfFilled = riskAddedIfFilled + pfRisk.DerivativesRiskByUnderlying(t.Symbol, Metric.Delta100BpUSDTotal);
-                            if (!IsFlippingTicket(t) && (pfRiskIfFilled < delta100BpTotalLowerBandStopSelling || pfRiskIfFilled > delta100BpTotalUpperBandStopSelling))
+                            var currentRisk = pfRisk.DerivativesRiskByUnderlying(t.Symbol, Metric.Delta100BpUSDTotal);
+                            if (!IsFlippingTicket(t) && (riskAddedIfFilled * currentRisk > 0 ))
                             {
                                 QuickLog(new Dictionary<string, string>() { { "topic", "CANCEL" }, { "msg", $"CancelRiskIncreasingOrderTickets {t.Symbol}, riskLimitType={riskLimitType}, riskAddedIfFilled={riskAddedIfFilled}, derivativesRiskByUnderlying={derivativesRiskByUnderlying}" } });
                                 ticketToCancel.Add(t);

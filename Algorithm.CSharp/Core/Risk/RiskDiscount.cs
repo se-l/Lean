@@ -7,12 +7,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
     public class DiscountParams
     {
-        public double TargetRisk { get; internal set; }
-        public double X0 { get; internal set; }
-        public double X1 { get; internal set; }
-        public double X2 { get; internal set; }
-        public double CapMin { get; internal set; }
-        public double CapMax { get; internal set; }
+        public double TargetRisk { get; set; }
+        public double X0 { get; set; }
+        public double X1 { get; set; }
+        public double X2 { get; set; }
+        public double CapMin { get; set; }
+        public double CapMax { get; set; }
     }
     public class RiskDiscount
     {

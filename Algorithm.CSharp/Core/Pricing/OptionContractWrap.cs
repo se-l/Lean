@@ -48,8 +48,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private BlackScholesMertonProcess bsmProcess;
         private BlackScholesProcess bsProcess;
         private double riskFreeRate = 0.0;  // IV; 0.0433
-        private double riskAversion = 1;
-        private double proportionalTransactionCost = 0.001;  // review refine
         private List<Date> dividendExDates;
         private List<double> dividendAmounts;
 
@@ -352,53 +350,48 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             double ttm = TimeToMaturity();
             
-            return 4.76 * Math.Pow(proportionalTransactionCost, 0.78) / 
+            return 4.76 * Math.Pow(algo.ZMProportionalTransactionCost, 0.78) / 
                 Math.Pow(ttm, 0.02) * 
                 Math.Pow(Math.Exp(-riskFreeRate * ttm) / sigma, 0.25) * 
-                Math.Pow(riskAversion * Math.Pow((double)algo.MidPrice(UnderlyingSymbol), 2) * Math.Abs(Gamma()), 0.15);
+                Math.Pow(algo.ZMRiskAversion * Math.Pow((double)algo.MidPrice(UnderlyingSymbol), 2) * Math.Abs(Gamma()), 0.15);
         }
 
-        public double DeltaZM(int? direction)
+        public double DeltaZM(int direction)
         {
             SetEvaluationDateToCalcDate();
-            if (direction == null)
-            {
-                throw new Exception("DeltaZM needs a direction");
-            }
             var hv0 = hvQuote.value();
             // ZM -Zakamulin
-            double sigma_mod = Math.Pow(Math.Pow(hv0, 2) * (1.0 + KappaZM(hv0) * Math.Sign(direction ?? 0)), 0.5);
-
-            hvQuote.setValue(sigma_mod);
+            hvQuote.setValue(VolatilityZM(direction));
             double delta = Delta();
             hvQuote.setValue(hv0);
             return delta;
         }
 
-        public double H0ZM()
+        public double VolatilityZM(int direction)
+        {
+            SetEvaluationDateToCalcDate();
+            var hv0 = hvQuote.value();
+            return Math.Pow(Math.Pow(hv0, 2) * (1.0 + KappaZM(hv0) * Math.Sign(direction)), 0.5);
+        }
+
+        public double H0ZM(double volatilityZM)
         {
             // not adjusted volatility. Implied, historical or forecasted.
-            return proportionalTransactionCost / (riskAversion * (double)algo.MidPrice(UnderlyingSymbol) * Math.Pow(hvQuote.value(), 2) * TimeToMaturity());
+            return algo.ZMProportionalTransactionCost / (algo.ZMRiskAversion * (double)algo.MidPrice(UnderlyingSymbol) * Math.Pow(volatilityZM, 2) * TimeToMaturity());
         }
 
-        public double HwZM()
+        public double HwZM(double volatilityZM)
         {
-            return 1.12 * Math.Pow(proportionalTransactionCost, 0.31) * 
+            return 1.12 * Math.Pow(algo.ZMProportionalTransactionCost, 0.31) * 
                 Math.Pow(TimeToMaturity(), 0.05) * 
-                Math.Pow(Math.Exp(-riskFreeRate * TimeToMaturity()) / hvQuote.value(), 0.25) * 
-                Math.Pow((Math.Abs(Gamma()) / riskAversion), 0.5);
+                Math.Pow(Math.Exp(-riskFreeRate * TimeToMaturity()) / volatilityZM, 0.25) * 
+                Math.Pow((Math.Abs(Gamma()) / algo.ZMRiskAversion), 0.5);
         }
 
-        public double BandZMLower(int direction)
+        public double DeltaZMOffset(int direction)
         {
-            double offset = H0ZM() + HwZM();
-            return DeltaZM(direction) - offset;
-        }
-
-        public double BandZMUpper(int direction)
-        {
-            double offset = H0ZM() + HwZM();
-            return DeltaZM(direction) + offset;
+            double volatilityZM = VolatilityZM(direction);
+            return H0ZM(volatilityZM) + HwZM(volatilityZM);
         }
 
         public double Theta(VanillaOption? option = null)
@@ -438,9 +431,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             
         }
 
-        public decimal Gamma100Bp()
+        public decimal GammaXBp(int x = 100)
         {
-            return (decimal)(0.5 * Gamma() * Math.Pow((double)algo.MidPrice(UnderlyingSymbol) * 100 * (double)BP, 2));
+            return (decimal)(0.5 * Gamma() * Math.Pow((double)algo.MidPrice(UnderlyingSymbol) * x * (double)BP, 2));
         }
 
         public double Vega()
@@ -490,13 +483,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return FiniteDifferenceApprox(riskFreeRateQuote, amOption, 0.01, "NPV");
         }
 
-        public double DPdIV()
+        public double DDeltadIV()
         {
-            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "delta") / 100;
+            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "delta");
         }
         public double DTdIV()
         {
-            return FiniteDifferenceApprox(hvQuote, euOption, 0.01, "thetaPerDay") / 100;
+            return FiniteDifferenceApprox(hvQuote, euOption, 0.01, "thetaPerDay");
         }
         public double DVegadIV()
         {
@@ -504,7 +497,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         }
         public double DGdIV()
         {
-            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "gamma") / 100;
+            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "gamma");
         }
         public double DIVdP()
         {

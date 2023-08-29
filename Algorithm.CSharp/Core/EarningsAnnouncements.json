@@ -2,8 +2,14 @@
   {
     "Symbol": "HPE",
     "Date": "2023-05-30",
-    "EmbargoPrior": "2023-05-29",
-    "EmbargoPost": "2023-06-01"
+    "EmbargoPrior": "2023-05-28",
+    "EmbargoPost": "2023-05-31"
+  },
+  {
+    "Symbol": "HPE",
+    "Date": "2023-08-29",
+    "EmbargoPrior": "2023-08-28",
+    "EmbargoPost": "2023-08-30"
   },
   {
     "Symbol": "AKAM",

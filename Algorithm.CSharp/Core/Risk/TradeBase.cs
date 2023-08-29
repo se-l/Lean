@@ -138,7 +138,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             switch (SecurityType)
             {
                 case SecurityType.Equity:
-                    return 1;
+                    return 0;  // Because ZM is to create option bands. Wouldn't want equity to dilute required bands.
                 case SecurityType.Option:
                     try
                     {
@@ -146,7 +146,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     }
                     catch
                     {
-                        Algo.Error($"Delta: Failed to derive ImpliedDelta. Using HV. Symbol: {Symbol} PriceUnderlying: {Mid1Underlying} HV: {IVMid1}");
+                        Algo.Error($"DeltaZM: Failed to derive DeltaZM. Returning BSM Delta. Symbol: {Symbol} PriceUnderlying: {Mid1Underlying} HV: {IVMid1}");
                         return Delta();
                     }
                 default:
@@ -154,24 +154,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
         }
 
-        public virtual decimal DeltaZMTotal(double? volatility = null)
+        public virtual double DeltaZMOffset(double? volatility = null)
         {
-            return SecurityType switch
-            {
-                SecurityType.Equity => (decimal)DeltaZM(volatility) * Quantity,
-                SecurityType.Option => (decimal)DeltaZM(volatility) * ((Option)Security).ContractMultiplier * Quantity
-            };
+            return GetGreeks1(volatility: volatility ?? (double)Algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility).DeltaZMOffset((int)Quantity);
         }
 
-        public virtual double BandZMLower(double? volatility = null)
-        { 
-            return GetGreeks1(volatility: volatility ?? (double)Algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility).BandZMLower((int)Quantity);
-        }
-
-        public virtual double BandZMUpper(double? volatility = null)
-        {
-            return GetGreeks1(volatility: volatility ?? (double)Algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility).BandZMUpper((int)Quantity);
-        }
         public virtual double DeltaImplied(double? volatility = null)
         {
             switch (SecurityType)
@@ -231,7 +218,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return SecurityType switch
             {
-                SecurityType.Equity => Mid1Underlying * 100 * BP * Quantity,
+                SecurityType.Equity => Mid1Underlying * (decimal)x * BP * Quantity,
                 SecurityType.Option => (decimal)(Delta() * x) * Mid1Underlying * BP * Multiplier * Quantity
             };
         }
