@@ -6,8 +6,6 @@ using QuantConnect.Data.Market;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
-using QuantConnect.Securities.Option;
-using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -19,7 +17,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Func<Symbol, Symbol, int, Resolution, double> Correlation;
         public Func<Symbol, int, Resolution, bool> IsLiquid;
         public VoidFunction HedgeWithIndex;
-        public VoidArg1Function<Symbol> HedgeGammaRisk;
+        //public VoidArg1Function<Symbol> HedgeGammaRisk;
         public VoidArg1Function<Symbol> HedgeOptionWithUnderlying;
         public VoidArg1Function<Symbol> HedgeOptionWithUnderlyingZM;
         public Func<Symbol, int, Resolution, IEnumerable<TradeBar>> HistoryWrap;
@@ -34,7 +32,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Correlation = Cache(GetCorrelation, (Symbol symbol1, Symbol symbol2, int periods, Resolution resolution) => (symbol1, symbol2, periods, resolution, Time.Date));  // not correct for resolution < daily
             IsLiquid = Cache(GetIsLiquid, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
             //HedgeWithIndex = Cache(GetHedgeWithIndex, () => Time, maxKeys: 1);
-            HedgeGammaRisk = Cache(GetHedgeGammaRisk, (Symbol symbol) => (Time, symbol));
+            //HedgeGammaRisk = Cache(GetHedgeGammaRisk, (Symbol symbol) => (Time, symbol));
             HedgeOptionWithUnderlying = Cache(GetHedgeOptionWithUnderlying, (Symbol symbol) => (Time, Underlying(symbol)));
             HedgeOptionWithUnderlyingZM = Cache(GetHedgeOptionWithUnderlyingZM, (Symbol symbol) => (Time, Underlying(symbol)));
             HistoryWrap = Cache(GetHistoryWrap, (Symbol symbol, int window, Resolution resolution) => (Time.Date, symbol, window, resolution));  // not correct for resolution < daily
@@ -110,97 +108,97 @@ namespace QuantConnect.Algorithm.CSharp.Core
         //    }
         //}
 
-        private void GetHedgeGammaRisk(Symbol symbol)
-        {
-            // Need to unify this with Signal functions. Scoped should be ALL options. Whether to Buy or Sell based on relative prices, events, inventory and current risk profile.
-            // This method triggers limit orders for a range of securities, does not price them. Some may get blocked on last-mile check. Need better flow from order scan through various checks and placement.
+        //private void GetHedgeGammaRisk(Symbol symbol)
+        //{
+        //    // Need to unify this with Signal functions. Scoped should be ALL options. Whether to Buy or Sell based on relative prices, events, inventory and current risk profile.
+        //    // This method triggers limit orders for a range of securities, does not price them. Some may get blocked on last-mile check. Need better flow from order scan through various checks and placement.
 
-            if (IsWarmingUp || !IsMarketOpen(equity1) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+        //    if (IsWarmingUp || !IsMarketOpen(equity1) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
 
-            List<Option> optionContracts = new();
+        //    List<Option> optionContracts = new();
 
-            Symbol underlying = Underlying(symbol);
+        //    Symbol underlying = Underlying(symbol);
 
-            decimal total500BpGamma = pfRisk.RiskByUnderlying(symbol, Metric.Gamma500BpUSDTotal);
-            double totalOptionsDelta = (double)pfRisk.DerivativesRiskByUnderlying(symbol, Metric.DeltaTotal);
+        //    decimal total500BpGamma = pfRisk.RiskByUnderlying(symbol, Metric.Gamma500BpUSDTotal);
+        //    double totalOptionsDelta = (double)pfRisk.DerivativesRiskByUnderlying(symbol, Metric.DeltaTotal);
 
-            decimal lowerBand = pfRisk.RiskBandByUnderlying(symbol, Metric.GammaLowerContinuousHedge);
-            decimal upperBand = pfRisk.RiskBandByUnderlying(symbol, Metric.GammaUpperContinuousHedge);
+        //    decimal lowerBand = pfRisk.RiskBandByUnderlying(symbol, Metric.GammaLowerContinuousHedge);
+        //    decimal upperBand = pfRisk.RiskBandByUnderlying(symbol, Metric.GammaUpperContinuousHedge);
 
-            optionChains.TryGetValue(underlying, out var options);
-            var records = options.Where(o => 
-                    o.Symbol.ID.Date > Time + TimeSpan.FromDays(60) 
-                    && o.BidPrice > 0.05m  // No units
-                    && Portfolio[o.Symbol].Quantity <= 0  // Get rid of this criteria eventually. Must be able to modify existing positions and adjust hedge.
-                ).Select(o => new
-            {
-                Option = o,
-                Delta = OptionContractWrap.E(this, o, 1).Delta(),
-                Gamma100Bp = OptionContractWrap.E(this, o, 1).GammaXBp(100)
-            });
+        //    optionChains.TryGetValue(underlying, out var options);
+        //    var records = options.Where(o => 
+        //            o.Symbol.ID.Date > Time + TimeSpan.FromDays(60) 
+        //            && o.BidPrice > 0.05m  // No units
+        //            && Portfolio[o.Symbol].Quantity <= 0  // Get rid of this criteria eventually. Must be able to modify existing positions and adjust hedge.
+        //        ).Select(o => new
+        //    {
+        //        Option = o,
+        //        Delta = OptionContractWrap.E(this, o, 1).Delta(),
+        //        Gamma100Bp = OptionContractWrap.E(this, o, 1).GammaXBp(100)
+        //    });
 
-            //if (total100BpGamma > upperBand)
-            //{
-            //    // Need options of same underlying with negative gamma. So sell any
-            //    records = records.Where(r => r.Gamma100Bp < 0);
-            //}
-            //else if (total100BpGamma < lowerBand)
-            //{
-            //    // Need options of same underlying with positive gamma. So buy any. This is the more likely case, given strategy starts by selling options.
-            //    records = records.Where(r => r.Gamma100Bp > 0);
-            //}
-            //else
-            //{
-            //    Log($"{Time} HedgeGammaRisk. Fill Event for {symbol}, but cannot no non-zero quantity in Portfolio. Expect this function to be called only when there is a non-zero quantity in Portfolio.");
-            //    return;
-            //}
+        //    //if (total100BpGamma > upperBand)
+        //    //{
+        //    //    // Need options of same underlying with negative gamma. So sell any
+        //    //    records = records.Where(r => r.Gamma100Bp < 0);
+        //    //}
+        //    //else if (total100BpGamma < lowerBand)
+        //    //{
+        //    //    // Need options of same underlying with positive gamma. So buy any. This is the more likely case, given strategy starts by selling options.
+        //    //    records = records.Where(r => r.Gamma100Bp > 0);
+        //    //}
+        //    //else
+        //    //{
+        //    //    Log($"{Time} HedgeGammaRisk. Fill Event for {symbol}, but cannot no non-zero quantity in Portfolio. Expect this function to be called only when there is a non-zero quantity in Portfolio.");
+        //    //    return;
+        //    //}
 
             
-            foreach (var record in records.Where(r => 
-                r.Gamma100Bp > 0.05m 
-                && r.Gamma100Bp < Math.Abs(total500BpGamma)
-                && r.Delta * totalOptionsDelta <= 0  // Only hedge with options that dont increase existing delta.
-            ))
-            {
-                decimal quantity = -Math.Round(total500BpGamma / record.Gamma100Bp, 0);
+        //    foreach (var record in records.Where(r => 
+        //        r.Gamma100Bp > 0.05m 
+        //        && r.Gamma100Bp < Math.Abs(total500BpGamma)
+        //        && r.Delta * totalOptionsDelta <= 0  // Only hedge with options that dont increase existing delta.
+        //    ))
+        //    {
+        //        decimal quantity = -Math.Round(total500BpGamma / record.Gamma100Bp, 0);
 
-                // Subtract existing limit orders from quantity to avoid over hedging. No Market orders on options yet
-                // decimal orderedQuantityMarket = ticketsUnderlying.Where(t => t.OrderType == OrderType.Market).Sum(t => t.Quantity);
-                // quantity -= orderedQuantityMarket;
+        //        // Subtract existing limit orders from quantity to avoid over hedging. No Market orders on options yet
+        //        // decimal orderedQuantityMarket = ticketsUnderlying.Where(t => t.OrderType == OrderType.Market).Sum(t => t.Quantity);
+        //        // quantity -= orderedQuantityMarket;
 
-                if (quantity != 0)
-                {
-                    orderTickets.TryGetValue(record.Option.Symbol, out List<OrderTicket> tickets);
-                    if (tickets != null && tickets.Any())
-                    {
-                        continue;
-                    }
-                    //Refactor to option, not equity quantity.
-                    //decimal orderedQuantityLimit = tickets.Where(t => t.OrderType == OrderType.Limit).Sum(t => t.Quantity);
-                    //if (orderedQuantityLimit != 0 && orderedQuantityLimit != quantity)
-                    //{
-                    //    // Update existing orders price and quantity.
-                    //    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", $"Update Order" }, { "f", $"GetHedgeOptionWithUnderlying" },
-                    //        { "Symbol", symbol}, { "riskDeltaTotalImplied", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
-                    //    UpdateLimitOrderEquity(equity, quantity, price);
-                    //    return;
-                    //}
+        //        if (quantity != 0)
+        //        {
+        //            orderTickets.TryGetValue(record.Option.Symbol, out List<OrderTicket> tickets);
+        //            if (tickets != null && tickets.Any())
+        //            {
+        //                continue;
+        //            }
+        //            //Refactor to option, not equity quantity.
+        //            //decimal orderedQuantityLimit = tickets.Where(t => t.OrderType == OrderType.Limit).Sum(t => t.Quantity);
+        //            //if (orderedQuantityLimit != 0 && orderedQuantityLimit != quantity)
+        //            //{
+        //            //    // Update existing orders price and quantity.
+        //            //    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", $"Update Order" }, { "f", $"GetHedgeOptionWithUnderlying" },
+        //            //        { "Symbol", symbol}, { "riskDeltaTotalImplied", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
+        //            //    UpdateLimitOrderEquity(equity, quantity, price);
+        //            //    return;
+        //            //}
 
-                    else
-                    {
-                        QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New Order" }, { "f", $"GetHedgeGammaRisk" },
-                        { "Symbol", symbol}, { "riskDeltaTotalImplied", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
+        //            else
+        //            {
+        //                QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New Order" }, { "f", $"GetHedgeGammaRisk" },
+        //                { "Symbol", symbol}, { "riskDeltaTotalImplied", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
 
-                        OrderOptionContract(
-                            record.Option,
-                            quantity,
-                            OrderType.Limit,
-                            " Gamma Risk Hedge"
-                        );
-                    }
-                }
-            }
-        }
+        //                OrderOptionContract(
+        //                    record.Option,
+        //                    quantity,
+        //                    OrderType.Limit,
+        //                    " Gamma Risk Hedge"
+        //                );
+        //            }
+        //        }
+        //    }
+        //}
         private void GetHedgeOptionWithUnderlyingZM(Symbol symbol)
         {
             if (IsWarmingUp || !IsMarketOpen(equity1) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;

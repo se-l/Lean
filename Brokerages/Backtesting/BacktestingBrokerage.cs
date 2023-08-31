@@ -28,6 +28,9 @@ using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using QuantConnect.Securities.Positions;
 using QuantConnect.Util;
+using QuantConnect.Configuration;
+using Newtonsoft.Json;
+using System.Globalization;
 
 namespace QuantConnect.Brokerages.Backtesting
 {
@@ -292,7 +295,7 @@ namespace QuantConnect.Brokerages.Backtesting
 
                     HasSufficientBuyingPowerForOrderResult hasSufficientBuyingPowerResult;
                     // verify sure we have enough cash to perform the fill
-                    if (false)
+                    if (JsonConvert.DeserializeObject<bool>(Config.Get("RunHasSufficientBuyPower").ToLowerInvariant()))
                     {
                         try
                         {

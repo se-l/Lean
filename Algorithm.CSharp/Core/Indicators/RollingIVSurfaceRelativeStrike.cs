@@ -5,10 +5,11 @@ using Accord.Math;
 using System.Globalization;
 using System.Text;
 using QuantConnect.Securities.Option;
+using System.IO;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
-    public class RollingIVSurfaceRelativeStrike<T>
+    public class RollingIVSurfaceRelativeStrike<T> : IDisposable
         where T : IVBidAsk, IIVBidAsk
     {
         public Symbol Underlying { get; }
@@ -21,6 +22,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         private Dictionary<(DateTime, decimal), int> samples = new();
         private DateTime TimeFrontier;
         private decimal MidPrice { get { return algo.MidPrice(Underlying); } }
+        private readonly string _path;
+        private readonly StreamWriter _writer;
+        private bool _headerWritten;
 
         // For Adaptive EWMA
         // private double gamma = 0.0001;  // HPE
@@ -31,6 +35,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             this.algo = algo;
             Underlying = underlying.SecurityType == SecurityType.Option ? underlying.Underlying : underlying;
             Side = side;
+
+            _path = Path.Combine(Directory.GetCurrentDirectory(), "IVSurface", Underlying.Value, $"{Side}.csv");
+            if (File.Exists(_path))
+            {
+                File.Delete(_path);
+            }
+            else
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_path));
+            }
+            _writer = new StreamWriter(_path, true);
         }
 
         public void AddStrike(Symbol symbol)
@@ -262,10 +277,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             csv.AppendLine("Time,IsOTM,Expiry," + string.Join(",", header));
             return csv.ToString();
         }
-        public string GetCsvRows()
+        public void WriteCsvRows()
         {
             var csv = new StringBuilder();
             var dict = ToDictionary();
+            if (_headerWritten)
+            {
+                _writer.WriteLine(GetCsvHeader());
+                _headerWritten = true;
+            }
 
             List<decimal> sortedKeys = dict[true][dict[true].Keys.First()].Keys.Sorted().ToList();
 
@@ -279,7 +299,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 }
             }
 
-            return csv.ToString();
+            _writer.Write(csv.ToString());
+        }
+
+        public void Dispose()
+        {
+            _writer.Flush();
+            _writer.Dispose();
         }
 
         public bool IsEmpty { get { return bins.Count == 0; } }

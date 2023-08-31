@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using QuantConnect.Orders;
 using QuantConnect.Algorithm.CSharp.Core.Events;
-using static QuantConnect.Algorithm.CSharp.Core.Events.EventSignal;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -34,23 +33,26 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }
                     UpdateLimitPrice(newBidAsk.Symbol);
                     pfRisk.IsRiskLimitExceededZM(newBidAsk.Symbol);
-                    pfRisk.IsRiskLimitExceededGamma(newBidAsk.Symbol);
+                    //pfRisk.IsRiskLimitExceededGamma(newBidAsk.Symbol);
                     //EmitNewFairOptionPrices(newBidAsk.Symbol);
                 }
             }
 
             if (@event is OrderEvent orderEvent && (orderEvent.Status is OrderStatus.Filled or OrderStatus.PartiallyFilled))
             {
+                UpdateOrderFillData(orderEvent);
                 pfRisk.ResetPositions();
                 LogOnEventOrderFill(orderEvent);
-                CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
+                GetDesiredOrders();
+                //CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
                 pfRisk.IsRiskLimitExceededZM(orderEvent.Symbol);
-                pfRisk.IsRiskLimitExceededGamma(orderEvent.Symbol);
+                //pfRisk.IsRiskLimitExceededGamma(orderEvent.Symbol);
                 
-                if (orderEvent.Symbol.SecurityType == SecurityType.Option)
-                {
-                    OrderOppositeOrder(orderEvent.Symbol);
-                }
+                //if (orderEvent.Symbol.SecurityType == SecurityType.Option)
+                //{
+                //    OrderOppositeOrder(orderEvent.Symbol);
+                //}
+                RiskPnLProfiles[Underlying(orderEvent.Symbol)].Update();
             }
 
             //if (@event is EventNewFairOptionPrice newFairOptionPrice)
@@ -58,23 +60,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //    UpdateLimitPrice(newFairOptionPrice.Symbol);
             //}
 
-            if (@event is EventSignals signals)
-            {
-                HandleSignals(signals.Signals);  // just orders all currently...
-            }
-
             if (@event is EventRiskLimitExceeded riskLimitExceeded)
             {
                 switch (riskLimitExceeded.LimitType)
                 {
                     case RiskLimitType.Delta:
-                        CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
+                        //CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
                         HedgeOptionWithUnderlyingZM(riskLimitExceeded.Symbol);
                         break;
-                    case RiskLimitType.Gamma:
-                        CancelRiskIncreasingOrderTickets(RiskLimitType.Gamma);
-                        HedgeGammaRisk(riskLimitExceeded.Symbol);
-                        break;
+                    //case RiskLimitType.Gamma:
+                    //    CancelRiskIncreasingOrderTickets(RiskLimitType.Gamma);
+                    //    HedgeGammaRisk(riskLimitExceeded.Symbol);
+                    //    break;
                 }
             }
         }

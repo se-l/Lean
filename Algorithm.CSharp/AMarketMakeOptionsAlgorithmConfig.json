@@ -1,0 +1,49 @@
+{
+  "HedgeTicker": [],
+  // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
+  //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
+  //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" ];  // Too much for 2 cores on a t3 instance.
+  "OptionTicker": [ "HPE" ],
+  "LiquidateTicker": [],
+  "OptionOrderQuantityDflt": 5,
+  "VolatilityPeriodDays": 5,
+
+  "scopeContractStrikeOverUnderlyingMax": 1.20,
+  "scopeContractStrikeOverUnderlyingMin": 0.8,
+  "scopeContractStrikeOverUnderlyingMargin": 0.05,
+  "scopeContractMinDTE": 0,
+  "scopeContractMaxDTE": 180,
+  "scopeContractIsLiquidDays": 5,
+
+  "ZMRiskAversion": 1,
+  "ZMProportionalTransactionCost": 0.001,
+
+  "DiscountParams": {
+    "HPE-Delta100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0.001,
+      "X2": 0.00005,
+      "CapMin": -0.5,
+      "CapMax": 0.5
+    },
+    "HPE-Gamma100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0.001,
+      "X2": 0.00005,
+      "CapMin": -0.3,
+      "CapMax": 0.3
+    },
+    "HPE-Events-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0.4,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
+    }
+  },
+  "RiskLimitEODDelta100BpUSDTotalLong": 5,
+  "RiskLimitEODDelta100BpUSDTotalShort": -5
+}

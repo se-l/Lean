@@ -6,6 +6,7 @@ using QuantConnect.Securities.Option;
 using System;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using static QuantConnect.Messages;
 
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -81,7 +82,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // targetRisk is absolute, while x0,x1 and x2 are relative to the precentage deviation off absoltue target risk.
             // Need to punish/incentivize how much a trade changes risk profile, but also how urgent it is....
             // Big negative delta while pf is pos, great, but only if whole portfolio is not worse off afterwards. Essentially need the area where nothing changes.
-
+            //double riskCurrent = (double)pfRisk.DerivativesRiskByUnderlying(option.Symbol, Metric.DeltaTotal);
+            //if (riskCurrent < -200)
+            //{
+            //    var a = 1;
+            //}
             double discountDelta = DiscountMetric(option, quantity, Metric.Delta100BpUSDTotal, DeltaDiscounts[option.Underlying.Symbol]);
             double discountGamma = DiscountMetric(option, quantity, Metric.Gamma500BpUSDTotal, GammaDiscounts[option.Underlying.Symbol]);
             double discountEvents = DiscountEvents(option, quantity);
@@ -119,7 +124,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
             return smoothedIVPrice;
         }
-
 
         /// <summary>
         /// Consider making spreadfactor a function of the forecasted volatility (long mean) and current volatility (short mean). all implied. Then hold until vega earned.
@@ -161,6 +165,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             else
             {
+                // if the risk utility of both directions is approximately the same, then a greater (Sell: IVBid - IVEWMA) or (Buy: IVEWMA - IVBid). Better translated into prices -> profit.
                 price = orderDirection switch
                 {
                     OrderDirection.Buy => Math.Min(smoothedIVPrice ?? 0, MidPrice(symbol)),

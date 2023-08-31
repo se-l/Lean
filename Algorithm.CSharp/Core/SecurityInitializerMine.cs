@@ -13,7 +13,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
     {
         public int VolatilityPeriodDays { get; set; }
 
-        private Foundations algo;
+        private readonly Foundations algo;
         public SecurityInitializerMine(IBrokerageModel brokerageModel, Foundations algo, ISecuritySeeder securitySeeder, int volatilityPeriodDays)
         : base(brokerageModel, securitySeeder) {
             this.algo = algo;
@@ -56,7 +56,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 // Initialize a Security Specific Hedge Band or Risk Limit object. Constitutes underlying, hence risk limit not just by security but also its derivatives.
                 // Adjust delta by underlying's volatility.
-                security.RiskLimit = new SecurityRiskLimit(security, delta100BpLong: 5, delta100BpShort: -5);  // These limits are currently only used for EOD Delta Hedging. Otherwise, following Zakamulin.
+                security.RiskLimit = new SecurityRiskLimit(security, delta100BpLong: algo.Cfg.RiskLimitEODDelta100BpUSDTotalLong, delta100BpShort: algo.Cfg.RiskLimitEODDelta100BpUSDTotalShort);
 
                 InitializeIVSurface(security.Symbol);
             }

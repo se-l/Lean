@@ -45,11 +45,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// Helper constructor reading arguments from config.json
         /// </summary>
         /// <param name="metric"></param>
-        public RiskDiscount(Symbol symbol, Metric metric)
+        public RiskDiscount(AMarketMakeOptionsAlgorithmConfig cfg, Symbol symbol, Metric metric)
         {
             Symbol = symbol;
             Metric = metric;
-            DiscountParams = JsonConvert.DeserializeObject<DiscountParams>(Config.Get($"{symbol.Value.ToUpper(CultureInfo.InvariantCulture)}-{metric}-discount-params"));
+            //DiscountParams = JsonConvert.DeserializeObject<DiscountParams>(Config.Get($"{symbol.Value.ToUpper(CultureInfo.InvariantCulture)}-{metric}-discount-params"));
+            DiscountParams = cfg.DiscountParams[$"{symbol.Value.ToUpper(CultureInfo.InvariantCulture)}-{metric}-discount-params"];
         }
     }
 }

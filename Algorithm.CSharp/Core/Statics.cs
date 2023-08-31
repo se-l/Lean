@@ -154,10 +154,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Bands
             BandZMLower,
             BandZMUpper,
-            GammaUpperStopBuying,
-            GammaLowerStopSelling,
-            GammaUpperContinuousHedge,
-            GammaLowerContinuousHedge,
 
             Events
         }

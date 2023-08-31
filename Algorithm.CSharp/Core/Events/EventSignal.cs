@@ -1,32 +1,19 @@
+using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
-using System.Collections.Generic;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Events
 {
-    public class EventSignal
-   {
-        public class Signal
+    public class Signal
+    {
+        public Symbol Symbol { get; internal set; }
+        public OrderDirection OrderDirection { get; internal set; }
+        public UtilityOrder UtilityOrder { get; internal set; }
+
+        public Signal(Symbol symbol, OrderDirection orderDirection, UtilityOrder utilityOrder)
         {
-            public Symbol Symbol;
-            public OrderDirection OrderDirection;
-            public bool PfRiskReviewed;
-
-            public Signal(Symbol symbol, OrderDirection orderDirection, bool pfRiskReviewed = false)
-            {
-                Symbol = symbol;
-                OrderDirection = orderDirection;
-                PfRiskReviewed = pfRiskReviewed;
-            }
-        }
-
-        public class EventSignals
-        {
-            public List<Signal> Signals;
-
-            public EventSignals(List<Signal> signals)
-            {
-                Signals = signals;
-            }
+            Symbol = symbol;
+            OrderDirection = orderDirection;
+            UtilityOrder = utilityOrder;
         }
     }
 }

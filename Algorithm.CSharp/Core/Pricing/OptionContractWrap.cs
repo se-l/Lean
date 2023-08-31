@@ -350,10 +350,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             double ttm = TimeToMaturity();
             
-            return 4.76 * Math.Pow(algo.ZMProportionalTransactionCost, 0.78) / 
+            return 4.76 * Math.Pow(algo.Cfg.ZMProportionalTransactionCost, 0.78) / 
                 Math.Pow(ttm, 0.02) * 
                 Math.Pow(Math.Exp(-riskFreeRate * ttm) / sigma, 0.25) * 
-                Math.Pow(algo.ZMRiskAversion * Math.Pow((double)algo.MidPrice(UnderlyingSymbol), 2) * Math.Abs(Gamma()), 0.15);
+                Math.Pow(algo.Cfg.ZMRiskAversion * Math.Pow((double)algo.MidPrice(UnderlyingSymbol), 2) * Math.Abs(Gamma()), 0.15);
         }
 
         public double DeltaZM(int direction)
@@ -377,15 +377,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double H0ZM(double volatilityZM)
         {
             // not adjusted volatility. Implied, historical or forecasted.
-            return algo.ZMProportionalTransactionCost / (algo.ZMRiskAversion * (double)algo.MidPrice(UnderlyingSymbol) * Math.Pow(volatilityZM, 2) * TimeToMaturity());
+            return algo.Cfg.ZMProportionalTransactionCost / (algo.Cfg.ZMRiskAversion * (double)algo.MidPrice(UnderlyingSymbol) * Math.Pow(volatilityZM, 2) * TimeToMaturity());
         }
 
         public double HwZM(double volatilityZM)
         {
-            return 1.12 * Math.Pow(algo.ZMProportionalTransactionCost, 0.31) * 
+            return 1.12 * Math.Pow(algo.Cfg.ZMProportionalTransactionCost, 0.31) * 
                 Math.Pow(TimeToMaturity(), 0.05) * 
                 Math.Pow(Math.Exp(-riskFreeRate * TimeToMaturity()) / volatilityZM, 0.25) * 
-                Math.Pow((Math.Abs(Gamma()) / algo.ZMRiskAversion), 0.5);
+                Math.Pow((Math.Abs(Gamma()) / algo.Cfg.ZMRiskAversion), 0.5);
         }
 
         public double DeltaZMOffset(int direction)
