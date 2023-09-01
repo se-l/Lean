@@ -10,13 +10,14 @@ using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Option;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Algorithm.CSharp.Core.Events;
-using QuantConnect.Algorithm.CSharp.Core.Pricing;
+using QuantConnect.Data.Consolidators;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations : QCAlgorithm
     {
         public Resolution resolution;
+        public Dictionary<Symbol, QuoteBarConsolidator> QuoteBarConsolidators = new();
         public List<OrderEvent> OrderEvents = new();
         public Dictionary<Symbol, List<OrderTicket>> orderTickets = new();
         public OrderType orderType;
@@ -187,6 +188,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <returns></returns>
         public void HandleDesiredOrders(IEnumerable<Signal> signals)
         {
+            // Fix Cancel orders if none received.
             foreach (var group in signals.GroupBy(s => s.Symbol.Underlying))
             {
                 var underlying = group.Key;
@@ -219,12 +221,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         {
                             // No tickets for this symbol currently.
                             OrderOptionContract((Option)Securities[signal.Symbol], SignalQuantity(signal.Symbol, signal.OrderDirection), OrderType.Limit);
+                            signal.UtilityOrder.Export();
                         }
                     }
                     else 
                     {
                         // First time orders are placed on this symbol
                         OrderOptionContract((Option)Securities[signal.Symbol], SignalQuantity(signal.Symbol, signal.OrderDirection), OrderType.Limit);
+                        signal.UtilityOrder.Export();
                     }
                 }
                 // Also need to cancel any other option order not listed in the signals.
@@ -437,21 +441,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     var ideal_limit_price = PriceOptionPfRiskAdjusted(contract, ticket.Quantity);
                     ideal_limit_price = RoundTick(ideal_limit_price, tick_size_);
 
-                    // Reduce Order Ticket Updates - Only update when more change is more than 1 tick size. Commented as it premature optimization.
-                    //if (ticket.UpdateRequests.Count > 0 && ticket.UpdateRequests[ticket.UpdateRequests.Count - 1].LimitPrice == ideal_limit_price)
-                    //{
-                    //    continue;
-                    //}
-
-
-                    //var orderDirection = NUM2DIRECTION[Math.Sign(ticket.Quantity)];
-                    //if (!IsFlippingTicket(ticket) && !PermittedOrderDirectionsFromVolatility(contract.Symbol, IVLongShortBandCancel).Contains(orderDirection))
-                    ////else if (!PermittedOrderDirectionsFromVolatility(contract.Symbol, IVLongShortBandCancel).Contains(orderDirection))                        
-                    //{
-                    //    Log($"{Time}: CANCEL LIMIT Symbol{contract.Symbol}: ideal_limit_price = 0. Presumably IV too far gone...");
-                    //    ticket.Cancel();
-                    //}
-
                     if (Math.Abs(ideal_limit_price - limit_price) >= tick_size_ && ideal_limit_price >= tick_size_)
                     {
                         if (ideal_limit_price < tick_size_)
@@ -532,7 +521,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             var absTargetDelta = QuantityExceedingMinimumBrokerageFee(symbol); // Make the hedge worthwile
             var currentDelta = pfRisk.RiskByUnderlying(symbol.Underlying, Metric.DeltaTotal);
             var deltaPerUnit = pfRisk.RiskAddedIfFilled(symbol, DIRECTION2NUM[orderDirection] * 1, Metric.DeltaTotal);
-            if (deltaPerUnit * currentDelta > 0) // same direction. Increase risk up to 200 more.
+            if (deltaPerUnit == 0) // ZeroDivisionError
+            {
+                absQuantity = Cfg.OptionOrderQuantityDflt;
+            }
+            else if (deltaPerUnit * currentDelta > 0) // same direction. Increase risk up to 200 more.
             {
                 absQuantity = Math.Abs((absTargetDelta - Math.Abs(currentDelta)) / deltaPerUnit);
             }
@@ -547,43 +540,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             return DIRECTION2NUM[orderDirection] * Math.Min(10, absQuantity);
         }
-
-        //public void HedgePortfolioRiskIs()
-        //{
-        //    /    todo: This needs to go through central risk and other trade processing function. Dont circumvent.
-        //    /    This event should be triggered when
-        //    /    - the absolute risk changes significantly requiring updates to ticket prices or new hedges.
-        //    /    - Many small changes will result in a big net delta change, then olso hedge...
-        //    /   Simplifying assumption: There is at most one contract per option contract
-        //    /   //    # Missing the usual Signal -> Risk check here. Suddenly placing orders for illiquid option.
-        //    foreach (var tickets in orderTickets.Values)
-        //    {
-        //        foreach (var t in tickets)
-        //        {
-        //            decimal dPfDeltaIf = pfRisk.DPfDeltaIfFilled(t.Symbol, t.Quantity);
-        //             0 to be replace with HedgeBand target, once DPfDeltaFilled returns a decent number
-        //            if (dPfDeltaIf * pfRisk.DeltaSPYUnhedged100BpUSD > 0)
-        //            {
-        //                OrderDirection orderDirection = NUM2DIRECTION[Math.Sign(t.Quantity)];
-        //                decimal newPrice = PriceOptionPfRiskAdjusted((Option)Securities[t.Symbol], pfRisk, orderDirection);
-        //                newPrice = RoundTick(newPrice, TickSize(t.Symbol));
-        //                if (newPrice == 0)
-        //                {
-        //                    Debug($"Failed to get price for {t.Symbol} while hedging portfolio looking to update existing tickets..");
-        //                    continue;
-        //                }
-        //                if (t.UpdateRequests?.Count > 0 && t.UpdateRequests.Last()?.LimitPrice == newPrice)
-        //                {
-        //                    continue;
-        //                }
-        //                        tag = f'Update Ticket: {ticket}. Set Price: {new_price} from originally: {limit_price}'
-        //                        algo.Log(humanize(ts=
-        //                        , topic="HEDGE MORE AGGRESSIVELY", symbol=str(ticket.Symbol), current_price=limit_price, new_price=new_price))
-        //                t.UpdateLimitPrice(newPrice);
-        //            }
-        //        }
-        //    }
-        //}
 
         private static readonly HashSet<OrderStatus> skipOrderStatus = new() { OrderStatus.Canceled, OrderStatus.Filled, OrderStatus.Invalid, OrderStatus.CancelPending };
 
@@ -606,127 +562,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         }
 
-        ///// <summary>
-        ///// Objectives:
-        ///// 1. Dont cancel tickets that reduce an absolute position. Need to flip.
-        ///// 2. Cancel any open tickets that would increase the risk by Underlying, except for flipping tickets...
-        ///// 3. This function is oddly portfoliowide....
-        ///// </summary>
-        //public void CancelRiskIncreasingOrderTickets(RiskLimitType riskLimitType)
-        //{
-        //    decimal riskAddedIfFilled;
-        //    decimal derivativesRiskByUnderlying;
-            
-        //    var tickets = orderTickets.Values.SelectMany(x => x).Where(t => !skipOrderStatus.Contains(t.Status)).ToList();  // ToList() -> Avoids concurrent modification error
-        //    var ticketToCancel = new List<OrderTicket>();
-        //    foreach (var ticketsByUnderlying in tickets.GroupBy(t => Underlying(t.Symbol)))
-        //    {
-        //        OrderTicket tg = ticketsByUnderlying.First();
-        //        derivativesRiskByUnderlying = riskLimitType switch 
-        //        {
-        //            RiskLimitType.Delta => pfRisk.DerivativesRiskByUnderlying(tg.Symbol, Metric.Delta100BpUSDTotal),
-        //            RiskLimitType.Gamma => pfRisk.DerivativesRiskByUnderlying(tg.Symbol, Metric.Gamma100BpUSDTotal),
-        //            _ => throw new NotImplementedException(riskLimitType.ToString()),
-        //        };
-        //        //if (  // Only cancel when risk limit are so high, that no buy/sell signals follow.
-        //        //    riskLimitType == RiskLimitType.Gamma && derivativesRiskByUnderlying < 0 && !(derivativesRiskByUnderlying < pfRisk.RiskBandByUnderlying(tg.Symbol, Metric.GammaLowerStopSelling))
-        //        //    || riskLimitType == RiskLimitType.Gamma && derivativesRiskByUnderlying > 0 && !(derivativesRiskByUnderlying > pfRisk.RiskBandByUnderlying(tg.Symbol, Metric.GammaUpperStopBuying))
-        //        //    )
-        //        //{
-        //        //    continue;
-        //        //}
-
-        //        foreach (var t in ticketsByUnderlying)
-        //        {
-        //            switch (riskLimitType)
-        //            {
-        //                case RiskLimitType.Delta:
-        //                    riskAddedIfFilled = pfRisk.RiskAddedIfFilled(t.Symbol, t.Quantity, Metric.Delta100BpUSDTotal);
-        //                    var currentRisk = pfRisk.DerivativesRiskByUnderlying(t.Symbol, Metric.Delta100BpUSDTotal);
-        //                    if (!IsFlippingTicket(t) && (riskAddedIfFilled * currentRisk > 0 ))
-        //                    {
-        //                        QuickLog(new Dictionary<string, string>() { { "topic", "CANCEL" }, { "msg", $"CancelRiskIncreasingOrderTickets {t.Symbol}, riskLimitType={riskLimitType}, riskAddedIfFilled={riskAddedIfFilled}, derivativesRiskByUnderlying={derivativesRiskByUnderlying}" } });
-        //                        ticketToCancel.Add(t);
-        //                    }
-        //                    break;
-        //                //case RiskLimitType.Gamma:
-        //                //    riskAddedIfFilled = pfRisk.RiskAddedIfFilled(t.Symbol, t.Quantity, Metric.Gamma100BpUSDTotal);
-        //                //    if (riskAddedIfFilled * derivativesRiskByUnderlying > 0)  // same sign; non-null
-        //                //    {
-        //                //        QuickLog(new Dictionary<string, string>() { { "topic", "CANCEL" }, { "msg", $"CancelRiskIncreasingOrderTickets {t.Symbol}, riskLimitType={riskLimitType}, riskAddedIfFilled={riskAddedIfFilled}, derivativesRiskByUnderlying={derivativesRiskByUnderlying}" } });
-        //                //        ticketToCancel.Add(t);
-        //                //    }
-        //                //    break;
-        //            }
-        //        }
-        //    }
-        //    ticketToCancel.ForEach(t => t.Cancel());
-        //}
-
-        //public bool IsFlippingTicket(OrderTicket ticket)
-        //{
-        //    Symbol symbol = ticket.Symbol;
-        //    if (symbol.ID.SecurityType != SecurityType.Option) { return false; }
-
-        //    var position = Portfolio[symbol].Quantity;
-        //    if (position == 0) { return false; }
-
-        //    return ticket.Quantity * position < 0;
-        //}
-
-        /// <summary>
-        /// Good for flipping. Bad for risk reduction. But flipping is more important...
-        /// </summary>
-        //public void OrderOppositeOrder(Symbol symbol)
-        //{
-        //    //if (symbol.Value.StartsWith("HPE") && (new List<DateTime>() { new DateTime(2023, 5, 30).Date, new DateTime(2023, 6, 1) }).Contains(Time.Date))
-        //    //{
-        //    //    return;
-        //    //}
-        //    if (symbol.ID.SecurityType != SecurityType.Option) { return; }
-
-        //    var position = Portfolio[symbol].Quantity;
-        //    if (position == 0) { return; }
-
-        //    if (orderTickets.TryGetValue(symbol, out List<OrderTicket> tickets))
-        //    {
-        //        if (tickets.Sum(t => t.Quantity) * position < 0) 
-        //        {
-        //            // Already having liquidating tickets
-        //            return;
-        //        }
-        //    }
-
-        //    //if (!PermittedOrderDirectionsFromGamma(symbol).Contains(NUM2DIRECTION[Math.Sign(-position)])) { 
-        //    //    return; 
-        //    //}
-
-        //    // IV Very High - Dont buy amymore
-        //    //if (position < 0 && RollingIVBid[symbol].EWMASlow < RollingIVBid[symbol].EWMA * 1.2)
-        //    //{
-        //    //    Log($"{Time} - IV very high. Not buying anymore.");
-        //    //    return;
-        //    //}
-        //    //if (position > 0 && RollingIVAsk[symbol].EWMASlow * 0.8 > RollingIVAsk[symbol].EWMA * 1.2)
-        //    //{
-        //    //    Log($"{Time} - IV very low. Not selling anymore.");
-        //    //    return;
-        //    //}
-
-        //    // If here in function. No liquidating tickets.
-        //    Log($"{Time} - Ordering order opposite to {symbol}");
-        //    OrderOptionContract((Option)Securities[symbol], -position, OrderType.Limit);
-        //}
-
-        //public void OrderOppositeOrders()
-        //{
-        //    // Get all Securities with non-zero position. Would not get through as it's not yet time to trade....
-        //    var nonZeroPositions = Portfolio.Values.Where(x => x.Invested && x.Type == SecurityType.Option);
-        //    foreach (var position in nonZeroPositions)
-        //    {
-        //        OrderOppositeOrder(position.Symbol);
-        //    }
-        //}
+        
 
         public IEnumerable<Symbol> SymbolsATM(Symbol symbol)
         {
@@ -751,36 +587,5 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return new List<Symbol> { };
             }
         }
-
-        //public double IVAtm(Symbol symbol)
-        //{
-        //    // refactor to use ATM symbols of canoical option derived from symbol argument.
-        //    var symbolsAtm = SymbolsATM(symbol);
-        //    if (!symbolsAtm.Any()) return 0;
-
-        //    double bidIV = symbolsAtm.Select(sym => RollingIVBid[sym].Current.IV).Average();
-        //    double askIV = symbolsAtm.Select(sym => RollingIVAsk[sym].Current.IV).Average();
-        //    double midIV = (bidIV + askIV) / 2;
-        //    return midIV;
-        //}
-
-        //public void EmitNewFairOptionPrices(Symbol symbol)
-        //{
-        //    if (symbol.SecurityType != SecurityType.Equity)
-        //    {
-        //        return;
-        //    }
-        //    foreach (Symbol sym in orderTickets.Keys.Where(sym => sym.SecurityType == SecurityType.Option && sym.ID.Underlying.Symbol == symbol))
-        //    {
-        //        if (!orderTickets[sym].Any()) continue;
-        //        var option = (Option)Securities[sym];
-        //        decimal? price = PriceOptionPfRiskAdjusted(option, OrderDirection.Buy);
-        //        if (price != null && price != fairOptionPrices.GetValueOrDefault(option, null))
-        //        {
-        //            fairOptionPrices[option] = price;
-        //            PublishEvent(new EventNewFairOptionPrice(option.Symbol, (decimal)price));
-        //        }
-        //    }
-        //}
     }
 }

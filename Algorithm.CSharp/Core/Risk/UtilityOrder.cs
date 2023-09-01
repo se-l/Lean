@@ -14,7 +14,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private readonly StreamWriter _writer;
         public Utility()
         {
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "UtilityOrder.csv");
+            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "UtilityOrder.csv");
             if (File.Exists(_path))
             {
                 File.Delete(_path);
@@ -81,13 +81,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             // Calling Utility to snap the risk. Cached for future use.
             _ = Utility;
+        }
+
+        public void Export()
+        {
             _algo.Utility.Write(this);
         }
 
         public double UtilityRisk()
         {
             // Greater 1. Good for portfolio. Risk reducing. Negative: Risk increasing.
-            var _inventoryRisk = _algo.Portfolio[Symbol].Quantity * Quantity > 0 ? -100 : 0;  // for now, dont order in the same direction as position
+            var _inventoryRisk = _algo.Portfolio[Symbol].Quantity * Quantity > 0 ? -1 : 0;  // for now, dont order in the same direction as position
             return
                 _inventoryRisk + 
                 (1 / ( 1 - _algo.SpreadFactor(Option, Quantity)));
@@ -128,8 +132,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             double iv = OrderDirection switch
             {
-                OrderDirection.Buy => _algo.IVBids[Symbol].Current.IV,
-                OrderDirection.Sell => _algo.IVAsks[Symbol].Current.IV,
+                OrderDirection.Buy => _algo.IVBids[Symbol].IVBidAsk.IV,
+                OrderDirection.Sell => _algo.IVAsks[Symbol].IVBidAsk.IV,
                 _ => 0
             };
             if (iv == 0) { return 0; }

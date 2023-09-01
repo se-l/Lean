@@ -6,6 +6,7 @@ using QuantConnect.Data.Market;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System.Linq;
+using QuantConnect.Data.Consolidators;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -74,11 +75,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Initialize a Security Specific Hedge Band or Risk Limit object.
                 option.RiskLimit = new SecurityRiskLimit(option);
 
+                if (!algo.QuoteBarConsolidators.ContainsKey(option.Symbol))
+                {
+                    algo.QuoteBarConsolidators[option.Symbol] = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
+                }
+
                 algo.IVBids[option.Symbol] = new IVBid(option, algo);
                 algo.IVAsks[option.Symbol] = new IVAsk(option, algo);
+
                 InitializeIVSurface(option.Symbol.Underlying);
-
-
             }
 
             if (security.Resolution == Resolution.Tick)

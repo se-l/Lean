@@ -16,7 +16,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private readonly Foundations _algo;
         public readonly Equity Equity;
         public Symbol Symbol { get => Equity.Symbol; }
-        public Dictionary<double, decimal> PnLProfile = Enumerable.Range(-10, 10).Select(i => (double)i).ToDictionary(i => i, i => 0m);
+        public Dictionary<double, decimal> PnLProfile = Enumerable.Range(-10, 21).Select(i => (double)i).ToDictionary(i => i, i => 0m);
         private readonly List<string> _header;
         private readonly string _path;
         private readonly StreamWriter _writer;
@@ -25,7 +25,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             _algo = algo;
             Equity = equity;
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "RiskPnLProfile", $"{Symbol.Value}.csv");
+            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "RiskPnLProfile", $"{Symbol.Value}.csv");
             if (File.Exists(_path))
             {
                 //File.Delete(_path);

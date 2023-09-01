@@ -1,7 +1,6 @@
 using QuantConnect.Securities.Equity;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
@@ -66,7 +65,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public RiskRecorder(Foundations algo)
         {
             _algo = algo;
-            _path = Path.Combine(Directory.GetCurrentDirectory(), $"{_algo.Name}_risk_records_{_algo.EndDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture)}.csv");
+            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "RiskRecords.csv");
             if (File.Exists(_path))
             {
                 File.Delete(_path);

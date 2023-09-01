@@ -36,7 +36,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Underlying = underlying.SecurityType == SecurityType.Option ? underlying.Underlying : underlying;
             Side = side;
 
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "IVSurface", Underlying.Value, $"{Side}.csv");
+            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "IVSurface", Underlying.Value, $"{Side}.csv");
             if (File.Exists(_path))
             {
                 File.Delete(_path);
@@ -90,6 +90,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         /// </summary>
         public void RefreshSurface()
         {
+            // 1. TODO Refactor to just run it over all Options in Securities for this underlying
+            // 2. Interpolate all bins from "raw" strike IV % .
+            // 3. Smooth all bins.
             foreach (var expiry in Strikes.Keys)
             {
                 foreach (decimal strike in Strikes[expiry])
@@ -281,9 +284,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         {
             var csv = new StringBuilder();
             var dict = ToDictionary();
-            if (_headerWritten)
+            if (!_headerWritten)
             {
-                _writer.WriteLine(GetCsvHeader());
+                _writer.Write(GetCsvHeader());
                 _headerWritten = true;
             }
 

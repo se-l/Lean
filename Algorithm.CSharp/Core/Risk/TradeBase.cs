@@ -72,13 +72,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             get => SecurityType switch
             {
-                SecurityType.Option => Algo.IVBids[Symbol].Current.IV,
+                SecurityType.Option => Algo.IVBids[Symbol].IVBidAsk.IV,
                 _ => 0
             };
         }
         public virtual double IVAsk1 { get => SecurityType switch
         {
-            SecurityType.Option => Algo.IVAsks[Symbol].Current.IV,
+            SecurityType.Option => Algo.IVAsks[Symbol].IVBidAsk.IV,
             _ => 0
         };}
         public virtual double IVMid1 { get => (IVBid1 + IVAsk1) / 2; }

@@ -32,6 +32,7 @@ using QuantConnect.Securities.Equity;
 using Newtonsoft.Json;
 using QuantConnect.Configuration;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Data.Consolidators;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -52,14 +53,15 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 6, 1);
-            SetEndDate(2023, 8, 30);
+            SetStartDate(2023, 6, 15);
+            SetEndDate(2023, 6, 30);
             SetCash(10_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             UniverseSettings.Leverage = 1;
             Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText("EarningsAnnouncements.json"));
+            //QuoteBarConsolidator1Sec = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
 
             mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - ScheduledEvent.SecurityEndOfDayDelta);  // 2mins before EOD EOD market close events fire
             orderType = OrderType.Limit;
@@ -125,62 +127,11 @@ namespace QuantConnect.Algorithm.CSharp
             SetWarmUp(timeSpan);
 
             RiskRecorder = new(this);
-            //Cfg = JsonConvert.DeserializeObject<StrategyConfig>(File.ReadAllText(@"C:\repos\quantconnect\Lean\Algorithm.CSharp\Core\EarningsAnnouncements.json"));
         }
-        /// <summary>
-        /// For a given Symbol, warmup Underlying MidPrices and Option Bid/Ask to calculate implied volatility primarily. Add other indicators where necessary. 
-        /// Required for scoping new options as part of the dynamic universe.
-        /// Consider moving this into the SecurityInitializer.
-        /// </summary>
-        public void WarmUpSecurities(ICollection<Security> securities)
-        {
-            QuoteBar quoteBar;
-            Symbol symbol;
-            Dictionary<Symbol, decimal> underlyingMidPrice = new();
-
-            var history = History<QuoteBar>(securities.Select(sec => sec.Symbol), 60 * 7 * 5, Resolution.Minute, fillForward: false);
-
-            foreach (DataDictionary<QuoteBar> data in history)
-            {
-                foreach (KeyValuePair<Symbol, QuoteBar> kvp in data)
-                {
-                    symbol = kvp.Key;
-                    quoteBar = kvp.Value;
-                    if (quoteBar.Symbol.SecurityType == SecurityType.Equity)
-                    {
-                        underlyingMidPrice[symbol] = (quoteBar.Bid.Close + quoteBar.Ask.Close) / 2;
-                    }
-                    else if (quoteBar.Symbol.SecurityType == SecurityType.Option)
-                    {
-                        if (underlyingMidPrice.TryGetValue(quoteBar.Symbol.Underlying, out decimal underlyingMidPriceValue))
-                        {
-                            IVBids[symbol].Update(quoteBar, underlyingMidPriceValue);
-                            IVAsks[symbol].Update(quoteBar, underlyingMidPriceValue);
-                            RollingIVStrikeBid[symbol].Update(IVBids[symbol].Current);
-                            RollingIVStrikeAsk[symbol].Update(IVAsks[symbol].Current);
-                        }
-                    }
-                }
-            };
-        }
-
 
         public override void OnData(Slice slice)
         {
             if (IsWarmingUp) return;
-
-            // Likely want to replace WarmUp with history calls for RollingIV
-            foreach (KeyValuePair<Symbol, QuoteBar> kvp in slice.QuoteBars)
-            {
-                Symbol symbol = kvp.Key;
-                if (symbol.SecurityType == SecurityType.Option && kvp.Value != null)
-                {
-                    IVBids[symbol].Update(kvp.Value);
-                    IVAsks[symbol].Update(kvp.Value);
-                    RollingIVStrikeBid[symbol.Underlying].Update(IVBids[symbol].Current);
-                    RollingIVStrikeAsk[symbol.Underlying].Update(IVAsks[symbol].Current);
-                }
-            }
 
             foreach (Symbol symbol in slice.QuoteBars.Keys)
             {
@@ -327,10 +278,7 @@ namespace QuantConnect.Algorithm.CSharp
             }
 
             var signals = GetDesiredOrders();
-            if (signals.Any())
-            {
-                HandleDesiredOrders(signals);
-            }
+            HandleDesiredOrders(signals);
         }
 
         public List<Symbol> AddOptionIfScoped(Symbol option)
@@ -387,39 +335,18 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void OnEndOfDay(Symbol symbol)
         {
-            if (IsWarmingUp || Time.Date == endOfDay)
-            {
-                return;
-            }
-            LogRisk();
-
-            Log($"Cash: {Portfolio.Cash}");
-            Log($"UnsettledCash: {Portfolio.UnsettledCash}");
-            Log($"TotalFeesQC: {Portfolio.TotalFees}");
-            Log($"RealizedProfitQC: {Portfolio.TotalNetProfit}");
-            Log($"TotalUnrealizedProfitQC: {Portfolio.TotalUnrealizedProfit}");
-
-            Log($"TotalPortfolioValueMid: {pfRisk.PortfolioValue("Mid")}");
-            Log($"TotalPortfolioValueQC/Close: {pfRisk.PortfolioValue("QC")}");
-            Log($"TotalPortfolioValueWorst: {pfRisk.PortfolioValue("Worst")}");
-            Log($"TotalUnrealizedProfitMineExFees: {pfRisk.PortfolioValue("UnrealizedProfit")}");
-            Log($"PnLClose: {Portfolio.TotalPortfolioValue - TotalPortfolioValueSinceStart}");
+            if (IsWarmingUp || Time.Date == endOfDay) { return; }
+            LogPortfolioHighLevel();
             endOfDay = Time.Date;
-
-            var positions = TradesCumulative.Cumulative(this);
-            //var trades = Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).Select(order => new Trade(this, order));
-            //ExportToCsv(trades, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_{Time:yyyyMMdd}.csv"));
-            ExportToCsv(positions, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_cumulative_{Time:yyMMdd}.csv"));
-            Log($"PnLMid: {positions.Select(p => p.PL).Sum()}");
-            Log($"PnlMidPerPosition: {pfRisk.PortfolioValue("AvgPositionPnLMid")}");
-            Log($"PnlMidPerOptionAbsQuantity: {pfRisk.PortfolioValue("PnlMidPerOptionAbsQuantity")}");
         }
 
         public override void OnEndOfAlgorithm()
         {
             OnEndOfDay();
+            ExportToCsv(TradesCumulative.Cumulative(this), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "TradesCumulative.csv"));
             RiskRecorder.Dispose();
             RollingIVStrikeBid.Values.Union(RollingIVStrikeAsk.Values).Where(s => !s.IsEmpty).DoForEach(s => s.Dispose());
+            RiskPnLProfiles.Values.DoForEach(s => s.Dispose());
             Utility.Dispose();
             base.OnEndOfAlgorithm();
             _diskDataCacheProvider.DisposeSafely();

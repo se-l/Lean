@@ -207,5 +207,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
             DiscordClient.Send(tag, DiscordChannel.Status, LiveMode);
             return tag;
         }
+
+        public void LogPortfolioHighLevel()
+        {
+            LogRisk();
+            Log($"Cash: {Portfolio.Cash}");
+            Log($"UnsettledCash: {Portfolio.UnsettledCash}");
+            Log($"TotalFeesQC: {Portfolio.TotalFees}");
+            Log($"RealizedProfitQC: {Portfolio.TotalNetProfit}");
+            Log($"TotalUnrealizedProfitQC: {Portfolio.TotalUnrealizedProfit}");
+            Log($"TotalPortfolioValueMid: {pfRisk.PortfolioValue("Mid")}");
+            Log($"TotalPortfolioValueQC/Close: {pfRisk.PortfolioValue("QC")}");
+            Log($"TotalPortfolioValueWorst: {pfRisk.PortfolioValue("Worst")}");
+            Log($"TotalUnrealizedProfitMineExFees: {pfRisk.PortfolioValue("UnrealizedProfit")}");
+            Log($"PnLClose: {Portfolio.TotalPortfolioValue - TotalPortfolioValueSinceStart}");
+            Log($"PnlMidPerPosition: {pfRisk.PortfolioValue("AvgPositionPnLMid")}");
+            Log($"PnlMidPerOptionAbsQuantity: {pfRisk.PortfolioValue("PnlMidPerOptionAbsQuantity")}");
+        }
     }
 }

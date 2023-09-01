@@ -2,6 +2,7 @@ using QLNet;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Twilio.Rest.Numbers.V2.RegulatoryCompliance;
 using static Accord.Math.FourierTransform;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
@@ -600,6 +601,33 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
+        public double? NPV(VanillaOption option)
+        {
+            try
+            {
+                return option.NPV();
+            }
+            catch (Exception e)
+            {
+                algo.Error(e);
+                return null;
+            }
+        }
+
+        public double? Invoke(VanillaOption option, string invoke="NPV")
+        {
+            try
+            {
+                var methodInfo = option.GetType().GetMethod(invoke);
+                return (double)methodInfo.Invoke(option, new object[] { });
+            }
+            catch (Exception e)
+            {
+                algo.Error(e);
+                return null;
+            }
+        }
+
         public double FiniteDifferenceApprox(SimpleQuote quote, VanillaOption option, double d_pct = 0.01, string derive = "NPV", SimpleQuote d1perturbance = null, string method = "central")
         {
             // f'(x) ≈ (f(x+h) - f(x-h)) / (2h); h: step size;
@@ -623,7 +651,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             else if (derive == "NPV")
             {
-                pPlus = option.NPV();
+                pPlus = NPV(option);
             }
             else if (derive == "IV")
             {
@@ -631,8 +659,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             else
             {
-                var methodInfo = option.GetType().GetMethod(derive);
-                pPlus = (double)methodInfo.Invoke(option, new object[] { });
+                pPlus = Invoke(option, derive);
             }
 
             PerturbQuote(quote, q0, -d_pct);
@@ -649,7 +676,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             else if (derive == "NPV")
             {
-                pMinus = option.NPV();
+                pMinus = NPV(option);
             }
             else if (derive == "IV")
             {
@@ -657,8 +684,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             else
             {
-                var methodInfo = option.GetType().GetMethod(derive);
-                pMinus = (double)methodInfo.Invoke(option, new object[] { });
+                pMinus = Invoke(option, derive);
             }
             // Reset to starting value
             quote.setValue(q0);
@@ -671,15 +697,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             } 
             else if (pPlus != null || method=="forward")
             {
-                var methodInfo = option.GetType().GetMethod(derive);
-                var p0 = (double)methodInfo.Invoke(option, new object[] { });
+                var p0 = Invoke(option, derive);
                 var stepSize = q0 == 0 ? d_pct : q0 * d_pct;
                 result = ((double)pPlus - (double)p0) / stepSize;
             }
             else if (pMinus != null || method=="backward")
             {
-                var methodInfo = option.GetType().GetMethod(derive);
-                var p0 = (double)methodInfo.Invoke(option, new object[] { });
+                var p0 = Invoke(option, derive);
                 var stepSize = q0 == 0 ? d_pct : q0 * d_pct;
                 result = ((double)p0 - (double)pMinus) / stepSize;
             }

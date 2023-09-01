@@ -1,73 +1,34 @@
 using System;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Data.Market;
+using QuantConnect.Indicators;
 using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
-    public class IVAsk
+    public class IVAsk : IVBidAskIndicator
     {
-        public Symbol Symbol { get => Option.Symbol; }
-        public Option Option { get; }
-        public DateTime Time { get; set; }
-        public decimal UnderlyingMidPrice { get; set; }
-        public decimal Price { get; set; }
-        public double IV { get; set; }
-        public IVBidAsk Current { get; internal set; }
-
-        private Foundations algo { get; }
-
-        public IVAsk(Option option, Foundations algo)
+        public IVAsk(Option option, Foundations algo) : base(QuoteSide.Ask, option, algo)
         {
-            this.algo = algo;
-            Option = option;
         }
 
-        public void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null)
+        public override void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null)
         {
             if (quoteBar == null || quoteBar.Ask == null || quoteBar.EndTime <= Time)
             {
                 return;
             }
             Time = quoteBar.EndTime;
-            UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
-            Price = quoteBar.Ask.Close;
-            IV = OptionContractWrap.E(algo, Option, 1, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
-            Current = new IVBidAsk(Symbol, Time, UnderlyingMidPrice, Price, IV);
-        }
-        public void Update(decimal quote, DateTime time, decimal? underlyingMidPrice = null, bool calcDelta = false)
-        {
-            if (time <= Time)
+            decimal midPriceUnderlying = underlyingMidPrice ?? _algo.MidPrice(Symbol.Underlying);
+            decimal quote = quoteBar.Ask.Close;
+            if (HaveInputsChanged(quote, midPriceUnderlying, Time.Date))
             {
-                return;
+                MidPriceUnderlying = midPriceUnderlying;
+                Price = quote;
+                IV = OptionContractWrap.E(_algo, Option, 1, Time.Date).IV(Price, MidPriceUnderlying, 0.001);
             }
-            Time = time;
-            UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
-            Price = quote;
-            IV = OptionContractWrap.E(algo, Option, 1, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
-            Current = new IVBidAsk(Symbol, Time, UnderlyingMidPrice, Price, IV);
-        }
-
-        public void Update(IVBidAsk bar)
-        {
-            Time = bar.Time;
-            UnderlyingMidPrice = bar.UnderlyingMidPrice;
-            Price = bar.Price;
-            IV = bar.IV;
-            Current = bar;
-        }
-
-        public IVBidAsk Refresh()
-        {
-            Price = Option.AskPrice;
-            UnderlyingMidPrice = algo.MidPrice(Symbol.Underlying);
-            IV = OptionContractWrap.E(algo, Option, 1, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
-            Current = new IVBidAsk(Symbol, Time, UnderlyingMidPrice, Price, IV);
-            return Current;
-        }
-        public void SetDelta(double? delta = null)
-        {
-            Current.Delta = delta == null ? OptionContractWrap.E(algo, Option, 1, Time.Date).Delta() : delta;
+            IVBidAsk = new IVBidAsk(Symbol, Time, MidPriceUnderlying, Price, IV);
+            Current = new IndicatorDataPoint(Time, (decimal)IVBidAsk.IV);
         }
     }
 }

@@ -286,3 +286,4 @@ Results/
 /Launcher/config.json
 /Algorithm.CSharp/config.json
 /Launcher/Properties/launchSettings.json
+/Algorithm.CSharp/Core/Archive.cs

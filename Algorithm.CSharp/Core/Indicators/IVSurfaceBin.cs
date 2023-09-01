@@ -111,13 +111,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
                 if (Side == "bid")
                 {
-                    Update(algo.IVBids[contract].Refresh());
+                    Update(algo.IVBids[contract].Refresh()); // to be deleted with registrated event
                     return true;
 
                 }
                 else if (Side == "ask")
                 {
-                    Update(algo.IVAsks[contract].Refresh());
+                    Update(algo.IVAsks[contract].Refresh()); // to be deleted with registrated event
                     return true;
                 }
                 else
