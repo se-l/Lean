@@ -28,6 +28,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public decimal Gamma100Bp { get => OCW?.GammaXBp(100) ?? 0; }  // dP2
 
         // Second order derivatives using finite difference
+        public double MVVega { get => OCW?.MVVega() ?? 0; }
         public double DeltaDecay { get => OCW?.DeltaDecay() ?? 0; }  // dPdT
         public double DPdIV { get => OCW?.DDeltadIV() ?? 0; }  // dPdIV
         public double DGdP { get => OCW?.DGdP() ?? 0; }  // dP3

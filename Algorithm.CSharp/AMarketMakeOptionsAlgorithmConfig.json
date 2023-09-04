@@ -8,8 +8,10 @@
   "OptionOrderQuantityDflt": 5,
   "VolatilityPeriodDays": 5,
 
-  "scopeContractStrikeOverUnderlyingMax": 1.20,
-  "scopeContractStrikeOverUnderlyingMin": 0.8,
+  "scopeContractStrikeOverUnderlyingMax": 1.25,
+  "scopeContractStrikeOverUnderlyingMaxSignal": 1.15,
+  "scopeContractStrikeOverUnderlyingMin": 0.75,
+  "scopeContractStrikeOverUnderlyingMinSignal": 0.85,
   "scopeContractStrikeOverUnderlyingMargin": 0.05,
   "scopeContractMinDTE": 0,
   "scopeContractMaxDTE": 180,
@@ -22,22 +24,22 @@
     "HPE-Delta100BpUSDTotal-discount-params": {
       "TargetRisk": 0,
       "X0": 0,
-      "X1": 0.001,
-      "X2": 0.00005,
+      "X1": 0, //0.0005,
+      "X2": 0.00001,
       "CapMin": -0.5,
       "CapMax": 0.5
     },
-    "HPE-Gamma100BpUSDTotal-discount-params": {
+    "HPE-Gamma500BpUSDTotal-discount-params": {
       "TargetRisk": 0,
       "X0": 0,
-      "X1": 0.001,
-      "X2": 0.00005,
+      "X1": 0, //0.0005,
+      "X2": 0.00001,
       "CapMin": -0.3,
       "CapMax": 0.3
     },
     "HPE-Events-discount-params": {
       "TargetRisk": 0,
-      "X0": 0.4,
+      "X0": 0.3,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -45,5 +47,7 @@
     }
   },
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
-  "RiskLimitEODDelta100BpUSDTotalShort": -5
+  "RiskLimitEODDelta100BpUSDTotalShort": -5,
+  "IVSurfaceRelativeStrikeAlpha": 0.05,
+  "IsZMVolatilityImplied":  false
 }

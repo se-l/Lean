@@ -1,5 +1,4 @@
-using Newtonsoft.Json;
-using QuantConnect.Configuration;
+using System;
 using System.Globalization;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
@@ -51,6 +50,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Metric = metric;
             //DiscountParams = JsonConvert.DeserializeObject<DiscountParams>(Config.Get($"{symbol.Value.ToUpper(CultureInfo.InvariantCulture)}-{metric}-discount-params"));
             DiscountParams = cfg.DiscountParams[$"{symbol.Value.ToUpper(CultureInfo.InvariantCulture)}-{metric}-discount-params"];
+        }
+        public double Discount(double riskBenefit)
+        {
+            return X0 + X1 * Math.Abs(riskBenefit) + X2 * Math.Pow(riskBenefit, 2);
         }
     }
 }

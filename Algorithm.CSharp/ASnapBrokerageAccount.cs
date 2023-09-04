@@ -48,10 +48,10 @@ namespace QuantConnect.Algorithm.CSharp
             AssignCachedFunctions();
 
             equity1 = AddEquity("SPY", Resolution.Daily).Symbol;
-            pfRisk = PortfolioRisk.E(this);
+            PfRisk = PortfolioRisk.E(this);
 
-            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
+            SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
+            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
             Log($"WarmUp TimeSpan: {timeSpan}");
             SetWarmUp(timeSpan);
         }
@@ -83,7 +83,7 @@ namespace QuantConnect.Algorithm.CSharp
                 orderTickets[ticket.Symbol].Add(ticket);
             }
 
-            pfRisk.ResetPositions();
+            PfRisk.ResetPositions();
 
             PopulateOptionChains();
 

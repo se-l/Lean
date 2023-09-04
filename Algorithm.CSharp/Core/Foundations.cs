@@ -31,24 +31,25 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public MMWindow mmWindow;
         public Symbol equity1;
         public Dictionary<Symbol, SecurityCache> PriceCache = new();
-        public SecurityExchangeHours securityExchangeHours;
+        public SecurityExchangeHours SecurityExchangeHours;
 
-        public Dictionary<Symbol, IVBid> IVBids = new();
-        public Dictionary<Symbol, IVAsk> IVAsks = new();
-        public Dictionary<Symbol, RollingIVIndicator<IVBidAsk>> RollingIVBid = new();
-        public Dictionary<Symbol, RollingIVIndicator<IVBidAsk>> RollingIVAsk = new();
-        public Dictionary<Symbol, RollingIVSurfaceRelativeStrike<IVBidAsk>> RollingIVStrikeBid = new();
-        public Dictionary<Symbol, RollingIVSurfaceRelativeStrike<IVBidAsk>> RollingIVStrikeAsk = new();
+        public Dictionary<Symbol, IVQuoteIndicator> IVBids = new();
+        public Dictionary<Symbol, IVQuoteIndicator> IVAsks = new();
+        public Dictionary<Symbol, IVSurfaceRelativeStrike> IVSurfaceRelativeStrikeBid = new();
+        public Dictionary<Symbol, IVSurfaceRelativeStrike> IVSurfaceRelativeStrikeAsk = new();
+
+        // Begin Used by ImpliedVolaExporter - To be moved over there....
+        public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVBid = new();
+        public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVAsk = new();
         public Dictionary<Symbol, IVTrade> IVTrades = new();
-        public Dictionary<Symbol, RollingIVIndicator<IVBidAsk>> RollingIVTrade = new();
+        public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVTrade = new();
+        // End
         public RiskRecorder RiskRecorder;
-
-        public TickCounter TickCounterFilter;
-        
-        public PortfolioRisk pfRisk;
+        public TickCounter TickCounterFilter;  // Not in use        
+        public PortfolioRisk PfRisk;
         public bool OnWarmupFinishedCalled = false;
         public decimal TotalPortfolioValueSinceStart = 0m;
-        public Dictionary<int, OrderFillData> orderFillDataTN1 = new();
+        public Dictionary<int, OrderFillData> OrderFillDataTN1 = new();
         public EarningsAnnouncement[] EarningsAnnouncements;
         public AMarketMakeOptionsAlgorithmConfig Cfg;
 
@@ -57,6 +58,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, RiskDiscount> EventDiscounts = new();
         public Dictionary<Symbol, RiskPnLProfile> RiskPnLProfiles = new();
         public Utility Utility = new();
+        public Dictionary<int, Quote<Option>> Quotes = new();
 
         public HashSet<OrderStatus> orderStatusFilled = new() { OrderStatus.Filled, OrderStatus.PartiallyFilled };
         public HashSet<OrderStatus> orderCanceledOrPending = new() { OrderStatus.CancelPending, OrderStatus.Canceled };
@@ -67,9 +69,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return (thisResolution ?? resolution) switch
             {
                 Resolution.Daily => days,
-                Resolution.Hour => (int)(days * 24),
-                Resolution.Minute => (int)(days * 24 * 60),
-                Resolution.Second => (int)(days * 24 * 60 * 60),
+                Resolution.Hour => (days * 24),
+                Resolution.Minute => (days * 24 * 60),
+                Resolution.Second => (days * 24 * 60 * 60),
                 _ => 1,
             };
         }
@@ -105,7 +107,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     PriceCache[symbol] = Securities[symbol].Cache.Clone();
                 }
                 //orderEvent.OrderFee
-                orderFillDataTN1[order.Id] = symbol.SecurityType switch
+                OrderFillDataTN1[order.Id] = symbol.SecurityType switch
                 {
                     SecurityType.Option => new OrderFillData(
                         orderEvent.UtcTime, PriceCache[symbol].BidPrice, PriceCache[symbol].AskPrice, PriceCache[symbol].Price,
@@ -119,8 +121,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
-        public bool IsEventNewBidAsk(Symbol symbol)
+        public bool IsEventNewQuote(Symbol symbol)
         {
+            // called in Consolidator AND OnData. Should cache result at timestamp, update PriceCache and read here from cache.
             if (!PriceCache.ContainsKey(symbol))
             {
                 return false;
@@ -149,10 +152,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         && sec.BidPrice != 0
                         && sec.AskPrice != 0
                         && IsLiquid(sec.Symbol, 5, Resolution.Daily)
-                        && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMin)
-                        && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMax)
-                        && RollingIVStrikeBid[sec.Symbol.Underlying].IsReady
-                        && RollingIVStrikeAsk[sec.Symbol.Underlying].IsReady
+                        && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMinSignal)
+                        && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
+                        && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < 0
                         && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
                         ) 
                         || 
@@ -371,12 +373,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return true;
         }
 
-        public void StoreOrderTicket(OrderTicket orderTicket)
+        public void StoreOrderTicket(OrderTicket orderTicket, Quote<Option>? quote = null)
         {
             (orderTickets.TryGetValue(orderTicket.Symbol, out List<OrderTicket> tickets)
                     ? tickets  // if the key exists, use its value
             : orderTickets[orderTicket.Symbol] = new List<OrderTicket>()) // create a new list if the key doesn't exist
                 .Add(orderTicket);
+            if (quote != null)
+            {
+                Quotes[orderTicket.OrderId] = quote;
+            }
         }
 
         public void OrderEquity(Symbol symbol, decimal quantity, decimal limitPrice, string tag = "", OrderType orderType = OrderType.Market)
@@ -396,7 +402,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (!IsOrderValid(contract.Symbol, quantity)) { return; }
 
-            decimal limitPrice = PriceOptionPfRiskAdjusted(contract, quantity);
+            Quote<Option> quote = GetQuote(new QuoteRequest<Option>(contract, quantity));
+            decimal limitPrice = quote.Price;
             if (limitPrice == 0)
             {
                 Log($"No price for {contract.Symbol}. Not trading...");
@@ -412,7 +419,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 OrderType.Market => MarketOrder(contract.Symbol, (int)quantity, tag: tag, asynchronous: LiveMode),
                 _ => throw new NotImplementedException($"OrderType {orderType} not implemented")
             };
-            StoreOrderTicket(orderTicket);
+            StoreOrderTicket(orderTicket, quote);
         }
         public void UpdateLimitPrice(Symbol symbol)
         {
@@ -438,24 +445,26 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     var symbol = ticket.Symbol;
                     var tick_size_ = TickSize(contract.Symbol);
                     var limit_price = ticket.Get(OrderField.LimitPrice);
-                    var ideal_limit_price = PriceOptionPfRiskAdjusted(contract, ticket.Quantity);
-                    ideal_limit_price = RoundTick(ideal_limit_price, tick_size_);
+                    Quote<Option> quote = GetQuote(new QuoteRequest<Option>(contract, ticket.Quantity));
+                    decimal idealLimitPrice = quote.Price;
+                    idealLimitPrice = RoundTick(idealLimitPrice, tick_size_);
 
-                    if (Math.Abs(ideal_limit_price - limit_price) >= tick_size_ && ideal_limit_price >= tick_size_)
+                    if (Math.Abs(idealLimitPrice - limit_price) >= tick_size_ && idealLimitPrice >= tick_size_)
                     {
-                        if (ideal_limit_price < tick_size_)
+                        if (idealLimitPrice < tick_size_)
                         {
                             Log($"{Time}: CANCEL LIMIT Symbol{contract.Symbol}: Price too small: {limit_price}");
                             ticket.Cancel();
                         }
                         else
                         {
-                            var tag = $"{Time}: UPDATE LIMIT Symbol{contract.Symbol}: From: {limit_price} To: {ideal_limit_price}";
-                            var response = ticket.UpdateLimitPrice(ideal_limit_price, tag);
+                            var tag = $"{Time}: UPDATE LIMIT Symbol{contract.Symbol}: From: {limit_price} To: {idealLimitPrice}";
+                            var response = ticket.UpdateLimitPrice(idealLimitPrice, tag);
                             if (LiveMode)
                             {
                                 Log($"{tag}, Response: {response}");
                             }
+                            Quotes[ticket.OrderId] = quote;
                         }
                     }
                 }
@@ -519,8 +528,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal midPrice = MidPrice(Underlying(symbol));
 
             var absTargetDelta = QuantityExceedingMinimumBrokerageFee(symbol); // Make the hedge worthwile
-            var currentDelta = pfRisk.RiskByUnderlying(symbol.Underlying, Metric.DeltaTotal);
-            var deltaPerUnit = pfRisk.RiskAddedIfFilled(symbol, DIRECTION2NUM[orderDirection] * 1, Metric.DeltaTotal);
+            var currentDelta = PfRisk.RiskByUnderlying(symbol.Underlying, Metric.DeltaTotal);
+            var deltaPerUnit = PfRisk.RiskAddedIfFilled(symbol, DIRECTION2NUM[orderDirection] * 1, Metric.DeltaTotal);
             if (deltaPerUnit == 0) // ZeroDivisionError
             {
                 absQuantity = Cfg.OptionOrderQuantityDflt;

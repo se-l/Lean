@@ -13,7 +13,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public decimal UnderlyingMidPrice { get; set; }
         public decimal Price { get; set; }
         public double IV { get; set; }
-        public IVBidAsk Current { get; internal set; }
+        public IVQuote Current { get; internal set; }
 
         private Foundations algo { get; }
 
@@ -33,7 +33,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
             Price = tick.Price;
             IV = OptionContractWrap.E(algo, Option, 1, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
-            Current = new IVBidAsk(Symbol, Time, UnderlyingMidPrice, Price, IV);
+            Current = new IVQuote(Symbol, Time, UnderlyingMidPrice, Price, IV);
         }
 
         public void Update(TradeBar tradeBar, decimal? underlyingMidPrice = null)
@@ -46,7 +46,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
             Price = tradeBar.Close;
             IV = OptionContractWrap.E(algo, Option, 1, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
-            Current = new IVBidAsk(Symbol, Time, UnderlyingMidPrice, Price, IV);
+            Current = new IVQuote(Symbol, Time, UnderlyingMidPrice, Price, IV);
         }
         public void SetDelta(double? delta = null)
         {

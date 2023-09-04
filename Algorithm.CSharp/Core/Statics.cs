@@ -127,19 +127,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             Delta, // Unit free sensitivity
             DeltaTotal,
+            DeltaImpliedTotal,
+
             Delta100BpUSDTotal,
-            Delta500BpUSDTotal,
-            DeltaMeanImplied, // Sensitivity * Quantity * Multiplier / n_OptionPositions
-            DeltaTotalImplied, // Sensitivity * Quantity * Multiplier
-            Delta100BpUSD,  // USD change for every 1% of underlying change
-            Delta100BpUSDImplied,  // USD change for every 1% of underlying change
-            Delta100BpUSDTotalImplied,
+            DeltaImplied100BpUSDTotal,
+            Delta500BpUSDTotal,           
+            
             EquityDeltaTotal,
 
             Gamma,
             GammaTotal,
+            GammaImpliedTotal,
             Gamma100BpUSDTotal,
+            GammaImplied100BpUSDTotal,
             Gamma500BpUSDTotal,
+            GammaImplied500BpUSDTotal,
 
             Theta,
             ThetaTotal,

@@ -1,9 +1,7 @@
 using QLNet;
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using Twilio.Rest.Numbers.V2.RegulatoryCompliance;
-using static Accord.Math.FourierTransform;
+using static QLNet.Callability;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Pricing
@@ -328,23 +326,36 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return delta;
         }
 
-        public decimal Delta100Bp()
+        public double DeltaImplied()
         {
-            return (decimal)Delta() * algo.MidPrice(UnderlyingSymbol) * 100 * BP;
+            var hv = hvQuote.value();
+            SetHistoricalVolatility(IV(null, null, 0.001));
+            var delta = Delta();
+            SetHistoricalVolatility(hv);
+            return delta;
+        }
+
+        public decimal DeltaXBp(int x = 100)
+        {
+            return (decimal)Delta() * algo.MidPrice(UnderlyingSymbol) * x * BP;
+        }
+
+        public decimal DeltaImpliedXBp(int x = 100)
+        {
+            return (decimal)DeltaImplied() * algo.MidPrice(UnderlyingSymbol) * x * BP;
         }
 
         /// <summary>
-        /// Minimum Variance Delta
+        /// Vega component of Minimum Variance Delta
         /// </summary>
-        public double MVDelta()
+        public double MVVega()
         {
             SetEvaluationDateToCalcDate();
             //Settings.setEvaluationDate(algo.Time.Date);
             //https://www.researchgate.net/publication/226498536
             //https://drive.google.com/drive/folders/10g-QYf17V5pEQEJ5aeNu4RGbtm4tJse3
             // The slope of the curve of IV vs strike price. In paper about 0.05 +/- 0.01
-            return Delta() + Vega() * DIVdP();
-            
+            return Vega() * DIVdP();
         }
 
         public double KappaZM(double sigma)
@@ -365,13 +376,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             hvQuote.setValue(VolatilityZM(direction));
             double delta = Delta();
             hvQuote.setValue(hv0);
-            return delta;
+            return delta + MVVega();
         }
 
         public double VolatilityZM(int direction)
         {
+            double hv0;
+            // Original paper appears to use historical volatility. Choosing implied vola to use market's bet on future vola, thereby reducing PnL volatility and presumably frequency of hedging.
             SetEvaluationDateToCalcDate();
-            var hv0 = hvQuote.value();
+            if (algo.Cfg.IsZMVolatilityImplied)
+            {
+                hv0 = IV(null, null, 0.001);
+            }
+            else
+            {
+                hv0 = (double)HistoricalVolatility();
+            }
             return Math.Pow(Math.Pow(hv0, 2) * (1.0 + KappaZM(hv0) * Math.Sign(direction)), 0.5);
         }
 
@@ -432,9 +452,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             
         }
 
+        public double GammaImplied()
+        {
+            var hv = hvQuote.value();
+            SetHistoricalVolatility(IV(null, null, 0.001));
+            var gamma = Gamma();
+            SetHistoricalVolatility(hv);
+            return gamma;
+
+        }
+
         public decimal GammaXBp(int x = 100)
         {
             return (decimal)(0.5 * Gamma() * Math.Pow((double)algo.MidPrice(UnderlyingSymbol) * x * (double)BP, 2));
+        }
+        public decimal GammaImpliedXBp(int x = 100)
+        {
+            return (decimal)(0.5 * GammaImplied() * Math.Pow((double)algo.MidPrice(UnderlyingSymbol) * x * (double)BP, 2));
         }
 
         public double Vega()

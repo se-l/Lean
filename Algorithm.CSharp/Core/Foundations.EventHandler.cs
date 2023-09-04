@@ -24,15 +24,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 else if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)
                 {
                     // LogOnEventNewBidAsk(newBidAsk);  // Because Backtest and LiveTrading differ significantly in price update logs.
-                    RollingIVStrikeBid[newBidAsk.Symbol].RefreshSurface();
-                    RollingIVStrikeAsk[newBidAsk.Symbol].RefreshSurface();
                     var scopedTickets = orderTickets.Keys.Where(k => k.SecurityType == SecurityType.Option && k.Underlying == newBidAsk.Symbol && orderTickets[k].Count > 0).ToList();  // ToList, avoid concurrent modification error
                     foreach (Symbol symbol in scopedTickets)
                     {
                         UpdateLimitPrice(symbol);
                     }
                     UpdateLimitPrice(newBidAsk.Symbol);
-                    pfRisk.IsRiskLimitExceededZM(newBidAsk.Symbol);
+                    PfRisk.IsRiskLimitExceededZM(newBidAsk.Symbol);
                     //pfRisk.IsRiskLimitExceededGamma(newBidAsk.Symbol);
                     //EmitNewFairOptionPrices(newBidAsk.Symbol);
                 }
@@ -41,11 +39,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (@event is OrderEvent orderEvent && (orderEvent.Status is OrderStatus.Filled or OrderStatus.PartiallyFilled))
             {
                 UpdateOrderFillData(orderEvent);
-                pfRisk.ResetPositions();
+                PfRisk.ResetPositions();
                 LogOnEventOrderFill(orderEvent);
                 GetDesiredOrders();
                 //CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
-                pfRisk.IsRiskLimitExceededZM(orderEvent.Symbol);
+                PfRisk.IsRiskLimitExceededZM(orderEvent.Symbol);
                 //pfRisk.IsRiskLimitExceededGamma(orderEvent.Symbol);
                 
                 //if (orderEvent.Symbol.SecurityType == SecurityType.Option)

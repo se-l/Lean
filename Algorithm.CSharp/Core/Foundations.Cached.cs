@@ -205,13 +205,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             
             Symbol underlying = Underlying(symbol);
 
-            decimal equityHedge = pfRisk.RiskByUnderlying(symbol, Metric.EquityDeltaTotal);  // Normalized risk of an assets 1% change in price for band breach check.
-            decimal lowerBand = pfRisk.RiskBandByUnderlying(symbol, Metric.BandZMLower);
-            decimal upperBand = pfRisk.RiskBandByUnderlying(symbol, Metric.BandZMUpper);
-
-            // Bands inverted. Need to understand better. Likely overall switches from neg. to pos. and vv.
-            //decimal lowerBand = Math.Min(band1, band2);
-            //decimal upperBand = Math.Max(band1, band2);
+            decimal equityHedge = PfRisk.RiskByUnderlying(symbol, Metric.EquityDeltaTotal);  // Normalized risk of an assets 1% change in price for band breach check.
+            decimal lowerBand = PfRisk.RiskBandByUnderlying(symbol, Metric.BandZMLower);
+            decimal upperBand = PfRisk.RiskBandByUnderlying(symbol, Metric.BandZMUpper);
 
             if (equityHedge > upperBand || equityHedge < lowerBand)
             {
@@ -233,15 +229,32 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (IsWarmingUp || !IsMarketOpen(equity1)) return;
 
+            decimal riskDelta100BpUSDTotal;
+            decimal riskDeltaTotal;
             Symbol underlying = Underlying(symbol);
 
-            decimal riskDelta100BpUSDTotal = pfRisk.RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal);
+            if (Cfg.IsZMVolatilityImplied)
+            {
+                riskDelta100BpUSDTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaImplied100BpUSDTotal);
+            }
+            else
+            {
+                riskDelta100BpUSDTotal = PfRisk.RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal);
+            }
+            
             SecurityRiskLimit riskLimit = Securities[underlying].RiskLimit;
 
 
             if (riskDelta100BpUSDTotal > riskLimit.Delta100BpLong || riskDelta100BpUSDTotal < riskLimit.Delta100BpShort)
             {
-                var riskDeltaTotal = pfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+                if (Cfg.IsZMVolatilityImplied)
+                {
+                    riskDeltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaImpliedTotal);
+                }
+                else
+                {
+                    riskDeltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+                }
                 ExecuteHedge(underlying, -riskDeltaTotal);
             }
             else 

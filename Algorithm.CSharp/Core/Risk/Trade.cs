@@ -11,7 +11,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
     public class Trade : TradeBase
     {
         public override decimal Quantity { get => Order.Status == OrderStatus.Filled ? Order.Quantity : 0; }  // Ignore PartialFill for now. Likely need to reference ticket....
-        public decimal Fee { get => Algo.orderFillDataTN1.TryGetValue(Order.Id, out OrderFillData ofd) ? -ofd.Fee : -1; }                
+        public decimal Fee { get => Algo.OrderFillDataTN1.TryGetValue(Order.Id, out OrderFillData ofd) ? -ofd.Fee : -1; }                
         public Order? Order { get; }
         public decimal PriceFillAvg { get
             {
@@ -66,6 +66,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             false => Bid0 <= PriceFillAvg && BidTN1 <= PriceFillAvg
         };
         }
+        public double MVVega0 { get => GetGreeks0().MVVega; }
+        public double MVVega1 { get => GetGreeks1().MVVega; }
         public double DeltaImplied0 { get => GetGreeks0().Delta; }
         public double DeltaImplied1 { get => GetGreeks1().Delta; }
         public double GammaImplied0 { get => GetGreeks0().Gamma; }
@@ -74,6 +76,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double VegaImplied1 { get => GetGreeks1().Vega; }
         public double ThetaImplied0 { get => GetGreeks0().Theta; }
         public double ThetaImplied1 { get => GetGreeks1().Theta; }
+        public Quote<Option>? Quote;
         public int DDaysToExpiration { get => SecurityType switch
         {
             SecurityType.Option => Greeks0.OCW.DaysToExpiration(Ts0.Date) - Greeks0.OCW.DaysToExpiration(Ts1.Date),
@@ -117,12 +120,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             TimeCreated = Algo.Time;
             SecurityType = Security.Type;
 
-            if (Algo.orderFillDataTN1.TryGetValue(order.Id, out OrderFillData orderFillDataTN1))
+            if (Algo.OrderFillDataTN1.TryGetValue(order.Id, out OrderFillData orderFillDataTN1))
             {
                 BidTN1 = orderFillDataTN1?.BidPrice ?? 0;
                 AskTN1 = orderFillDataTN1?.AskPrice ?? 0;
-                BidTN1Underlying = Algo.orderFillDataTN1[order.Id]?.BidPriceUnderlying ?? BidTN1;
-                AskTN1Underlying = Algo.orderFillDataTN1[order.Id]?.AskPriceUnderlying ?? AskTN1;
+                BidTN1Underlying = Algo.OrderFillDataTN1[order.Id]?.BidPriceUnderlying ?? BidTN1;
+                AskTN1Underlying = Algo.OrderFillDataTN1[order.Id]?.AskPriceUnderlying ?? AskTN1;
             }
 
             if (Order.Type == OrderType.OptionExercise && Security.Type == SecurityType.Option)
@@ -143,6 +146,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
                 Bid0Underlying = SecurityType == SecurityType.Option ? Order.OrderFillData.BidPriceUnderlying ?? Bid0 : Bid0;
                 Ask0Underlying = SecurityType == SecurityType.Option ? Order.OrderFillData.AskPriceUnderlying ?? Ask0 : Ask0;
+                Quote = SecurityType == SecurityType.Option ? algo.Quotes[Order.Id] : null;
             }
 
             GetGreeks0();

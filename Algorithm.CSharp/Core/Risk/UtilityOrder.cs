@@ -4,6 +4,7 @@ using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using System.IO;
+using System.Linq;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -92,9 +93,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             // Greater 1. Good for portfolio. Risk reducing. Negative: Risk increasing.
             var _inventoryRisk = _algo.Portfolio[Symbol].Quantity * Quantity > 0 ? -1 : 0;  // for now, dont order in the same direction as position
+            var quoteDiscounts = _algo.GetQuoteDiscounts(new QuoteRequest<Option>(Option, Quantity));
             return
                 _inventoryRisk + 
-                (1 / ( 1 - _algo.SpreadFactor(Option, Quantity)));
+                (1 / ( 1 - quoteDiscounts.Sum(qd => qd.SpreadFactor)));
         }
 
         /// <summary>
@@ -124,8 +126,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             double IVEWMA = OrderDirection switch
             {
-                OrderDirection.Buy => _algo.RollingIVStrikeBid.ContainsKey(underlying) ? _algo.RollingIVStrikeBid[underlying].IV(Symbol) : 0,
-                OrderDirection.Sell => _algo.RollingIVStrikeAsk.ContainsKey(underlying) ? _algo.RollingIVStrikeAsk[underlying].IV(Symbol) : 0,
+                OrderDirection.Buy => _algo.IVSurfaceRelativeStrikeBid.ContainsKey(underlying) ? _algo.IVSurfaceRelativeStrikeBid[underlying].IV(Symbol) : 0,
+                OrderDirection.Sell => _algo.IVSurfaceRelativeStrikeAsk.ContainsKey(underlying) ? _algo.IVSurfaceRelativeStrikeAsk[underlying].IV(Symbol) : 0,
                 _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {OrderDirection}")
             } ?? 0;
             if (IVEWMA == 0) { return 0; }

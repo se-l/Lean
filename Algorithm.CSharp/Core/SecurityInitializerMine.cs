@@ -7,6 +7,7 @@ using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System.Linq;
 using QuantConnect.Data.Consolidators;
+using QuantConnect.Util;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -26,6 +27,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // First, call the superclass definition
             // This method sets the reality models of each security using the default reality models of the brokerage model
             base.Initialize(security);
+            Symbol symbol = security.Symbol;
 
             if (!algo.LiveMode)
             {
@@ -35,6 +37,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 // Fill Model
                 security.SetFillModel(new FillModelMine());
+            }
+
+            if (!algo.QuoteBarConsolidators.ContainsKey(symbol))
+            {
+                algo.QuoteBarConsolidators[symbol] = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
             }
 
             if (security.Type == SecurityType.Equity)
@@ -49,21 +56,28 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 };
                 security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: algo.Periods(days: VolatilityPeriodDays) / samplePeriods, algo.resolution, TimeSpan.FromSeconds(samplePeriods));
                 
-                foreach (var tradeBar in algo.HistoryWrap(security.Symbol, algo.Periods(days: VolatilityPeriodDays + 2), algo.resolution))
+                foreach (var tradeBar in algo.HistoryWrap(symbol, algo.Periods(days: VolatilityPeriodDays + 2), algo.resolution))
                 {
                     security.VolatilityModel.Update(security, tradeBar);
                 }
-                algo.Log($"SecurityInitializer.Initialize: {security.Symbol} WarmedUp Volatility To: {security.VolatilityModel.Volatility}");
+                algo.Log($"SecurityInitializer.Initialize: {symbol} WarmedUp Volatility To: {security.VolatilityModel.Volatility}");
 
                 // Initialize a Security Specific Hedge Band or Risk Limit object. Constitutes underlying, hence risk limit not just by security but also its derivatives.
                 // Adjust delta by underlying's volatility.
                 security.RiskLimit = new SecurityRiskLimit(security, delta100BpLong: algo.Cfg.RiskLimitEODDelta100BpUSDTotalLong, delta100BpShort: algo.Cfg.RiskLimitEODDelta100BpUSDTotalShort);
 
-                InitializeIVSurface(security.Symbol);
+                InitializeIVSurface(symbol);
+                algo.QuoteBarConsolidators[symbol].DataConsolidated += (object sender, QuoteBar consolidated) =>
+                {
+                    if (algo.IsEventNewQuote(symbol))
+                    {
+                        algo.IVBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                        algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                    }
+                };
             }
-            else
 
-            if (security.Type == SecurityType.Option)
+            else if (security.Type == SecurityType.Option)
             {
                 Option option = (Option)security;
                 option.PriceModel = new CurrentPriceOptionPriceModel();
@@ -75,15 +89,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Initialize a Security Specific Hedge Band or Risk Limit object.
                 option.RiskLimit = new SecurityRiskLimit(option);
 
-                if (!algo.QuoteBarConsolidators.ContainsKey(option.Symbol))
-                {
-                    algo.QuoteBarConsolidators[option.Symbol] = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
-                }
-
-                algo.IVBids[option.Symbol] = new IVBid(option, algo);
-                algo.IVAsks[option.Symbol] = new IVAsk(option, algo);
-
-                InitializeIVSurface(option.Symbol.Underlying);
+                algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, algo);
+                algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, algo);
             }
 
             if (security.Resolution == Resolution.Tick)
@@ -95,13 +102,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         private void InitializeIVSurface(Symbol underlying)
         {
-            if (!algo.RollingIVStrikeBid.ContainsKey(underlying))
+            if (!algo.IVSurfaceRelativeStrikeBid.ContainsKey(underlying))
             {
-                algo.RollingIVStrikeBid[underlying] = new RollingIVSurfaceRelativeStrike<IVBidAsk>(algo, underlying, "bid");
+                algo.IVSurfaceRelativeStrikeBid[underlying] = new IVSurfaceRelativeStrike(algo, underlying, QuoteSide.Bid);
             }
-            if (!algo.RollingIVStrikeAsk.ContainsKey(underlying))
+            if (!algo.IVSurfaceRelativeStrikeAsk.ContainsKey(underlying))
             {
-                algo.RollingIVStrikeAsk[underlying] = new RollingIVSurfaceRelativeStrike<IVBidAsk>(algo, underlying, "ask");
+                algo.IVSurfaceRelativeStrikeAsk[underlying] = new IVSurfaceRelativeStrike(algo, underlying, QuoteSide.Ask);
             }
         }
 
@@ -120,16 +127,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (option.Underlying == null) return;
                 symbol = option.Symbol;
                 Symbol underlying = symbol.Underlying;
-                algo.RollingIVStrikeBid[option.Symbol.Underlying].AddStrike(option.Symbol);
-                algo.RollingIVStrikeAsk[option.Symbol.Underlying].AddStrike(option.Symbol);
+                algo.IVSurfaceRelativeStrikeBid[option.Symbol.Underlying].RegisterSymbol(option);
+                algo.IVSurfaceRelativeStrikeAsk[option.Symbol.Underlying].RegisterSymbol(option);
 
                 var volaSyms = algo.Securities.Keys.Where(s => s.Underlying == symbol);
-                var history = algo.History<VolatilityBar>(volaSyms, algo.Periods(days: 14), algo.resolution, fillForward: false);
+                var history = algo.History<VolatilityBar>(volaSyms, algo.Periods(days: 7), algo.resolution, fillForward: false);
 
                 foreach (DataDictionary<VolatilityBar> data in history)
                 {
-                    IVBidAsk bid = null;
-                    IVBidAsk ask = null;
+                    IVQuote bid = null;
+                    IVQuote ask = null;
                     if (data.TryGetValue(volaSyms.First(), out volBar))
                     {
                         // Data issue. empty row is loaded.
@@ -137,11 +144,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         {
                             continue;
                         }
-                        bid = new IVBidAsk(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceBid.Close, (double)volBar.Bid.Close);
-                        ask = new IVBidAsk(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceAsk.Close, (double)volBar.Ask.Close);
-                        algo.RollingIVStrikeBid[underlying].Update(bid);
-                        algo.RollingIVStrikeAsk[underlying].Update(ask);
-                        
+                        bid = new IVQuote(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceBid.Close, (double)volBar.Bid.Close);
+                        ask = new IVQuote(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceAsk.Close, (double)volBar.Ask.Close);                        
                     }
                     if (bid != null)
                     {
@@ -149,62 +153,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         algo.IVAsks[symbol].Update(ask);
                     }                    
                 }
-                Action<string> log = algo.RollingIVStrikeBid[underlying].IsReady ? algo.Log : algo.Error;
 
+                //Action<string> log = algo.RollingIVStrikeBid[underlying].IsReady ? algo.Log : algo.Error;
                 //log($"WarmUpSecurity.RollingIVStrikeBid {underlying}: Samples: {algo.RollingIVStrikeBid[underlying].Samples(symbol)}");
                 //log($"WarmUpSecurity.RollingIVStrikeAsk {underlying}: Samples: {algo.RollingIVStrikeBid[underlying].Samples(symbol)}");
             }
         }
-
-        /// <summary>   
-        /// Taking too long. May want to load historical IVs from list. Then just calculate EWMA load IV method... Loadings IVs requires much set up work... shortcut?
-        /// Works for 1 day of testing securities....
-        /// </summary>
-        /// <param name="security"></param>
-        //public void WarmUpSecurityOnTheFlyIV(Security security)
-        //{
-        //    QuoteBar quoteBar;
-        //    QuoteBar quoteBarUnderlying;
-        //    Symbol symbol;
-
-        //    algo.Log($"SecurityInitializer.WarmUpSecurity: {security}");
-
-
-        //    if (security.Type == SecurityType.Option)
-        //    {
-        //        var option = (Option)security;
-
-        //        if (option.Underlying == null) return;
-        //        //if (option.Underlying.Price == 0) return;
-        //        //if (option.Underlying.HasData)
-        //        symbol = option.Symbol;
-        //        var history = algo.History<QuoteBar>(new List<Symbol>() { symbol, option.Symbol.Underlying }, algo.Periods(days: 5), algo.resolution, fillForward: false);
-
-        //        // Loop over symbols, determine time frontier, use latest among iterators until finished.
-        //        decimal underlyingMidPrice = 0;
-        //        foreach (DataDictionary<QuoteBar> data in history)
-        //        {
-        //            if (data.TryGetValue(option.Symbol.Underlying, out quoteBarUnderlying))
-        //            {
-        //                underlyingMidPrice = (quoteBarUnderlying.Bid.Close + quoteBarUnderlying.Ask.Close) / 2;
-        //            }
-
-        //            if (data.TryGetValue(option.Symbol, out quoteBar) && underlyingMidPrice != 0)
-        //            {
-        //                algo.IVBids[symbol].Update(quoteBar, underlyingMidPrice);
-        //                algo.IVAsks[symbol].Update(quoteBar, underlyingMidPrice);
-        //                algo.RollingIVBid[symbol].Update(algo.IVBids[symbol].Current);
-        //                algo.RollingIVAsk[symbol].Update(algo.IVAsks[symbol].Current);
-        //            }
-        //        }
-                
-        //        algo.Log($"WarmUpSecurity.RollingIVBid {option.Symbol}: Samples: {algo.RollingIVBid[option.Symbol].Samples}");
-        //        algo.Log($"WarmUpSecurity.RollingIVAsk {option.Symbol}: Samples: {algo.RollingIVAsk[option.Symbol].Samples}");
-        //    }
-        //    else if (security.Type == SecurityType.Equity)
-        //    {
-
-        //    }
-        //}
     }
 }

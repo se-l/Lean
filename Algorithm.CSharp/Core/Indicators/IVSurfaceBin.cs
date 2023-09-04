@@ -1,143 +1,67 @@
 using System;
-using System.Linq;
-using QuantConnect.Securities.Option;
-using Accord.Math;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
-    // All too imperative design. Refactor into getters. Correct Lazy updates on demand
-    public class Bin<T> where T : IVBidAsk, IIVBidAsk
+    public class Bin
     {
-        private readonly Foundations algo;
-        public readonly RollingIVSurfaceRelativeStrike<T> Surface;
-        public readonly string Side;
+        public readonly QuoteSide Side;
+        public readonly decimal Value;
         public readonly bool IsOTM;
-        public decimal Value;
+        public readonly DateTime Expiry;
+        public readonly double Alpha;  // 1: No Smoothing, 0: No Update. First IV.
+        public readonly TimeSpan SamplingPeriod;
+        // For Adaptive EWMA
+        // private double gamma = 0.0001;
+        // private double eps;
+
         public double? IV;
-        public double? EWMA;
-        public double? EWMAPrevious;
-        public decimal Strike;
-        public DateTime Expiry;
-        public DateTime LastUpdatedEWMA;
-        public decimal MidPrice;
-        public double Slope;
-        private readonly double alpha = 0.005;
-        private readonly TimeSpan samplingPeriod = TimeSpan.FromMinutes(5);
+        public double? IVEWMA;
+        private double? _IVEWMAPrevious;
 
-        private DateTime LastUpdatedEWMAPrevious;
+        public double? Slope;
+        public double? SlopeEWMA;
+        private double? _slopeEWMAPrevious;
 
-        public Bin(Foundations algo, RollingIVSurfaceRelativeStrike<T> surface, string side, decimal value, double? iv, DateTime expiry, DateTime time, decimal midPrice, bool isOTM, double slope = 0)
+        public DateTime Time;
+        private DateTime PreviousTime;
+
+        public Bin(QuoteSide side, decimal value, DateTime expiry, bool isOTM, double alpha = 1.0, TimeSpan? samplingPeriod = null)
         {
-            this.algo = algo;
-            Surface = surface;
             Side = side;
             Value = value;
-            IV = iv;
             Expiry = expiry;
-            LastUpdatedEWMA = time;
-            MidPrice = midPrice;
-            Slope = slope;
             IsOTM = isOTM;
+            Alpha = alpha;
+            SamplingPeriod = samplingPeriod ?? TimeSpan.FromMinutes(5);
         }
-        public void Update(IVBidAsk item)
-        {
-            if (item.Time == DateTime.MinValue || item.Price == 0 || item.IV == 0)
-            {
-                return; 
-            }
 
-            EWMAPrevious = GetPreviousEWMA(item);
-            EWMA = alpha * item.IV + (1 - alpha) * EWMAPrevious;
-            // Adjust alpha if gamma > 0
-            // eps = Math.Abs(item.IV - EWMA);
-            // alpha = (1 - gamma) * alpha + gamma * (eps / (eps + EWMAPrevious));
-            UpdateEWMAPrevious(item);
-        }
-        private double? GetPreviousEWMA(IVBidAsk item)
+        public void Update(DateTime time, double iv, double slope)
         {
-            // Previous EWMA was calculated within sample Period. Expected to be most common scenario.
-            if (LastUpdatedEWMAPrevious.TimeOfDay >= new TimeSpan(15, 55, 0) || LastUpdatedEWMAPrevious >= item.Time - samplingPeriod)
+            if (time <= Time || iv == 0) { return; }
+
+            IV = iv;
+            Time = time;
+            Slope = slope;
+
+            IVEWMA = Alpha * iv + (1 - Alpha) * (_IVEWMAPrevious ?? iv);
+            SlopeEWMA = Alpha * iv + (1 - Alpha) * (_slopeEWMAPrevious ?? slope);
+            
+            if (UpdatePreviousTime(time) || _IVEWMAPrevious == null)
             {
-                return EWMAPrevious;
-            }
-            // Initial EWMA
-            else if (LastUpdatedEWMAPrevious == DateTime.MinValue)
-            {
-                return item.IV;
-            }
-            // EWMAPrevious could be too old in the past, rather interpolate recently updated strikes then.
-            // Little issue. Neighbors are already EWMA smoothed. Would not want to 'double' smooth.
-            else
-            {
-                double? interpolated = Surface.InterpolateNearestBins(this);
-                if (interpolated != null)
-                {
-                    LastUpdatedEWMA = item.Time; // Approximation. Smallest timestamps of bins EWMA is source from.
-                }
-                return EWMAPrevious = interpolated ?? EWMAPrevious;
+                _IVEWMAPrevious = IVEWMA;
+                _slopeEWMAPrevious = Slope;
             }
         }
-        private void UpdateEWMAPrevious(IVBidAsk item)
+
+        private bool UpdatePreviousTime(DateTime time)
         {
             // Too frequent EWMA would turn signal noisier, hence keep only save latest ewma to previousEWMA every x Periods.
-            if (LastUpdatedEWMAPrevious + samplingPeriod < item.Time)
+            if (PreviousTime + SamplingPeriod < time)
             {
-                EWMAPrevious = EWMA;
-                LastUpdatedEWMAPrevious = item.Time;
-            }
-        }
-
-        private decimal Bin2Strike(decimal bin)
-        {
-            return Math.Round(bin * MidPrice / 100, 0);
-        }
-        /// <summary>
-        /// Fetch Bid / Ask / Calc IV and update EWMA... No interpolation here. Stack Overflow
-        /// </summary>
-        public bool Refresh()
-        {
-            decimal strike = Bin2Strike(Value);
-            var contracts = algo.Securities.Values.Where(s =>
-                s.Type == SecurityType.Option
-                && s.Symbol.Underlying == Surface.Underlying
-                && ((Option)s).Symbol.ID.Date == Expiry
-                && ((Option)s).Symbol.ID.StrikePrice == strike
-                && (IsOTM ? ((Option)s).GetPayOff(MidPrice) < 0 : ((Option)s).GetPayOff(MidPrice) > 0 )
-            );
-            if (contracts.Any())
-            {
-                var option = contracts.First();
-                Symbol contract = option.Symbol;
-
-                if (Side == "bid")
-                {
-                    Update(algo.IVBids[contract].Refresh()); // to be deleted with registrated event
-                    return true;
-
-                }
-                else if (Side == "ask")
-                {
-                    Update(algo.IVAsks[contract].Refresh()); // to be deleted with registrated event
-                    return true;
-                }
-                else
-                {
-                    throw new Exception("Invalid side");
-                }
+                PreviousTime = time;
+                return true;
             }
             return false;
-        }
-
-        public bool IsReady
-        {
-            get
-            {
-                if (algo.IsWarmingUp)
-                {
-                    throw new NotSupportedException("IsReady during warm up is not supported currently.");
-                }
-                return LastUpdatedEWMA >= algo.Time - samplingPeriod;
-            }
         }
     }
 }

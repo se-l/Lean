@@ -11,7 +11,9 @@ namespace QuantConnect.Algorithm.CSharp
         public int OptionOrderQuantityDflt { get; set; }
         public int VolatilityPeriodDays { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMax { get; set; }
+        public decimal scopeContractStrikeOverUnderlyingMaxSignal { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMin { get; set; }
+        public decimal scopeContractStrikeOverUnderlyingMinSignal { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMargin { get; set; }
         public int scopeContractMinDTE { get; set; }
         public int scopeContractMaxDTE { get; set; }
@@ -21,5 +23,7 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, DiscountParams> DiscountParams { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalLong { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
+        public double IVSurfaceRelativeStrikeAlpha { get; set; }
+        public bool IsZMVolatilityImplied { get; set; }
     }
 }

@@ -40,8 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 8, 30);
-            SetEndDate(2023, 8, 30);
+            SetStartDate(2023, 9, 1);
+            SetEndDate(2023, 9, 1);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -79,14 +79,14 @@ namespace QuantConnect.Algorithm.CSharp
             Debug($"Subscribing to {subscriptions} securities");
             SetUniverseSelection(new ManualUniverseSelectionModel(equities));
 
-            pfRisk = PortfolioRisk.E(this);
+            PfRisk = PortfolioRisk.E(this);
 
             // Scheduled functions
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(new TimeSpan(1, 0, 0)), UpdateUniverseSubscriptions);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
 
-            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(2).First();
+            SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
+            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(2).First();
             Log($"WarmUp TimeSpan: {timeSpan}");
             SetWarmUp(timeSpan);
         }
@@ -103,11 +103,9 @@ namespace QuantConnect.Algorithm.CSharp
                 if (symbol.SecurityType == SecurityType.Option && kvp.Value != null)
                 {
                     IVBids[symbol].Update(kvp.Value);
-                    IVBids[symbol].SetDelta();
                     IVAsks[symbol].Update(kvp.Value);
-                    IVAsks[symbol].SetDelta();
-                    RollingIVBid[symbol].Update(IVBids[symbol].Current);
-                    RollingIVAsk[symbol].Update(IVAsks[symbol].Current);
+                    RollingIVBid[symbol].Update(IVBids[symbol].IVBidAsk);
+                    RollingIVAsk[symbol].Update(IVAsks[symbol].IVBidAsk);
                 }
             }
 

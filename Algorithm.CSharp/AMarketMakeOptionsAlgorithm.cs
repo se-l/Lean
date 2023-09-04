@@ -32,7 +32,6 @@ using QuantConnect.Securities.Equity;
 using Newtonsoft.Json;
 using QuantConnect.Configuration;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using QuantConnect.Data.Consolidators;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -53,15 +52,15 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 6, 15);
-            SetEndDate(2023, 6, 30);
+            //SetStartDate(2023, 5, 15);
+            SetStartDate(2023, 8, 1);
+            SetEndDate(2023, 9, 1);
             SetCash(10_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             UniverseSettings.Leverage = 1;
             Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText("EarningsAnnouncements.json"));
-            //QuoteBarConsolidator1Sec = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
 
             mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - ScheduledEvent.SecurityEndOfDayDelta);  // 2mins before EOD EOD market close events fire
             orderType = OrderType.Limit;
@@ -95,7 +94,7 @@ namespace QuantConnect.Algorithm.CSharp
                     foreach (string t in optionTicker)
                     {
                         DeltaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Delta100BpUSDTotal);
-                        GammaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Gamma100BpUSDTotal);
+                        GammaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Gamma500BpUSDTotal);
                         EventDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Events);
                     }
                 }
@@ -105,41 +104,41 @@ namespace QuantConnect.Algorithm.CSharp
             Debug($"Subscribing to {subscriptions} securities");
             SetUniverseSelection(new ManualUniverseSelectionModel(equities));
 
-            pfRisk = PortfolioRisk.E(this);
+            PfRisk = PortfolioRisk.E(this);
 
-            // Scheduled functions
+            // SCHEDULED EVENTS
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.AfterMarketOpen(hedgeTicker[0]), OnMarketOpen);
-            //Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(mmWindow.Start), OrderOppositeOrders);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(mmWindow.Start), RunSignals);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Leaves EOD Equity hedges.
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportRiskRecords);
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(60)), ExportIVSurface);
+            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportIVSurface);
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.BeforeMarketClose(hedgeTicker[0], 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then
             // Turn Limit Equity into EOD before market close...
 
-            securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
-            // first digit ensure looking byeond past holidays. Second digit is days of trading days to warm up.
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(securityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(1).First();
+            // WARMUP
+            SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
+            // first digit ensure looking beyond past holidays. Second digit is days of trading days to warm up.
+            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
             Log($"WarmUp TimeSpan: {timeSpan} starting on {StartDate - timeSpan}");
             SetWarmUp(timeSpan);
 
+            // Logging
             RiskRecorder = new(this);
         }
 
         public override void OnData(Slice slice)
         {
+            equities.DoForEach(underlying => IVSurfaceRelativeStrikeBid[underlying].Update());
+            equities.DoForEach(underlying => IVSurfaceRelativeStrikeAsk[underlying].Update());
+
             if (IsWarmingUp) return;
 
             foreach (Symbol symbol in slice.QuoteBars.Keys)
             {
-                if (symbol.SecurityType == SecurityType.Equity && IsEventNewBidAsk(symbol))
-                {
-                    PublishEvent(new EventNewBidAsk(symbol));  // Refresh entire IV % Surface
-                }
-                else if (symbol.SecurityType == SecurityType.Option && IsEventNewBidAsk(symbol))
+                if (IsEventNewQuote(symbol)) // also called in Consolidator. Should cache result at timestamp, update PriceCache and read here from cache.
                 {
                     PublishEvent(new EventNewBidAsk(symbol));
                 }
@@ -157,6 +156,7 @@ namespace QuantConnect.Algorithm.CSharp
             //    }
             //}
 
+            // Move into consolidator events. Not driving any biz logic.
             // Record data for restarts and next day comparison with history. Avoid conflict with Paper on same instance by running this for live mode only.
             if (LiveMode && Config.Get("ib-trading-mode") == "live")
             {
@@ -200,71 +200,7 @@ namespace QuantConnect.Algorithm.CSharp
             Log(assignmentEvent.ToString());
         }
 
-        public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
-        {
-            Symbol symbol = security.Symbol;
-            if (
-                security.Symbol.ID.Symbol.Contains(VolatilityBar)
-                || !HistoryRequestValid(symbol) 
-                || HistoryProvider == null
-                )
-            {
-                return Enumerable.Empty<BaseData>();
-            }
-
-            var result = new Dictionary<TickType, BaseData>();
-            Resolution? resolution = null;
-            Func<int, bool> requestData = period =>
-            {
-                var historyRequests = CreateBarCountHistoryRequests(new[] { symbol }, period)
-                    .Select(request =>
-                    {
-                        // For speed and memory usage, use Resolution.Minute as the minimum resolution
-                        request.Resolution = (Resolution)Math.Max((int)Resolution.Minute, (int)request.Resolution);
-                        // force no fill forward behavior
-                        request.FillForwardResolution = null;
-
-                        resolution = request.Resolution;
-                        return request;
-                    })
-                    // request only those tick types we didn't get the data we wanted
-                    .Where(request => !result.ContainsKey(request.TickType))
-                    .ToList();
-                foreach (var slice in History(historyRequests))
-                {
-                    for (var i = 0; i < historyRequests.Count; i++)
-                    {
-                        var historyRequest = historyRequests[i];
-                        var data = slice.Get(historyRequest.DataType);
-                        if (data.ContainsKey(symbol))
-                        {
-                            // keep the last data point per tick type
-                            result[historyRequest.TickType] = (BaseData)data[symbol];
-                        }
-                    }
-                }
-                // true when all history requests tick types have a data point
-                return historyRequests.All(request => result.ContainsKey(request.TickType));
-            };
-
-            if (!requestData(Periods(Resolution.Minute, days: 1)))
-            {
-                if (resolution.HasValue)
-                {
-                    // If the first attempt to get the last know price returns null, it maybe the case of an illiquid security.
-                    // Use Quote data to return MidPrice
-                    var periods = Periods(security.Resolution, days: 5);
-                    requestData(periods);
-                }
-                else
-                {
-                    // this shouldn't happen but just in case
-                    Error($"QCAlgorithm.GetLastKnownPrices(): no history request was created for symbol {symbol} at {Time}");
-                }
-            }
-            // return the data ordered by time ascending
-            return result.Values.OrderBy(data => data.Time);
-        }
+        
 
         /// <summary>
         /// Event driven: On MarketOpen, OnFill, OnRiskProfileChanges / Thresholds crossed
@@ -345,7 +281,8 @@ namespace QuantConnect.Algorithm.CSharp
             OnEndOfDay();
             ExportToCsv(TradesCumulative.Cumulative(this), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "TradesCumulative.csv"));
             RiskRecorder.Dispose();
-            RollingIVStrikeBid.Values.Union(RollingIVStrikeAsk.Values).Where(s => !s.IsEmpty).DoForEach(s => s.Dispose());
+            IVSurfaceRelativeStrikeBid.Values.DoForEach(s => s.Dispose());
+            IVSurfaceRelativeStrikeAsk.Values.DoForEach(s => s.Dispose());
             RiskPnLProfiles.Values.DoForEach(s => s.Dispose());
             Utility.Dispose();
             base.OnEndOfAlgorithm();
@@ -364,7 +301,7 @@ namespace QuantConnect.Algorithm.CSharp
             foreach (Security security in Securities.Values.Where(s => s.Type == SecurityType.Equity))  // because risk is hedged by underlying
             {
                 PublishEvent(new EventNewBidAsk(security.Symbol));
-                pfRisk.IsRiskLimitExceededZM(security.Symbol);
+                PfRisk.IsRiskLimitExceededZM(security.Symbol);
             }
 
             LogRisk();
@@ -386,7 +323,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             TotalPortfolioValueSinceStart = Portfolio.TotalPortfolioValue;
 
-            pfRisk.ResetPositions();
+            PfRisk.ResetPositions();
 
             //CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
 
@@ -411,7 +348,7 @@ namespace QuantConnect.Algorithm.CSharp
             // This doesnt work. Cannot call it every 60mins expecting the dynamic surface header remain constant and dump data with identical schema.
             
             if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
-            RollingIVStrikeBid.Values.Union(RollingIVStrikeAsk.Values).Where(s => !s.IsEmpty).DoForEach(s => s.WriteCsvRows());
+            IVSurfaceRelativeStrikeBid.Values.Union(IVSurfaceRelativeStrikeAsk.Values).DoForEach(s => s.WriteCsvRows());
         }
 
         public void HedgeDeltaFlat()
@@ -424,6 +361,73 @@ namespace QuantConnect.Algorithm.CSharp
                 Log($"HedgeDeltaFlat EOD: {equity.Symbol}");
                 HedgeOptionWithUnderlying(equity.Symbol);
             }
+        }
+
+        // OTHER
+        public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
+        {
+            Symbol symbol = security.Symbol;
+            if (
+                security.Symbol.ID.Symbol.Contains(VolatilityBar)
+                || !HistoryRequestValid(symbol)
+                || HistoryProvider == null
+                )
+            {
+                return Enumerable.Empty<BaseData>();
+            }
+
+            var result = new Dictionary<TickType, BaseData>();
+            Resolution? resolution = null;
+            Func<int, bool> requestData = period =>
+            {
+                var historyRequests = CreateBarCountHistoryRequests(new[] { symbol }, period)
+                    .Select(request =>
+                    {
+                        // For speed and memory usage, use Resolution.Minute as the minimum resolution
+                        request.Resolution = (Resolution)Math.Max((int)Resolution.Minute, (int)request.Resolution);
+                        // force no fill forward behavior
+                        request.FillForwardResolution = null;
+
+                        resolution = request.Resolution;
+                        return request;
+                    })
+                    // request only those tick types we didn't get the data we wanted
+                    .Where(request => !result.ContainsKey(request.TickType))
+                    .ToList();
+                foreach (var slice in History(historyRequests))
+                {
+                    for (var i = 0; i < historyRequests.Count; i++)
+                    {
+                        var historyRequest = historyRequests[i];
+                        var data = slice.Get(historyRequest.DataType);
+                        if (data.ContainsKey(symbol))
+                        {
+                            // keep the last data point per tick type
+                            result[historyRequest.TickType] = (BaseData)data[symbol];
+                        }
+                    }
+                }
+                // true when all history requests tick types have a data point
+                return historyRequests.All(request => result.ContainsKey(request.TickType));
+            };
+
+            if (!requestData(Periods(Resolution.Minute, days: 1)))
+            {
+                if (resolution.HasValue)
+                {
+                    // If the first attempt to get the last know price returns null, it maybe the case of an illiquid security.
+                    // Use Quote data to return MidPrice
+                    var periods = Periods(security.Resolution, days: 5);
+                    requestData(periods);
+                }
+                else
+                {
+                    // this shouldn't happen but just in case
+                    Error($"QCAlgorithm.GetLastKnownPrices(): no history request was created for symbol {symbol} at {Time}");
+                }
+            }
+            // return the data ordered by time ascending
+            return result.Values.OrderBy(data => data.Time);
         }
     }
 }

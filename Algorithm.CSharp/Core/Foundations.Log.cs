@@ -161,8 +161,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001), 2).ToString() : "" },
                 { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001), 2).ToString() : "" },
                 { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001), 2).ToString() : "" },
-                { "IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVStrikeBid[underlying].IV(symbol).ToString() : "" },
-                { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? RollingIVStrikeAsk[underlying].IV(symbol).ToString() : "" },
+                { "IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeBid[underlying].IV(symbol).ToString() : "" },
+                { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeAsk[underlying].IV(symbol).ToString() : "" },
             });
             Log(tag);
 
@@ -181,7 +181,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "topic", "RISK" },
                 { "Symbol", $"{symbol ?? "Portfolio"}" },
             };
-            var d2 = pfRisk.ToDict(symbol).ToDictionary(x => x.Key, x => Math.Round(x.Value, 2).ToString());
+            var d2 = PfRisk.ToDict(symbol).ToDictionary(x => x.Key, x => Math.Round(x.Value, 2).ToString());
             string tag = Humanize(d1.Union(d2));
             Log(tag);
 
@@ -216,13 +216,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Log($"TotalFeesQC: {Portfolio.TotalFees}");
             Log($"RealizedProfitQC: {Portfolio.TotalNetProfit}");
             Log($"TotalUnrealizedProfitQC: {Portfolio.TotalUnrealizedProfit}");
-            Log($"TotalPortfolioValueMid: {pfRisk.PortfolioValue("Mid")}");
-            Log($"TotalPortfolioValueQC/Close: {pfRisk.PortfolioValue("QC")}");
-            Log($"TotalPortfolioValueWorst: {pfRisk.PortfolioValue("Worst")}");
-            Log($"TotalUnrealizedProfitMineExFees: {pfRisk.PortfolioValue("UnrealizedProfit")}");
+            Log($"TotalPortfolioValueMid: {PfRisk.PortfolioValue("Mid")}");
+            Log($"TotalPortfolioValueQC/Close: {PfRisk.PortfolioValue("QC")}");
+            Log($"TotalPortfolioValueWorst: {PfRisk.PortfolioValue("Worst")}");
+            Log($"TotalUnrealizedProfitMineExFees: {PfRisk.PortfolioValue("UnrealizedProfit")}");
             Log($"PnLClose: {Portfolio.TotalPortfolioValue - TotalPortfolioValueSinceStart}");
-            Log($"PnlMidPerPosition: {pfRisk.PortfolioValue("AvgPositionPnLMid")}");
-            Log($"PnlMidPerOptionAbsQuantity: {pfRisk.PortfolioValue("PnlMidPerOptionAbsQuantity")}");
+            Log($"PnlMidPerPosition: {PfRisk.PortfolioValue("AvgPositionPnLMid")}");
+            Log($"PnlMidPerOptionAbsQuantity: {PfRisk.PortfolioValue("PnlMidPerOptionAbsQuantity")}");
         }
     }
 }

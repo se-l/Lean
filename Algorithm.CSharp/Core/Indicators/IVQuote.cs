@@ -2,7 +2,7 @@ using System;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
-    public class IVBidAsk : IIVBidAsk
+    public class IVQuote
     {
         public Symbol Symbol { get; }
         public DateTime Time { get; }
@@ -12,7 +12,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public double? Delta { get; set; }
 
 
-        public IVBidAsk(Symbol symbol, DateTime time, decimal underlyingMidPrice, decimal price, double iv)
+        public IVQuote(Symbol symbol, DateTime time, decimal underlyingMidPrice, decimal price, double iv)
         {
             Symbol = symbol;
             Time = time;
