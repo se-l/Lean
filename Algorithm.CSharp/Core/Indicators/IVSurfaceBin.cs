@@ -12,7 +12,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public readonly TimeSpan SamplingPeriod;
         // For Adaptive EWMA
         // private double gamma = 0.0001;
-        // private double eps;
 
         public double? IV;
         public double? IVEWMA;
@@ -24,6 +23,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public DateTime Time;
         private DateTime PreviousTime;
+        public double? Epsilon { get => IV - IVEWMA; }
 
         public Bin(QuoteSide side, decimal value, DateTime expiry, bool isOTM, double alpha = 1.0, TimeSpan? samplingPeriod = null)
         {
@@ -62,6 +62,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 return true;
             }
             return false;
+        }
+
+        public void ResetEWMA()
+        {
+            IVEWMA = _IVEWMAPrevious = IV;
+            SlopeEWMA = _slopeEWMAPrevious = Slope;
         }
     }
 }

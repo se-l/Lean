@@ -52,8 +52,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            //SetStartDate(2023, 5, 15);
-            SetStartDate(2023, 8, 1);
+            SetStartDate(2023, 5, 15);
+            //SetStartDate(2023, 8, 1);
             SetEndDate(2023, 9, 1);
             SetCash(10_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
@@ -94,7 +94,7 @@ namespace QuantConnect.Algorithm.CSharp
                     foreach (string t in optionTicker)
                     {
                         DeltaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Delta100BpUSDTotal);
-                        GammaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Gamma500BpUSDTotal);
+                        GammaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Gamma100BpUSDTotal);
                         EventDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Events);
                     }
                 }
@@ -131,8 +131,8 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void OnData(Slice slice)
         {
-            equities.DoForEach(underlying => IVSurfaceRelativeStrikeBid[underlying].Update());
-            equities.DoForEach(underlying => IVSurfaceRelativeStrikeAsk[underlying].Update());
+            equities.DoForEach(underlying => IVSurfaceRelativeStrikeBid[underlying].Update().CheckExecuteIVJumpReset());
+            equities.DoForEach(underlying => IVSurfaceRelativeStrikeAsk[underlying].Update().CheckExecuteIVJumpReset());
 
             if (IsWarmingUp) return;
 

@@ -11,6 +11,7 @@ using QuantConnect.Securities.Option;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Data.Consolidators;
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -156,6 +157,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
                         && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < 0
                         && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
+                        // Embargo
+                        && !(
+                            EarningsAnnouncements.Where(ea => ea.Symbol == ((Option)sec).Symbol.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()
+                            //|| (((Option)sec).Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
+                        )
                         ) 
                         || 
                         (
@@ -164,6 +170,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     )
                 )
                 {
+                    // BuySell Distinction is insufficient. Scenario: We are delta short, gamma long. Would only want to buy/sell options reducing both, unless the utility is calculated better to compare weight 
+                    // beneficial risk and detrimental risk against each other. That's what the RiskDiscounts are for.
+
                     Option option = (Option)sec;
                     Symbol symbol = sec.Symbol;
                     UtilityOrder utilBuy = new(this, option, 1m);
@@ -406,7 +415,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal limitPrice = quote.Price;
             if (limitPrice == 0)
             {
-                Log($"No price for {contract.Symbol}. Not trading...");
+                // Fix Me
+                // Log($"No price for {Num2Direction(quantity)} {Math.Abs(quantity)} {contract.Symbol}. Not trading...");
                 return;
             }
             limitPrice = RoundTick(limitPrice, TickSize(contract.Symbol));
@@ -447,6 +457,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     var limit_price = ticket.Get(OrderField.LimitPrice);
                     Quote<Option> quote = GetQuote(new QuoteRequest<Option>(contract, ticket.Quantity));
                     decimal idealLimitPrice = quote.Price;
+                    if (idealLimitPrice == 0)
+                    {
+                        Log($"{Time}: UpdateLimitPriceContract. Received 0 price for submitted order. Canceling {contract.Symbol}. Not trading...");
+                        ticket.Cancel();
+                        return;
+                    }
                     idealLimitPrice = RoundTick(idealLimitPrice, tick_size_);
 
                     if (Math.Abs(idealLimitPrice - limit_price) >= tick_size_ && idealLimitPrice >= tick_size_)
@@ -509,11 +525,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
             }
         }
-        public decimal RiskSpreadAdjustment(decimal spread, PortfolioRisk pfRisk, decimal pfDeltaUSDIf)
-        {
-            return spread * Math.Max(Math.Min(0, pfRisk.Delta100BpUSDTotal / 500), 1) * 0.5m * (pfRisk.Delta100BpUSDTotal - pfDeltaUSDIf) / pfRisk.Delta100BpUSDTotal;
-        }
-
         public decimal QuantityExceedingMinimumBrokerageFee(Symbol symbol)
         {
             return 1 / 0.005m;  // 200. To be extended. max is 1% of trade value I think. 

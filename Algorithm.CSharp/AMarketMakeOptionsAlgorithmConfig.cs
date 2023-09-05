@@ -25,5 +25,6 @@ namespace QuantConnect.Algorithm.CSharp
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
         public double IVSurfaceRelativeStrikeAlpha { get; set; }
         public bool IsZMVolatilityImplied { get; set; }
+        public double SurfaceVerticalResetThreshold { get; set; }
     }
 }

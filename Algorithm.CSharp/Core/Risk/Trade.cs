@@ -76,7 +76,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double VegaImplied1 { get => GetGreeks1().Vega; }
         public double ThetaImplied0 { get => GetGreeks0().Theta; }
         public double ThetaImplied1 { get => GetGreeks1().Theta; }
-        public Quote<Option>? Quote;
+        public Quote<Option>? Quote { get; internal set; }
         public int DDaysToExpiration { get => SecurityType switch
         {
             SecurityType.Option => Greeks0.OCW.DaysToExpiration(Ts0.Date) - Greeks0.OCW.DaysToExpiration(Ts1.Date),

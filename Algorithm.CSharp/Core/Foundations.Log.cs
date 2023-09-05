@@ -179,7 +179,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 { "ts", Time.ToString() },
                 { "topic", "RISK" },
-                { "Symbol", $"{symbol ?? "Portfolio"}" },
+                { "Symbol", $"Equities: {string.Join(",", equities)}" },
             };
             var d2 = PfRisk.ToDict(symbol).ToDictionary(x => x.Key, x => Math.Round(x.Value, 2).ToString());
             string tag = Humanize(d1.Union(d2));

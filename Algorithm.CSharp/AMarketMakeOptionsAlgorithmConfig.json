@@ -25,15 +25,15 @@
       "TargetRisk": 0,
       "X0": 0,
       "X1": 0, //0.0005,
-      "X2": 0.00001,
-      "CapMin": -0.5,
-      "CapMax": 0.5
+      "X2": 0.000001,
+      "CapMin": -0.3,
+      "CapMax": 0.3
     },
-    "HPE-Gamma500BpUSDTotal-discount-params": {
+    "HPE-Gamma100BpUSDTotal-discount-params": {
       "TargetRisk": 0,
       "X0": 0,
       "X1": 0, //0.0005,
-      "X2": 0.00001,
+      "X2": 0.000005,
       "CapMin": -0.3,
       "CapMax": 0.3
     },
@@ -49,5 +49,6 @@
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
   "IVSurfaceRelativeStrikeAlpha": 0.05,
-  "IsZMVolatilityImplied":  false
+  "IsZMVolatilityImplied": false,
+  "SurfaceVerticalResetThreshold":  0.01
 }

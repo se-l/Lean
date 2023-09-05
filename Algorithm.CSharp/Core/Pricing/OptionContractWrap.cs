@@ -310,10 +310,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             };
         }
             
-        public double Delta()
+        public double Delta(double? volatility = null)
         {
             double delta;
             SetEvaluationDateToCalcDate();
+            var hv = hvQuote.value();
+            if (volatility != null)  // For caculating ATM Implied Greeks
+            {
+                SetHistoricalVolatility((double)volatility);
+            }
             try
             {
                 delta = amOption.delta();
@@ -323,26 +328,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 algo.Error($"OptionContractWrap.Delta. Attempting FD. {e}");
                 delta = FiniteDifferenceApprox(spotQuote, amOption, 0.01, "NPV");
             }
-            return delta;
-        }
-
-        public double DeltaImplied()
-        {
-            var hv = hvQuote.value();
-            SetHistoricalVolatility(IV(null, null, 0.001));
-            var delta = Delta();
             SetHistoricalVolatility(hv);
             return delta;
         }
 
-        public decimal DeltaXBp(int x = 100)
+        public decimal DeltaXBp(int x = 100, double? volatility = null)
         {
-            return (decimal)Delta() * algo.MidPrice(UnderlyingSymbol) * x * BP;
-        }
-
-        public decimal DeltaImpliedXBp(int x = 100)
-        {
-            return (decimal)DeltaImplied() * algo.MidPrice(UnderlyingSymbol) * x * BP;
+            return (decimal)Delta(volatility) * algo.MidPrice(UnderlyingSymbol) * x * BP;
         }
 
         /// <summary>
@@ -431,44 +423,37 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
-        public double Gamma()
+        public double Gamma(double? volatility = null)
         {
+            double gamma;
             SetEvaluationDateToCalcDate();
             // dPdP = gamma = finite_difference_approx(spot_quote, am_option, 0.01, 'delta');
-            if (hvQuote.value() == 0)
+            double hv0 = hvQuote.value();
+            if (hv0 == 0 && volatility == null)
             {
                 algo.Error($"OptionContractWrap.Gamma: hvQuote.value() == 0, returning 0 gamma.");
                 return 0;
             }
+            if (volatility != null)
+            {
+                SetHistoricalVolatility((double)volatility); // For calculating at, eg, ATM IV.
+            }
             try
             {
-                return amOption.gamma();
+                gamma = amOption.gamma();
             }
             catch  (Exception e)
             {
                 algo.Error($"OptionContractWrap.Gamma. HV: {hvQuote.value()} Attempting FD {e}");
-                return FDApprox2ndDerivative(spotQuote, amOption, 0.01, "NPV");
+                gamma = FDApprox2ndDerivative(spotQuote, amOption, 0.01, "NPV");
             }
-            
-        }
-
-        public double GammaImplied()
-        {
-            var hv = hvQuote.value();
-            SetHistoricalVolatility(IV(null, null, 0.001));
-            var gamma = Gamma();
-            SetHistoricalVolatility(hv);
+            SetHistoricalVolatility(hv0);
             return gamma;
-
         }
 
-        public decimal GammaXBp(int x = 100)
+        public decimal GammaXBp(int x = 100, double? volatility = null)
         {
-            return (decimal)(0.5 * Gamma() * Math.Pow((double)algo.MidPrice(UnderlyingSymbol) * x * (double)BP, 2));
-        }
-        public decimal GammaImpliedXBp(int x = 100)
-        {
-            return (decimal)(0.5 * GammaImplied() * Math.Pow((double)algo.MidPrice(UnderlyingSymbol) * x * (double)BP, 2));
+            return (decimal)(0.5 * Gamma(volatility) * Math.Pow((double)algo.MidPrice(UnderlyingSymbol) * x * (double)BP, 2));
         }
 
         public double Vega()

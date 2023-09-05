@@ -25,7 +25,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Symbol = holding.Symbol;
             Security = algo.Securities[Symbol];
             TimeCreated = algo.Time;
-            SecurityType = Security.Type;            
+            SecurityType = Security.Type;
         }     
     }
 }

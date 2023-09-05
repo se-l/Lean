@@ -32,6 +32,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal PositionOptions { get; internal set; }
         public decimal PositionOptionsUSD { get; internal set; }
         public decimal HistoricalVolatility { get; internal set; }
+        public double AtmIvOtm { get; internal set; }
+        public double AtmIvOtmEWMA { get; internal set; }
         public decimal PnL { get; internal set; }
         public decimal MidPriceUnderlying { get; internal set; }
         public RiskRecord(Foundations algo, PortfolioRisk pfRisk, Equity equity)
@@ -61,6 +63,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             PnL = TradesCumulative.Cumulative(algo).Where(t => t.UnderlyingSymbol == Symbol).Select(t => t.PL).Sum();
             MidPriceUnderlying = algo.MidPrice(Symbol);
             HistoricalVolatility = algo.Securities[equity.Symbol].VolatilityModel.Volatility;
+            AtmIvOtm = algo.PfRisk.AtmIV(equity.Symbol);
+            AtmIvOtmEWMA = algo.PfRisk.AtmIVEWMA(equity.Symbol);
         }
     }
 
@@ -71,7 +75,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private readonly string _path;
         public readonly List<string> riskRecordsHeader = new() { "Time", "Symbol",
             "DeltaTotal", "DeltaImpliedTotal", "Delta100BpUSDTotal", "DeltaImplied100BpUSDTotal", "Delta100BpUSDOptionsTotal", "GammaTotal", "GammaImpliedTotal", "Gamma100BpUSDTotal", "GammaImplied100BpUSDTotal", "Gamma500BpUSDTotal", "GammaImplied500BpUSDTotal",
-            "VegaTotal", "ThetaTotal", "PositionUSD", "PositionUnderlying", "PositionUnderlyingUSD", "PositionOptions", "PositionOptionsUSD", "PnL", "MidPriceUnderlying", "HistoricalVolatility"};
+            "VegaTotal", "ThetaTotal", "PositionUSD", "PositionUnderlying", "PositionUnderlyingUSD", "PositionOptions", "PositionOptionsUSD", "PnL", "MidPriceUnderlying", "HistoricalVolatility", "AtmIvOtm", "AtmIvOtmEWMA"};
         public RiskRecorder(Foundations algo)
         {
             _algo = algo;

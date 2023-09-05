@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Collections.Generic;
 using Accord.Math;
 using QuantConnect.Securities.Option;
+using MathNet.Numerics.Statistics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
@@ -96,9 +97,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         /// Assumes all IVBidAsk update events have been processed. Only need to interpolate in between strikes that actually have changed values. Their timestamps would
         /// need to greater than the Bin's 'raw' IV timestamp.
         /// </summary>
-        public void Update()
+        public IVSurfaceRelativeStrike Update()
         {
-            if (_algo.Time.TimeOfDay > new TimeSpan(16, 0, 0) || _algo.Time.TimeOfDay < new TimeSpan(9, 30, 0)) { return; }  // Only RTH
+            if (_algo.Time.TimeOfDay > new TimeSpan(16, 0, 0) || _algo.Time.TimeOfDay < new TimeSpan(9, 30, 0)) { return this; }  // Only RTH
             Time = _algo.Time;
 
             Symbol symbolLeft = null;
@@ -140,6 +141,54 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                         symbolLeft = symbolRight;
                     }
                     symbolLeft = null;
+                }
+            }
+            return this;
+        }
+
+        public void CheckExecuteIVJumpReset()
+        {
+            return;
+            double epsilonLeft;
+            double epsilonRight;
+            DateTime expiry = _expiries.Min();
+            // Every Bin will get an error term between IV and IVEWMA.
+            // Getting the error terms from all 8 ATM contracts. Each side 4.
+            // averaged. If non-zero = presume whole surface has moved vertically / jump. If error small, can profit from it presuming return to average. if large, my quotes will be rather junk, selling into rising IV, buying into falling market...
+            // configurable threshold: start with 1%.
+            List<double> epsilons = new();
+            var atmContracts = ATMContracts();
+            foreach (Symbol symbol in atmContracts)
+            {
+                var ivQuote = _ivQuote(symbol);
+                if (ivQuote.IV == null || ivQuote.IV == 0)
+                {
+                    continue;
+                }
+                var strikePct = StrikePct(symbol.ID.StrikePrice, MidPriceUnderlying);
+                var isOTM = IsOTM(symbol.ID.OptionRight, strikePct);
+                if (!_bins.TryGetValue((isOTM, expiry, Math.Floor(strikePct)), out Bin binLeft))
+                {
+                    continue;
+                }
+                if (!_bins.TryGetValue((isOTM, expiry, Math.Ceiling(strikePct)), out Bin binRight))
+                {
+                    continue;
+                }
+                
+                epsilonLeft = ivQuote.IV + (binLeft.SlopeEWMA ?? 0) * (double)(strikePct - binLeft.Value) - (binLeft.IVEWMA ?? ivQuote.IV);
+                epsilonRight = ivQuote.IV + (binRight.SlopeEWMA ?? 0) * (double)(strikePct - binRight.Value) - (binRight.IVEWMA ?? ivQuote.IV);
+                epsilons.Add((epsilonLeft + epsilonRight) / 2);
+            }
+            if (epsilons.Mean() > _algo.Cfg.SurfaceVerticalResetThreshold)
+            {
+                _algo.Log($"Detected significant vertical ATM IV Surface jump. Setting all EWMAs to their current IV zeroing epsilon. {string.Join(",", epsilons)}. Derived from {string.Join(",", atmContracts)}");
+            }
+            foreach (var bin in _bins.Values)
+            {
+                if (_algo.Time.TimeOfDay < new TimeSpan(hours: 9, minutes: 40, seconds: 0));
+                {
+                    //bin.ResetEWMA();
                 }
             }
         }
@@ -238,16 +287,59 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             decimal strikePct = StrikePct(strike);
             bool isOTM = IsOTM(symbol.ID.OptionRight, strikePct);
 
-            Bin binLeft = GetBin(isOTM, expiry, Math.Floor(strikePct));         
-
+            Bin bin = GetBin(isOTM, expiry, Math.Round(strikePct));
             // Correcting for binToBin % difference. One-sided interpolation.
-            double? ewmaInterpolated = binLeft.IVEWMA + binLeft.SlopeEWMA * (double)(strikePct - binLeft.Value);
+            double? ewmaInterpolated = bin.IVEWMA + bin.SlopeEWMA * (double)(strikePct - bin.Value);
             return ewmaInterpolated;
         }
 
         private decimal StrikePct(decimal strike, decimal? midPrice = null)
         {
+            //  K/S, which is known as the (spot) simple moneyness
             return 100 * strike / (midPrice ?? MidPriceUnderlying);
+        }
+
+        public IEnumerable<Symbol> ATMContracts()
+        {
+            var atmStrikeLower = _strikes[_expiries.Min()].Where(x => x < MidPriceUnderlying).Max();
+            var atmStrikeUpper = _strikes[_expiries.Min()].Where(x => x > MidPriceUnderlying).Min();
+            var atmStrikes = new HashSet<decimal>() { atmStrikeLower, atmStrikeUpper };
+            return _algo.Securities.Where(x => x.Key.SecurityType == SecurityType.Option && x.Key.Underlying == Underlying && x.Key.ID.Date == _expiries.Min() && atmStrikes.Contains(x.Key.ID.StrikePrice)).Select(x => x.Key);
+        }
+
+        public Bin ATMBin(bool otm = true)
+        {
+            // Should be warmed up. No null here.
+            // Derive ATM volatility from the bin with value 100. OTM only. And smallest expiry.
+            var minExpiry = _expiries.Min();
+            if (!_bins.ContainsKey((otm, minExpiry, 100)))
+            {
+                InitalizeNewBin(otm, minExpiry, 100);
+                Update();
+            }
+            return _bins[(otm, minExpiry, 100)];
+        }
+
+        public double AtmIVEWMA(bool otm = true)
+        {
+            double? vol = ATMBin(otm).IVEWMA;
+            if (vol == null)
+            {
+                _algo.Error($"AtmIVEWMA is null. WarmUp Failed. {otm} {_expiries.Min()}");
+                return 0;
+            }
+            return (double)vol;
+        }
+
+        public double AtmIv(bool otm = true)
+        {
+            double? vol = ATMBin(otm).IV;
+            if (vol == null)
+            {
+                _algo.Error($"AtmIVEWMA is null. WarmUp Failed. {otm} {_expiries.Min()}");
+                return 0;
+            }
+            return (double)vol;
         }
 
         public Dictionary<bool, Dictionary<DateTime, Dictionary<decimal, double?>>> ToDictionary(decimal minBin = 70, decimal maxBin = 130, Func<Bin, double?>? binGetter = null)
@@ -281,7 +373,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public bool IsOTM(OptionRight right, decimal strikePct)
         {
-            return right == OptionRight.Call ? strikePct < 100 : strikePct > 100;
+            return right == OptionRight.Call ? strikePct > 100 : strikePct < 100;
         }
 
         public string GetCsvHeader()
