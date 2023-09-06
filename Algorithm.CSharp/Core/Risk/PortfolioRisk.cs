@@ -153,11 +153,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public double AtmIV(Symbol symbol)
         {
+            if (algo.Time >= symbol.ID.Date) { return 0; }  // Expired
             return (double)(algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIv() + algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIv()) / 2;
         }
         
         public double AtmIVEWMA(Symbol symbol)
         {
+            if (algo.Time >= symbol.ID.Date) { return 0; }  // Expired
             return (double)(algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIVEWMA() + algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIVEWMA()) / 2;
         }
 

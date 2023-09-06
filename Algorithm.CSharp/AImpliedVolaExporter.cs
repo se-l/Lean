@@ -40,8 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 9, 1);
-            SetEndDate(2023, 9, 1);
+            SetStartDate(2023, 9, 5);
+            SetEndDate(2023, 9, 5);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;

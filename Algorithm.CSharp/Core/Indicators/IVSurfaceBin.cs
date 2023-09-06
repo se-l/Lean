@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
@@ -25,6 +26,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         private DateTime PreviousTime;
         public double? Epsilon { get => IV - IVEWMA; }
 
+        private int _samples;
+        private int _smoothings;
+        public int Samples { get => _samples; }
+        public int Smoothings { get => _smoothings; }
+
         public Bin(QuoteSide side, decimal value, DateTime expiry, bool isOTM, double alpha = 1.0, TimeSpan? samplingPeriod = null)
         {
             Side = side;
@@ -42,6 +48,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             IV = iv;
             Time = time;
             Slope = slope;
+            _samples += 1;
 
             IVEWMA = Alpha * iv + (1 - Alpha) * (_IVEWMAPrevious ?? iv);
             SlopeEWMA = Alpha * iv + (1 - Alpha) * (_slopeEWMAPrevious ?? slope);
@@ -50,6 +57,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             {
                 _IVEWMAPrevious = IVEWMA;
                 _slopeEWMAPrevious = Slope;
+                _smoothings += 1;
             }
         }
 
@@ -68,6 +76,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         {
             IVEWMA = _IVEWMAPrevious = IV;
             SlopeEWMA = _slopeEWMAPrevious = Slope;
+        }
+
+        public string Id()
+        {
+            string otm = IsOTM ? "OTM" : "ITM";
+            return $"{Side} {otm} {Expiry.ToString("yyMMdd", CultureInfo.InvariantCulture)} {Value}";
         }
     }
 }

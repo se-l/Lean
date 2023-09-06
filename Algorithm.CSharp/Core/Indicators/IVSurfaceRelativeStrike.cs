@@ -37,6 +37,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         private Func<Symbol, IVQuoteIndicator> _ivQuote;
         private decimal MidPriceUnderlying { get { return _algo.MidPrice(Underlying); } }
+        public enum Status
+        {
+            Samples,
+            Smoothings
+        }
 
         public IVSurfaceRelativeStrike(Foundations algo, Symbol underlying, QuoteSide side)
         {
@@ -86,13 +91,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             }
 
             // Initialize some bins to get min max boundaries
-            InitalizeNewBin(true, symbol.ID.Date, (int)Math.Floor(symbol.ID.StrikePrice));
-            InitalizeNewBin(false, symbol.ID.Date, (int)Math.Floor(symbol.ID.StrikePrice));
+            InitalizeNewBin(true, symbol.ID.Date, Math.Floor(StrikePct(option)));
+            InitalizeNewBin(false, symbol.ID.Date, Math.Floor(StrikePct(option)));
         }
-        public int Samples(Symbol symbol)
-        {
-            return _samples[(symbol.ID.Date, symbol.ID.StrikePrice)];
-        }
+
         /// <summary>
         /// Assumes all IVBidAsk update events have been processed. Only need to interpolate in between strikes that actually have changed values. Their timestamps would
         /// need to greater than the Bin's 'raw' IV timestamp.
@@ -107,6 +109,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             IVQuoteIndicator ivQuoteIndicatorRight;
             decimal strikePctLeft;
             decimal strikePctRight;
+            double ivLeft=0;
+            double ivRight;
+            DateTime timeLeft = default(DateTime);
+            DateTime timeRight;
             DateTime maxTime;
 
 
@@ -118,29 +124,46 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                     foreach (Symbol symbolRight in OptionSymbols(expiry, otm))
                     {
                         ivQuoteIndicatorRight = _ivQuote(symbolRight);
+                        strikePctRight = StrikePct(symbolRight.ID.StrikePrice, MidPriceUnderlying);
                         if (ivQuoteIndicatorRight.IV == 0)
+                        {
+                            // Use the current IV rather. Otherwise this Bin's values would be overwritten by the interpolation of its neighbors.
+                            // Get it from Bin
+                            var binRight = GetBin(otm, expiry, Math.Round(strikePctRight));
+                            ivRight = binRight.IV ?? 0;
+                            timeRight = binRight.Time;
+                        }
+                        else
+                        {
+                            ivRight = ivQuoteIndicatorRight.IV;
+                            timeRight = ivQuoteIndicatorRight.Time;
+                        }
+
+                        // A change at inception that above is zero nonetheless. Dont use that.
+                        if (ivRight == 0)
                         {
                             continue;
                         }
-                        strikePctRight = StrikePct(symbolRight.ID.StrikePrice, MidPriceUnderlying);                        
-
-                        if (symbolLeft != null)
+                        else
                         {
-                            ivQuoteIndicatorLeft = _ivQuote(symbolLeft);
-                            strikePctLeft = StrikePct(symbolLeft.ID.StrikePrice, MidPriceUnderlying);
-                            maxTime = ivQuoteIndicatorLeft.Time > ivQuoteIndicatorRight.Time ? ivQuoteIndicatorLeft.Time : ivQuoteIndicatorRight.Time;
-
-                            var slope = (ivQuoteIndicatorRight.IV - ivQuoteIndicatorLeft.IV) / (double)(strikePctRight - strikePctLeft);
-                            foreach (Bin bin in GetBins(otm, expiry, strikePctLeft, strikePctRight))
+                            if (ivLeft != 0 && timeLeft != default(DateTime))
                             {
-                                double ivInterpolated = ivQuoteIndicatorLeft.IV + slope * (double)(bin.Value - strikePctLeft);
-                                bin.Update(maxTime, ivInterpolated, slope);
-                            }
-                        }
+                                strikePctLeft = StrikePct(symbolLeft.ID.StrikePrice, MidPriceUnderlying);
+                                maxTime = timeLeft > ivQuoteIndicatorRight.Time ? timeLeft : timeRight;
 
-                        symbolLeft = symbolRight;
+                                var slope = (ivRight - ivLeft) / (double)(strikePctRight - strikePctLeft);
+                                foreach (Bin bin in GetBins(otm, expiry, strikePctLeft, strikePctRight))
+                                {
+                                    double ivInterpolated = ivLeft + slope * (double)(bin.Value - strikePctLeft);
+                                    bin.Update(maxTime, ivInterpolated, slope);
+                                }
+                            }
+
+                            symbolLeft = symbolRight;
+                        }
+                        ivLeft = ivRight;
+                        timeLeft = timeRight;
                     }
-                    symbolLeft = null;
                 }
             }
             return this;
@@ -249,8 +272,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 {
                     _minBin[(isOTM, expiry)] = binValue;
                 }
+
+                InitializeInBetweenBins(isOTM, expiry);
             }
+
             return _bins[(isOTM, expiry, binValue)];
+        }
+
+        private void InitializeInBetweenBins(bool isOTM, DateTime expiry)
+        {
+            // Ensuring there's a bin for every value in between min and max.
+            foreach (int binValue in Enumerable.Range((int)_minBin[(isOTM, expiry)], (int)(_maxBin[(isOTM, expiry)] - _minBin[(isOTM, expiry)])))
+            {
+                if (!_bins.ContainsKey((isOTM, expiry, binValue)))
+                {
+                    _bins[(isOTM, expiry, binValue)] = new Bin(Side, binValue, expiry, isOTM, Alpha);
+                }
+            }
         }
 
         /// <summary>
@@ -260,14 +298,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         {
             if (gt < _minBin[(otm, expiry)])
             {
-                foreach (int binValue in Enumerable.Range((int)Math.Floor(gt), (int)Math.Ceiling(gt - _minBin[(otm, expiry)])+1))
+                foreach (int binValue in Enumerable.Range((int)Math.Floor(gt), (int)Math.Ceiling(_minBin[(otm, expiry)] - gt)))
                 {
                     InitalizeNewBin(otm, expiry, binValue);
                 }
             }
             if (lt > _maxBin[(otm, expiry)])
             {
-                foreach (int binValue in Enumerable.Range((int)_maxBin[(otm, expiry)], (int)Math.Ceiling(lt - (int)_maxBin[(otm, expiry)])+1))
+                foreach (int binValue in Enumerable.Range((int)_maxBin[(otm, expiry)]+1, (int)Math.Ceiling(lt - (int)_maxBin[(otm, expiry)])+1))
                 {
                     InitalizeNewBin(otm, expiry, binValue);
                 }
@@ -299,6 +337,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return 100 * strike / (midPrice ?? MidPriceUnderlying);
         }
 
+        private decimal StrikePct(Option option, decimal? midPrice = null)
+        {
+            return StrikePct(option.Symbol.ID.StrikePrice, midPrice);
+        }
+
         public IEnumerable<Symbol> ATMContracts()
         {
             var atmStrikeLower = _strikes[_expiries.Min()].Where(x => x < MidPriceUnderlying).Max();
@@ -325,7 +368,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             double? vol = ATMBin(otm).IVEWMA;
             if (vol == null)
             {
-                _algo.Error($"AtmIVEWMA is null. WarmUp Failed. {otm} {_expiries.Min()}");
+                _algo.Error($"AtmIVEWMA is null for OTM={otm}. WarmUp Failed for OTM={otm} Expiry={_expiries.Min()}");
                 return 0;
             }
             return (double)vol;
@@ -336,7 +379,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             double? vol = ATMBin(otm).IV;
             if (vol == null)
             {
-                _algo.Error($"AtmIVEWMA is null. WarmUp Failed. {otm} {_expiries.Min()}");
+                _algo.Error($"AtmIV is null for OTM={otm}. WarmUp Failed for OTM={otm} Expiry={_expiries.Min()}");
                 return 0;
             }
             return (double)vol;
@@ -344,7 +387,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public Dictionary<bool, Dictionary<DateTime, Dictionary<decimal, double?>>> ToDictionary(decimal minBin = 70, decimal maxBin = 130, Func<Bin, double?>? binGetter = null)
         {
-            binGetter = binGetter == null ? (bin) => bin.IVEWMA : binGetter;
+            binGetter ??= ((bin) => bin.IVEWMA);
             // Initialize empty bin dictionary
             Dictionary<bool, Dictionary<DateTime, Dictionary<decimal, double?>>> dict = new();
             foreach (bool isOTM in new bool[] { true, false })
@@ -425,6 +468,41 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 }
             }
             _writerRaw.Write(csv.ToString());
+        }
+        public Dictionary<string, int> Samples()
+        {
+            return _bins.Values.ToDictionary(x => x.Id(), x => x.Samples);
+        }
+        public Dictionary<string, int> Smoothings()
+        {
+            return _bins.Values.ToDictionary(x => x.Id(), x => x.Smoothings);
+        }
+
+        public string GetStatus(Status status)
+        {
+            StringBuilder binLog = new();
+            string metric;
+            Func<Dictionary<string, int>> func;
+            switch (status)
+            {
+                case Status.Samples:
+                    metric = "Samples";
+                    func = Samples;
+                    break;
+                case Status.Smoothings:
+                    metric = "Smoothings";
+                    func = Smoothings;
+                    break;
+                default:
+                    throw new NotImplementedException();
+            };
+            binLog.AppendLine($"{Time} {Underlying} IV Surface Relative Strike {metric} {Side}:");
+            foreach (var kvp in func())
+            {
+                binLog.Append($"{kvp.Key}: {kvp.Value}; ");
+            };
+            binLog.AppendLine(".");
+            return binLog.ToString();
         }
 
         public void Dispose()

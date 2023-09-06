@@ -121,7 +121,7 @@ namespace QuantConnect.Algorithm.CSharp
             // WARMUP
             SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
             // first digit ensure looking beyond past holidays. Second digit is days of trading days to warm up.
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
+            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(3).First();
             Log($"WarmUp TimeSpan: {timeSpan} starting on {StartDate - timeSpan}");
             SetWarmUp(timeSpan);
 
@@ -273,6 +273,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (IsWarmingUp || Time.Date == endOfDay) { return; }
             LogPortfolioHighLevel();
+            equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
+            equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
             endOfDay = Time.Date;
         }
 
@@ -332,6 +334,9 @@ namespace QuantConnect.Algorithm.CSharp
 
             OnMarketOpen();
 
+            equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
+            equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
+
             OnWarmupFinishedCalled = true;
         }
         /// <summary>
@@ -344,9 +349,7 @@ namespace QuantConnect.Algorithm.CSharp
         }
 
         public void ExportIVSurface()
-        {
-            // This doesnt work. Cannot call it every 60mins expecting the dynamic surface header remain constant and dump data with identical schema.
-            
+        {           
             if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
             IVSurfaceRelativeStrikeBid.Values.Union(IVSurfaceRelativeStrikeAsk.Values).DoForEach(s => s.WriteCsvRows());
         }
