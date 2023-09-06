@@ -35,8 +35,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public Func<IBaseData, decimal> Selector { get {
                 return Side switch
                 {
-                    QuoteSide.Bid => (IBaseData b) => ((QuoteBar)b).Bid.Close,
-                    QuoteSide.Ask => (IBaseData b) => ((QuoteBar)b).Ask.Close,
+                    QuoteSide.Bid => (IBaseData b) => ((QuoteBar)b)?.Bid?.Close ?? 0,
+                    QuoteSide.Ask => (IBaseData b) => ((QuoteBar)b)?.Ask?.Close ?? 0,
                 };
             }
         }
