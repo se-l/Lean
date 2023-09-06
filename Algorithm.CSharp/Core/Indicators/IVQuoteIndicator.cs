@@ -20,6 +20,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public decimal Price { get; set; }
         public double IV { get; set; }
         public IVQuote IVBidAsk { get; internal set; }
+        private int _samples;
+        public int Samples { get => _samples; }
         private decimal GetQuote(QuoteBar quoteBar) => _side switch
         {
             QuoteSide.Bid => quoteBar.Bid.Close,
@@ -39,13 +41,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             }
         }
 
-        public override bool IsReady => Current != null;
+        public override bool IsReady => _samples > 0;
 
         public IVQuoteIndicator(QuoteSide side, Option option, Foundations algo) : base($"IV {side} {option.Symbol}")
         {
             _side = side;
             _algo = algo;
             Option = option;
+            IVBidAsk = new IVQuote(Symbol, algo.Time, 0, 0, 0);  // Default, in case referenced downstream before any successful update.
             algo.RegisterIndicator(Symbol, this, algo.QuoteBarConsolidators[Symbol], Selector);
         }
 
@@ -53,6 +56,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         {
             if (time <= Time || quote == 0) { return; }
 
+            _samples += 1;
             Time = time;
             if (HaveInputsChanged(quote, midPriceUnderlying, Time.Date))
             {
