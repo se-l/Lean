@@ -12,6 +12,7 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
+using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -51,6 +52,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public bool OnWarmupFinishedCalled = false;
         public decimal TotalPortfolioValueSinceStart = 0m;
         public Dictionary<int, OrderFillData> OrderFillDataTN1 = new();
+        public Dictionary<Symbol, List<Trade>> Trades = new();
+        public Dictionary<Symbol, Position> Positions = new();
         public EarningsAnnouncement[] EarningsAnnouncements;
         public AMarketMakeOptionsAlgorithmConfig Cfg;
 
@@ -95,6 +98,27 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             var security = Securities[symbol];
             return (security.AskPrice + security.BidPrice) / 2;
+        }
+        public Trade WrapToTrade(OrderEvent orderEvent)
+        {
+            Trade trade = new(this, Transactions.GetOrderById(orderEvent.OrderId));
+            if (!Trades.ContainsKey(trade.Symbol))
+            {
+                Trades[trade.Symbol] = new();
+            }
+            Trades[orderEvent.Symbol].Add(trade);
+            return trade;
+        }
+        public void ApplyToPosition(Trade trade)
+        {
+            if (!Positions.ContainsKey(trade.Symbol))
+            {
+                Positions[trade.Symbol] = new(null, trade, this);
+            }
+            else
+            {
+                Positions[trade.Symbol] = new(Positions[trade.Symbol], trade, this);
+            }
         }
         public void UpdateOrderFillData(OrderEvent orderEvent)
         {

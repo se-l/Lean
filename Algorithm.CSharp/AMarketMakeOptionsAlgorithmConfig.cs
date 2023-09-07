@@ -26,5 +26,6 @@ namespace QuantConnect.Algorithm.CSharp
         public double IVSurfaceRelativeStrikeAlpha { get; set; }
         public bool IsZMVolatilityImplied { get; set; }
         public double SurfaceVerticalResetThreshold { get; set; }
+        public int WarmUpDays { get; set; }
     }
 }

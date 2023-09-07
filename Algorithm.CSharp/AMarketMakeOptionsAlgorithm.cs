@@ -31,6 +31,7 @@ using QuantConnect.Scheduling;
 using QuantConnect.Securities.Equity;
 using Newtonsoft.Json;
 using QuantConnect.Configuration;
+using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp
@@ -52,10 +53,10 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 5, 15);
+            SetStartDate(2023, 7, 1);
             //SetStartDate(2023, 8, 1);
-            SetEndDate(2023, 9, 1);
-            SetCash(10_000);
+            SetEndDate(2023, 9, 6);
+            SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             UniverseSettings.Leverage = 1;
@@ -121,7 +122,7 @@ namespace QuantConnect.Algorithm.CSharp
             // WARMUP
             SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
             // first digit ensure looking beyond past holidays. Second digit is days of trading days to warm up.
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(3).First();
+            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(Cfg.WarmUpDays + 1).First();
             Log($"WarmUp TimeSpan: {timeSpan} starting on {StartDate - timeSpan}");
             SetWarmUp(timeSpan);
 
@@ -144,17 +145,6 @@ namespace QuantConnect.Algorithm.CSharp
                 }
                 PriceCache[symbol] = Securities[symbol].Cache.Clone();
             }
-
-            // Logging Fills
-            //foreach (KeyValuePair<Symbol, TradeBar> kvp in data.Bars)
-            //{
-            //    Symbol symbol = kvp.Key;
-            //    if (symbol.ID.SecurityType == SecurityType.Option)
-            //    {
-            //        Log($"{Time} OnData.FILL Detected: symbol: {symbol} Time: {kvp.Value.Time} Close: {kvp.Value.Close} Volume: {kvp.Value.Volume} RollingIVBid: {RollingIVBid[symbol].EWMA} RollingIVAsk: {RollingIVAsk[symbol].EWMA}" +
-            //            $"Best Bid: {Securities[symbol].BidPrice} Best Ask: {Securities[symbol].AskPrice}");
-            //    }
-            //}
 
             // Move into consolidator events. Not driving any biz logic.
             // Record data for restarts and next day comparison with history. Avoid conflict with Paper on same instance by running this for live mode only.
@@ -195,12 +185,33 @@ namespace QuantConnect.Algorithm.CSharp
             PublishEvent(orderEvent);
         }
 
+        static decimal Strike(Order o) => o.Symbol.ID.StrikePrice;
+        Order NewEquityExerciseOrder(OptionExerciseOrder o) => new EquityExerciseOrder(o, new OrderFillData(o.Time, Strike(o), Strike(o), Strike(o), Strike(o), Strike(o), Strike(o)))
+        {
+            Status = OrderStatus.Filled
+        };
+
         public override void OnAssignmentOrderEvent(OrderEvent assignmentEvent)
         {
             Log(assignmentEvent.ToString());
+
+            OptionExerciseOrder optionExerciseOrder = (OptionExerciseOrder)Transactions.GetOrderById(assignmentEvent.OrderId);            
+            var equityExerciseOrders = NewEquityExerciseOrder(optionExerciseOrder);
+
+            if (!Trades.ContainsKey(assignmentEvent.Symbol))
+            {
+                Trades[assignmentEvent.Symbol] = new();
+            }
+            if (!Trades.ContainsKey(assignmentEvent.Symbol.Underlying))
+            {
+                Trades[assignmentEvent.Symbol.Underlying] = new();
+            }
+
+            Trades[assignmentEvent.Symbol].Add(new(this, optionExerciseOrder));
+            Trades[equityExerciseOrders.Symbol].Add(new(this, equityExerciseOrders));
         }
 
-        
+
 
         /// <summary>
         /// Event driven: On MarketOpen, OnFill, OnRiskProfileChanges / Thresholds crossed
@@ -273,15 +284,15 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (IsWarmingUp || Time.Date == endOfDay) { return; }
             LogPortfolioHighLevel();
-            equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
-            equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
+            //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
+            //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
             endOfDay = Time.Date;
         }
 
         public override void OnEndOfAlgorithm()
         {
             OnEndOfDay();
-            ExportToCsv(TradesCumulative.Cumulative(this), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "TradesCumulative.csv"));
+            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "PositionLifeCycle.csv"));
             RiskRecorder.Dispose();
             IVSurfaceRelativeStrikeBid.Values.DoForEach(s => s.Dispose());
             IVSurfaceRelativeStrikeAsk.Values.DoForEach(s => s.Dispose());
@@ -296,7 +307,6 @@ namespace QuantConnect.Algorithm.CSharp
             if (IsWarmingUp) { return; }
 
             PopulateOptionChains();
-            //CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
             CancelGammaHedgeBeyondScope();
 
             // Trigger events
@@ -324,10 +334,6 @@ namespace QuantConnect.Algorithm.CSharp
             }
 
             TotalPortfolioValueSinceStart = Portfolio.TotalPortfolioValue;
-
-            PfRisk.ResetPositions();
-
-            //CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
 
             LogRisk();
             LogPnL();

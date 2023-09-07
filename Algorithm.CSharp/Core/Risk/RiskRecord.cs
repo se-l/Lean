@@ -1,3 +1,4 @@
+using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 using QuantConnect.Securities.Equity;
 using System;
 using System.Collections.Generic;
@@ -60,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             PositionOptions = optionHoldings.Select(h => h.Quantity).Sum();
             PositionOptionsUSD = optionHoldings.Select(h => h.HoldingsValue).Sum();
 
-            PnL = TradesCumulative.Cumulative(algo).Where(t => t.UnderlyingSymbol == Symbol).Select(t => t.PL).Sum();
+            PnL = Position.AllLifeCycles(algo).Where(p => p.UnderlyingSymbol == Symbol).Sum(p => p.PL);
             MidPriceUnderlying = algo.MidPrice(Symbol);
             HistoricalVolatility = algo.Securities[equity.Symbol].VolatilityModel.Volatility;
             AtmIvOtm = algo.PfRisk.AtmIV(equity.Symbol);

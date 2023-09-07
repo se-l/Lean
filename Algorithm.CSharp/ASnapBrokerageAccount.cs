@@ -17,7 +17,6 @@ using QuantConnect.Brokerages;
 using QuantConnect.Securities;
 using QuantConnect.Orders;
 using System.Linq;
-//using QuantConnect.ToolBox.IQFeed.IQ;
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 
@@ -37,10 +36,6 @@ namespace QuantConnect.Algorithm.CSharp
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
 
-            //if (LiveMode)
-            //{
-            //    SetOptionChainProvider(new IQOptionChainProvider());
-            //}
             int volatilitySpan = 30;
 
             SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilitySpan));
@@ -82,8 +77,6 @@ namespace QuantConnect.Algorithm.CSharp
                 }
                 orderTickets[ticket.Symbol].Add(ticket);
             }
-
-            PfRisk.ResetPositions();
 
             PopulateOptionChains();
 

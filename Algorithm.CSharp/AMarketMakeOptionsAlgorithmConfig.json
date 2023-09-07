@@ -24,7 +24,7 @@
     "HPE-Delta100BpUSDTotal-discount-params": {
       "TargetRisk": 0,
       "X0": 0,
-      "X1": 0, //0.0005,
+      "X1": 0,
       "X2": 0.000001,
       "CapMin": -0.3,
       "CapMax": 0.3
@@ -32,12 +32,36 @@
     "HPE-Gamma100BpUSDTotal-discount-params": {
       "TargetRisk": 0,
       "X0": 0,
-      "X1": 0, //0.0005,
+      "X1": 0,
       "X2": 0.000005,
       "CapMin": -0.3,
       "CapMax": 0.3
     },
     "HPE-Events-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0.3,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
+    },
+    "PFE-Delta100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0.000001,
+      "CapMin": -0.3,
+      "CapMax": 0.3
+    },
+    "PFE-Gamma100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0.000005,
+      "CapMin": -0.3,
+      "CapMax": 0.3
+    },
+    "PFE-Events-discount-params": {
       "TargetRisk": 0,
       "X0": 0.3,
       "X1": 0,
@@ -50,5 +74,6 @@
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
   "IVSurfaceRelativeStrikeAlpha": 0.05,
   "IsZMVolatilityImplied": false,
-  "SurfaceVerticalResetThreshold":  0.01
+  "SurfaceVerticalResetThreshold": 0.01,
+  "WarmUpDays":  1
 }

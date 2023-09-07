@@ -31,39 +31,25 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }
                     UpdateLimitPrice(newBidAsk.Symbol);
                     PfRisk.IsRiskLimitExceededZM(newBidAsk.Symbol);
-                    //pfRisk.IsRiskLimitExceededGamma(newBidAsk.Symbol);
-                    //EmitNewFairOptionPrices(newBidAsk.Symbol);
                 }
             }
 
             if (@event is OrderEvent orderEvent && (orderEvent.Status is OrderStatus.Filled or OrderStatus.PartiallyFilled))
             {
                 UpdateOrderFillData(orderEvent);
-                PfRisk.ResetPositions();
+                var trade = WrapToTrade(orderEvent);
+                ApplyToPosition(trade);
                 LogOnEventOrderFill(orderEvent);
                 GetDesiredOrders();
-                //CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
                 PfRisk.IsRiskLimitExceededZM(orderEvent.Symbol);
-                //pfRisk.IsRiskLimitExceededGamma(orderEvent.Symbol);
-                
-                //if (orderEvent.Symbol.SecurityType == SecurityType.Option)
-                //{
-                //    OrderOppositeOrder(orderEvent.Symbol);
-                //}
                 RiskPnLProfiles[Underlying(orderEvent.Symbol)].Update();
             }
-
-            //if (@event is EventNewFairOptionPrice newFairOptionPrice)
-            //{
-            //    UpdateLimitPrice(newFairOptionPrice.Symbol);
-            //}
 
             if (@event is EventRiskLimitExceeded riskLimitExceeded)
             {
                 switch (riskLimitExceeded.LimitType)
                 {
                     case RiskLimitType.Delta:
-                        //CancelRiskIncreasingOrderTickets(RiskLimitType.Delta);
                         HedgeOptionWithUnderlyingZM(riskLimitExceeded.Symbol);
                         break;
                     //case RiskLimitType.Gamma:

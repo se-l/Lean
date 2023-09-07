@@ -1,6 +1,7 @@
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Data;
+using QuantConnect.Data.Market;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
@@ -223,6 +224,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Log($"PnLClose: {Portfolio.TotalPortfolioValue - TotalPortfolioValueSinceStart}");
             Log($"PnlMidPerPosition: {PfRisk.PortfolioValue("AvgPositionPnLMid")}");
             Log($"PnlMidPerOptionAbsQuantity: {PfRisk.PortfolioValue("PnlMidPerOptionAbsQuantity")}");
+        }
+
+        public void LogTradeBar(Slice slice)
+        {
+            // Logging Fills
+            foreach (KeyValuePair<Symbol, TradeBar> kvp in slice.Bars)
+            {
+                Symbol symbol = kvp.Key;
+                if (symbol.ID.SecurityType == SecurityType.Option)
+                {
+                    Log($"{Time} OnData.FILL Detected: symbol: {symbol} Time: {kvp.Value.Time} Close: {kvp.Value.Close} Volume: {kvp.Value.Volume}" +
+                        $"Best Bid: {Securities[symbol].BidPrice} Best Ask: {Securities[symbol].AskPrice}");
+                }
+            }
         }
     }
 }

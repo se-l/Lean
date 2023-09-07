@@ -48,7 +48,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             // Update PnL profile
             var midPrice = _algo.MidPrice(Symbol);
-            var positions = _algo.PfRisk.Positions.Where(x => x.UnderlyingSymbol == Symbol);
+            var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol);
 
             foreach (double pctChange in PnLProfile.Keys)
             {              

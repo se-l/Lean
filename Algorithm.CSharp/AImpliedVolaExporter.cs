@@ -40,8 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 9, 5);
-            SetEndDate(2023, 9, 5);
+            SetStartDate(2023, 9, 6);
+            SetEndDate(2023, 9, 6);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -57,7 +57,7 @@ namespace QuantConnect.Algorithm.CSharp
             hedgeTicker = new List<string> { "SPY" };
             optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
             //optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE" };
-            optionTicker = new List<string> { "HPE", "IPG", "AKAM" };
+            optionTicker = new List<string> { "HPE", "IPG", "AKAM", "PFE" };
             ticker = optionTicker.Concat(hedgeTicker).ToList();
 
             int subscriptions = 0;
@@ -86,7 +86,7 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
 
             SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(2).First();
+            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(1).First();
             Log($"WarmUp TimeSpan: {timeSpan}");
             SetWarmUp(timeSpan);
         }
@@ -164,8 +164,8 @@ namespace QuantConnect.Algorithm.CSharp
             Func<TA, TKey> selectKeyA,
             Func<TB, TKey> selectKeyB,
             Func<TA, TB, TKey, TResult> projection,
-            TA defaultA = default(TA),
-            TB defaultB = default(TB),
+            TA defaultA = default,
+            TB defaultB = default,
             IEqualityComparer<TKey> cmp = null
             )
         {
@@ -226,7 +226,7 @@ namespace QuantConnect.Algorithm.CSharp
                 }                
 
                 string underlying = symbol.ID.Underlying.Symbol.ToString();
-                string entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_quote_american_{symbol.ID.OptionRight}_{symbol.ID.StrikePrice * 10000m}_{symbol.ID.Date:yyyyMMdd}.csv".ToLower();
+                string entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_quote_american_{symbol.ID.OptionRight}_{Math.Round(symbol.ID.StrikePrice * 10000m)}_{symbol.ID.Date:yyyyMMdd}.csv".ToLowerInvariant();
                 using (streamWriter = new ZipStreamWriter(filePathQuote, entryName, overwrite:true))
                 {
                     streamWriter.WriteLine(csv);
@@ -252,7 +252,7 @@ namespace QuantConnect.Algorithm.CSharp
                     csv = csv.Substring(csv.IndexOf(Environment.NewLine) + Environment.NewLine.Length);
                 }
 
-                entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_trade_american_{symbol.ID.OptionRight}_{symbol.ID.StrikePrice * 10000m}_{symbol.ID.Date:yyyyMMdd}.csv".ToLower();
+                entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_trade_american_{symbol.ID.OptionRight}_{Math.Round(symbol.ID.StrikePrice * 10000m)}_{symbol.ID.Date:yyyyMMdd}.csv".ToLowerInvariant();
                 using (streamWriter = new ZipStreamWriter(filePathTrade, entryName, overwrite: true))
                 {
                     streamWriter.WriteLine(csv);
