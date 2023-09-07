@@ -174,7 +174,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return;
             double epsilonLeft;
             double epsilonRight;
-            DateTime expiry = _expiries.Min();
+            DateTime expiry = MinExpiry();
             // Every Bin will get an error term between IV and IVEWMA.
             // Getting the error terms from all 8 ATM contracts. Each side 4.
             // averaged. If non-zero = presume whole surface has moved vertically / jump. If error small, can profit from it presuming return to average. if large, my quotes will be rather junk, selling into rising IV, buying into falling market...
@@ -344,17 +344,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public IEnumerable<Symbol> ATMContracts()
         {
-            var atmStrikeLower = _strikes[_expiries.Min()].Where(x => x < MidPriceUnderlying).Max();
-            var atmStrikeUpper = _strikes[_expiries.Min()].Where(x => x > MidPriceUnderlying).Min();
+            var atmStrikeLower = _strikes[MinExpiry()].Where(x => x < MidPriceUnderlying).Max();
+            var atmStrikeUpper = _strikes[MinExpiry()].Where(x => x > MidPriceUnderlying).Min();
             var atmStrikes = new HashSet<decimal>() { atmStrikeLower, atmStrikeUpper };
-            return _algo.Securities.Where(x => x.Key.SecurityType == SecurityType.Option && x.Key.Underlying == Underlying && x.Key.ID.Date == _expiries.Min() && atmStrikes.Contains(x.Key.ID.StrikePrice)).Select(x => x.Key);
+            return _algo.Securities.Where(x => x.Key.SecurityType == SecurityType.Option && x.Key.Underlying == Underlying && x.Key.ID.Date == MinExpiry() && atmStrikes.Contains(x.Key.ID.StrikePrice)).Select(x => x.Key);
         }
 
         public Bin ATMBin(bool otm = true)
         {
             // Should be warmed up. No null here.
             // Derive ATM volatility from the bin with value 100. OTM only. And smallest expiry.
-            var minExpiry = _expiries.Min();
+            var minExpiry = MinExpiry();
             if (!_bins.ContainsKey((otm, minExpiry, 100)))
             {
                 InitalizeNewBin(otm, minExpiry, 100);
@@ -368,7 +368,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             double? vol = ATMBin(otm).IVEWMA;
             if (vol == null)
             {
-                _algo.Error($"AtmIVEWMA is null for OTM={otm}. WarmUp Failed for OTM={otm} Expiry={_expiries.Min()}");
+                _algo.Error($"AtmIVEWMA is null for OTM={otm}. WarmUp Failed for OTM={otm} Expiry={MinExpiry()}");
                 return 0;
             }
             return (double)vol;
@@ -379,10 +379,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             double? vol = ATMBin(otm).IV;
             if (vol == null)
             {
-                _algo.Error($"AtmIV is null for OTM={otm}. WarmUp Failed for OTM={otm} Expiry={_expiries.Min()}");
+                _algo.Error($"AtmIV is null for OTM={otm}. WarmUp Failed for OTM={otm} Expiry={MinExpiry()}");
                 return 0;
             }
             return (double)vol;
+        }
+
+        public DateTime MinExpiry()
+        {
+            return _expiries.Where(e => e > _algo.Time.Date).Min();
         }
 
         public Dictionary<bool, Dictionary<DateTime, Dictionary<decimal, double?>>> ToDictionary(decimal minBin = 70, decimal maxBin = 130, Func<Bin, double?>? binGetter = null)

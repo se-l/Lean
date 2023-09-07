@@ -463,42 +463,44 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             if (symbol.SecurityType == SecurityType.Option && !symbol.IsCanonical())
             {
-                UpdateLimitPriceContract(Securities[symbol] as Option);
+                UpdateLimitOrderOption(Securities[symbol] as Option);
             }
             else if (symbol.SecurityType == SecurityType.Equity)
             {
                 UpdateLimitOrderEquity(Securities[symbol] as Equity);
             }
         }
-        public void UpdateLimitPriceContract(Option contract)
+        public void UpdateLimitOrderOption(Option option)
         {
-            foreach (var ticket in orderTickets[contract.Symbol])
+            Symbol symbol = option.Symbol;
+            foreach (var ticket in orderTickets[symbol])
             {
                 if (ticket.Status == OrderStatus.Submitted || ticket.Status == OrderStatus.PartiallyFilled || ticket.Status == OrderStatus.UpdateSubmitted)
                 {
-                    var symbol = ticket.Symbol;
-                    var tick_size_ = TickSize(contract.Symbol);
-                    var limit_price = ticket.Get(OrderField.LimitPrice);
-                    Quote<Option> quote = GetQuote(new QuoteRequest<Option>(contract, ticket.Quantity));
+                    decimal tickSize = TickSize(symbol);
+                    decimal limitPrice = ticket.Get(OrderField.LimitPrice);
+                    Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, SignalQuantity(symbol, Num2Direction(ticket.Quantity))));
                     decimal idealLimitPrice = quote.Price;
-                    if (idealLimitPrice == 0)
+
+                    if (idealLimitPrice == 0 || quote.Quantity == 0)
                     {
-                        Log($"{Time}: UpdateLimitPriceContract. Received 0 price for submitted order. Canceling {contract.Symbol}. Not trading...");
+                        Log($"{Time}: UpdateLimitPriceContract. Received 0 price or quantity for submitted order. Canceling {symbol}. Quote: {quote}. Not trading...");
                         ticket.Cancel();
                         return;
                     }
-                    idealLimitPrice = RoundTick(idealLimitPrice, tick_size_);
+                    idealLimitPrice = RoundTick(idealLimitPrice, tickSize);
 
-                    if (Math.Abs(idealLimitPrice - limit_price) >= tick_size_ && idealLimitPrice >= tick_size_)
+                    // Price
+                    if (Math.Abs(idealLimitPrice - limitPrice) >= tickSize && idealLimitPrice >= tickSize)
                     {
-                        if (idealLimitPrice < tick_size_)
+                        if (idealLimitPrice < tickSize)
                         {
-                            Log($"{Time}: CANCEL LIMIT Symbol{contract.Symbol}: Price too small: {limit_price}");
+                            Log($"{Time}: CANCEL LIMIT Symbol{symbol}: Price too small: {limitPrice}");
                             ticket.Cancel();
                         }
                         else
                         {
-                            var tag = $"{Time}: UPDATE LIMIT Symbol{contract.Symbol}: From: {limit_price} To: {idealLimitPrice}";
+                            var tag = $"{Time}: UPDATE LIMIT Symbol{symbol} Price: From: {limitPrice} To: {idealLimitPrice}";
                             var response = ticket.UpdateLimitPrice(idealLimitPrice, tag);
                             if (LiveMode)
                             {
@@ -507,11 +509,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
                             Quotes[ticket.OrderId] = quote;
                         }
                     }
+
+                    // Quantity
+                    if (ticket.Quantity != quote.Quantity)
+                    {
+                        var tag = $"{Time}: UPDATE LIMIT Symbol{symbol} Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
+                        var response = ticket.UpdateQuantity(quote.Quantity, tag);
+                        if (LiveMode)
+                        {
+                            Log($"{tag}, Response: {response}");
+                        }
+                        Quotes[ticket.OrderId] = quote;
+                    }
                 }
                 else if (ticket.Status == OrderStatus.CancelPending) { }
                 else
                 {
-                    Log($"{Time} UpdateLimitPriceContract {contract} ticket={ticket}, OrderStatus={ticket.Status} - Should not run this function for this ticket. Cleanup orderTickets.");
+                    Log($"{Time} UpdateLimitPriceContract {option} ticket={ticket}, OrderStatus={ticket.Status} - Should not run this function for this ticket. Cleanup orderTickets.");
                 }
             }
         }

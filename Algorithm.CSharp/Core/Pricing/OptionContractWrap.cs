@@ -315,9 +315,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double delta;
             SetEvaluationDateToCalcDate();
             var hv = hvQuote.value();
-            if (volatility != null)  // For caculating ATM Implied Greeks
+            if (volatility != null && volatility != 0)  // For caculating ATM Implied Greeks
             {
                 SetHistoricalVolatility((double)volatility);
+            }
+            else if (volatility == 0)  // For caculating ATM Implied Greeks
+            {
+                algo.Error($"Received 0 volatility. Potentially for implied calcs. {Contract}. Resetting to HV");
+                SetHistoricalVolatility();
             }
             try
             {
@@ -431,9 +436,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double hv0 = hvQuote.value();
             if (hv0 == 0 && volatility == null)
             {
-                algo.Error($"OptionContractWrap.Gamma: hvQuote.value() == 0, returning 0 gamma.");
-                return 0;
+                algo.Error($"OptionContractWrap.Gamma: Volatility set to 0. Resetting to HV.");
+                SetHistoricalVolatility();
             }
+            else if (volatility == 0)
+            {
+                algo.Error($"Received 0 volatility. Potentially for implied calcs. {Contract}. Resetting to HV");
+                SetHistoricalVolatility();
+            }            
             if (volatility != null)
             {
                 SetHistoricalVolatility((double)volatility); // For calculating at, eg, ATM IV.

@@ -25,5 +25,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             QuoteDiscounts = quoteDiscounts;
             SpreadFactor = quoteDiscounts.Sum(qd => qd.SpreadFactor);
         }
+
+        public override string ToString()
+        {
+            return $"Quote {Symbol}: Quantity={Quantity}, Price={Price}, QuoteDiscounts={QuoteDiscountsString}";
+        }
     }
 }

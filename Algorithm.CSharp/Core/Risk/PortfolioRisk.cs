@@ -45,7 +45,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null)
         {
             Symbol underlying = Underlying(symbol);
-            var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == underlying);
+            var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
             positions = filter == null ? positions : filter(positions);
             if (!positions.Any()) return 0;
 
@@ -83,14 +83,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// </summary>
         public decimal DerivativesRiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null)
         {
-            return RiskByUnderlying(symbol, metric, volatility, filter: positions => positions.Where(p => p.SecurityType == SecurityType.Option));
+            return RiskByUnderlying(symbol, metric, volatility, filter: positions => positions.Where(p => p.SecurityType == SecurityType.Option && p.Quantity != 0));
         }
 
         public decimal RiskBandByUnderlying(Symbol symbol, Metric metric, double? volatility = null)
         {
             (decimal, decimal) tupZMBands = (0, 0);
             Symbol underlying = Underlying(symbol);
-            var positions = _algo.Positions.Values.Where(p => p.UnderlyingSymbol == underlying && p.SecurityType == SecurityType.Option);
+            var positions = _algo.Positions.Values.Where(p => p.UnderlyingSymbol == underlying && p.SecurityType == SecurityType.Option && p.Quantity != 0);
             
             if (!positions.Any()) return 0;
             if (new HashSet<Metric>() { Metric.BandZMLower, Metric.BandZMUpper }.Contains(metric))
@@ -141,13 +141,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public double AtmIV(Symbol symbol)
         {
-            if (_algo.Time >= symbol.ID.Date) { return 0; }  // Expired
             return (double)(_algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIv() + _algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIv()) / 2;
         }
         
         public double AtmIVEWMA(Symbol symbol)
         {
-            if (_algo.Time >= symbol.ID.Date) { return 0; }  // Expired
             return (double)(_algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIVEWMA() + _algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIVEWMA()) / 2;
         }
 
