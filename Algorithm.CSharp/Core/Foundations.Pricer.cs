@@ -70,23 +70,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // targetRisk is absolute, while x0,x1 and x2 are relative to the precentage deviation off absoltue target risk.
             // Need to punish/incentivize how much a trade changes risk profile, but also how urgent it is....
             // Big negative delta while pf is pos, great, but only if whole portfolio is not worse off afterwards. Essentially need the area where nothing changes.
-            //double riskCurrent = (double)pfRisk.DerivativesRiskByUnderlying(option.Symbol, Metric.DeltaTotal);
-            //if (riskCurrent < -200)
-            //{
-            //    var a = 1;
-            //}
-            if (Cfg.IsZMVolatilityImplied)
-            {
-                discountDelta = DiscountMetric(qr, DeltaDiscounts[qr.Option.Underlying.Symbol]);
-                discountGamma = DiscountMetric(qr, GammaDiscounts[qr.Option.Underlying.Symbol]);
-            }
-            else
-            {
-                discountDelta = DiscountMetric(qr, DeltaDiscounts[qr.Option.Underlying.Symbol]);
-                discountGamma = DiscountMetric(qr, GammaDiscounts[qr.Option.Underlying.Symbol]);
-            }
 
+            discountDelta = DiscountMetric(qr, DeltaDiscounts[qr.Option.Underlying.Symbol]);
+            discountGamma = DiscountMetric(qr, GammaDiscounts[qr.Option.Underlying.Symbol]);
             QuoteDiscount discountEvents = DiscountEvents(qr.Option, qr.Quantity);
+
             return new List<QuoteDiscount>() { discountDelta, discountGamma, discountEvents };
         }
 
@@ -98,14 +86,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Symbol symbol = ocw.Contract.Symbol;
             decimal? smoothedIVPrice;
 
-            double? bidIV = IVSurfaceRelativeStrikeBid[symbol.Underlying].IV(symbol); // Using Current IV over ExOutlier improved cumulative annual return by ~2 USD per trade (~200 trades).
-            double? askIV = IVSurfaceRelativeStrikeAsk[symbol.Underlying].IV(symbol); // ExOutlier is a moving average of the last 100IVs. Doesnt explain why I quoted Selling at less than 90% of bid ask spread.
-            if (askIV == null || bidIV == null) { return null; } // No IV, no price. This is a problem. Need to default to something. (e.g. 10% spread
-            //double iVSpread = (askIV - bidIV) ?? 0.1 * (askIV ?? 0);  // presuinng default 10 % spread.
+            double? bidIV = IVSurfaceRelativeStrikeBid[symbol.Underlying].IV(symbol);
+            double? askIV = IVSurfaceRelativeStrikeAsk[symbol.Underlying].IV(symbol);
+            if (askIV == null || bidIV == null) { return null; }
 
-            // Issue here. Bid IV is often null, impacting selling due to missing IV Spread. I could default to a kind
-            // of default spread. Whenever BidIV is null, it's very low. < ~20%.
-            // FF?
             if (bidIV > askIV)
             {
                 Error($"IVStrikePrice: BidIV > AskIV for {symbol.Underlying} {symbol.ID.Date} {symbol.ID.OptionRight} {symbol.ID.StrikePrice} {bidIV} {askIV}");

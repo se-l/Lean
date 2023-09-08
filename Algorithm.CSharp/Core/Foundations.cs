@@ -23,13 +23,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public List<OrderEvent> OrderEvents = new();
         public Dictionary<Symbol, List<OrderTicket>> orderTickets = new();
         public OrderType orderType;
-        public List<string> hedgeTicker;
         public List<string> optionTicker;
         public List<string> liquidateTicker;
         public List<string> ticker;
         public List<Symbol> equities = new();
         public List<Symbol> options = new();  // Canonical symbols
-        public Dictionary<Symbol, HashSet<Option>> optionChains = new();
         public MMWindow mmWindow;
         public Symbol equity1;
         public Dictionary<Symbol, SecurityCache> PriceCache = new();
@@ -181,6 +179,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
                         && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < 0
                         && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
+                        //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
                         // Embargo
                         && !(
                             EarningsAnnouncements.Where(ea => ea.Symbol == ((Option)sec).Symbol.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()
@@ -296,28 +295,28 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void LogRiskSchedule()
         {
-            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
             
             LogRisk();
             LogPnL();
         }
 
-        public void PopulateOptionChains()
-        {
-            if (IsWarmingUp) return;
+        //public void PopulateOptionChains()
+        //{
+        //    if (IsWarmingUp) return;
 
-            foreach (Symbol symbol in Securities.Keys)
-            {
-                if (symbol.SecurityType == SecurityType.Option)
-                {
-                    Option option = (Option)Securities[symbol];
-                    Symbol underlying = option.Underlying.Symbol;
-                    HashSet<Option> optionChain = optionChains.GetValueOrDefault(underlying, new HashSet<Option>());
-                    optionChain.Add(option);
-                    optionChains[underlying] = optionChain;
-                }
-            }
-        }
+        //    foreach (Symbol symbol in Securities.Keys)
+        //    {
+        //        if (symbol.SecurityType == SecurityType.Option)
+        //        {
+        //            Option option = (Option)Securities[symbol];
+        //            Symbol underlying = option.Underlying.Symbol;
+        //            HashSet<Option> optionChain = optionChains.GetValueOrDefault(underlying, new HashSet<Option>());
+        //            optionChain.Add(option);
+        //            optionChains[underlying] = optionChain;
+        //        }
+        //    }
+        //}
 
         public bool ContractInScope(Symbol symbol, decimal? priceUnderlying = null, decimal margin=0m)
         {
@@ -330,7 +329,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 && symbol.ID.StrikePrice <= midPriceUnderlying * (Cfg.scopeContractStrikeOverUnderlyingMax + margin)
                 && IsLiquid(symbol, Cfg.scopeContractIsLiquidDays, Resolution.Daily)
                 ;
-                //&& symbol.ID.StrikePrice % 0.05m != 0m;  // This condition is somewhat strange here. Revise and move elsewhere. Beware of not buying those 5 Cent options. Should have been previously filtered out. Yet another check
         }
 
         public void RemoveUniverseSecurity(Security security)
@@ -439,8 +437,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal limitPrice = quote.Price;
             if (limitPrice == 0)
             {
-                // Fix Me
-                // Log($"No price for {Num2Direction(quantity)} {Math.Abs(quantity)} {contract.Symbol}. Not trading...");
+                //Log($"No price for {Num2Direction(quantity)} {Math.Abs(quantity)} {contract.Symbol}. Not trading...");
                 return;
             }
             limitPrice = RoundTick(limitPrice, TickSize(contract.Symbol));
@@ -618,32 +615,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             ticketToCancel.ForEach(t => t.Cancel());
 
-        }
-
-        
-
-        public IEnumerable<Symbol> SymbolsATM(Symbol symbol)
-        {
-            if (symbol.ID.SecurityType != SecurityType.Option) return new List<Symbol> { };
-
-            Option option = (Option)Securities[symbol];
-
-            if (!optionChains.ContainsKey(symbol.Underlying)) { PopulateOptionChains(); }
-            if (optionChains.TryGetValue(symbol.Underlying, out HashSet<Option> optionContracts))
-            {
-                var priceUnderlying = MidPrice(option.Underlying.Symbol);
-
-                // get the contracts whose strike prices are next above and below the underlying price
-                //var strikeAbove = optionContracts.Where(c => c.StrikePrice >= priceUnderlying).Min(c => c.StrikePrice) ?? priceUnderlying;
-                var strikeAbove = optionContracts.Where(c => c.StrikePrice >= priceUnderlying).Select(c => c.StrikePrice).DefaultIfEmpty(priceUnderlying).Min();
-                var strikeBelow = optionContracts.Where(c => c.StrikePrice < priceUnderlying).Select(c => c.StrikePrice).DefaultIfEmpty(priceUnderlying).Max();  // may not have matching contracts in Securities. Illiquid requires refactor.
-
-                return optionContracts.Where(c => c.StrikePrice == strikeAbove || c.StrikePrice == strikeBelow).Select(c => c.Symbol);
-            }
-            else
-            {
-                return new List<Symbol> { };
-            }
         }
     }
 }

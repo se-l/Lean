@@ -28,7 +28,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             QuoteSide.Ask => quoteBar.Ask.Close,
         };
 
-        protected readonly Foundations _algo;
+        private readonly Foundations _algo;
 
         public int WarmUpPeriod => 0;
 
@@ -48,8 +48,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             _side = side;
             _algo = algo;
             Option = option;
-            IVBidAsk = new IVQuote(Symbol, algo.Time, 0, 0, 0);  // Default, in case referenced downstream before any successful update.
-            algo.RegisterIndicator(Symbol, this, algo.QuoteBarConsolidators[Symbol], Selector);
+            IVBidAsk = new IVQuote(Symbol, _algo.Time, 0, 0, 0);  // Default, in case referenced downstream before any successful update.
+            algo.RegisterIndicator(Symbol, this, _algo.QuoteBarConsolidators[Symbol], Selector);
         }
 
         public void Update(DateTime time, decimal quote, decimal midPriceUnderlying)

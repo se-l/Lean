@@ -72,7 +72,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private Security _securityUnderlying;
         public Security SecurityUnderling { get => _securityUnderlying ??= _algo.Securities[UnderlyingSymbol]; }
         public int Multiplier { get => SecurityType == SecurityType.Option ? 100 : 1; }
-        public decimal Spread { get => Security.AskPrice - Security.BidPrice; }
+        public decimal Spread0 { get => Ask0 - Bid0; }
         public decimal Bid0Underlying { get; internal set; } = 0;
         public decimal Ask0Underlying { get; internal set; } = 0;
         public decimal Mid0Underlying { get => (Bid0Underlying + Ask0Underlying) / 2; }

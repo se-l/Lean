@@ -233,28 +233,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal riskDeltaTotal;
             Symbol underlying = Underlying(symbol);
 
-            if (Cfg.IsZMVolatilityImplied)
-            {
-                riskDelta100BpUSDTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaImplied100BpUSDTotal);
-            }
-            else
-            {
-                riskDelta100BpUSDTotal = PfRisk.RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal);
-            }
+            riskDelta100BpUSDTotal = PfRisk.RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal);
             
             SecurityRiskLimit riskLimit = Securities[underlying].RiskLimit;
 
 
             if (riskDelta100BpUSDTotal > riskLimit.Delta100BpLong || riskDelta100BpUSDTotal < riskLimit.Delta100BpShort)
             {
-                if (Cfg.IsZMVolatilityImplied)
-                {
-                    riskDeltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaImpliedTotal);
-                }
-                else
-                {
-                    riskDeltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
-                }
+                riskDeltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+
                 ExecuteHedge(underlying, -riskDeltaTotal);
             }
             else 

@@ -13,16 +13,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public T Last { get; protected set; }
 
         public readonly List<T> Window = new();
-        public bool IsReady => Window.Count >= 1;// _sizeCurrent;
-        public int WarmUpPeriod => _size;
+        public bool IsReady => Window.Count >= 1;
+        public int WarmUpPeriod => 1;
         public int Samples { get; internal set; }
-
-        private readonly int _size;
 
         public RollingIVIndicator(int size, Symbol symbol)
         {
             Symbol = symbol;
-            _size = size;
         }
 
         private T? GetCurrent()
@@ -37,10 +34,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public bool Add(T item)
         {
-            if (Samples >= _size)
-            {
-                Window.RemoveAt(0);
-            }
             Last = item;
             Window.Add(item);
             Samples += 1;

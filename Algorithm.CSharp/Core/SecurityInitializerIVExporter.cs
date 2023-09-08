@@ -35,7 +35,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Margin Model
                 security.MarginModel = SecurityMarginModel.Null;
                 security.SetBuyingPowerModel(new NullBuyingPowerModel());
-
                 // Fill Model
                 security.SetFillModel(new FillModelMine());
             }
@@ -64,9 +63,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 // No need for particular option contract's volatility.
                 security.VolatilityModel = VolatilityModel.Null;
-
-                // Initialize a Security Specific Hedge Band or Risk Limit object.
-                option.RiskLimit = new SecurityRiskLimit(option);
 
                 algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, algo);
                 algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, algo);

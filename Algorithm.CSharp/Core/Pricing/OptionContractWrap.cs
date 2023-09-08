@@ -381,14 +381,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double hv0;
             // Original paper appears to use historical volatility. Choosing implied vola to use market's bet on future vola, thereby reducing PnL volatility and presumably frequency of hedging.
             SetEvaluationDateToCalcDate();
-            if (algo.Cfg.IsZMVolatilityImplied)
-            {
-                hv0 = IV(null, null, 0.001);
-            }
-            else
-            {
-                hv0 = (double)HistoricalVolatility();
-            }
+            hv0 = (double)HistoricalVolatility();
             return Math.Pow(Math.Pow(hv0, 2) * (1.0 + KappaZM(hv0) * Math.Sign(direction)), 0.5);
         }
 

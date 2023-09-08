@@ -126,7 +126,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             double deltaZM = positions.Select(p => DeltaZM(p, volatility)).Sum();
             double offsetZM = Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum());
             // For high quantities, offset goes towards +/- 1, not good. Hence using sqrt(deltaZM) as minimum.
-            offsetZM = Math.Max(offsetZM, Math.Abs(Math.Sqrt(deltaZM)));
+            offsetZM = Math.Max(offsetZM, Math.Sqrt(Math.Abs(deltaZM)));
 
             // Debug why bands can be zero despite options postions open
             if (deltaZM == 0 && offsetZM == 0)
@@ -213,10 +213,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (method == "Mid")
             {
                 return _algo.Positions.Values.Sum(t => t.ValueMid) + _algo.Portfolio.Cash;
-            }
-            else if (method == "Close")
-            {
-                return _algo.Positions.Values.Sum(t => t.ValueClose) + _algo.Portfolio.Cash;
             }
             else if (method == "Worst")
             {

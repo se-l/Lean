@@ -78,8 +78,6 @@ namespace QuantConnect.Algorithm.CSharp
                 orderTickets[ticket.Symbol].Add(ticket);
             }
 
-            PopulateOptionChains();
-
             LogRisk();
             LogPnL();
             LogToDisk();

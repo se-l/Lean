@@ -13,13 +13,9 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
     public class Position
     {
         private readonly Foundations _algo;
-        public Trade Trade { get; internal set; }
+        public Trade Trade0 { get; internal set; }
+        public Trade? Trade1 { get; internal set; }
         private readonly Position? _prevPosition;
-        public decimal P1 { get => _algo.MidPrice(Symbol); }
-        public decimal Mid1 { get { return (Bid1 + Ask1) / 2; } }
-        public decimal Bid1Underlying { get => SecurityUnderling.BidPrice; }
-        public decimal Ask1Underlying { get => SecurityUnderling.AskPrice; }
-        public decimal UnrealizedProfit { get => _algo.Portfolio[Symbol].UnrealizedProfit; }
         public SecurityType SecurityType { get => Security.Type; }
 
         /// <summary>
@@ -31,7 +27,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
             Symbol = holding.Symbol;
             Security = _algo.Securities[Symbol];
             Quantity = holding.Quantity;
-            Trade = new Trade(algo, holding);
+            Trade0 = new Trade(algo, holding);
         }
 
         /// <summary>
@@ -40,7 +36,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         public Position(Position? position, Trade trade, Foundations algo)
         {
             _prevPosition = position;
-            Trade = trade;
+            Trade0 = trade;
             _algo = algo;
             Symbol = trade.Symbol;
             Security = trade.Security;
@@ -96,14 +92,20 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                 _ => null
             };
         }
-        public int Multiplier { get => SecurityType == SecurityType.Option ? 100 : 1; }
-        public decimal Spread1 { get => Ask1 - Bid1; }
-        public DateTime Ts1 { get => _algo.Time; }
-        public decimal Bid1 { get => Security.BidPrice; }
-        public decimal Ask1 { get => Security.AskPrice; }
+        private int? _multipier;
+        public int Multiplier { get => _multipier ??= SecurityType == SecurityType.Option ? ((Option)Security).ContractMultiplier : 1; }
+        public decimal P1 { get => Trade1?.P0 ?? _algo.MidPrice(Symbol); }
+        public decimal Mid1 { get { return (Bid1 + Ask1) / 2; } }
+        public decimal Bid1Underlying { get => Trade1?.Bid0Underlying ?? SecurityUnderling.BidPrice; }
+        public decimal Ask1Underlying { get => Trade1?.Ask0Underlying ?? SecurityUnderling.AskPrice; }
+        public decimal UnrealizedProfit { get => _algo.Portfolio[Symbol].UnrealizedProfit; }
+        public decimal Spread1 { get => Trade1?.Spread0 ?? ( Ask1 - Bid1 ); }
+        public DateTime Ts1 { get => Trade1?.Ts0 ?? _algo.Time; }
+        public decimal Bid1 { get => Trade1?.Bid0 ?? Security.BidPrice; }
+        public decimal Ask1 { get => Trade1?.Ask0 ?? Security.AskPrice; }
         public double IVBid1
         {
-            get => SecurityType switch
+            get => Trade1?.IVBid0 ?? SecurityType switch
             {
                 SecurityType.Option => _algo.IVBids[Symbol].IVBidAsk.IV,
                 _ => 0
@@ -111,7 +113,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         }
         public double IVAsk1
         {
-            get => SecurityType switch
+            get => Trade1?.IVBid0 ?? SecurityType switch
             {
                 SecurityType.Option => _algo.IVAsks[Symbol].IVBidAsk.IV,
                 _ => 0
@@ -119,30 +121,24 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         }
         public double IVMid1 { get => (IVBid1 + IVAsk1) / 2; }
         public decimal Mid1Underlying { get => (Bid1Underlying + Ask1Underlying) / 2; }
-        public decimal Bid0 { get => Trade.Bid0; }
-        public decimal Ask0 { get => Trade.Ask0; }
-        public decimal Mid0 { get => (Bid0 + Ask0) / 2; }
-
-        public decimal Bid0Underlying { get => Trade.Bid0Underlying; }
-        public decimal Ask0Underlying { get => Trade.Ask0Underlying; }
-        public decimal Mid0Underlying { get => Trade.Mid0Underlying; }
+        public decimal Mid0 { get => (Trade0.Bid0 + Trade0.Ask0) / 2; }
+        public decimal Mid0Underlying { get => Trade0.Mid0Underlying; }
         public decimal ValueMid { get { return Mid1 * Quantity * Multiplier; } }
-        public decimal ValueWorst { get { return (Quantity > 0 ? Bid1 : Ask1) * Quantity * Multiplier; } }  // Bid1 presumably defaults to zero. For Ask1, infinite loss for short call.
-        public decimal ValueClose { get { return Security.Close * Quantity * Multiplier; } }
+        public decimal ValueWorst { get { return (Quantity > 0 ? Bid1 : Ask1) * Quantity * Multiplier; } }
         public GreeksPlus Greeks1 { get; internal set; }
         public GreeksPlus GetGreeks(int version = 1)
         {
             return SecurityType switch
             {
                 // version 0 means as of a time in the past. Passing Fill time to calculate all Greeks as of that date.
-                SecurityType.Option => version == 0 ? new(OptionContractWrap.E(_algo, (Option)Security, version, Trade.Ts0.Date)) : new(OptionContractWrap.E(_algo, (Option)Security, version)),
+                SecurityType.Option => version == 0 ? new(OptionContractWrap.E(_algo, (Option)Security, version, Trade0.Ts0.Date)) : new(OptionContractWrap.E(_algo, (Option)Security, version)),
                 SecurityType.Equity => new GreeksPlus(),
                 _ => throw new NotSupportedException()
             };
         }
         public GreeksPlus GetGreeks1(double? volatility = null)
         {
-            Greeks1 ??= GetGreeks(1);
+            Greeks1 ??= Trade1?.GetGreeks(0) ?? GetGreeks(1);
             if (SecurityType == SecurityType.Option)
             {
                 Greeks1.OCW.SetIndependents(Mid1Underlying, Mid1, volatility ?? (double)SecurityUnderling.VolatilityModel.Volatility);
@@ -323,7 +319,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)Theta() * ((Option)Security).ContractMultiplier * Quantity,
+                SecurityType.Option => (decimal)Theta() * Multiplier * Quantity,
                 _ => 0,
             };
         }
@@ -350,28 +346,20 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         {
             get => SecurityType switch
             {
-                SecurityType.Option => (decimal)GetGreeks1().Vega * ((Option)Security).ContractMultiplier * Quantity,
+                SecurityType.Option => (decimal)GetGreeks1().Vega * Multiplier * Quantity,
                 _ => 0
             };
         }
-        
-        /// <summary>
-        /// Generate trade history backwards as every Position is linked to its previous position via trade.
-        /// </summary>
-        public IEnumerable<Position> LifeCycle()
-        {
-            throw new NotImplementedException();
-        }
 
-        public double Ts0Sec { get => (Trade.Ts0 - new DateTime(1970, 1, 1, 0, 0, 0)).TotalSeconds; }
-        public decimal DP { get => P1 - Trade.PriceFillAvg; }
+        public double Ts0Sec { get => (Trade0.Ts0 - new DateTime(1970, 1, 1, 0, 0, 0)).TotalSeconds; }
+        public decimal DP { get => P1 - Trade0.PriceFillAvg; }
         public decimal DeltaFillMid1 { get => P1 - Mid1; }
         public decimal DPUnderlying { get => Mid1Underlying - Mid0Underlying; }
         public decimal PL
         {
             get
             {
-                var pl = (P1 - Trade.P0) * Quantity * Multiplier + Trade.Fee;
+                var pl = (P1 - Trade0.P0) * Quantity * Multiplier + Trade0.Fee;
                 return pl;
             }
         }
@@ -380,25 +368,25 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         {
             get => SecurityType switch
             {
-                SecurityType.Option => Trade.Greeks0.OCW.DaysToExpiration(Trade.Ts0.Date) - GetGreeks1().OCW.DaysToExpiration(Ts1.Date),
+                SecurityType.Option => Trade0.Greeks0.OCW.DaysToExpiration(Trade0.Ts0.Date) - GetGreeks1().OCW.DaysToExpiration(Ts1.Date),
                 _ => 0
             };
         }
         public double IVPrice1 { get => IVMid1; }
-        public double DMidIV { get => IVMid1 - Trade.IVMid0; }
-        public double DIVPrice { get => IVPrice1 - Trade.IVPrice0; }
+        public double DMidIV { get => IVMid1 - Trade0.IVMid0; }
+        public double DIVPrice { get => IVPrice1 - Trade0.IVPrice0; }
         public PLExplain PLExplain { get => GetPLExplain(); }  // public getter for easy CSV export
         private PLExplain GetPLExplain()
         {
             return new PLExplain(
-                    Trade.Greeks0,
+                    Trade0.Greeks0,
                     (double)DPUnderlying,
                     DDaysToExpiration,
                     DIVPrice,  // the realized IV.
                     0,
                     (double)(Quantity * Multiplier),
-                    DeltaFillMid1 - Trade.DeltaFillMid0, // the realized bit.
-                    Trade.Fee
+                    DeltaFillMid1 - Trade0.DeltaFillMid0, // the realized bit.
+                    Trade0.Fee
                     );
         }
 
@@ -409,10 +397,11 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         {            
             List<Position> positions = new();
 
-            foreach (var kvp in algo.Trades)
+            foreach (var (symbol, trades) in algo.Trades)
             {
                 Position position = null;
-                foreach (Trade trade in kvp.Value.OrderBy(t => t.Ts0))
+                Trade trade1 = null;
+                foreach (Trade trade in trades.OrderBy(t => t.Ts0))
                 {
                     if (position != null)
                     {
@@ -423,6 +412,11 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                         position = new Position(null, trade, algo);
                     }
                     positions.Add(position);
+                    if (trade1 != null && positions.Any())
+                    {
+                        positions.Last().Trade1 = trade1;
+                    }
+                    trade1 = trade;
                 }
             }
             return positions;

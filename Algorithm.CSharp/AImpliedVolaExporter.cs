@@ -40,8 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 9, 6);
-            SetEndDate(2023, 9, 6);
+            SetStartDate(2023, 9, 7);
+            SetEndDate(2023, 9, 7);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -53,12 +53,11 @@ namespace QuantConnect.Algorithm.CSharp
             AssignCachedFunctions();
 
             // Subscriptions
-            equity1 = AddEquity("SPY", resolution).Symbol;
-            hedgeTicker = new List<string> { "SPY" };
             optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
-            //optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE" };
             optionTicker = new List<string> { "HPE", "IPG", "AKAM", "PFE" };
-            ticker = optionTicker.Concat(hedgeTicker).ToList();
+            //optionTicker = new List<string> { "PFE" };
+            ticker = optionTicker;
+            equity1 = AddEquity(optionTicker.First(), resolution).Symbol;
 
             int subscriptions = 0;
             foreach (string ticker in ticker)
@@ -82,13 +81,13 @@ namespace QuantConnect.Algorithm.CSharp
             PfRisk = PortfolioRisk.E(this);
 
             // Scheduled functions
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(new TimeSpan(1, 0, 0)), UpdateUniverseSubscriptions);
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.At(new TimeSpan(1, 0, 0)), UpdateUniverseSubscriptions);
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
 
-            SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(1).First();
-            Log($"WarmUp TimeSpan: {timeSpan}");
-            SetWarmUp(timeSpan);
+            //SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
+            //var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(1).First();
+            //Log($"WarmUp TimeSpan: {timeSpan}");
+            //SetWarmUp(timeSpan);
         }
         public override void OnData(Slice data)
         {
@@ -121,7 +120,7 @@ namespace QuantConnect.Algorithm.CSharp
             }
         }
 
-        public bool ContractInScope(Symbol symbol, decimal? priceUnderlying = null)
+        public bool ContractInScope(Symbol symbol)
         {
             return symbol.ID.Date > Time.Date && symbol.ID.OptionStyle == OptionStyle.American;
         }
@@ -150,12 +149,8 @@ namespace QuantConnect.Algorithm.CSharp
         }
         public void UpdateUniverseSubscriptions()
         {
-            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
-
             // Add options that have moved into scope
             options.ForEach(s => AddOptionIfScoped(s));
-
-            PopulateOptionChains();
         }
 
         public static IEnumerable<TResult> FullOuterJoin<TA, TB, TKey, TResult>(

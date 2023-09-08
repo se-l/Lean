@@ -53,7 +53,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 7, 14);
+            SetStartDate(2023, 8, 15);
             //SetStartDate(2023, 8, 1);
             SetEndDate(2023, 9, 6);
             SetCash(100_000);
@@ -72,10 +72,9 @@ namespace QuantConnect.Algorithm.CSharp
 
             // Subscriptions            
             optionTicker = Cfg.OptionTicker;
-            hedgeTicker = new() { optionTicker.First() };
+            ticker = optionTicker;
             equity1 = AddEquity(optionTicker.First(), resolution).Symbol;
             liquidateTicker = Cfg.LiquidateTicker;
-            ticker = optionTicker.Union(hedgeTicker).ToList();
 
             int subscriptions = 0;
             foreach (string ticker in ticker)
@@ -108,15 +107,15 @@ namespace QuantConnect.Algorithm.CSharp
             PfRisk = PortfolioRisk.E(this);
 
             // SCHEDULED EVENTS
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.AfterMarketOpen(hedgeTicker[0]), OnMarketOpen);
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(mmWindow.Start), RunSignals);
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Leaves EOD Equity hedges.
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportRiskRecords);
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportIVSurface);
-            Schedule.On(DateRules.EveryDay(hedgeTicker[0]), TimeRules.BeforeMarketClose(hedgeTicker[0], 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.AfterMarketOpen(ticker[0]), OnMarketOpen);
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.At(mmWindow.Start), RunSignals);
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Leaves EOD Equity hedges.
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportRiskRecords);
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportIVSurface);
+            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.BeforeMarketClose(ticker[0], 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then
             // Turn Limit Equity into EOD before market close...
 
             // WARMUP
@@ -218,7 +217,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public void RunSignals()
         {
-            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0]) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+            if (IsWarmingUp || !IsMarketOpen(ticker[0]) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
             if (!OnWarmupFinishedCalled)
             {
                 OnWarmupFinished();
@@ -251,7 +250,7 @@ namespace QuantConnect.Algorithm.CSharp
                         var item = AddData<VolatilityBar>(symbol, resolution: Resolution.Second, fillForward: false);
                         item.IsTradable = false;
 
-                        var optionContract = AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false);
+                        AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false);
                         QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
                         subscribedSymbol.Add(symbol);
                     }
@@ -266,7 +265,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         public void UpdateUniverseSubscriptions()
         {
-            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
 
             // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
             Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
@@ -276,8 +275,6 @@ namespace QuantConnect.Algorithm.CSharp
 
             // Add options that have moved into scope
             options.ForEach(s => AddOptionIfScoped(s));
-
-            PopulateOptionChains();
         }
 
         public override void OnEndOfDay(Symbol symbol)
@@ -306,7 +303,6 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (IsWarmingUp) { return; }
 
-            PopulateOptionChains();
             CancelGammaHedgeBeyondScope();
 
             // Trigger events
@@ -350,19 +346,19 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public void ExportRiskRecords()
         {
-            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
             optionTicker.DoForEach(ticker => RiskRecorder.Record(ticker));
         }
 
         public void ExportIVSurface()
         {           
-            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
             IVSurfaceRelativeStrikeBid.Values.Union(IVSurfaceRelativeStrikeAsk.Values).DoForEach(s => s.WriteCsvRows());
         }
 
         public void HedgeDeltaFlat()
         {
-            if (IsWarmingUp || !IsMarketOpen(hedgeTicker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
 
             foreach (string ticker in optionTicker)
             {
@@ -377,7 +373,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             Symbol symbol = security.Symbol;
             if (
-                security.Symbol.ID.Symbol.Contains(VolatilityBar)
+                symbol.ID.Symbol.Contains(VolatilityBar)
                 || !HistoryRequestValid(symbol)
                 || HistoryProvider == null
                 )
