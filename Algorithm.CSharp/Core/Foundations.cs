@@ -13,7 +13,6 @@ using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
-using QuantConnect.Data.Market;
 using QuantConnect.Data;
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -181,8 +180,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         && IsLiquid(sec.Symbol, 5, Resolution.Daily)
                         && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMinSignal)
                         && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
-                        && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < 0
+                        && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < 0  // Needs fix. ATM ITM is good.
                         && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
+                        && IVSurfaceRelativeStrikeBid[Underlying(sec.Symbol)].IsReady(sec.Symbol)
+                        && IVSurfaceRelativeStrikeAsk[Underlying(sec.Symbol)].IsReady(sec.Symbol)
                         //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
                         // Embargo
                         && !(
@@ -441,7 +442,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal limitPrice = quote.Price;
             if (limitPrice == 0)
             {
-                //Log($"No price for {Num2Direction(quantity)} {Math.Abs(quantity)} {contract.Symbol}. Not trading...");
+                Log($"No price for {Num2Direction(quantity)} {Math.Abs(quantity)} {contract.Symbol}. Not trading...");
                 return;
             }
             limitPrice = RoundTick(limitPrice, TickSize(contract.Symbol));

@@ -33,15 +33,16 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         /// <summary>
         /// Generates a position from a previous and applied a trade to it.
         /// </summary>
-        public Position(Position? position, Trade trade, Foundations algo)
+        public Position(Position? position, Trade trade0, Foundations algo, Trade? trade1 = null)
         {
             _prevPosition = position;
-            Trade0 = trade;
+            Trade0 = trade0;
             _algo = algo;
-            Symbol = trade.Symbol;
-            Security = trade.Security;
-            OrderQuantity = trade.Quantity;            
-            Quantity = (_prevPosition?.Quantity ?? 0) + trade.Quantity;
+            Symbol = trade0.Symbol;
+            Security = trade0.Security;
+            OrderQuantity = trade0.Quantity;            
+            Quantity = (_prevPosition?.Quantity ?? 0) + trade0.Quantity;
+            Trade1 = trade1;
             Greeks1 = GetGreeks1();
         }
 
@@ -385,7 +386,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                     DIVPrice,  // the realized IV.
                     0,
                     (double)(Quantity * Multiplier),
-                    DeltaFillMid1 - Trade0.DeltaFillMid0, // the realized bit.
+                    Trade0.DeltaFillMid0, // the realized bit. Only use Trade0, otherwise double counting....
                     Trade0.Fee
                     );
         }
@@ -399,24 +400,14 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
 
             foreach (var (symbol, trades) in algo.Trades)
             {
-                Position position = null;
-                Trade trade1 = null;
-                foreach (Trade trade in trades.OrderBy(t => t.Ts0))
+                Position position = null;                
+                List<Trade> _trades = trades.OrderBy(t => t.Ts0).ToList();
+
+                for (ushort i=0; i < _trades.Count; i++)
                 {
-                    if (position != null)
-                    {
-                        position = new Position(position, trade, algo);
-                    }
-                    else
-                    {
-                        position = new Position(null, trade, algo);
-                    }
+                    Trade trade1 = (i+1) < _trades.Count ? _trades[i+1] : null;
+                    position = new Position(position, _trades[i], algo, trade1);
                     positions.Add(position);
-                    if (trade1 != null && positions.Any())
-                    {
-                        positions.Last().Trade1 = trade1;
-                    }
-                    trade1 = trade;
                 }
             }
             return positions;

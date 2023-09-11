@@ -14,7 +14,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
     {
         public DateTime Time;
         public Symbol Underlying { get; }
-        public bool IsReady => true;
         private readonly QuoteSide _side;
         public QuoteSide Side { get => _side; }
 
@@ -120,7 +119,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             decimal strikePctRight;
             double ivLeft=0;
             double ivRight;
-            DateTime timeLeft = default(DateTime);
+            DateTime timeLeft = default;
             DateTime timeRight;
             DateTime maxTime;
 
@@ -130,7 +129,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             {
                 foreach (var expiry in Expiries())
                 {
-                    foreach (Symbol symbolRight in OptionSymbols(expiry, otm))
+                    var symbols = OptionSymbols(expiry, otm);
+                    var maxStrike = symbols.Select(s => s.ID.StrikePrice).Max();
+                    foreach (Symbol symbolRight in symbols)
                     {
                         ivQuoteIndicatorRight = _ivQuote(symbolRight);
                         strikePctRight = StrikePct(symbolRight.ID.StrikePrice, MidPriceUnderlying);
@@ -155,16 +156,28 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                         }
                         else
                         {
-                            if (ivLeft != 0 && timeLeft != default(DateTime))
+                            if (ivLeft != 0 && timeLeft != default)
                             {
                                 strikePctLeft = StrikePct(symbolLeft.ID.StrikePrice, MidPriceUnderlying);
                                 maxTime = timeLeft > ivQuoteIndicatorRight.Time ? timeLeft : timeRight;
 
                                 var slope = (ivRight - ivLeft) / (double)(strikePctRight - strikePctLeft);
-                                foreach (Bin bin in GetBins(otm, expiry, strikePctLeft, strikePctRight))
+                                
+                                // When crossing 100, optionRight changes. Investigate whether surface is smoother regressing with ITM of same right.
+                                // Then whole loop goes over expiries -> binValues. OTM derived.
+                                foreach (Bin bin in GetBins(otm, expiry, Math.Floor(strikePctLeft), strikePctRight))
                                 {
                                     double ivInterpolated = ivLeft + slope * (double)(bin.Value - strikePctLeft);
                                     bin.Update(maxTime, ivInterpolated);
+                                }
+
+                                // Update bin on right edge. No right neighbor to interpolate from. Extrapolate from left neighbor.
+                                if (symbolRight.ID.StrikePrice == maxStrike)
+                                {
+                                    var strikePctMax = StrikePct(maxStrike, MidPriceUnderlying);
+                                    var binRightEdge = GetBin(otm, expiry, (ushort)Math.Ceiling(strikePctMax));
+                                    double ivRightEdgeInterpolated = ivRight + slope * (double)(binRightEdge.Value - strikePctMax);
+                                    binRightEdge.Update(maxTime, ivRightEdgeInterpolated);
                                 }
                             }
 
@@ -342,7 +355,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             double? ewmaInterpolated = bin.IVEWMA + slopeEWMA * (double)(strikePct - bin.Value);
             if (ewmaInterpolated == null) // No IV, no price. Major problem, especially on bid side.
             {
-                _algo.Error($"IVSurfaceRelativeStrike: {symbol} - Null EWMA interpolated. Will cause pricing to fail Fix. IsOTM:{isOTM}. strikePct:{strikePct}.");
+                _algo.Error($"IVSurfaceRelativeStrike: {symbol} - Null EWMA interpolated. Will cause pricing to fail Fix. " +
+                    $"IsOTM={isOTM}, strikePct={strikePct}, slopeEWMA={slopeEWMA}, " +
+                    $"bin.IVEWMA={bin.IVEWMA}, bin.IV={bin.IV}, bin.Value={bin.Value}, binB.Samples={bin.Samples}, " +
+                    $"binB.IVEWMA={binB.IVEWMA}, binB.IV={binB.IV}, binB.Value={binB.Value}, binB.Samples={binB.Samples}, ");
             }
             //if (symbol.Value == "PFE   240119C00038000" && _algo.Time.TimeOfDay > new TimeSpan(9, 49, 0) & _algo.Time.TimeOfDay < new TimeSpan(9, 50, 0))
             //{
@@ -356,15 +372,28 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             //    _algo.Log($"bin.IV: {bin.IV}");
             //    _algo.Log($"ewmaInterpolated: {ewmaInterpolated}");
 
-            //    _algo.Log($"binLeft: {binB}");
-            //    _algo.Log($"binB.IsOTM: {binB.IsOTM}");
-            //    _algo.Log($"binB.Value: {binB.Value}");
-            //    _algo.Log($"binB.IVEWMA: {binB.IVEWMA}");
-            //    _algo.Log($"binB.IV: {binB.IV}");
-                
-            //    _algo.Log($"slopeEWMA: {slopeEWMA}");
-            //}
+                //    _algo.Log($"binLeft: {binB}");
+                //    _algo.Log($"binB.IsOTM: {binB.IsOTM}");
+                //    _algo.Log($"binB.Value: {binB.Value}");
+                //    _algo.Log($"binB.IVEWMA: {binB.IVEWMA}");
+                //    _algo.Log($"binB.IV: {binB.IV}");
+
+                //    _algo.Log($"slopeEWMA: {slopeEWMA}");
+                //}
             return ewmaInterpolated;
+        }
+
+        public bool IsReady(Symbol symbol)
+        {
+            if (symbol.SecurityType != SecurityType.Option) return false;
+
+            decimal strikePct = StrikePct(symbol.ID.StrikePrice);
+            Bin bin = GetBin(
+                IsOTM(symbol.ID.OptionRight, strikePct),
+                symbol.ID.Date,
+                (ushort)Math.Round(strikePct)
+                );
+            return bin.Samples > 0;
         }
 
         public double Slope(Bin binA, Bin binB)
