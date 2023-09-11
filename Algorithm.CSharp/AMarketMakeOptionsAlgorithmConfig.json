@@ -49,7 +49,7 @@
       "TargetRisk": 0,
       "X0": 0,
       "X1": 0,
-      "X2": 0.0,
+      "X2": 0.000001,
       "CapMin": -0.3,
       "CapMax": 0.3
     },
@@ -57,7 +57,7 @@
       "TargetRisk": 0,
       "X0": 0,
       "X1": 0,
-      "X2": 0.0,
+      "X2": 0.00001,
       "CapMin": -0.3,
       "CapMax": 0.3
     },
@@ -75,6 +75,6 @@
   "IVSurfaceRelativeStrikeAlpha": 0.15, // PFE
   //"IVSurfaceRelativeStrikeAlpha": 0.05, // HPE
   "SurfaceVerticalResetThreshold": 0.01,
-  "WarmUpDays": 1,
+  "WarmUpDays": 2,
   "LogOrderUpdates":  false
 }
