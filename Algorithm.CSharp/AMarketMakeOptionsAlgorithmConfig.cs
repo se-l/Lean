@@ -5,9 +5,9 @@ namespace QuantConnect.Algorithm.CSharp
 {
     public class AMarketMakeOptionsAlgorithmConfig
     {
-        public List<string> HedgeTicker { get; set; }
-        public List<string> OptionTicker { get; set; }
-        public List<string> LiquidateTicker { get; set; }
+        public HashSet<string> HedgeTicker { get; set; }
+        public HashSet<string> OptionTicker { get; set; }
+        public HashSet<string> LiquidateTicker { get; set; }
         public int OptionOrderQuantityDflt { get; set; }
         public int VolatilityPeriodDays { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMax { get; set; }

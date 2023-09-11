@@ -19,6 +19,8 @@ using QuantConnect.Orders;
 using System.Linq;
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
+using Newtonsoft.Json;
+using System.IO;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -35,20 +37,17 @@ namespace QuantConnect.Algorithm.CSharp
             //SetCash(100000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
+            Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
 
-            int volatilitySpan = 30;
-
-            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilitySpan));
+            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays));
 
             AssignCachedFunctions();
-
-            equity1 = AddEquity("SPY", Resolution.Daily).Symbol;
             PfRisk = PortfolioRisk.E(this);
 
-            SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
-            Log($"WarmUp TimeSpan: {timeSpan}");
-            SetWarmUp(timeSpan);
+            //SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
+            //var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
+            //Log($"WarmUp TimeSpan: {timeSpan}");
+            SetWarmUp(0);
         }
 
         public void LogToDisk()
@@ -67,6 +66,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void OnWarmupFinished()
         {
+            equities = Securities.Keys.Where(s => s.SecurityType == SecurityType.Equity).ToHashSet();
             IEnumerable<OrderTicket> openTransactions = Transactions.GetOpenOrderTickets();
             Log($"Adding Open Transactions to OrderTickets: {openTransactions.Count()}");
             foreach (OrderTicket ticket in openTransactions)
@@ -77,6 +77,7 @@ namespace QuantConnect.Algorithm.CSharp
                 }
                 orderTickets[ticket.Symbol].Add(ticket);
             }
+            InitializePositionsFromPortfolio();
 
             LogRisk();
             LogPnL();

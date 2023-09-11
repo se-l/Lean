@@ -347,7 +347,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         private decimal StrikePct(decimal strike, decimal? midPrice = null)
         {
             //  K/S, which is known as the (spot) simple moneyness
-            return 100 * strike / (midPrice ?? MidPriceUnderlying);
+            decimal _midPrice = midPrice ?? MidPriceUnderlying;
+            return _midPrice == 0 ? 0 : 100 * strike / (_midPrice);
         }
 
         private decimal StrikePct(Option option, decimal? midPrice = null)

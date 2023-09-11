@@ -13,23 +13,26 @@ using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
+using QuantConnect.Data.Market;
+using QuantConnect.Data;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations : QCAlgorithm
     {
+        private const string VolatilityBar = "VolatilityBar";
         public Resolution resolution;
         public Dictionary<Symbol, QuoteBarConsolidator> QuoteBarConsolidators = new();
         public List<OrderEvent> OrderEvents = new();
         public Dictionary<Symbol, List<OrderTicket>> orderTickets = new();
         public OrderType orderType;
-        public List<string> optionTicker;
-        public List<string> liquidateTicker;
-        public List<string> ticker;
-        public List<Symbol> equities = new();
-        public List<Symbol> options = new();  // Canonical symbols
+        public HashSet<string> optionTicker;
+        public HashSet<string> liquidateTicker;
+        public HashSet<string> ticker;
+        public HashSet<Symbol> equities = new();
+        public HashSet<Symbol> options = new();  // Canonical symbols
         public MMWindow mmWindow;
-        public Symbol equity1;
+        public Symbol symbolSubscribed;
         public Dictionary<Symbol, SecurityCache> PriceCache = new();
         public SecurityExchangeHours SecurityExchangeHours;
 
@@ -64,6 +67,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public HashSet<OrderStatus> orderStatusFilled = new() { OrderStatus.Filled, OrderStatus.PartiallyFilled };
         public HashSet<OrderStatus> orderCanceledOrPending = new() { OrderStatus.CancelPending, OrderStatus.Canceled };
+        public HashSet<SecurityType> securityTypeOptionEquity = new() { SecurityType.Equity, SecurityType.Option };
         public record MMWindow(TimeSpan Start, TimeSpan End);
 
         public int Periods(Resolution? thisResolution = null, int days = 5)
@@ -295,7 +299,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void LogRiskSchedule()
         {
-            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
             
             LogRisk();
             LogPnL();
@@ -615,6 +619,80 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             ticketToCancel.ForEach(t => t.Cancel());
 
+        }
+        public void InitializePositionsFromPortfolio()
+        {
+            // Adding existing positions to algo state.
+            foreach (var holding in Portfolio.Values.Where(x => securityTypeOptionEquity.Contains(x.Type)))
+            {
+                Log($"Initialized Position {holding.Symbol} with Holding: {holding}");
+                Positions[holding.Symbol] = new(this, holding);
+            }
+        }
+        public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
+        {
+            Symbol symbol = security.Symbol;
+            if (
+                symbol.ID.Symbol.Contains(VolatilityBar)
+                || !HistoryRequestValid(symbol)
+                || HistoryProvider == null
+                )
+            {
+                return Enumerable.Empty<BaseData>();
+            }
+
+            var result = new Dictionary<TickType, BaseData>();
+            Resolution? resolution = null;
+            Func<int, bool> requestData = period =>
+            {
+                var historyRequests = CreateBarCountHistoryRequests(new[] { symbol }, period)
+                    .Select(request =>
+                    {
+                        // For speed and memory usage, use Resolution.Minute as the minimum resolution
+                        request.Resolution = (Resolution)Math.Max((int)Resolution.Minute, (int)request.Resolution);
+                        // force no fill forward behavior
+                        request.FillForwardResolution = null;
+
+                        resolution = request.Resolution;
+                        return request;
+                    })
+                    // request only those tick types we didn't get the data we wanted
+                    .Where(request => !result.ContainsKey(request.TickType))
+                    .ToList();
+                foreach (var slice in History(historyRequests))
+                {
+                    for (var i = 0; i < historyRequests.Count; i++)
+                    {
+                        var historyRequest = historyRequests[i];
+                        var data = slice.Get(historyRequest.DataType);
+                        if (data.ContainsKey(symbol))
+                        {
+                            // keep the last data point per tick type
+                            result[historyRequest.TickType] = (BaseData)data[symbol];
+                        }
+                    }
+                }
+                // true when all history requests tick types have a data point
+                return historyRequests.All(request => result.ContainsKey(request.TickType));
+            };
+
+            if (!requestData(Periods(Resolution.Minute, days: 1)))
+            {
+                if (resolution.HasValue)
+                {
+                    // If the first attempt to get the last know price returns null, it maybe the case of an illiquid security.
+                    // Use Quote data to return MidPrice
+                    var periods = Periods(security.Resolution, days: 5);
+                    requestData(periods);
+                }
+                else
+                {
+                    // this shouldn't happen but just in case
+                    Error($"QCAlgorithm.GetLastKnownPrices(): no history request was created for symbol {symbol} at {Time}");
+                }
+            }
+            // return the data ordered by time ascending
+            return result.Values.OrderBy(data => data.Time);
         }
     }
 }

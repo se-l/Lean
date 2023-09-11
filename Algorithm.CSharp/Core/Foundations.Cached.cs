@@ -201,7 +201,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         //}
         private void GetHedgeOptionWithUnderlyingZM(Symbol symbol)
         {
-            if (IsWarmingUp || !IsMarketOpen(equity1) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
             
             Symbol underlying = Underlying(symbol);
 
@@ -227,7 +227,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             /// </summary>
             private void GetHedgeOptionWithUnderlying(Symbol symbol)
         {
-            if (IsWarmingUp || !IsMarketOpen(equity1)) return;
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
 
             decimal riskDelta100BpUSDTotal;
             decimal riskDeltaTotal;

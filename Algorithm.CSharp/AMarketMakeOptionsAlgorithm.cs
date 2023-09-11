@@ -41,7 +41,6 @@ namespace QuantConnect.Algorithm.CSharp
     /// </summary>
     public partial class AMarketMakeOptionsAlgorithm : Foundations
     {
-        private const string VolatilityBar = "VolatilityBar";
         private DateTime endOfDay;
         DiskDataCacheProvider _diskDataCacheProvider = new();
         Dictionary<(Resolution, Symbol, TickType), LeanDataWriter> writers = new();
@@ -73,7 +72,7 @@ namespace QuantConnect.Algorithm.CSharp
             // Subscriptions            
             optionTicker = Cfg.OptionTicker;
             ticker = optionTicker;
-            equity1 = AddEquity(optionTicker.First(), resolution).Symbol;
+            symbolSubscribed = AddEquity(optionTicker.First(), resolution).Symbol;
             liquidateTicker = Cfg.LiquidateTicker;
 
             int subscriptions = 0;
@@ -107,19 +106,19 @@ namespace QuantConnect.Algorithm.CSharp
             PfRisk = PortfolioRisk.E(this);
 
             // SCHEDULED EVENTS
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.AfterMarketOpen(ticker[0]), OnMarketOpen);
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.At(mmWindow.Start), RunSignals);
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Leaves EOD Equity hedges.
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportRiskRecords);
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportIVSurface);
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.BeforeMarketClose(ticker[0], 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), RunSignals);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Leaves EOD Equity hedges.
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportRiskRecords);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportIVSurface);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then
             // Turn Limit Equity into EOD before market close...
 
             // WARMUP
-            SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
+            SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
             // first digit ensure looking beyond past holidays. Second digit is days of trading days to warm up.
             var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(Cfg.WarmUpDays + 1).First();
             Log($"WarmUp TimeSpan: {timeSpan} starting on {StartDate - timeSpan}");
@@ -217,7 +216,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public void RunSignals()
         {
-            if (IsWarmingUp || !IsMarketOpen(ticker[0]) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
             if (!OnWarmupFinishedCalled)
             {
                 OnWarmupFinished();
@@ -265,7 +264,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         public void UpdateUniverseSubscriptions()
         {
-            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
 
             // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
             Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
@@ -274,7 +273,7 @@ namespace QuantConnect.Algorithm.CSharp
             });
 
             // Add options that have moved into scope
-            options.ForEach(s => AddOptionIfScoped(s));
+            options.DoForEach(s => AddOptionIfScoped(s));
         }
 
         public override void OnEndOfDay(Symbol symbol)
@@ -329,6 +328,13 @@ namespace QuantConnect.Algorithm.CSharp
                 orderTickets[ticket.Symbol].Add(ticket);
             }
 
+            // Adding existing positions to algo state.
+            foreach (var holding in Portfolio.Values)
+            {
+                Log($"Initialized Position {holding.Symbol} with Holding: {holding}");
+                Positions[holding.Symbol] = new(this, holding);
+            }
+
             TotalPortfolioValueSinceStart = Portfolio.TotalPortfolioValue;
 
             LogRisk();
@@ -346,19 +352,19 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public void ExportRiskRecords()
         {
-            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
             optionTicker.DoForEach(ticker => RiskRecorder.Record(ticker));
         }
 
         public void ExportIVSurface()
         {           
-            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
             IVSurfaceRelativeStrikeBid.Values.Union(IVSurfaceRelativeStrikeAsk.Values).DoForEach(s => s.WriteCsvRows());
         }
 
         public void HedgeDeltaFlat()
         {
-            if (IsWarmingUp || !IsMarketOpen(ticker[0])) return;
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
 
             foreach (string ticker in optionTicker)
             {
@@ -366,73 +372,6 @@ namespace QuantConnect.Algorithm.CSharp
                 Log($"HedgeDeltaFlat EOD: {equity.Symbol}");
                 HedgeOptionWithUnderlying(equity.Symbol);
             }
-        }
-
-        // OTHER
-        public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
-        {
-            Symbol symbol = security.Symbol;
-            if (
-                symbol.ID.Symbol.Contains(VolatilityBar)
-                || !HistoryRequestValid(symbol)
-                || HistoryProvider == null
-                )
-            {
-                return Enumerable.Empty<BaseData>();
-            }
-
-            var result = new Dictionary<TickType, BaseData>();
-            Resolution? resolution = null;
-            Func<int, bool> requestData = period =>
-            {
-                var historyRequests = CreateBarCountHistoryRequests(new[] { symbol }, period)
-                    .Select(request =>
-                    {
-                        // For speed and memory usage, use Resolution.Minute as the minimum resolution
-                        request.Resolution = (Resolution)Math.Max((int)Resolution.Minute, (int)request.Resolution);
-                        // force no fill forward behavior
-                        request.FillForwardResolution = null;
-
-                        resolution = request.Resolution;
-                        return request;
-                    })
-                    // request only those tick types we didn't get the data we wanted
-                    .Where(request => !result.ContainsKey(request.TickType))
-                    .ToList();
-                foreach (var slice in History(historyRequests))
-                {
-                    for (var i = 0; i < historyRequests.Count; i++)
-                    {
-                        var historyRequest = historyRequests[i];
-                        var data = slice.Get(historyRequest.DataType);
-                        if (data.ContainsKey(symbol))
-                        {
-                            // keep the last data point per tick type
-                            result[historyRequest.TickType] = (BaseData)data[symbol];
-                        }
-                    }
-                }
-                // true when all history requests tick types have a data point
-                return historyRequests.All(request => result.ContainsKey(request.TickType));
-            };
-
-            if (!requestData(Periods(Resolution.Minute, days: 1)))
-            {
-                if (resolution.HasValue)
-                {
-                    // If the first attempt to get the last know price returns null, it maybe the case of an illiquid security.
-                    // Use Quote data to return MidPrice
-                    var periods = Periods(security.Resolution, days: 5);
-                    requestData(periods);
-                }
-                else
-                {
-                    // this shouldn't happen but just in case
-                    Error($"QCAlgorithm.GetLastKnownPrices(): no history request was created for symbol {symbol} at {Time}");
-                }
-            }
-            // return the data ordered by time ascending
-            return result.Values.OrderBy(data => data.Time);
         }
     }
 }

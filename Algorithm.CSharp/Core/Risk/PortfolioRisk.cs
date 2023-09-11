@@ -236,15 +236,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }            
         }
 
-        public double Correlation(Symbol symbol)
-        {
-            return _algo.Correlation(_algo.equity1, symbol, 20, Resolution.Daily);
-        }
+        //public double Correlation(Symbol symbol)
+        //{
+        //    return _algo.Correlation(_algo.equity1, symbol, 20, Resolution.Daily);
+        //}
 
 
         public Dictionary<string, decimal> ToDict(Symbol symbol = null)
         {
-            var underlyings = symbol == null ? _algo.equities : new List<Symbol>() { Underlying(symbol) };
+            var underlyings = symbol == null ? _algo.equities : new HashSet<Symbol>() { Underlying(symbol) };
             return new Dictionary<string, decimal>()
             {
                 { "EquityPosition", underlyings.Sum(x => _algo.Portfolio[x].Quantity) },

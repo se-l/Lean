@@ -40,8 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 9, 7);
-            SetEndDate(2023, 9, 7);
+            SetStartDate(2023, 9, 8);
+            SetEndDate(2023, 9, 8);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -53,11 +53,11 @@ namespace QuantConnect.Algorithm.CSharp
             AssignCachedFunctions();
 
             // Subscriptions
-            optionTicker = new List<string> { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
-            optionTicker = new List<string> { "HPE", "IPG", "AKAM", "PFE" };
+            optionTicker = new() { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
+            optionTicker = new() { "HPE", "IPG", "AKAM", "PFE" };
             //optionTicker = new List<string> { "PFE" };
             ticker = optionTicker;
-            equity1 = AddEquity(optionTicker.First(), resolution).Symbol;
+            symbolSubscribed = AddEquity(optionTicker.First(), resolution).Symbol;
 
             int subscriptions = 0;
             foreach (string ticker in ticker)
@@ -81,8 +81,8 @@ namespace QuantConnect.Algorithm.CSharp
             PfRisk = PortfolioRisk.E(this);
 
             // Scheduled functions
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.At(new TimeSpan(1, 0, 0)), UpdateUniverseSubscriptions);
-            Schedule.On(DateRules.EveryDay(ticker[0]), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(new TimeSpan(1, 0, 0)), UpdateUniverseSubscriptions);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
 
             //SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
             //var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(1).First();
@@ -150,7 +150,7 @@ namespace QuantConnect.Algorithm.CSharp
         public void UpdateUniverseSubscriptions()
         {
             // Add options that have moved into scope
-            options.ForEach(s => AddOptionIfScoped(s));
+            options.DoForEach(s => AddOptionIfScoped(s));
         }
 
         public static IEnumerable<TResult> FullOuterJoin<TA, TB, TKey, TResult>(
