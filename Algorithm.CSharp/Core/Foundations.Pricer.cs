@@ -106,6 +106,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 OrderDirection.Sell => (decimal?)ocw.AnalyticalIVToPrice(hv: askIV - iVSpread * spreadFactor),
                 _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
             };
+            //if (symbol.Value == "PFE   240119C00038000" && Time.TimeOfDay > new TimeSpan(9, 49, 0) & Time.TimeOfDay < new TimeSpan(9, 50, 0))
+            //{
+            //    Log($"bidIV: {bidIV}");
+            //    Log($"askIV: {askIV}");
+            //    Log($"smoothedIVPrice: {smoothedIVPrice}");
+            //}
             return smoothedIVPrice;
         }
 
@@ -163,7 +169,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
                     };
                 }
-            }            
+            }
+            //if (qr.Symbol.Value == "PFE   240119C00038000" && Time.TimeOfDay > new TimeSpan(0, 9, 49) & Time.TimeOfDay < new TimeSpan(0, 9, 50))
+            //{
+            //    Log($"priceSpread: {priceSpread}");
+            //    Log($"priceSpread: {priceSpread}");
+            //    Log($"Option.BidPrice : {qr.Option.BidPrice}");
+            //    Log($"Option.AskPrice : {qr.Option.AskPrice}");
+            //    Log($"price : {price}");
+            //}
 
             return new Quote<Option>(qr.Option, qr.Quantity, price, quoteDiscounts);
         }

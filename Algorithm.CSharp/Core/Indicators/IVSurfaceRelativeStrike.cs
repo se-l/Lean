@@ -164,7 +164,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                                 foreach (Bin bin in GetBins(otm, expiry, strikePctLeft, strikePctRight))
                                 {
                                     double ivInterpolated = ivLeft + slope * (double)(bin.Value - strikePctLeft);
-                                    bin.Update(maxTime, ivInterpolated, slope);
+                                    bin.Update(maxTime, ivInterpolated);
                                 }
                             }
 
@@ -208,8 +208,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                     continue;
                 }
                 
-                epsilonLeft = ivQuote.IV + (binLeft.SlopeEWMA ?? 0) * (double)(strikePct - binLeft.Value) - (binLeft.IVEWMA ?? ivQuote.IV);
-                epsilonRight = ivQuote.IV + (binRight.SlopeEWMA ?? 0) * (double)(strikePct - binRight.Value) - (binRight.IVEWMA ?? ivQuote.IV);
+                //epsilonLeft = ivQuote.IV + (binLeft.SlopeEWMA ?? 0) * (double)(strikePct - binLeft.Value) - (binLeft.IVEWMA ?? ivQuote.IV);
+                //epsilonRight = ivQuote.IV + (binRight.SlopeEWMA ?? 0) * (double)(strikePct - binRight.Value) - (binRight.IVEWMA ?? ivQuote.IV);
                 epsilons.Add((epsilonLeft + epsilonRight) / 2);
             }
             if (epsilons.Mean() > _algo.Cfg.SurfaceVerticalResetThreshold)
@@ -334,21 +334,50 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             decimal strikePct = StrikePct(strike);
             bool isOTM = IsOTM(symbol.ID.OptionRight, strikePct);
 
-            Bin bin = GetBin(isOTM, expiry, (ushort)Math.Round(strikePct));
+            ushort binValue = (ushort)Math.Round(strikePct);
+            Bin bin = GetBin(isOTM, expiry, binValue);
+            Bin binB = GetBin(isOTM, expiry, (ushort)(binValue + Math.Sign(strikePct - binValue)));
             // Correcting for binToBin % difference. One-sided interpolation.
-            double? ewmaInterpolated = bin.IVEWMA + bin.SlopeEWMA * (double)(strikePct - bin.Value);
+            double slopeEWMA = Slope(bin, binB);
+            double? ewmaInterpolated = bin.IVEWMA + slopeEWMA * (double)(strikePct - bin.Value);
             if (ewmaInterpolated == null) // No IV, no price. Major problem, especially on bid side.
             {
                 _algo.Error($"IVSurfaceRelativeStrike: {symbol} - Null EWMA interpolated. Will cause pricing to fail Fix. IsOTM:{isOTM}. strikePct:{strikePct}.");
             }
+            //if (symbol.Value == "PFE   240119C00038000" && _algo.Time.TimeOfDay > new TimeSpan(9, 49, 0) & _algo.Time.TimeOfDay < new TimeSpan(9, 50, 0))
+            //{
+            //    _algo.Log($"side: {Side}");
+            //    _algo.Log($"strike: {strike}");
+            //    _algo.Log($"strikePct: {strikePct}");
+            //    _algo.Log($"bin: {bin}");
+            //    _algo.Log($"bin.IsOTM: {bin.IsOTM}");
+            //    _algo.Log($"bin.Value: {bin.Value}");
+            //    _algo.Log($"bin.IVEWMA: {bin.IVEWMA}");
+            //    _algo.Log($"bin.IV: {bin.IV}");
+            //    _algo.Log($"ewmaInterpolated: {ewmaInterpolated}");
+
+            //    _algo.Log($"binLeft: {binB}");
+            //    _algo.Log($"binB.IsOTM: {binB.IsOTM}");
+            //    _algo.Log($"binB.Value: {binB.Value}");
+            //    _algo.Log($"binB.IVEWMA: {binB.IVEWMA}");
+            //    _algo.Log($"binB.IV: {binB.IV}");
+                
+            //    _algo.Log($"slopeEWMA: {slopeEWMA}");
+            //}
             return ewmaInterpolated;
+        }
+
+        public double Slope(Bin binA, Bin binB)
+        {
+            if (binB.IVEWMA == null || binA.IVEWMA == null) { return 0; }
+            return ((double)binB.IVEWMA - (double)binA.IVEWMA) / (binB.Value - binA.Value);
         }
 
         private decimal StrikePct(decimal strike, decimal? midPrice = null)
         {
             //  K/S, which is known as the (spot) simple moneyness
             decimal _midPrice = midPrice ?? MidPriceUnderlying;
-            return _midPrice == 0 ? 0 : 100 * strike / (_midPrice);
+            return _midPrice == 0 ? 0 : 100 * strike / _midPrice;
         }
 
         private decimal StrikePct(Option option, decimal? midPrice = null)

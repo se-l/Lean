@@ -3,7 +3,7 @@
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" ];  // Too much for 2 cores on a t3 instance.
-  "OptionTicker": [ "HPE" ],
+  "OptionTicker": [ "PFE" ],
   "LiquidateTicker": [],
   "OptionOrderQuantityDflt": 5,
   "VolatilityPeriodDays": 5,
@@ -49,7 +49,7 @@
       "TargetRisk": 0,
       "X0": 0,
       "X1": 0,
-      "X2": 0.000001,
+      "X2": 0.0,
       "CapMin": -0.3,
       "CapMax": 0.3
     },
@@ -57,7 +57,7 @@
       "TargetRisk": 0,
       "X0": 0,
       "X1": 0,
-      "X2": 0.000005,
+      "X2": 0.0,
       "CapMin": -0.3,
       "CapMax": 0.3
     },
@@ -72,7 +72,9 @@
   },
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
-  "IVSurfaceRelativeStrikeAlpha": 0.05,
+  "IVSurfaceRelativeStrikeAlpha": 0.15, // PFE
+  //"IVSurfaceRelativeStrikeAlpha": 0.05, // HPE
   "SurfaceVerticalResetThreshold": 0.01,
-  "WarmUpDays":  1
+  "WarmUpDays": 1,
+  "LogOrderUpdates":  false
 }

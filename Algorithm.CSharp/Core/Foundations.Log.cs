@@ -159,9 +159,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "BestBid", security.BidPrice.ToString() },
                 { "BestAsk", security.AskPrice.ToString() },
                 { "Delta2Mean", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.LimitPrice : orderEvent.LimitPrice - MidPrice(symbol)).ToString() },
-                { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001), 2).ToString() : "" },
-                { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001), 2).ToString() : "" },
-                { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001), 2).ToString() : "" },
+                { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
+                { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
+                { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
                 { "IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeBid[underlying].IV(symbol).ToString() : "" },
                 { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeAsk[underlying].IV(symbol).ToString() : "" },
             });
@@ -182,7 +182,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "topic", "RISK" },
                 { "Symbol", $"Equities: {string.Join(",", equities)}" },
             };
-            var d2 = PfRisk.ToDict(symbol).ToDictionary(x => x.Key, x => Math.Round(x.Value, 2).ToString());
+            var d2 = PfRisk.ToDict(symbol).ToDictionary(x => x.Key, x => Math.Round(x.Value, 3).ToString());
             string tag = Humanize(d1.Union(d2));
             Log(tag);
 

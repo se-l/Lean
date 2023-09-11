@@ -18,10 +18,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public double? IVEWMA;
         private double? _IVEWMAPrevious;
 
-        public double? Slope;
-        public double? SlopeEWMA;
-        private double? _slopeEWMAPrevious;
-
         public DateTime Time;
         private DateTime PreviousTime;
         public double? Epsilon { get => IV - IVEWMA; }
@@ -41,22 +37,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             SamplingPeriod = samplingPeriod ?? TimeSpan.FromMinutes(5);
         }
 
-        public void Update(DateTime time, double iv, double slope)
+        public void Update(DateTime time, double iv)
         {
             if (time <= Time || iv == 0) { return; }
 
             IV = iv;
             Time = time;
-            Slope = slope;
             _samples += 1;
 
             IVEWMA = Alpha * iv + (1 - Alpha) * (_IVEWMAPrevious ?? iv);
-            SlopeEWMA = Alpha * iv + (1 - Alpha) * (_slopeEWMAPrevious ?? slope);
-            
+
             if (UpdatePreviousTime(time) || _IVEWMAPrevious == null)
             {
                 _IVEWMAPrevious = IVEWMA;
-                _slopeEWMAPrevious = Slope;
                 _smoothings += 1;
             }
         }
@@ -75,7 +68,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public void ResetEWMA()
         {
             IVEWMA = _IVEWMAPrevious = IV;
-            SlopeEWMA = _slopeEWMAPrevious = Slope;
         }
 
         public string Id()

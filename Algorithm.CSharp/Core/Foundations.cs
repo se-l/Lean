@@ -480,7 +480,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     decimal tickSize = TickSize(symbol);
                     decimal limitPrice = ticket.Get(OrderField.LimitPrice);
+                    
                     Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, SignalQuantity(symbol, Num2Direction(ticket.Quantity))));
+
+                    //if (symbol.Value == "PFE   240119C00038000" && Time.TimeOfDay > new TimeSpan(9, 49, 0) & Time.TimeOfDay < new TimeSpan(9, 50, 0))
+                    //{
+                    //    Log(quote.QuoteDiscountsString);
+                    //    Log(quote.Price);
+                    //    Log(quote.SpreadFactor);
+                    //}
+
                     decimal idealLimitPrice = quote.Price;
 
                     if (idealLimitPrice == 0 || quote.Quantity == 0)
@@ -501,9 +510,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         }
                         else
                         {
-                            var tag = $"{Time}: UPDATE LIMIT Symbol{symbol} Price: From: {limitPrice} To: {idealLimitPrice}";
+                            var tag = $"{Time}: UPDATE LIMIT Symbol {symbol} Price: From: {limitPrice} To: {idealLimitPrice}";
                             var response = ticket.UpdateLimitPrice(idealLimitPrice, tag);
-                            if (LiveMode)
+                            if (Cfg.LogOrderUpdates || LiveMode)
                             {
                                 Log($"{tag}, Response: {response}");
                             }
@@ -512,11 +521,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }
 
                     // Quantity
-                    if (ticket.Quantity != quote.Quantity)
+                    if (ticket.Quantity != quote.Quantity && Math.Abs(ticket.Quantity - quote.Quantity) >= 2)
                     {
-                        var tag = $"{Time}: UPDATE LIMIT Symbol{symbol} Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
+                        var tag = $"{Time}: UPDATE LIMIT Symbol {symbol} Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
                         var response = ticket.UpdateQuantity(quote.Quantity, tag);
-                        if (LiveMode)
+                        if (Cfg.LogOrderUpdates || LiveMode)
                         {
                             Log($"{tag}, Response: {response}");
                         }
