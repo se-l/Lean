@@ -52,9 +52,9 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 8, 15);
+            SetStartDate(2023, 8, 7);
             //SetStartDate(2023, 8, 1);
-            SetEndDate(2023, 9, 6);
+            SetEndDate(2023, 9, 11);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -328,12 +328,7 @@ namespace QuantConnect.Algorithm.CSharp
                 orderTickets[ticket.Symbol].Add(ticket);
             }
 
-            // Adding existing positions to algo state.
-            foreach (var holding in Portfolio.Values)
-            {
-                Log($"Initialized Position {holding.Symbol} with Holding: {holding}");
-                Positions[holding.Symbol] = new(this, holding);
-            }
+            InitializePositionsFromPortfolio();
 
             TotalPortfolioValueSinceStart = Portfolio.TotalPortfolioValue;
 
