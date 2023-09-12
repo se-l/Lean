@@ -442,10 +442,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal limitPrice = quote.Price;
             if (limitPrice == 0)
             {
-                Log($"No price for {Num2Direction(quantity)} {Math.Abs(quantity)} {contract.Symbol}. Not trading...");
+                Log($"No price quoted for {Num2Direction(quantity)} {Math.Abs(quantity)} {contract.Symbol}. Not trading...");
                 return;
             }
             limitPrice = RoundTick(limitPrice, TickSize(contract.Symbol));
+            if (limitPrice < TickSize(contract.Symbol))
+            {
+                Log($"Invalid price: {limitPrice}. {Num2Direction(quantity)} {Math.Abs(quantity)} {contract.Symbol}. Not trading... TickSize: {TickSize(contract.Symbol)}");
+                return;
+            }
 
             tag = LogContract(contract, NUM2DIRECTION[Math.Sign(quantity)], limitPrice, orderType) + tag;
 
@@ -544,7 +549,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public void UpdateLimitOrderEquity(Equity equity, decimal? newQuantity = 0, decimal? newLimitPrice = null)
         {
             int cnt = 0;
-            foreach (var ticket in orderTickets[equity.Symbol])
+            foreach (var ticket in orderTickets[equity.Symbol].Where(t => t.OrderType == OrderType.Limit))
             {
                 if (ticket.Status == OrderStatus.Submitted || ticket.Status == OrderStatus.PartiallyFilled || ticket.Status == OrderStatus.UpdateSubmitted)
                 {
