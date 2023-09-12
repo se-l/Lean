@@ -7,8 +7,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
     {
         public readonly QuoteSide Side;
         public readonly ushort Value;
-        public readonly bool IsOTM;
         public readonly DateTime Expiry;
+        public readonly OptionRight OptionRight;
         public readonly double Alpha;  // 1: No Smoothing, 0: No Update. First IV.
         public readonly TimeSpan SamplingPeriod;
         // For Adaptive EWMA
@@ -27,12 +27,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public uint Samples { get => _samples; }
         public uint Smoothings { get => _smoothings; }
 
-        public Bin(QuoteSide side, ushort value, DateTime expiry, bool isOTM, double alpha = 1.0, TimeSpan? samplingPeriod = null)
+        public Bin(QuoteSide side, ushort value, DateTime expiry, OptionRight optionRight, double alpha = 1.0, TimeSpan? samplingPeriod = null)
         {
             Side = side;
             Value = value;
             Expiry = expiry;
-            IsOTM = isOTM;
+            OptionRight = optionRight;
             Alpha = alpha;
             SamplingPeriod = samplingPeriod ?? TimeSpan.FromMinutes(5);
         }
@@ -72,8 +72,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public string Id()
         {
-            string otm = IsOTM ? "OTM" : "ITM";
-            return $"{Side} {otm} {Expiry.ToString("yyMMdd", CultureInfo.InvariantCulture)} {Value}";
+            return $"{Side} {OptionRight} {Expiry.ToString("yyMMdd", CultureInfo.InvariantCulture)} {Value}";
         }
     }
 }
