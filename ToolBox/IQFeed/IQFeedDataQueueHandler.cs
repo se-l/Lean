@@ -35,6 +35,7 @@ using QuantConnect.Data.Auxiliary;
 using IQFeed.CSharpApiClient.Lookup.Chains.Equities;
 using IQFeed.CSharpApiClient.Lookup.Chains;
 using IQFeed.CSharpApiClient.Lookup;
+using System.Globalization;
 
 namespace QuantConnect.ToolBox.IQFeed
 {
@@ -77,7 +78,8 @@ namespace QuantConnect.ToolBox.IQFeed
             _symbols = new HashSet<Symbol>();
             _underlyings = new Dictionary<Symbol, Symbol>();
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
-            LookupClient lookupClient = LookupClientFactory.CreateNew(NumberOfClients);
+            LookupClient lookupClient = LookupClientFactory.CreateNew(Config.Get("iqfeed-host-lookup", "127.0.0.1"), Int32.Parse(Config.Get("iqfeed-port-lookup", "9100"), CultureInfo.InvariantCulture), NumberOfClients);
+            //LookupClient lookupClient = LookupClientFactory.CreateNew(NumberOfClients);
             lookupClient.Connect();
             IQFeedDataQueueUniverseProvider universeProvider = new IQFeedDataQueueUniverseProvider();
             _historyProvider = new IQFeedFileHistoryProvider(lookupClient, universeProvider, MarketHoursDatabase.FromDataFolder());            

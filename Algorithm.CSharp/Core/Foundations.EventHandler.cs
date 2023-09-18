@@ -37,8 +37,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (@event is OrderEvent orderEvent && (orderEvent.Status is OrderStatus.Filled or OrderStatus.PartiallyFilled))
             {
                 UpdateOrderFillData(orderEvent);
-                var trade = WrapToTrade(orderEvent);
-                ApplyToPosition(trade);
+                UpdatePositionLifeCycle(orderEvent);
                 LogOnEventOrderFill(orderEvent);
                 GetDesiredOrders();
                 PfRisk.IsRiskLimitExceededZM(orderEvent.Symbol);

@@ -36,7 +36,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// <param name="dIV"></param>Delta Implied IV. Analytical used.
         /// <param name="position"></param>Quantity of contracts
         /// <param name="deltaMid0"></param>We didnt get filled at Mid exactly, slightly off.
-        public PLExplain(GreeksPlus g, double dP = 1.0, double dT = 1, double dIV = 0, double dR = 0, double position = 0, decimal deltaMid = 0, decimal fee=0)
+        public PLExplain(GreeksPlus g, double dP = 1.0, double dT = 1, double dIV = 0, double dR = 0, double position = 0, decimal deltaMid = 0, decimal tradeQuantity = 0, decimal fee=0)
         {
             if (g == null) { return; }
             //        # missed negative carry cost (interest payments). Not Greeks related though. Goes elsewhere.
@@ -44,7 +44,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             // https://medium.com/hypervolatility/option-greeks-and-hedging-strategies-14101169604e  //Δ Option Value ≈ Delta * ΔS + ½ Gamma * ΔS + 1/6 Speed * ΔS
             double dIVPct = dIV * 100;
 
-            PL_DeltaFillMid = position * (double)deltaMid;
+            PL_DeltaFillMid = (double)(tradeQuantity * deltaMid);
 
             PL_Delta = position * g.Delta * dP;
             PL_Vega = position * g.Vega * dIVPct;

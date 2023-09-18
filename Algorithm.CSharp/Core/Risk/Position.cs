@@ -40,14 +40,11 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
             _algo = algo;
             Symbol = trade0.Symbol;
             Security = trade0.Security;
-            OrderQuantity = trade0.Quantity;            
             Quantity = (_prevPosition?.Quantity ?? 0) + trade0.Quantity;
             Trade1 = trade1;
-            Greeks1 = GetGreeks1();
         }
 
         public decimal Quantity { get; internal set; }
-        public decimal OrderQuantity { get; internal set; } = 0m;
         public Symbol Symbol { get; internal set; }
         private Security _securityUnderlying;
         public Security SecurityUnderling { get => _securityUnderlying ??= _algo.Securities[UnderlyingSymbol]; }
@@ -100,7 +97,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         public decimal Bid1Underlying { get => Trade1?.Bid0Underlying ?? SecurityUnderling.BidPrice; }
         public decimal Ask1Underlying { get => Trade1?.Ask0Underlying ?? SecurityUnderling.AskPrice; }
         public decimal UnrealizedProfit { get => _algo.Portfolio[Symbol].UnrealizedProfit; }
-        public decimal Spread1 { get => Trade1?.Spread0 ?? ( Ask1 - Bid1 ); }
+        public decimal Spread1 { get => Trade1?.Spread0 ?? (Ask1 - Bid1); }
         public DateTime Ts1 { get => Trade1?.Ts0 ?? _algo.Time; }
         public decimal Bid1 { get => Trade1?.Bid0 ?? Security.BidPrice; }
         public decimal Ask1 { get => Trade1?.Ask0 ?? Security.AskPrice; }
@@ -120,31 +117,30 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                 _ => 0
             };
         }
-        public double IVMid1 { get => (IVBid1 + IVAsk1) / 2; }
+        public double IVMid1 { get => Trade1?.IVMid0 ?? (IVBid1 + IVAsk1) / 2; }
         public decimal Mid1Underlying { get => (Bid1Underlying + Ask1Underlying) / 2; }
         public decimal Mid0 { get => (Trade0.Bid0 + Trade0.Ask0) / 2; }
         public decimal Mid0Underlying { get => Trade0.Mid0Underlying; }
         public decimal ValueMid { get { return Mid1 * Quantity * Multiplier; } }
         public decimal ValueWorst { get { return (Quantity > 0 ? Bid1 : Ask1) * Quantity * Multiplier; } }
-        public GreeksPlus Greeks1 { get; internal set; }
-        public GreeksPlus GetGreeks(int version = 1)
+        public GreeksPlus Greeks1 { get => Trade1?.Greeks ?? GetGreeks1(); }  // This one gets exported to CSV because it's not a method.
+        public GreeksPlus GetGreeks()
         {
             return SecurityType switch
             {
-                // version 0 means as of a time in the past. Passing Fill time to calculate all Greeks as of that date.
-                SecurityType.Option => version == 0 ? new(OptionContractWrap.E(_algo, (Option)Security, version, Trade0.Ts0.Date)) : new(OptionContractWrap.E(_algo, (Option)Security, version)),
-                SecurityType.Equity => new GreeksPlus(),
+                SecurityType.Option => new(OptionContractWrap.E(_algo, (Option)Security, _algo.Time.Date)),
+                SecurityType.Equity => new GreeksPlus(Security),
                 _ => throw new NotSupportedException()
             };
         }
         public GreeksPlus GetGreeks1(double? volatility = null)
         {
-            Greeks1 ??= Trade1?.GetGreeks(0) ?? GetGreeks(1);
-            if (SecurityType == SecurityType.Option)
+            GreeksPlus greeks = Trade1?.Greeks ?? GetGreeks();
+            if (SecurityType == SecurityType.Option && Trade1 == null)
             {
-                Greeks1.OCW.SetIndependents(Mid1Underlying, Mid1, volatility ?? (double)SecurityUnderling.VolatilityModel.Volatility);
+                greeks.OCW.SetIndependents(Mid1Underlying, Mid1, volatility ?? (double)SecurityUnderling.VolatilityModel.Volatility);
             }
-            return Greeks1;
+            return greeks;
         }
 
         public double Delta()
@@ -194,7 +190,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
             return GetGreeks1(volatility: volatility ?? (double)SecurityUnderling.VolatilityModel.Volatility).DeltaZMOffset((int)Quantity);
         }
 
-        public double DeltaImplied(double? volatility = null)
+        public double DeltaImplied(double volatility)
         {
             switch (SecurityType)
             {
@@ -203,7 +199,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                 case SecurityType.Option:
                     try
                     {
-                        return GetGreeks1(volatility: volatility ?? IVMid1).Delta;
+                        return GetGreeks1(volatility: volatility).Delta;  // Contract IV wouldnt make much sense. ATM most likely. kill this call
                     }
                     catch
                     {
@@ -237,7 +233,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                 SecurityType.Option => (decimal)(Delta() * x) * Mid1Underlying * BP * Multiplier * Quantity
             };
         }
-        public decimal DeltaImpliedTotal(double? volatility = null)
+        public decimal DeltaImpliedTotal(double volatility)
         {
             return SecurityType switch
             {
@@ -245,7 +241,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                 SecurityType.Option => (decimal)DeltaImplied(volatility) * Multiplier * Quantity
             };
         }
-        public decimal DeltaImpliedXBpUSDTotal(double x = 100, double? volatility = null)
+        public decimal DeltaImpliedXBpUSDTotal(double volatility, double x = 100)
         {
             return SecurityType switch
             {
@@ -258,14 +254,14 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         {
             return GetGreeks1().Gamma;
         }
-        public double GammaImplied(double? volatility = null)
+        public double GammaImplied(double volatility)
         {
             switch (SecurityType)
             {
                 case SecurityType.Option:
                     try
                     {
-                        return GetGreeks1(volatility: volatility ?? IVMid1).Gamma;
+                        return GetGreeks1(volatility: volatility).Gamma;
                     }
                     catch
                     {
@@ -284,11 +280,11 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                 _ => 0
             }; ;
         }
-        public decimal GammaImpliedTotal()
+        public decimal GammaImpliedTotal(double volatility)
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)Gamma() * Multiplier * Quantity,
+                SecurityType.Option => (decimal)GetGreeks1(volatility: volatility).Gamma * Multiplier * Quantity,
                 _ => 0
             }; ;
         }
@@ -301,7 +297,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                 _ => 0
             };
         }
-        public decimal GammaImpliedXBpUSDTotal(double x = 100, double? volatility = null)
+        public decimal GammaImpliedXBpUSDTotal(double volatility, double x = 100)
         {
             return SecurityType switch
             {
@@ -369,26 +365,45 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         {
             get => SecurityType switch
             {
-                SecurityType.Option => Trade0.Greeks0.OCW.DaysToExpiration(Trade0.Ts0.Date) - GetGreeks1().OCW.DaysToExpiration(Ts1.Date),
+                SecurityType.Option => (Trade0.Greeks?.OCW?.DaysToExpiration(Trade0.Ts0.Date) ?? 0) - GetGreeks1()?.OCW?.DaysToExpiration(Ts1.Date) ?? 0,
                 _ => 0
             };
         }
         public double IVPrice1 { get => IVMid1; }
-        public double DMidIV { get => IVMid1 - Trade0.IVMid0; }
-        public double DIVPrice { get => IVPrice1 - Trade0.IVPrice0; }
+        public double DIVMid { get => IVMid1 - Trade0.IVMid0; }
+        public bool IsExercised {  get => (Trade1?.Tag.Contains("Automatic Exercise") ?? false) || (Trade1?.Tag.Contains("Simulated option") ?? false); }  // improve, together with LifeCycleUpdate
         public PLExplain PLExplain { get => GetPLExplain(); }  // public getter for easy CSV export
         private PLExplain GetPLExplain()
         {
-            return new PLExplain(
-                    Trade0.Greeks0,
+            if (IsExercised)
+            {
+                // (P1 - Trade0.P0) * Quantity * Multiplier + Trade0.Fee;
+                return new PLExplain(
+                    Trade0.Greeks,
+                    0,
+                    0,
+                    0,
+                    0,
+                    (double)(Quantity * Multiplier),  // Q over lifetime of position
+                    Trade0.Delta2MidFill, // Realized on fill. Only use Trade0, otherwise double counting....
+                    Trade0.Quantity * Multiplier,  // Trade fill Q at fill. Instant.
+                    PL//Trade0.Fee
+                    );
+            }
+            else
+            {
+                return new PLExplain(
+                    Trade0.Greeks,
                     (double)DPUnderlying,
                     DDaysToExpiration,
-                    DIVPrice,  // the realized IV.
+                    DIVMid,
                     0,
-                    (double)(Quantity * Multiplier),
-                    Trade0.DeltaFillMid0, // the realized bit. Only use Trade0, otherwise double counting....
+                    (double)(Quantity * Multiplier),  // Q over lifetime of position
+                    Trade0.Delta2MidFill, // Realized on fill. Only use Trade0, otherwise double counting....
+                    Trade0.Quantity * Multiplier,  // Trade fill Q at fill. Instant.
                     Trade0.Fee
                     );
+            }
         }
 
         /// <summary>

@@ -32,7 +32,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Time = tick.EndTime;
             UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
             Price = tick.Price;
-            IV = OptionContractWrap.E(algo, Option, 1, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
+            IV = OptionContractWrap.E(algo, Option, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
             Current = new IVQuote(Symbol, Time, UnderlyingMidPrice, Price, IV);
         }
 
@@ -45,12 +45,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Time = tradeBar.EndTime;
             UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
             Price = tradeBar.Close;
-            IV = OptionContractWrap.E(algo, Option, 1, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
+            IV = OptionContractWrap.E(algo, Option, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
             Current = new IVQuote(Symbol, Time, UnderlyingMidPrice, Price, IV);
         }
         public void SetDelta(double? delta = null)
         {
-            Current.Delta = delta == null ? OptionContractWrap.E(algo, Option, 1, Time.Date).Delta() : delta;
+            Current.Delta = delta == null ? OptionContractWrap.E(algo, Option, Time.Date).Delta() : delta;
         }
     }
 }

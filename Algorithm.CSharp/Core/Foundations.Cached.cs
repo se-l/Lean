@@ -7,6 +7,7 @@ using QuantConnect.Securities.Equity;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -40,6 +41,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             TickSize = Cache(GetTickSize, (Symbol symbol) => symbol, maxKeys: 1);
             PositionsTotal = Cache(GetPositionsTotal, () => Time, maxKeys: 1);
             PositionsN = Cache(GetPositionsN, () => Time, maxKeys: 1);
+
+            IntrinsicValue = (Option option) => option.GetIntrinsicValue(MidPrice(option.Underlying.Symbol));
         }
 
         private double GetBeta(Symbol index, Symbol asset, int periods, Resolution resolution = Resolution.Daily)

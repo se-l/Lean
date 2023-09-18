@@ -49,7 +49,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             _algo = algo;
             Option = option;
             IVBidAsk = new IVQuote(Symbol, _algo.Time, 0, 0, 0);  // Default, in case referenced downstream before any successful update.
-            algo.RegisterIndicator(Symbol, this, _algo.QuoteBarConsolidators[Symbol], Selector);
+            _algo.RegisterIndicator(Symbol, this, _algo.QuoteBarConsolidators[Symbol], Selector);
         }
 
         public void Update(DateTime time, decimal quote, decimal midPriceUnderlying)
@@ -62,7 +62,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             {
                 MidPriceUnderlying = midPriceUnderlying;
                 Price = quote;
-                IV = OptionContractWrap.E(_algo, Option, 1, Time.Date).IV(Price, MidPriceUnderlying, 0.001);
+                IV = OptionContractWrap.E(_algo, Option, Time.Date).IV(Price, MidPriceUnderlying, 0.001);
             }
             IVBidAsk = new IVQuote(Symbol, Time, MidPriceUnderlying, Price, IV);
             Current = new IndicatorDataPoint(Time, (decimal)IVBidAsk.IV);

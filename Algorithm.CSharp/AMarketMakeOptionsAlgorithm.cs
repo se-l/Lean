@@ -52,9 +52,10 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 8, 7);
-            //SetStartDate(2023, 8, 1);
-            SetEndDate(2023, 9, 11);
+            //SetStartDate(2023, 8, 8);
+            //SetEndDate(2023, 9, 8);
+            SetStartDate(2023, 6, 8);
+            SetEndDate(2023, 9, 14);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -69,7 +70,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             AssignCachedFunctions();
 
-            // Subscriptions            
+            // Subscriptions
             optionTicker = Cfg.OptionTicker;
             ticker = optionTicker;
             symbolSubscribed = AddEquity(optionTicker.First(), resolution).Symbol;
@@ -95,6 +96,7 @@ namespace QuantConnect.Algorithm.CSharp
                         DeltaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Delta100BpUSDTotal);
                         GammaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Gamma100BpUSDTotal);
                         EventDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Events);
+                        AbsoluteDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Absolute);
                     }
                 }
                 RiskPnLProfiles[equity.Symbol] = new RiskPnLProfile(this, equity);
@@ -114,7 +116,7 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportRiskRecords);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportIVSurface);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then.
             // Turn Limit Equity into EOD before market close...
 
             // WARMUP
@@ -143,7 +145,11 @@ namespace QuantConnect.Algorithm.CSharp
                 }
                 PriceCache[symbol] = Securities[symbol].Cache.Clone();
             }
+            RecordMarketData(slice);
+        }
 
+        public void RecordMarketData(Slice slice)
+        {
             // Move into consolidator events. Not driving any biz logic.
             // Record data for restarts and next day comparison with history. Avoid conflict with Paper on same instance by running this for live mode only.
             if (LiveMode && Config.Get("ib-trading-mode") == "live")
@@ -171,45 +177,22 @@ namespace QuantConnect.Algorithm.CSharp
                 }
             }
         }
-
         public override void OnOrderEvent(OrderEvent orderEvent)
         {
             OrderEvents.Add(orderEvent);
             LogOrderEvent(orderEvent);
+
             foreach (var tickets in orderTickets.Values)
             {
-                tickets.RemoveAll(t => t.Status == OrderStatus.Filled || t.Status == OrderStatus.Canceled || t.Status == OrderStatus.Invalid);
-            }            
+                tickets.RemoveAll(t => orderFilledCanceledInvalid.Contains(t.Status));
+            }
             PublishEvent(orderEvent);
         }
 
-        static decimal Strike(Order o) => o.Symbol.ID.StrikePrice;
-        Order NewEquityExerciseOrder(OptionExerciseOrder o) => new EquityExerciseOrder(o, new OrderFillData(o.Time, Strike(o), Strike(o), Strike(o), Strike(o), Strike(o), Strike(o)))
-        {
-            Status = OrderStatus.Filled
-        };
-
         public override void OnAssignmentOrderEvent(OrderEvent assignmentEvent)
         {
-            Log(assignmentEvent.ToString());
-
-            OptionExerciseOrder optionExerciseOrder = (OptionExerciseOrder)Transactions.GetOrderById(assignmentEvent.OrderId);            
-            var equityExerciseOrders = NewEquityExerciseOrder(optionExerciseOrder);
-
-            if (!Trades.ContainsKey(assignmentEvent.Symbol))
-            {
-                Trades[assignmentEvent.Symbol] = new();
-            }
-            if (!Trades.ContainsKey(assignmentEvent.Symbol.Underlying))
-            {
-                Trades[assignmentEvent.Symbol.Underlying] = new();
-            }
-
-            Trades[assignmentEvent.Symbol].Add(new(this, optionExerciseOrder));
-            Trades[equityExerciseOrders.Symbol].Add(new(this, equityExerciseOrders));
+            Log($"OnAssignmentOrderEvent: {assignmentEvent}");
         }
-
-
 
         /// <summary>
         /// Event driven: On MarketOpen, OnFill, OnRiskProfileChanges / Thresholds crossed
@@ -236,7 +219,6 @@ namespace QuantConnect.Algorithm.CSharp
             foreach (var symbol in contractSymbols)
             {
                 if ( Securities.ContainsKey(symbol) && Securities[symbol].IsTradable ) continue;  // already subscribed
-
 
                 Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
                 // Todo: move the period parameter to a config
@@ -294,13 +276,14 @@ namespace QuantConnect.Algorithm.CSharp
             IVSurfaceRelativeStrikeAsk.Values.DoForEach(s => s.Dispose());
             RiskPnLProfiles.Values.DoForEach(s => s.Dispose());
             Utility.Dispose();
-            base.OnEndOfAlgorithm();
             _diskDataCacheProvider.DisposeSafely();
         }
 
         public void OnMarketOpen()
         {
             if (IsWarmingUp) { return; }
+
+            embargoedSymbols = Securities.Keys.Where(s => EarningsAnnouncements.Where(ea => ea.Symbol == s.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()).ToHashSet();
 
             CancelGammaHedgeBeyondScope();
 

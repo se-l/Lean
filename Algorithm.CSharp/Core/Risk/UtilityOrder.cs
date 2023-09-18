@@ -93,6 +93,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             // Greater 1. Good for portfolio. Risk reducing. Negative: Risk increasing.
             var _inventoryRisk = _algo.Portfolio[Symbol].Quantity * Quantity > 0 ? -1 : 0;  // for now, dont order in the same direction as position
+            var _expireRisk = OrderDirection == OrderDirection.Buy && (Option.Symbol.ID.Date - _algo.Time.Date).Days <= 1 ? -1 : 0;  // dont buy stuff about to expire
             var quoteDiscounts = _algo.GetQuoteDiscounts(new QuoteRequest<Option>(Option, Quantity));
             return
                 _inventoryRisk + 
@@ -140,7 +141,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             };
             if (iv == 0) { return 0; }
 
-            var ocw = OptionContractWrap.E(_algo, Option, 1);
+            var ocw = OptionContractWrap.E(_algo, Option, _algo.Time.Date);
             ocw.SetIndependents(_algo.MidPrice(underlying), _algo.MidPrice(Symbol), (double)_algo.Securities[underlying].VolatilityModel.Volatility);
             double vega = ocw.Vega();
 

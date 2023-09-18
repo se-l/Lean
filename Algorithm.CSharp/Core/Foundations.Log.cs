@@ -158,10 +158,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "PriceUnderlying", orderEvent.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[orderEvent.Symbol]).Underlying.Price.ToString() : "" },
                 { "BestBid", security.BidPrice.ToString() },
                 { "BestAsk", security.AskPrice.ToString() },
-                { "Delta2Mean", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.LimitPrice : orderEvent.LimitPrice - MidPrice(symbol)).ToString() },
-                { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
-                { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
-                { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], 1).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
+                { "Delta2Mid", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.LimitPrice : orderEvent.LimitPrice - MidPrice(symbol)).ToString() },
+                { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], Time.Date).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
+                { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], Time.Date).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
+                { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], Time.Date).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
                 { "IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeBid[underlying].IV(symbol).ToString() : "" },
                 { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeAsk[underlying].IV(symbol).ToString() : "" },
             });
@@ -188,7 +188,37 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             DiscordClient.Send(tag, DiscordChannel.Status, LiveMode);
             return tag;
-        }        
+        }
+
+        public string LogPositions()
+        {
+            var d1 = new Dictionary<string, string>
+            {
+                { "ts", Time.ToString() },
+                { "topic", "POSITIONS portfolio" },
+            };
+            // Refactor into sanity check and alert on mismatch...
+            //var d3 = Positions.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString());
+            var d2 = Portfolio.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString());
+            string tag = Humanize(d1.Union(d2));
+            Log(tag);
+
+            d1 = new Dictionary<string, string>
+            {
+                { "ts", Time.ToString() },
+                { "topic", "POSITIONS internal" },
+            };
+            // Refactor into sanity check and alert on mismatch...
+            var d3 = Positions.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString());
+            if (!d3.SequenceEqual(d2))
+            {
+                Log("Portfolio and Positions mismatch!");
+                Log(Humanize(d1.Union(d3)));
+            }            
+
+            DiscordClient.Send(tag, DiscordChannel.Status, LiveMode);
+            return tag;
+        }
 
         public string LogPnL(Symbol symbol = null)
         {

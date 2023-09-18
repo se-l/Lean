@@ -112,6 +112,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return result;
                 }
                 result = decorated(args);
+
+                if (ttl > 0)
+                {
+                    foreach (var cacheKey in cacheMeta.Where(kvp => (Time - kvp.Value).Seconds >= ttl).Select(kvp => kvp.Key))
+                    {
+                        cache.TryRemove(cacheKey, out var value);
+                    }
+                }
+
                 cache[key] = result;
                 return result;
             };
@@ -129,6 +138,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return result;
                 }
                 result = decorated(arg1, arg2);
+
+                if (ttl > 0)
+                {
+                    foreach (var cacheKey in cacheMeta.Where(kvp => (Time - kvp.Value).Seconds >= ttl).Select(kvp => kvp.Key))
+                    {
+                        cache.TryRemove(cacheKey, out var value);
+                    }
+                }
+
                 cache[key] = result;
                 return result;
             };

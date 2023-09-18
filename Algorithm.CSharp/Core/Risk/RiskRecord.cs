@@ -45,15 +45,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             PositionUnderlyingUSD = algo.Securities[Symbol].Holdings.HoldingsValue;
 
             DeltaTotal = pfRisk.RiskByUnderlying(Symbol, Metric.DeltaTotal);
-            DeltaImpliedTotal = pfRisk.RiskByUnderlying(Symbol, Metric.DeltaImpliedTotal);
+            DeltaImpliedTotal = 0; // pfRisk.RiskByUnderlying(Symbol, Metric.DeltaImpliedTotal);
             Delta100BpUSDTotal = pfRisk.RiskByUnderlying(Symbol, Metric.Delta100BpUSDTotal);
-            DeltaImplied100BpUSDTotal = pfRisk.RiskByUnderlying(Symbol, Metric.DeltaImplied100BpUSDTotal);
+            DeltaImplied100BpUSDTotal = 0;// pfRisk.RiskByUnderlying(Symbol, Metric.DeltaImplied100BpUSDTotal);
             Delta100BpUSDOptionsTotal = Delta100BpUSDTotal - PositionUnderlying;
             GammaTotal = pfRisk.RiskByUnderlying(Symbol, Metric.GammaTotal);
             Gamma100BpUSDTotal = pfRisk.RiskByUnderlying(Symbol, Metric.Gamma100BpUSDTotal);
-            GammaImplied100BpUSDTotal = pfRisk.RiskByUnderlying(Symbol, Metric.GammaImplied100BpUSDTotal);
+            GammaImplied100BpUSDTotal = 0;// pfRisk.RiskByUnderlying(Symbol, Metric.GammaImplied100BpUSDTotal);
             Gamma500BpUSDTotal = pfRisk.RiskByUnderlying(Symbol, Metric.Gamma500BpUSDTotal);
-            GammaImplied500BpUSDTotal = pfRisk.RiskByUnderlying(Symbol, Metric.GammaImplied500BpUSDTotal);
+            GammaImplied500BpUSDTotal = 0; // pfRisk.RiskByUnderlying(Symbol, Metric.GammaImplied500BpUSDTotal);
             VegaTotal = pfRisk.RiskByUnderlying(Symbol, Metric.VegaTotal);
             ThetaTotal = pfRisk.RiskByUnderlying(Symbol, Metric.ThetaTotal);
 

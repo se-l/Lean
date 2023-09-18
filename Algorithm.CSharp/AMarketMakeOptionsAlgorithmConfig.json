@@ -9,10 +9,11 @@
   "VolatilityPeriodDays": 5,
 
   "scopeContractStrikeOverUnderlyingMax": 1.25,
-  "scopeContractStrikeOverUnderlyingMaxSignal": 1.15,
+  "scopeContractStrikeOverUnderlyingMaxSignal": 1.10,
   "scopeContractStrikeOverUnderlyingMin": 0.75,
-  "scopeContractStrikeOverUnderlyingMinSignal": 0.85,
+  "scopeContractStrikeOverUnderlyingMinSignal": 0.90,
   "scopeContractStrikeOverUnderlyingMargin": 0.05,
+  "scopeContractMoneynessITM": 0.05,
   "scopeContractMinDTE": 0,
   "scopeContractMaxDTE": 180,
   "scopeContractIsLiquidDays": 5,
@@ -45,9 +46,17 @@
       "CapMin": -0.5,
       "CapMax": 0.5
     },
-    "PFE-Delta100BpUSDTotal-discount-params": {
+    "HPE-Absolute-discount-params": {
       "TargetRisk": 0,
       "X0": 0,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
+    },
+    "PFE-Delta100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": -0.01,
       "X1": 0,
       "X2": 0.000001,
       "CapMin": -0.3,
@@ -57,7 +66,7 @@
       "TargetRisk": 0,
       "X0": 0,
       "X1": 0,
-      "X2": 0.00001,
+      "X2": 0.00003,
       "CapMin": -0.3,
       "CapMax": 0.3
     },
@@ -68,13 +77,23 @@
       "X2": 0,
       "CapMin": -0.5,
       "CapMax": 0.5
+    },
+    "PFE-Absolute-discount-params": {
+      "TargetRisk": 0,
+      "X0": -0.01,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
     }
   },
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
-  "IVSurfaceRelativeStrikeAlpha": 0.15, // PFE
-  //"IVSurfaceRelativeStrikeAlpha": 0.05, // HPE
+  "IVSurfaceRelativeStrikeAlpha": {
+    "HPE": 0.05,
+    "PFE": 0.15
+  },
   "SurfaceVerticalResetThreshold": 0.01,
   "WarmUpDays": 2,
-  "LogOrderUpdates":  false
+  "LogOrderUpdates": false
 }

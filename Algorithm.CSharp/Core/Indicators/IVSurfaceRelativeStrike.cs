@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using Accord.Math;
 using QuantConnect.Securities.Option;
 using MathNet.Numerics.Statistics;
+using System.ComponentModel.Composition.Primitives;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
@@ -46,13 +47,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         private const string _dateTimeFmt = "yyyy-MM-dd HH:mm:ss";
         private const string _dateFmt = "yyyy-MM-dd";
 
+        public Func<Symbol, double?> IV;
+
         public IVSurfaceRelativeStrike(Foundations algo, Symbol underlying, QuoteSide side)
         {
             _algo = algo;
-            Alpha = _algo.Cfg.IVSurfaceRelativeStrikeAlpha;
+            Alpha = _algo.Cfg.IVSurfaceRelativeStrikeAlpha[underlying];
             SamplingPeriod = TimeSpan.FromMinutes(1);
             Underlying = underlying.SecurityType == SecurityType.Option ? underlying.Underlying : underlying;
             _side = side;
+
+            IV = algo.Cache(GetIV, (Symbol symbol) => (_algo.Time, symbol), ttl: 10);
             _ivQuote = side == QuoteSide.Ask ? (Symbol s) => _algo.IVAsks[s] : (Symbol s) => _algo.IVBids[s];
 
             _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "IVSurface", Underlying.Value, $"{Side}.csv");
@@ -187,10 +192,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                             }
 
                             symbolLeft = symbolRight;
+                            ivLeft = ivRight;
+                            timeLeft = timeRight;
                         }
-                        ivLeft = ivRight;
-                        timeLeft = timeRight;
                     }
+                    symbolLeft = null;
+                    ivLeft = 0;
+                    timeLeft = default;
                 }
             }
             
@@ -346,7 +354,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             }
         }
 
-        public double? IV(Symbol symbol)
+        /// <summary>
+        /// Cache it. Surface iV.
+        /// </summary>
+        /// <param name="symbol"></param>
+        private double? GetIV(Symbol symbol)
         {
             // The OnData functions first updates all indicators BEFORE business events are triggered.
             // Lazy is best. Minimize any interpolation. If possible get update bin based on current market data, go for it. Otherwise interpolate neighboring _bins.

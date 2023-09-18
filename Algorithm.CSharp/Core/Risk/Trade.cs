@@ -49,25 +49,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _ => null
             };
         }
-        public GreeksPlus GetGreeks(int version = 1)
-        {
-            return SecurityType switch
-            {
-                // version 0 means as of a time in the past. Passing Fill time to calculate all Greeks as of that date.
-                SecurityType.Option => version == 0 ? new(OptionContractWrap.E(_algo, (Option)Security, version, Ts0.Date)) : new(OptionContractWrap.E(_algo, (Option)Security, version)),
-                SecurityType.Equity => new GreeksPlus(),
-                _ => throw new NotSupportedException()
-            };
-        }
-        public GreeksPlus GetGreeks0(decimal? mid0Underlying = null, decimal? mid0 = null, double? volatility = null)
-        {
-            Greeks0 ??= GetGreeks(0);
-            if (SecurityType == SecurityType.Option)
-            {
-                Greeks0.OCW.SetIndependents(mid0Underlying ?? Mid0Underlying, mid0 ?? Mid0, volatility ?? (double)SecurityUnderling.VolatilityModel.Volatility);
-            }
-            return Greeks0;
-        }
         public SecurityType SecurityType { get; internal set; }
         private Security _securityUnderlying;
         public Security SecurityUnderling { get => _securityUnderlying ??= _algo.Securities[UnderlyingSymbol]; }
@@ -76,7 +57,28 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal Bid0Underlying { get; internal set; } = 0;
         public decimal Ask0Underlying { get; internal set; } = 0;
         public decimal Mid0Underlying { get => (Bid0Underlying + Ask0Underlying) / 2; }
-        public GreeksPlus Greeks0 { get; internal set; }
+
+        private GreeksPlus _greeks;
+        public GreeksPlus Greeks {
+            get {
+                if (_greeks == null)
+                {
+                    switch (SecurityType)
+                    {
+                        case SecurityType.Option:
+                            OptionContractWrap ocw = OptionContractWrap.E(_algo, (Option)Security, Ts0.Date);
+                            ocw.SetIndependents(Mid0Underlying, Mid0, HistoricalVolatility0);
+                            _greeks = new GreeksPlus(ocw).Snap();
+                            break;
+                        case SecurityType.Equity:
+                            _greeks = new GreeksPlus(Security).Snap();
+                            break;
+                        default:
+                            throw new NotSupportedException();
+                    }                    
+                }
+                return _greeks;
+            } }
         public double HistoricalVolatility0 { get; internal set; }
         public decimal Quantity { get; internal set; }
         public decimal Fee { get; internal set; }
@@ -88,7 +90,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal AskTN1 { get; internal set; } = 0;
         public decimal MidTN1 { get => (BidTN1 + AskTN1) / 2; }
         public double Ts0Sec { get => (Ts0 - new DateTime(1970, 1, 1, 0, 0, 0)).TotalSeconds; }
-        public decimal DeltaFillMid0 { get => P0 - Mid0; }
+        public decimal Delta2MidFill { get => Quantity > 0 ? Mid0 - P0 : P0 - Mid0; }
         public decimal BidTN1Underlying { get; } = 0;
         public decimal AskTN1Underlying { get; } = 0;
         public decimal MidTN1Underlying { get => (BidTN1Underlying + AskTN1Underlying) / 2; }
@@ -112,31 +114,43 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             };
         }
         public Quote<Option>? Quote { get; internal set; }
-        public double IVBid0
-        {
-            get => SecurityType switch
-            {
-                SecurityType.Option => OptionContractWrap.E(_algo, (Option)Security, 0, Ts0.Date).IV(Bid0, Mid0Underlying, 0.001),
-                _ => 0
-            };
-        }
-        public double IVAsk0
-        {
-            get => SecurityType switch
-            {
-                SecurityType.Option => OptionContractWrap.E(_algo, (Option)Security, 0, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001),
-                _ => 0
-            };
-        }
-        public double IVPrice0
-        {
-            get => SecurityType switch
-            {
-                SecurityType.Option => OptionContractWrap.E(_algo, (Option)Security, 0, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001),
-                _ => 0
-            };
-        }
+        public double IVBid0 { get; internal set; }
+        public double IVAsk0 { get; internal set; }
+        public double IVPrice0 { get; internal set; }
         public double IVMid0 { get => (IVBid0 + IVAsk0) / 2; }
+        public string Tag { get; internal set; } = "";
+        public OrderEvent? OrderEvent = null;
+
+        /// <summary>
+        /// For option expiration
+        /// </summary>
+        public Trade(Foundations algo, Option option, decimal quantity, OrderEvent orderEvent)
+        {
+            _algo = algo;
+            Fee = 0;
+            Symbol = option.Symbol;
+            Security = _algo.Securities[Symbol];
+            SecurityType = Security.Type;
+            Quantity = quantity;
+
+            BidTN1 = 0;
+            AskTN1 = 0;
+            BidTN1Underlying = _algo.Securities[UnderlyingSymbol].BidPrice;
+            AskTN1Underlying = _algo.Securities[UnderlyingSymbol].AskPrice;
+
+            Bid0 = 0;
+            Ask0 = 0;
+
+            Bid0Underlying = _algo.Securities[UnderlyingSymbol].BidPrice;
+            Ask0Underlying = _algo.Securities[UnderlyingSymbol].AskPrice;
+
+
+            PriceFillAvg = 0;
+            FirstFillTime = algo.Time; // option.Symbol.ID.Date;
+            Snap();
+            Tag = "Simulated option OTM expiry setting algo.Position to zero.";
+            OrderEvent = orderEvent;
+        }
 
         public Trade(Foundations algo, SecurityHolding holding)
         {
@@ -161,11 +175,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             PriceFillAvg = holding.AveragePrice;
             FirstFillTime = algo.Time;
-            HistoricalVolatility0 = (double)_algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility;
-            GetGreeks0();
+            Snap();
+            Tag = "Simulated Fill derived from existing Portfolio Holding.";
         }
 
-        public Trade(Foundations algo, Order order)
+        public Trade(Foundations algo, Order order, OrderEvent orderEvent)
         {
             _algo = algo;
             Fee = _algo.OrderFillDataTN1.TryGetValue(order.Id, out OrderFillData ofd) ? -ofd.Fee : -1;
@@ -173,6 +187,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Security = _algo.Securities[Symbol];
             SecurityType = Security.Type;
             Quantity = order.Quantity;
+            Tag = order.Tag;
 
             if (_algo.OrderFillDataTN1.TryGetValue(order.Id, out OrderFillData orderFillDataTN1))
             {
@@ -217,9 +232,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
 
             FirstFillTime = (DateTime)(order?.LastFillTime?.ConvertFromUtc(_algo.TimeZone) ?? order?.Time);
+            Snap();
+            OrderEvent = orderEvent;
+        }
+        private void Snap()
+        {
             HistoricalVolatility0 = (double)_algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility;
-            GetGreeks0();
-        }        
+            IVBid0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Bid0, Mid0Underlying, 0.001) : 0;
+            IVAsk0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
+            IVPrice0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001) : 0;
+            _ = Greeks;
+        }
     }
 }
 

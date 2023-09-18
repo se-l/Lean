@@ -27,6 +27,7 @@ using QuantConnect.ToolBox.IQFeed;
 using IQFeed.CSharpApiClient.Lookup;
 using IQFeed.CSharpApiClient.Lookup.Chains;
 using IQFeed.CSharpApiClient.Lookup.Chains.Equities;
+using System.Globalization;
 
 namespace QuantConnect.ToolBox.IQFeedDownloader
 {
@@ -80,7 +81,9 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                 {
                     Log.Trace("No IQFeed product name provided. Assuming IQFeed is already running.");
                 }
-                var lookupClient = LookupClientFactory.CreateNew(NumberOfClients);
+                
+                //var lookupClient = LookupClientFactory.CreateNew(NumberOfClients);
+                var lookupClient = LookupClientFactory.CreateNew(Config.Get("iqfeed-host-lookup", "127.0.0.1"), Int32.Parse(Config.Get("iqfeed-port-lookup", "9100"), CultureInfo.InvariantCulture), NumberOfClients);
                 lookupClient.Connect();
 
                 // Create IQFeed downloader instance

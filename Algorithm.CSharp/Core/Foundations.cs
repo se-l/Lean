@@ -14,6 +14,8 @@ using QuantConnect.Data.Consolidators;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 using QuantConnect.Data;
+using Trade = QuantConnect.Algorithm.CSharp.Core.Risk.Trade;
+using CloneExtensions;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -60,14 +62,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, RiskDiscount> DeltaDiscounts = new();
         public Dictionary<Symbol, RiskDiscount> GammaDiscounts = new();
         public Dictionary<Symbol, RiskDiscount> EventDiscounts = new();
+        public Dictionary<Symbol, RiskDiscount> AbsoluteDiscounts = new();
+
         public Dictionary<Symbol, RiskPnLProfile> RiskPnLProfiles = new();
         public Utility Utility = new();
         public Dictionary<int, Quote<Option>> Quotes = new();
 
+        public HashSet<Symbol> embargoedSymbols = new();
+
         public HashSet<OrderStatus> orderStatusFilled = new() { OrderStatus.Filled, OrderStatus.PartiallyFilled };
         public HashSet<OrderStatus> orderCanceledOrPending = new() { OrderStatus.CancelPending, OrderStatus.Canceled };
+        public HashSet<OrderStatus> orderFilledCanceledInvalid = new() { OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Invalid, OrderStatus.CancelPending };
         public HashSet<SecurityType> securityTypeOptionEquity = new() { SecurityType.Equity, SecurityType.Option };
         public record MMWindow(TimeSpan Start, TimeSpan End);
+        Func<Option, decimal> IntrinsicValue;
 
         public int Periods(Resolution? thisResolution = null, int days = 5)
         {
@@ -100,25 +108,94 @@ namespace QuantConnect.Algorithm.CSharp.Core
             var security = Securities[symbol];
             return (security.AskPrice + security.BidPrice) / 2;
         }
-        public Trade WrapToTrade(OrderEvent orderEvent)
+        static decimal Strike(Order o) => o.Symbol.ID.StrikePrice;
+        Order NewEquityExerciseOrder(OptionExerciseOrder o) => new EquityExerciseOrder(o, new OrderFillData(o.Time, Strike(o), Strike(o), Strike(o), Strike(o), Strike(o), Strike(o)))
         {
-            Trade trade = new(this, Transactions.GetOrderById(orderEvent.OrderId));
-            if (!Trades.ContainsKey(trade.Symbol))
-            {
-                Trades[trade.Symbol] = new();
-            }
-            Trades[orderEvent.Symbol].Add(trade);
-            return trade;
+            Status = OrderStatus.Filled
+        };
+
+        public void UpdatePositionLifeCycle(OrderEvent orderEvent)
+        {
+            var trades = WrapToTrade(orderEvent);
+            ApplyToPosition(trades);
         }
-        public void ApplyToPosition(Trade trade)
+        public List<Trade> WrapToTrade(OrderEvent orderEvent)
         {
-            if (!Positions.ContainsKey(trade.Symbol))
+            // Apply to internal Positions and add a simulated trade setting the position quantity to zero, snapping data.
+
+            List<Trade> newTrades = new();
+            Symbol symbol = orderEvent.Symbol;
+
+            //if (orderEvent.IsAssignment)
+            //{
+            //    Log($"WrapToTrade. IsAssignment: {symbol}. {orderEvent.OrderId}.");
+            //    OptionExerciseOrder optionExerciseOrder = (OptionExerciseOrder)Transactions.GetOrderById(orderEvent.OrderId);
+            //    Trade tradeOptionExercise = new(this, optionExerciseOrder, orderEvent);
+            //    var equityExerciseOrder = NewEquityExerciseOrder(optionExerciseOrder);
+            //    Trade equityExerciseTrade = new(this, equityExerciseOrder, orderEvent);
+            //    newTrades.Add(tradeOptionExercise);
+            //    newTrades.Add(equityExerciseTrade);
+            //}
+            if (symbol.SecurityType == SecurityType.Option && symbol.ID.Date <= Time.Date && orderEvent.IsInTheMoney)  // Assignment or Exercise
             {
-                Positions[trade.Symbol] = new(null, trade, this);
+                Log($"WrapToTrade. Option OptionExersiseOrder - Option Leg - IsInTheMoney: {symbol}. {orderEvent.OrderId}.");
+                OptionExerciseOrder optionExerciseOrder = (OptionExerciseOrder)Transactions.GetOrderById(orderEvent.OrderId);
+                Trade tradeOptionExercise = new(this, optionExerciseOrder, orderEvent);
+                newTrades.Add(tradeOptionExercise);
+            }
+            else if (symbol.SecurityType == SecurityType.Option && symbol.ID.Date <= Time.Date)  // Expired OTM
+            {
+                Log($"WrapToTrade. Option Expired OTM: {symbol}. {Portfolio[symbol].Quantity}");
+                newTrades.Add(new(this, (Option)Securities[symbol], -Positions[symbol].Quantity, orderEvent));
+            }
+            else if (symbol.SecurityType == SecurityType.Equity && Transactions.GetOrderById(orderEvent.OrderId).SecurityType == SecurityType.Option)  // Assignment Or Exercise
+            {
+                Log($"WrapToTrade. Equity OptionExersiseOrder - Equity Leg.");
+                OptionExerciseOrder optionExerciseOrder = (OptionExerciseOrder)Transactions.GetOrderById(orderEvent.OrderId);
+                var equityExerciseOrder = NewEquityExerciseOrder(optionExerciseOrder);
+                Trade equityExerciseTrade = new(this, equityExerciseOrder, orderEvent);
+                newTrades.Add(equityExerciseTrade);
             }
             else
             {
-                Positions[trade.Symbol] = new(Positions[trade.Symbol], trade, this);
+                Log($"WrapToTrade. Neither expired not Assigned.");
+                newTrades.Add(new(this, Transactions.GetOrderById(orderEvent.OrderId), orderEvent));
+            }
+
+            foreach (Trade trade in newTrades)
+            {
+                if (!Trades.ContainsKey(trade.Symbol))
+                {
+                    Trades[trade.Symbol] = new();
+                }
+                Log($"Adding OrderEvent: {orderEvent.OrderId} -> Trade");
+                Trades[orderEvent.Symbol].Add(trade);
+            }            
+            return newTrades;
+        }
+        /// <summary>
+        /// Refactor into position. This here has the risk of double-counting trades. Need to not apply when order id equial to trade0.ID.
+        /// </summary>
+        /// <param name="trade"></param>
+        public void ApplyToPosition(List<Trade> trades)
+        {
+            foreach (var trade in trades)
+            {
+                if (trade.SecurityType == SecurityType.Option && trade.Expiry <= Time.Date)
+                {
+                    Positions.Remove(trade.Symbol);
+                    RemoveSecurity(trade.Symbol);
+                    return;
+                }
+
+                if (!Positions.ContainsKey(trade.Symbol))
+                {
+                    Positions[trade.Symbol] = new(null, trade, this);
+                }
+                else
+                {
+                    Positions[trade.Symbol] = new(Positions[trade.Symbol], trade, this);
+                }
             }
         }
         public void UpdateOrderFillData(OrderEvent orderEvent)
@@ -162,7 +239,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// Signals. Securities where we assume risk. Not necessarily same as positions or subscriptions.
         /// Should Handle Sizing??????
         /// </summary>
-        public List<Signal> GetDesiredOrders()
+        public List<Signal> GetDesiredOrders()  // Takes 25% CPU time. 10% each for utilBuy and 10% utilSell.
         {
             List<Signal> signals = new();
             foreach (Security sec in Securities.Values)
@@ -173,27 +250,31 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     && (
                         (                    
                         // to be review with Gamma hedging. Selling option at ultra-high, near-expiry IVs with great gamma hedge could be extra profitable.
-                        (sec.Symbol.ID.Date - Time.Date).Days > 2  //  Currently unable to handle the unpredictable underlying dynamics in between option epiration and ITM assignment.
+                        (sec.Symbol.ID.Date - Time.Date).Days > 1  //  Currently unable to handle the unpredictable underlying dynamics in between option epiration and ITM assignment.
                         && !sec.Symbol.IsCanonical()
                         && sec.BidPrice != 0
                         && sec.AskPrice != 0
                         && IsLiquid(sec.Symbol, 5, Resolution.Daily)
                         && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMinSignal)
                         && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
-                        && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < 0  // Needs fix. ATM ITM is good.
+                        && (
+                            ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < Cfg.scopeContractMoneynessITM * MidPrice(sec.Symbol.Underlying)
+                            || (orderTickets.ContainsKey(sec.Symbol) && orderTickets[sec.Symbol].Count > 0 && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < (Cfg.scopeContractMoneynessITM + 0.05m) * MidPrice(sec.Symbol.Underlying))
+                        )
                         && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
                         && IVSurfaceRelativeStrikeBid[Underlying(sec.Symbol)].IsReady(sec.Symbol)
                         && IVSurfaceRelativeStrikeAsk[Underlying(sec.Symbol)].IsReady(sec.Symbol)
                         //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
                         // Embargo
                         && !(
-                            EarningsAnnouncements.Where(ea => ea.Symbol == ((Option)sec).Symbol.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()
+                            embargoedSymbols.Contains(sec.Symbol)
                             //|| (((Option)sec).Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
                         )
                         ) 
                         || 
                         (
-                        Portfolio[sec.Symbol].Quantity != 0  // Need to exit eventually
+                        !(sec.Symbol.ID.Date <= Time.Date)
+                        && Portfolio[sec.Symbol].Quantity != 0  // Need to exit eventually
                         )
                     )
                 )
@@ -239,7 +320,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         if (tickets.Any())
                         {
                             // Cancel undesired orders without placing new ones right now, awaiting cancelation. If existing order is ok, continues to next symbol.
-                            foreach (OrderTicket ticket in tickets)
+                            foreach (OrderTicket ticket in tickets.ToList())
                             {
                                 // There is an order. If desired direction ok, otherwise place.
                                 if (Num2Direction(ticket.Quantity) != signal.OrderDirection)
@@ -301,27 +382,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public void LogRiskSchedule()
         {
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
-            
+
+            LogPositions();
             LogRisk();
             LogPnL();
         }
-
-        //public void PopulateOptionChains()
-        //{
-        //    if (IsWarmingUp) return;
-
-        //    foreach (Symbol symbol in Securities.Keys)
-        //    {
-        //        if (symbol.SecurityType == SecurityType.Option)
-        //        {
-        //            Option option = (Option)Securities[symbol];
-        //            Symbol underlying = option.Underlying.Symbol;
-        //            HashSet<Option> optionChain = optionChains.GetValueOrDefault(underlying, new HashSet<Option>());
-        //            optionChain.Add(option);
-        //            optionChains[underlying] = optionChain;
-        //        }
-        //    }
-        //}
 
         public bool ContractInScope(Symbol symbol, decimal? priceUnderlying = null, decimal margin=0m)
         {
@@ -344,9 +409,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     Securities[symbol].IsTradable
                     && !ContractInScope(symbol, margin: Cfg.scopeContractStrikeOverUnderlyingMargin)
                     && Portfolio[symbol].Quantity == 0
-                    && Securities[symbol].IsTradable
                     )
-                    || security.IsDelisted
+                    //|| security.IsDelisted
                 )
             {
                 QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Removing {symbol}. Descoped." } });
@@ -489,13 +553,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     
                     Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, SignalQuantity(symbol, Num2Direction(ticket.Quantity))));
 
-                    //if (symbol.Value == "PFE   240119C00038000" && Time.TimeOfDay > new TimeSpan(9, 49, 0) & Time.TimeOfDay < new TimeSpan(9, 50, 0))
-                    //{
-                    //    Log(quote.QuoteDiscountsString);
-                    //    Log(quote.Price);
-                    //    Log(quote.SpreadFactor);
-                    //}
-
                     decimal idealLimitPrice = quote.Price;
 
                     if (idealLimitPrice == 0 || quote.Quantity == 0)
@@ -526,7 +583,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         }
                     }
 
-                    // Quantity
+                    // Quantity - low overhead. SignalQuantity needs risk metrics that are also fetched for getting a price and cached.
                     if (ticket.Quantity != quote.Quantity && Math.Abs(ticket.Quantity - quote.Quantity) >= 2)
                     {
                         var tag = $"{Time}: UPDATE LIMIT Symbol {symbol} Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
@@ -562,12 +619,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     cnt++;
 
                     decimal ts = TickSize(ticket.Symbol);
-                    var limit_price = ticket.Get(OrderField.LimitPrice);
-                    decimal ideal_limit_price = newLimitPrice ?? GetEquityHedgeLimitOrderPrice(-ticket.Quantity, equity);
-                    if (RoundTick(ideal_limit_price, ts) != RoundTick(limit_price, ts) && ideal_limit_price > 0)
+                    var limitPrice = ticket.Get(OrderField.LimitPrice);
+                    decimal idealLimitPrice = newLimitPrice ?? GetEquityHedgeLimitOrderPrice(-ticket.Quantity, equity);
+                    if (RoundTick(idealLimitPrice, ts) != RoundTick(limitPrice, ts) && idealLimitPrice > 0)
                     {
-                        var tag = $"{Time}: {ticket.Symbol} Price not good {limit_price}: Changing to ideal limit price: {ideal_limit_price}";
-                        var response = ticket.UpdateLimitPrice(ideal_limit_price, tag);
+                        var tag = $"{Time}: {ticket.Symbol} Price not good {limitPrice}: Changing to ideal limit price: {idealLimitPrice}";
+                        var response = ticket.UpdateLimitPrice(idealLimitPrice, tag);
                         Log($"{tag}, Response: {response}");
                     }
                     if (newQuantity != 0 && newQuantity != ticket.Quantity)
@@ -579,6 +636,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
             }
         }
+
         public decimal QuantityExceedingMinimumBrokerageFee(Symbol symbol)
         {
             return 1 / 0.005m;  // 200. To be extended. max is 1% of trade value I think. 
@@ -590,27 +648,31 @@ namespace QuantConnect.Algorithm.CSharp.Core
             /// Want to avoid minimum fee payment of 1 USD/stock trade, hence looking to hit a delta that causes at least an equity fee of 1 USD during hedding and minimizes an absolute delta increase.
             /// So the target delta is +/-200.
             /// Hacky way to get quantities, risk, PnL of different underlyings on approximately the same live. HPE costing ~15 would typically have a quantity ~7 times higher than AKAM: ~100
-            decimal midPrice = MidPrice(Underlying(symbol));
+            //decimal midPrice = MidPrice(Underlying(symbol));
 
             var absTargetDelta = QuantityExceedingMinimumBrokerageFee(symbol); // Make the hedge worthwile
             var currentDelta = PfRisk.RiskByUnderlying(symbol.Underlying, Metric.DeltaTotal);
-            var deltaPerUnit = PfRisk.RiskAddedIfFilled(symbol, DIRECTION2NUM[orderDirection] * 1, Metric.DeltaTotal);
+            var deltaPerUnit = PfRisk.RiskAddedIfFilled(symbol, DIRECTION2NUM[orderDirection], Metric.DeltaTotal);
+
             if (deltaPerUnit == 0) // ZeroDivisionError
             {
                 absQuantity = Cfg.OptionOrderQuantityDflt;
             }
-            else if (deltaPerUnit * currentDelta > 0) // same direction. Increase risk up to 200 more.
+            else if (deltaPerUnit * currentDelta > 0) // same direction. Increase risk up to ~200 more. Depends on band as well. Should override Zakamulin and ensure hedge is triggered when off target risk more than 200.
             {
                 absQuantity = Math.Abs((absTargetDelta - Math.Abs(currentDelta)) / deltaPerUnit);
             }
-            else // opposite direction and zero.
+            else // opposite direction. Risk reducing / reversing. Aim for delta reversal.
             {
-                absQuantity = Math.Abs(absTargetDelta / deltaPerUnit);
+                absQuantity = Math.Abs((
+                    Math.Abs(currentDelta) +  // To zero Risk
+                    absTargetDelta)  // Reversing Delta Risk to worthwhile ~200
+                    / deltaPerUnit);
             }
 
             absQuantity = Math.Round(Math.Max(absQuantity, 1), 0);
 
-            // Limit Portfolio Quantity to configurable 20.
+            // Limit Portfolio Quantity to configurable 20.           
 
             return DIRECTION2NUM[orderDirection] * Math.Min(10, absQuantity);
         }
@@ -704,6 +766,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     // this shouldn't happen but just in case
                     Error($"QCAlgorithm.GetLastKnownPrices(): no history request was created for symbol {symbol} at {Time}");
+                    Log(Environment.StackTrace);
                 }
             }
             // return the data ordered by time ascending

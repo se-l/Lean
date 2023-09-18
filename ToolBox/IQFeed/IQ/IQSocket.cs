@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  * 
@@ -71,16 +71,16 @@ namespace QuantConnect.ToolBox.IQFeed
             switch (portType)
             {
                 case PortType.Level1:
-                    port = 5009;
+                    port = Int32.Parse(Config.Get("iqfeed-port-level1", "5009"), CultureInfo.InvariantCulture);
                     break;
                 case PortType.Lookup:
-                    port = 9100;
+                    port = Int32.Parse(Config.Get("iqfeed-port-lookup", "9100"), CultureInfo.InvariantCulture); 
                     break;
                 case PortType.Level2:
-                    port = 9200;
+                    port = Int32.Parse(Config.Get("iqfeed-port-level2", "9200"), CultureInfo.InvariantCulture); ;
                     break;
                 case PortType.Admin:
-                    port = 9300;
+                    port = Int32.Parse(Config.Get("iqfeed-port-admin", "9300"), CultureInfo.InvariantCulture); ;
                     break;
             }
             return port;
@@ -98,7 +98,14 @@ namespace QuantConnect.ToolBox.IQFeed
 
         public static IPEndPoint GetEndPoint(PortType portType)
         {
-            return new IPEndPoint(GetIp(Config.Get("iqfeed-host", "127.0.0.1")), GetPort(portType));
+            return portType switch
+            {
+                PortType.Level1 => new IPEndPoint(GetIp(Config.Get("iqfeed-host-level1", "127.0.0.1")), GetPort(portType)),
+                PortType.Lookup => new IPEndPoint(GetIp(Config.Get("iqfeed-host-lookup", "127.0.0.1")), GetPort(portType)),
+                PortType.Level2 => new IPEndPoint(GetIp(Config.Get("iqfeed-host-level2", "127.0.0.1")), GetPort(portType)),
+                PortType.Admin => new IPEndPoint(GetIp(Config.Get("iqfeed-host-admin", "127.0.0.1")), GetPort(portType))
+            };
+            //return new IPEndPoint(GetIp(Config.Get("iqfeed-host", "127.0.0.1")), GetPort(portType));
         }
 
         public static Socket GetSocket()
@@ -191,4 +198,3 @@ namespace QuantConnect.ToolBox.IQFeed
         #endregion
     }
 }
- 

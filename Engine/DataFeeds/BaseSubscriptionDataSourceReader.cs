@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -93,9 +93,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                 return reader;
             }
 
-            if (reader == null || reader.EndOfStream)
+            if (reader == null || reader.EndOfStream && !System.IO.File.Exists(subscriptionDataSource.Source.Split("#")[0]))  // Option files are often emtpy. An empty stream is no guarantee for an invalid source.
             {
-                OnInvalidSource(subscriptionDataSource, new Exception($"The reader was empty for source: ${subscriptionDataSource.Source}"));
+                OnInvalidSource(subscriptionDataSource, new Exception($"The reader was empty for source: ${subscriptionDataSource.Source}"));   // tries to read weekend data. Why, where?
                 return null;
             }
             return reader;

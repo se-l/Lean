@@ -157,7 +157,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             BandZMLower,
             BandZMUpper,
 
-            Events
+            Events,
+            Absolute
         }
 
         public static decimal RoundTick(decimal x, decimal tickSize, bool? ceil = null, decimal? reference = null)
@@ -254,7 +255,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }
                     else
                     {
-                        header.UnionWith(ObjectsToHeaderNames(prop.GetValue(obj), prefix: prefix + prop.Name + "."));
+                        object? val;
+                        try
+                        {
+                            val = prop.GetValue(obj);
+                        }
+                        catch (Exception e)
+                        {
+                            Logging.Log.Debug(e.ToString());
+                            val = null;
+                        }                        
+                        header.UnionWith(ObjectsToHeaderNames(val, prefix: prefix + prop.Name + "."));
                     }
                 }
                 return header;
@@ -277,24 +288,28 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 if (i == 0)
                 {
-                    if (obj.GetType() == typeof(Dictionary<Symbol, double>))  // && ((Dictionary<Symbol, double>)(object)obj).ContainsKey(propSequence[i])
+                    if (obj.GetType() == typeof(Dictionary<Symbol, double>))
                     {
                         return "";
-                        //var dict = (Dictionary<Symbol, double>)(object)obj;
-                        //val = dict[propSequence[i]].ToString() ?? "";
                     }
                     else
                     {
-                        val = obj.GetType().GetProperty(propSequence[i]).GetValue(obj);
+                        try
+                        {
+                            val = obj.GetType().GetProperty(propSequence[i]).GetValue(obj);
+                        }
+                        catch
+                        {
+                            Logging.Log.Error($"ValueFromPropSequence. Failed to get property for {obj} in {string.Join(",", propSequence)}.");
+                            return "";
+                        }
                     }
                 }
                 else
                 {
-                    if (val == null || val.GetType() == typeof(Dictionary<Symbol, double>))  // && ((Dictionary<Symbol, double>)(object)val).ContainsKey(propSequence[i])
+                    if (val == null || val.GetType() == typeof(Dictionary<Symbol, double>))
                     {
                         return "";
-                        //var dict = (Dictionary<Symbol, double>)(object)val;
-                        //val = dict[propSequence[i]].ToString() ?? "";
                     }
                     else
                     {
@@ -304,6 +319,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         }
                         catch
                         {
+                            Logging.Log.Error($"ValueFromPropSequence. Failed to get property for {obj} in {string.Join(",", propSequence)}.");
                             return "";
                         }
                     }                    
