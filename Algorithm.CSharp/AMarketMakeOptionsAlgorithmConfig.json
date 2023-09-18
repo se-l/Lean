@@ -3,7 +3,7 @@
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" ];  // Too much for 2 cores on a t3 instance.
-  "OptionTicker": [ "PFE" ],
+  "OptionTicker": [ "HPE" ],
   "LiquidateTicker": [],
   "OptionOrderQuantityDflt": 5,
   "VolatilityPeriodDays": 5,
@@ -36,7 +36,9 @@
       "X1": 0,
       "X2": 0.00001,
       "CapMin": -0.3,
-      "CapMax": 0.3
+      "CapMax": 0.3,
+      "DTEThreshold": 30,
+      "DTEX0TargetRisk": 30
     },
     "HPE-Events-discount-params": {
       "TargetRisk": 0,
@@ -68,7 +70,9 @@
       "X1": 0,
       "X2": 0.00003,
       "CapMin": -0.3,
-      "CapMax": 0.3
+      "CapMax": 0.3,
+      "DTEThreshold": 30,
+      "DTEX0TargetRisk": 30
     },
     "PFE-Events-discount-params": {
       "TargetRisk": 0,

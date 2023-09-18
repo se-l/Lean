@@ -54,8 +54,8 @@ namespace QuantConnect.Algorithm.CSharp
             UniverseSettings.Resolution = resolution = Resolution.Second;
             //SetStartDate(2023, 8, 8);
             //SetEndDate(2023, 9, 8);
-            SetStartDate(2023, 6, 8);
-            SetEndDate(2023, 9, 14);
+            SetStartDate(2023, 9, 9);
+            SetEndDate(2023, 9, 15);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -93,10 +93,10 @@ namespace QuantConnect.Algorithm.CSharp
 
                     foreach (string t in optionTicker)
                     {
-                        DeltaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Delta100BpUSDTotal);
-                        GammaDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Gamma100BpUSDTotal);
-                        EventDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Events);
-                        AbsoluteDiscounts[equity.Symbol] = new RiskDiscount(Cfg, equity.Symbol, Metric.Absolute);
+                        DeltaDiscounts[equity.Symbol] = new RiskDiscount(this, Cfg, equity.Symbol, Metric.Delta100BpUSDTotal);
+                        GammaDiscounts[equity.Symbol] = new RiskDiscount(this, Cfg, equity.Symbol, Metric.Gamma100BpUSDTotal);
+                        EventDiscounts[equity.Symbol] = new RiskDiscount(this, Cfg, equity.Symbol, Metric.Events);
+                        AbsoluteDiscounts[equity.Symbol] = new RiskDiscount(this, Cfg, equity.Symbol, Metric.Absolute);
                     }
                 }
                 RiskPnLProfiles[equity.Symbol] = new RiskPnLProfile(this, equity);
@@ -199,7 +199,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public void RunSignals()
         {
-            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed) || Time.TimeOfDay <= mmWindow.Start || Time.TimeOfDay >= mmWindow.End) return;
             if (!OnWarmupFinishedCalled)
             {
                 OnWarmupFinished();

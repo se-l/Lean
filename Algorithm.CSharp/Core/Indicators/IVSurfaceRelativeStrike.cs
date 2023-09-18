@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using Accord.Math;
 using QuantConnect.Securities.Option;
 using MathNet.Numerics.Statistics;
-using System.ComponentModel.Composition.Primitives;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
@@ -378,7 +377,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             // Correcting for binToBin % difference. One-sided interpolation.
             double slopeEWMA = Slope(bin, binB);
             double? ewmaInterpolated = bin.IVEWMA + slopeEWMA * (double)(strikePct - bin.Value);
-            if (ewmaInterpolated == null) // No IV, no price. Major problem, especially on bid side.
+            if (ewmaInterpolated == null || double.IsNaN(ewmaInterpolated ?? 0)) // No IV, no price. Major problem, especially on bid side.
             {
                 _algo.Error($"IVSurfaceRelativeStrike: {symbol} - Null EWMA interpolated. Will cause pricing to fail Fix. " +
                     $"IsOTM={isOTM}, strikePct={strikePct}, slopeEWMA={slopeEWMA}, " +

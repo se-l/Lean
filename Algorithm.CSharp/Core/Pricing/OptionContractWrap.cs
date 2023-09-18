@@ -362,7 +362,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             hvQuote.setValue(VolatilityZM(direction));
             double delta = Delta();
             hvQuote.setValue(hv0);
-            return delta + MVVega();
+            return delta; // + MVVega();
         }
 
         public double VolatilityZM(int direction)
