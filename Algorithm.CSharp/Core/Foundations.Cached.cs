@@ -21,6 +21,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         //public VoidArg1Function<Symbol> HedgeGammaRisk;
         public VoidArg1Function<Symbol> HedgeOptionWithUnderlying;
         public VoidArg1Function<Symbol> HedgeOptionWithUnderlyingZM;
+        public VoidArg1Function<Symbol> HedgeOptionWithUnderlyingZMBands;
         public Func<Symbol, int, Resolution, IEnumerable<TradeBar>> HistoryWrap;
         public Func<Symbol, int, Resolution, IEnumerable<QuoteBar>> HistoryWrapQuote;
         public Func<Symbol, decimal> TickSize;
@@ -36,11 +37,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //HedgeGammaRisk = Cache(GetHedgeGammaRisk, (Symbol symbol) => (Time, symbol));
             HedgeOptionWithUnderlying = Cache(GetHedgeOptionWithUnderlying, (Symbol symbol) => (Time, Underlying(symbol)));
             HedgeOptionWithUnderlyingZM = Cache(GetHedgeOptionWithUnderlyingZM, (Symbol symbol) => (Time, Underlying(symbol)));
+            HedgeOptionWithUnderlyingZMBands = Cache(GetHedgeOptionWithUnderlyingZMBands, (Symbol symbol) => (Time, Underlying(symbol)));
             HistoryWrap = Cache(GetHistoryWrap, (Symbol symbol, int window, Resolution resolution) => (Time.Date, symbol, window, resolution));  // not correct for resolution < daily
             HistoryWrapQuote = Cache(GetHistoryWrapQuote, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
             TickSize = Cache(GetTickSize, (Symbol symbol) => symbol, maxKeys: 1);
-            PositionsTotal = Cache(GetPositionsTotal, () => Time, maxKeys: 1);
-            PositionsN = Cache(GetPositionsN, () => Time, maxKeys: 1);
+            PositionsTotal = Cache(GetPositionsTotal, () => Time.Ticks, maxKeys: 1);
+            PositionsN = Cache(GetPositionsN, () => Time.Ticks, maxKeys: 1);
 
             IntrinsicValue = (Option option) => option.GetIntrinsicValue(MidPrice(option.Underlying.Symbol));
         }
@@ -156,7 +158,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         //    //    return;
         //    //}
 
-            
+
         //    foreach (var record in records.Where(r => 
         //        r.Gamma100Bp > 0.05m 
         //        && r.Gamma100Bp < Math.Abs(total500BpGamma)
@@ -202,6 +204,25 @@ namespace QuantConnect.Algorithm.CSharp.Core
         //        }
         //    }
         //}
+        private void GetHedgeOptionWithUnderlyingZMBands(Symbol symbol)
+        {
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
+
+            Symbol underlying = Underlying(symbol);
+
+            decimal zmOffset = PfRisk.RiskBandByUnderlying(symbol, Metric.ZMOffset);
+            decimal riskDeltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+
+            if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
+            {
+                Log($"{Time} GetHedgeOptionWithUnderlyingZMBands. zmOffset={zmOffset}, riskDeltaTotalNotZMFlat={riskDeltaTotal}.");
+                ExecuteHedge(underlying, -riskDeltaTotal);  // Like standard delta hedging, but with ZM bands.
+            }
+            else
+            {
+                Log($"{Time} GetHedgeOptionWithUnderlying. Fill Event for {symbol}, but cannot no non-zero quantity in Portfolio. Expect this function to be called only when risk is exceeded.");
+            }
+        }
         private void GetHedgeOptionWithUnderlyingZM(Symbol symbol)
         {
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
@@ -214,7 +235,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (equityHedge > upperBand || equityHedge < lowerBand)
             {
-                Log($"{Time} GetHedgeOptionWithUnderlyingZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, DeltaEquityTotal={equityHedge}.");
+                Log($"{Time} GetHedgeOptionWithUnderlyingZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, DeltaEquityTotal={equityHedge}, ZMQuantity={(upperBand + lowerBand) / 2 - equityHedge}.");
                 ExecuteHedge(underlying, (upperBand + lowerBand) / 2 - equityHedge);
             }
             else
@@ -223,12 +244,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
-            /// <summary>
-            /// Closely related to GedHedgeWithIndex, but hedges with the underlying instead of the index.
-            /// To avoid dynamic over hedging, best used rarely. For example once per fill only.
-            /// To be refactored with a more generic hedging function searching for the best hedge given the current portfolio.
-            /// </summary>
-            private void GetHedgeOptionWithUnderlying(Symbol symbol)
+        /// <summary>
+        /// Closely related to GedHedgeWithIndex, but hedges with the underlying instead of the index.
+        /// To avoid dynamic over hedging, best used rarely. For example once per fill only.
+        /// To be refactored with a more generic hedging function searching for the best hedge given the current portfolio.
+        /// </summary>
+        private void GetHedgeOptionWithUnderlying(Symbol symbol)
         {
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
 
@@ -291,7 +312,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     {
                         // Update existing orders price and quantity.
                         QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", $"Update Order" }, { "f", $"GetHedgeOptionWithUnderlying" },
-                                { "Symbol", symbol}, { "riskDeltaTotalImplied", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
+                                { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
                         UpdateLimitOrderEquity(equity, quantity, price);
                         return;
                     }
@@ -299,7 +320,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (quantity != 0 && tickets == null || tickets.Count == 0)
                 {
                     QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New Order" }, { "f", $"GetHedgeOptionWithUnderlying" },
-                            { "Symbol", symbol}, { "riskDeltaTotalImplied", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
+                            { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
 
                     // Place new order. Market if no position yet, otherwise limit
                     switch (Portfolio[symbol].Quantity)

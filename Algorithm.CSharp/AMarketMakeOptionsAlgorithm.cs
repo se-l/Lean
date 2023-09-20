@@ -52,10 +52,10 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            //SetStartDate(2023, 8, 8);
-            //SetEndDate(2023, 9, 8);
-            SetStartDate(2023, 9, 9);
-            SetEndDate(2023, 9, 15);
+            SetStartDate(2023, 8, 8);
+            SetEndDate(2023, 9, 8);
+            //SetStartDate(2023, 9, 1);
+            //SetEndDate(2023, 9, 18);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -109,10 +109,10 @@ namespace QuantConnect.Algorithm.CSharp
 
             // SCHEDULED EVENTS
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), RunSignals);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Leaves EOD Equity hedges.
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), RunSignals);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportRiskRecords);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), ExportIVSurface);
@@ -291,7 +291,7 @@ namespace QuantConnect.Algorithm.CSharp
             foreach (Security security in Securities.Values.Where(s => s.Type == SecurityType.Equity))  // because risk is hedged by underlying
             {
                 PublishEvent(new EventNewBidAsk(security.Symbol));
-                PfRisk.IsRiskLimitExceededZM(security.Symbol);
+                PfRisk.IsRiskLimitExceededZMBands(security.Symbol);
             }
 
             LogRisk();

@@ -15,7 +15,6 @@ using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 using QuantConnect.Data;
 using Trade = QuantConnect.Algorithm.CSharp.Core.Risk.Trade;
-using CloneExtensions;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -158,7 +157,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             else
             {
-                Log($"WrapToTrade. Neither expired not Assigned.");
+                //Log($"WrapToTrade. Neither expired not Assigned.");
                 newTrades.Add(new(this, Transactions.GetOrderById(orderEvent.OrderId), orderEvent));
             }
 

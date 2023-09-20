@@ -76,8 +76,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             Contract = contract;
             UnderlyingSymbol = contract.Underlying.Symbol;
             IV = Cache<(decimal, decimal, double), decimal?, decimal?, double, double>(GetIVEngine, GenCacheKeyIV);  // Using fast Analytical BSM for IV
-            DeltaCached = Cache((double hvQuote, double spotQuote) => amOption.delta(), (double hvQuote, double spotQuoteb) => (hvQuote, spotQuote));
-            GammaCached = Cache((double hvQuote, double spotQuote) => amOption.gamma(), (double hvQuote, double spotQuoteb) => (hvQuote, spotQuote));
+            DeltaCached = Cache((double hvQuote, double spotQuote) => amOption.delta(), (double hvQuote, double spotQuote) => (hvQuote, spotQuote));
+            GammaCached = Cache((double hvQuote, double spotQuote) => amOption.gamma(), (double hvQuote, double spotQuote) => (hvQuote, spotQuote));
 
             calendar = new UnitedStates(UnitedStates.Market.NYSE);
             //dayCounter = new Business252(calendar); // extremely slow
@@ -368,7 +368,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double VolatilityZM(int direction)
         {
             double hv0;
-            // Original paper appears to use historical volatility. Choosing implied vola to use market's bet on future vola, thereby reducing PnL volatility and presumably frequency of hedging.
             SetEvaluationDateToCalcDate();
             hv0 = (double)HistoricalVolatility();
             return Math.Pow(Math.Pow(hv0, 2) * (1.0 + KappaZM(hv0) * Math.Sign(direction)), 0.5);
@@ -462,10 +461,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             return FiniteDifferenceApprox(spotQuote, euOption, 0.01, "thetaPerDay");
         }
-        public double DVegadP()  // Vanna
-        {
-            return FiniteDifferenceApprox(spotQuote, euOption, 0.01, "vega", d1perturbance: hvQuote) / 100;
-        }
         public double DGdP()
         {
             return FiniteDifferenceApprox(spotQuote, amOption, 0.01, "gamma");
@@ -500,7 +495,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return FiniteDifferenceApprox(riskFreeRateQuote, amOption, 0.01, "NPV");
         }
 
-        public double DDeltadIV()
+        public double DDeltaDIV()  // Vanna
         {
             return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "delta");
         }
@@ -512,7 +507,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "vega", d1perturbance: hvQuote) / Math.Pow(100,2);
         }
-        public double DGdIV()
+        public double DGammaDIV()
         {
             return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "gamma");
         }

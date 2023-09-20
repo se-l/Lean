@@ -362,6 +362,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             // The OnData functions first updates all indicators BEFORE business events are triggered.
             // Lazy is best. Minimize any interpolation. If possible get update bin based on current market data, go for it. Otherwise interpolate neighboring _bins.
             double? ewma = null;
+            ushort nearestBinValue;
 
             if (symbol.SecurityType != SecurityType.Option) return ewma;
 
@@ -373,7 +374,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
             ushort binValue = (ushort)Math.Round(strikePct);
             Bin bin = GetBin(optionRight, expiry, binValue);
-            Bin binB = GetBin(optionRight, expiry, (ushort)(binValue + Math.Sign(strikePct - binValue)));
+
+            // Neighboring bin
+            var nearestBinValueOffset = Math.Sign(strikePct - binValue);
+            nearestBinValueOffset = nearestBinValueOffset != 0 ? nearestBinValueOffset : (binValue < 100 ? -1 : 1);
+            nearestBinValue = (ushort)(binValue + nearestBinValueOffset);
+
+            Bin binB = GetBin(optionRight, expiry, nearestBinValue);
             // Correcting for binToBin % difference. One-sided interpolation.
             double slopeEWMA = Slope(bin, binB);
             double? ewmaInterpolated = bin.IVEWMA + slopeEWMA * (double)(strikePct - bin.Value);
@@ -384,26 +391,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                     $"bin.IVEWMA={bin.IVEWMA}, bin.IV={bin.IV}, bin.Value={bin.Value}, binB.Samples={bin.Samples}, " +
                     $"binB.IVEWMA={binB.IVEWMA}, binB.IV={binB.IV}, binB.Value={binB.Value}, binB.Samples={binB.Samples}, ");
             }
-            //if (symbol.Value == "PFE   240119C00038000" && _algo.Time.TimeOfDay > new TimeSpan(9, 49, 0) & _algo.Time.TimeOfDay < new TimeSpan(9, 50, 0))
-            //{
-            //    _algo.Log($"side: {Side}");
-            //    _algo.Log($"strike: {strike}");
-            //    _algo.Log($"strikePct: {strikePct}");
-            //    _algo.Log($"bin: {bin}");
-            //    _algo.Log($"bin.IsOTM: {bin.IsOTM}");
-            //    _algo.Log($"bin.Value: {bin.Value}");
-            //    _algo.Log($"bin.IVEWMA: {bin.IVEWMA}");
-            //    _algo.Log($"bin.IV: {bin.IV}");
-            //    _algo.Log($"ewmaInterpolated: {ewmaInterpolated}");
-
-                //    _algo.Log($"binLeft: {binB}");
-                //    _algo.Log($"binB.IsOTM: {binB.IsOTM}");
-                //    _algo.Log($"binB.Value: {binB.Value}");
-                //    _algo.Log($"binB.IVEWMA: {binB.IVEWMA}");
-                //    _algo.Log($"binB.IV: {binB.IV}");
-
-                //    _algo.Log($"slopeEWMA: {slopeEWMA}");
-                //}
             return ewmaInterpolated;
         }
 
@@ -423,6 +410,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public double Slope(Bin binA, Bin binB)
         {
             if (binB.IVEWMA == null || binA.IVEWMA == null) { return 0; }
+            if (binA.Value == binB.Value)
+            {
+                _algo.Error("IVSurfaceRelativeStrike.Slope: You are trying to derive the slope for identical bins. Returning 0.");
+                return 0;
+            }
             return ((double)binB.IVEWMA - (double)binA.IVEWMA) / (binB.Value - binA.Value);
         }
 
@@ -533,11 +525,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public string GetCsvHeader()
         {
+            List<string> header;
             var csv = new StringBuilder();
             var dict = ToDictionary();
 
-            List<decimal> sortedKeys = dict[OptionRight.Call][dict[OptionRight.Call].Keys.First()].Keys.Sorted().ToList();
-            List<string> header = sortedKeys.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToList();
+            if (dict[OptionRight.Call].Keys.Any())
+            {
+                List<decimal> sortedKeys = dict[OptionRight.Call][dict[OptionRight.Call].Keys.First()].Keys.Sorted().ToList();
+                header = sortedKeys.Select(d => d.ToString(CultureInfo.InvariantCulture)).ToList();
+            }
+            else
+            {
+                header = new List<string>();
+            }
+            
             csv.AppendLine("Time,OptionRight,Expiry," + string.Join(",", header));
             return csv.ToString();
         }
@@ -545,6 +546,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         {
             var csv = new StringBuilder();
             var dict = ToDictionary(binGetter: (bin) => bin.IVEWMA);
+            if (!dict[OptionRight.Call].Keys.Any()) return;
+
             if (!_headerWritten)
             {
                 _writer.Write(GetCsvHeader());

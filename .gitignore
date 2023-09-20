@@ -287,3 +287,5 @@ Results/
 /Algorithm.CSharp/config.json
 /Launcher/Properties/launchSettings.json
 /Algorithm.CSharp/Core/Archive.cs
+/ToolBox/Resources/config.json
+/ToolBox/Properties/Resources.resx

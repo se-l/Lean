@@ -126,8 +126,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
         }
 
-        public Func<TArg1, TArg2, TResult> Cache<TCacheKey, TArg1, TArg2, TResult>(Func<TArg1, TArg2, TResult> decorated, Func<TArg1, TArg2, TCacheKey> genCacheKey, int maxKeys = 0, int ttl = 0)
+        public Func<TArg1, TArg2, TResult> Cache<TCacheKey, TArg1, TArg2, TResult>(Func<TArg1, TArg2, TResult> decorated, Func<TArg1, TArg2, TCacheKey> genCacheKey, int maxKeys = 0, int ttl = 0, TimeSpan? clearCacheEvery = null)
         {
+            var timeCacheLastCleared = default(DateTime);
             var cacheMeta = new ConcurrentDictionary<TCacheKey, DateTime>();
             var cache = new ConcurrentDictionary<TCacheKey, TResult>();
             return (arg1, arg2) =>
@@ -139,6 +140,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
                 result = decorated(arg1, arg2);
 
+                if (clearCacheEvery != null && timeCacheLastCleared + clearCacheEvery < Time)
+                {
+                    cache.Clear();
+                }
+
                 if (ttl > 0)
                 {
                     foreach (var cacheKey in cacheMeta.Where(kvp => (Time - kvp.Value).Seconds >= ttl).Select(kvp => kvp.Key))
@@ -148,6 +154,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
 
                 cache[key] = result;
+                cacheMeta[key] = Time;
                 return result;
             };
         }
@@ -164,7 +171,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return result;
                 }
                 result = decorated(arg1, arg2, arg3);
+
+                if (ttl > 0)
+                {
+                    foreach (var cacheKey in cacheMeta.Where(kvp => (Time - kvp.Value).Seconds >= ttl).Select(kvp => kvp.Key))
+                    {
+                        cache.TryRemove(cacheKey, out var value);
+                    }
+                }
+
                 cache[key] = result;
+                cacheMeta[key] = Time;
                 return result;
             };
         }
@@ -181,7 +198,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return result;
                 }
                 result = decorated(arg1, arg2, arg3, arg4);
+
+                if (ttl > 0)
+                {
+                    foreach (var cacheKey in cacheMeta.Where(kvp => (Time - kvp.Value).Seconds >= ttl).Select(kvp => kvp.Key))
+                    {
+                        cache.TryRemove(cacheKey, out var value);
+                    }
+                }
+
                 cache[key] = result;
+                cacheMeta[key] = Time;
                 return result;
             };
         }
@@ -198,7 +225,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return result;
                 }
                 result = decorated(arg1, arg2, arg3, arg4, arg5);
+
+                if (ttl > 0)
+                {
+                    foreach (var cacheKey in cacheMeta.Where(kvp => (Time - kvp.Value).Seconds >= ttl).Select(kvp => kvp.Key))
+                    {
+                        cache.TryRemove(cacheKey, out var value);
+                    }
+                }
+
                 cache[key] = result;
+                cacheMeta[key] = Time;
                 return result;
             };
         }

@@ -96,7 +96,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             var _expireRisk = OrderDirection == OrderDirection.Buy && (Option.Symbol.ID.Date - _algo.Time.Date).Days <= 1 ? -1 : 0;  // dont buy stuff about to expire
             var quoteDiscounts = _algo.GetQuoteDiscounts(new QuoteRequest<Option>(Option, Quantity));
             return
-                _inventoryRisk + 
+                _inventoryRisk +
+                _expireRisk + 
                 (1 / ( 1 - quoteDiscounts.Sum(qd => qd.SpreadFactor)));
         }
 

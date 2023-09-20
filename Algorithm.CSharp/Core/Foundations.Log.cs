@@ -210,10 +210,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
             // Refactor into sanity check and alert on mismatch...
             var d3 = Positions.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString());
-            if (!d3.SequenceEqual(d2))
+            if (!d3.OrderBy(x => x.Key).SequenceEqual(d2.OrderBy(x => x.Key)))
             {
-                Log("Portfolio and Positions mismatch!");
-                Log(Humanize(d1.Union(d3)));
+                Error($"Portfolio and Positions mismatch!\n{Humanize(d1.Union(d3))}");
             }            
 
             DiscordClient.Send(tag, DiscordChannel.Status, LiveMode);

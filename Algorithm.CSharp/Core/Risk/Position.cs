@@ -227,6 +227,10 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         }
         public decimal DeltaXBpUSDTotal(double x = 100)
         {
+            //if (x==100)
+            //{
+            //    _algo.Log($"DeltaXBpUSDTotal: {SecurityType} {Symbol} Mid1Underlying={Mid1Underlying} Quantity={Quantity} Delta={Delta()} DecimalDeltaxX={(decimal)(Delta() * x)} BP={BP} Multiplier={Multiplier} Result={(decimal)(Delta() * x) * Mid1Underlying * BP * Multiplier * Quantity}");
+            //}            
             return SecurityType switch
             {
                 SecurityType.Equity => Mid1Underlying * (decimal)x * BP * Quantity,
@@ -387,7 +391,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                     (double)(Quantity * Multiplier),  // Q over lifetime of position
                     Trade0.Delta2MidFill, // Realized on fill. Only use Trade0, otherwise double counting....
                     Trade0.Quantity * Multiplier,  // Trade fill Q at fill. Instant.
-                    PL//Trade0.Fee
+                    premiumOnExpiry: PL - Trade0.Delta2MidFill * Trade0.Quantity * Multiplier  // Premium
                     );
             }
             else

@@ -14,6 +14,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double CapMax { get; set; }
         public double DTEThreshold { get; set; }
         public double DTEX0TargetRisk { get; set; }
+        public double DTEX0TargetRiskFront { get; set; }
     }
     public class RiskDiscount
     {
@@ -24,14 +25,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double TargetRisk { get { 
                 if (DTE() < DTEThreshold)
                 {
-                    return DiscountParams.TargetRisk;
+                    return DiscountParams.TargetRisk + DTEX0TargetRiskFront;
                 }
                 else
                 {
                     return DiscountParams.TargetRisk + DTEX0TargetRisk;
 
                 }
-                
             } }
         public double X0 { get => DiscountParams.X0; }
         public double X1 { get => DiscountParams.X1; }
@@ -40,21 +40,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double CapMax { get => DiscountParams.CapMax; }
         public double DTEThreshold { get => DiscountParams.DTEThreshold; }
         public double DTEX0TargetRisk { get => DiscountParams.DTEX0TargetRisk; }
+        public double DTEX0TargetRiskFront { get => DiscountParams.DTEX0TargetRiskFront; }
 
-        //public RiskDiscount(Symbol symbol, Metric metric, double targetRisk, double x0, double x1, double x2, double capMin, double capMax)
-        //{
-        //    Symbol = symbol;
-        //    Metric = metric;
-        //    DiscountParams = new DiscountParams
-        //    {
-        //        TargetRisk = targetRisk,
-        //        X0 = x0,
-        //        X1 = x1,
-        //        X2 = x2,
-        //        CapMin = capMin,
-        //        CapMax = capMax
-        //    };
-        //}
 
         /// <summary>
         /// Helper constructor reading arguments from config.json

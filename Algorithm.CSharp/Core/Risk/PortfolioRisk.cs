@@ -1,3 +1,4 @@
+using Fasterflect;
 using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
@@ -41,8 +42,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             //algo.Log($"{algo.Time}: PortfolioRisk.Constructor called.");
             TimeCreated = _algo.Time;
             TimeLastUpdated = _algo.Time;
-            RiskBySymbol = _algo.Cache(GetRiskBySymbol, (Symbol symbol, Metric riskMetric) => (symbol, riskMetric, _algo.Time), ttl: 10);
-            RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility) => (Underlying(symbol), metric, _algo.Time), ttl: 10);
+            //RiskBySymbol = _algo.Cache(GetRiskBySymbol, (Symbol symbol, Metric riskMetric) => (symbol, riskMetric, _algo.Time), ttl: 10);
+            RiskBySymbol = _algo.Cache(GetRiskBySymbol, (Symbol symbol, Metric riskMetric) => (symbol, riskMetric, _algo.Time));
+            //RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility) => (Underlying(symbol), metric, positions.Count(), volatility ?? 0, _algo.Time), clearCacheEvery: TimeSpan.FromMinutes(5));
+            RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility) => (Underlying(symbol), metric, positions.Count(), volatility ?? 0, _algo.Time));
+            //RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility) => (Underlying(symbol), metric, positions.Count(), volatility ?? 0, _algo.Time), ttl: 5);
         }
 
         private decimal RiskByUnderlying(Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility)
@@ -76,13 +80,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             };
         }
 
-        public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null)
+        public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, bool skipCache=false)
         {
             Symbol underlying = Underlying(symbol);
             var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
             positions = filter == null ? positions : filter(positions);
             if (!positions.Any()) return 0;
-            return RiskByUnderlyingCached(symbol, metric, positions, volatility);
+            
+            return skipCache ? RiskByUnderlying(symbol, metric, positions, volatility) : RiskByUnderlyingCached(symbol, metric, positions, volatility);
         }
 
         /// <summary>
@@ -102,11 +107,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (!positions.Any()) return 0;
             if (new HashSet<Metric>() { Metric.BandZMLower, Metric.BandZMUpper }.Contains(metric))
             {
-                tupZMBands = ZMBands(positions, volatility);
+                tupZMBands = ZMBands(underlying, positions, volatility);
             };
 
             return metric switch
             {
+                Metric.ZMOffset => ZMOffset(underlying, positions, volatility),
                 Metric.BandZMLower => tupZMBands.Item1,
                 Metric.BandZMUpper => tupZMBands.Item2,
                 _ => throw new NotImplementedException(metric.ToString()),
@@ -124,7 +130,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return -p.Multiplier * scaledQuantity * p.DeltaZMOffset(volatility);
         }
 
-        public (decimal, decimal) ZMBands(IEnumerable<Position> positions, double? volatility = null)
+        public decimal ZMOffset(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
+        {
+            return Math.Max(_algo.CastGracefully(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), (decimal)_algo.Cfg.MinZMOffset[underlying]);
+        }
+
+        public (decimal, decimal) ZMBands(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
         {
             //  Scaling Zakamulin bands with quanitity**0.5 as they become fairly large with many option positions...
             //  Better made dependent on proportional transaction costs.
@@ -133,7 +144,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             double deltaZM = positions.Select(p => DeltaZM(p, volatility)).Sum();
             double offsetZM = Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum());
             // For high quantities, offset goes towards +/- 1, not good. Hence using sqrt(deltaZM) as minimum.
-            offsetZM = Math.Max(offsetZM, Math.Sqrt(Math.Abs(deltaZM)));
+            offsetZM = Math.Min(Math.Max(offsetZM, Math.Pow(Math.Abs(deltaZM), 0.5)), _algo.Cfg.MinZMOffset[underlying]);
 
             // Debug why bands can be zero despite options postions open
             if (deltaZM == 0 && offsetZM == 0)
@@ -279,6 +290,26 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             };
         }
 
+        public bool IsRiskLimitExceededZMBands(Symbol symbol)
+        {
+            if (_algo.IsWarmingUp) { return false; }
+
+            Security security = _algo.Securities[symbol];
+            Symbol underlying = Underlying(symbol);
+
+            decimal zmOffset = RiskBandByUnderlying(symbol, Metric.ZMOffset);
+            decimal riskDeltaTotal = RiskByUnderlying(symbol, Metric.DeltaTotal);
+
+            if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
+            {
+                _algo.Log($"{_algo.Time} IsRiskLimitExceededZM. riskDeltaTotal={riskDeltaTotal}.");
+                _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
+                return true;
+
+            }
+            return false;
+        }
+
         public bool IsRiskLimitExceededZM(Symbol symbol)
         {
             if (_algo.IsWarmingUp) { return false; }
@@ -290,7 +321,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             decimal lowerBand = RiskBandByUnderlying(symbol, Metric.BandZMLower);
             decimal upperBand = RiskBandByUnderlying(symbol, Metric.BandZMUpper);
 
-            if (riskDeltaEquityTotal > upperBand || riskDeltaEquityTotal < lowerBand)
+            if ((riskDeltaEquityTotal > upperBand || riskDeltaEquityTotal < lowerBand) && Math.Abs(RiskByUnderlying(symbol, Metric.DeltaTotal)) >= 20)
             {
                 _algo.Log($"{_algo.Time} IsRiskLimitExceededZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, DeltaEquityTotal={riskDeltaEquityTotal}.");
                 _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
@@ -301,9 +332,3 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
     }
 }
-
-
-
-
-
-

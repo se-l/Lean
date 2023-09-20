@@ -17,13 +17,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private double? _dPdIV;
         private double? _dGdP;
         private double? _gammaDecay;
-        private double? _dGdIV;
+        private double? _dGammaDIV;
         private double? _theta;
         private double? _dTdP;
         private double? _thetaDecay;
         private double? _dTdIV;
         private double? _vega;
-        private double? _dVegadP;
+        private double? _dDeltaDIV;
         private double? _vegaDecay;
         private double? _dVegadIV;
         private double? _rho;
@@ -39,16 +39,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         // Second order derivatives using finite difference
         public double MVVega { get => _mVVega ?? OCW.MVVega(); }
         public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(); }  // dPdT
-        public double DPdIV { get => _dPdIV ?? OCW.DDeltadIV(); }  // dPdIV
+        public double DPdIV { get => _dPdIV ?? OCW.DDeltaDIV(); }  // dPdIV
         public double DGdP { get => _dGdP ?? OCW.DGdP(); }  // dP3
         public double GammaDecay { get => _gammaDecay ?? OCW.GammaDecay(); }  // dP2dT
-        public double DGdIV { get => _dGdIV ?? OCW.DGdIV(); }  // dP2dIV
+        public double DGammaDIV { get => _dGammaDIV ?? OCW.DGammaDIV(); }  // dP2dIV
         public double Theta { get => _theta ?? OCW.Theta(); }  // dT ; sensitivity to time
         public double DTdP { get => _dTdP ?? OCW.DTdP(); }  // dTdP
         public double ThetaDecay { get => _thetaDecay ?? OCW.ThetaDecay(); }  // dT2
         public double DTdIV { get => _dTdIV ?? OCW.DTdIV(); }  // dTdIV
         public double Vega { get => _vega ?? OCW.Vega(); }  // dIV ; sensitivity to volatility
-        public double DVegadP { get => _dVegadP ?? OCW.DVegadP(); }  // dVegadP ; vanna
+        public double DDeltaDIV { get => _dDeltaDIV ?? OCW.DDeltaDIV(); }  // dVegadP ; Vanna
         public double VegaDecay { get => _vegaDecay ?? OCW.VegaDecay(); }  // dIVdT
         public double DVegadIV { get => _dVegadIV ?? OCW.DVegadIV(); }  // vomma
         public double Rho { get => _rho ?? OCW.Rho(); }  // dR ; sensitivity to interest rate
@@ -88,13 +88,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _dPdIV = 0;
             _dGdP = 0;
             _gammaDecay = 0;
-            _dGdIV = 0;
+            _dGammaDIV = 0;
             _theta = 0;
             _dTdP = 0;
             _thetaDecay = 0;
             _dTdIV = 0;
             _vega = 0;
-            _dVegadP = 0;
+            _dDeltaDIV = 0;
             _vegaDecay = 0;
             _dVegadIV = 0;
             _rho = 0;
@@ -112,13 +112,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _dPdIV = DPdIV;
             _dGdP = DGdP;
             _gammaDecay = GammaDecay;
-            _dGdIV = DGdIV;
+            _dGammaDIV = DGammaDIV;
             _theta = Theta;
             _dTdP = DTdP;
             _thetaDecay = ThetaDecay;
             _dTdIV = DTdIV;
             _vega = Vega;
-            _dVegadP = DVegadP;
+            _dDeltaDIV = DDeltaDIV;
             _vegaDecay = VegaDecay;
             _dVegadIV = DVegadIV;
             _rho = Rho;

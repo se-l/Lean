@@ -154,6 +154,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Vega100BpUSD,
 
             // Bands
+            ZMOffset,
             BandZMLower,
             BandZMUpper,
 

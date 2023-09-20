@@ -28,5 +28,7 @@ namespace QuantConnect.Algorithm.CSharp
         public double SurfaceVerticalResetThreshold { get; set; }
         public int WarmUpDays { get; set; }
         public bool LogOrderUpdates { get; set; }
+        public bool SkipWarmUpSecurity { get; set; }
+        public Dictionary<string, double> MinZMOffset { get; set; }
     }
 }

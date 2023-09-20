@@ -38,6 +38,7 @@
       "CapMin": -0.3,
       "CapMax": 0.3,
       "DTEThreshold": 30,
+      "DTEX0TargetRiskFront": -30,
       "DTEX0TargetRisk": 30
     },
     "HPE-Events-discount-params": {
@@ -71,8 +72,9 @@
       "X2": 0.00003,
       "CapMin": -0.3,
       "CapMax": 0.3,
-      "DTEThreshold": 30,
-      "DTEX0TargetRisk": 30
+      "DTEThreshold": 0,
+      "DTEX0TargetRiskFront": -0,
+      "DTEX0TargetRisk": 0
     },
     "PFE-Events-discount-params": {
       "TargetRisk": 0,
@@ -98,6 +100,11 @@
     "PFE": 0.15
   },
   "SurfaceVerticalResetThreshold": 0.01,
-  "WarmUpDays": 2,
-  "LogOrderUpdates": false
+  "WarmUpDays": 2, // Reduce for debugging. Usually 2.
+  "LogOrderUpdates": false,
+  "SkipWarmUpSecurity": false, // for debugging. Usually false.
+  "MinZMOffset": {
+    "HPE": 20,
+    "PFE": 20
+  }
 }

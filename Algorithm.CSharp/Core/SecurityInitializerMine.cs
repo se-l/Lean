@@ -15,10 +15,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
     {
         public int VolatilityPeriodDays { get; set; }
 
-        private readonly Foundations algo;
+        private readonly Foundations _algo;
         public SecurityInitializerMine(IBrokerageModel brokerageModel, Foundations algo, ISecuritySeeder securitySeeder, int volatilityPeriodDays)
         : base(brokerageModel, securitySeeder) {
-            this.algo = algo;
+            _algo = algo;
             VolatilityPeriodDays = volatilityPeriodDays;
         }
 
@@ -29,7 +29,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             base.Initialize(security);
             Symbol symbol = security.Symbol;
 
-            if (!algo.LiveMode)
+            if (!_algo.LiveMode)
             {
                 // Margin Model
                 security.MarginModel = SecurityMarginModel.Null;
@@ -39,14 +39,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 security.SetFillModel(new FillModelMine());
             }
 
-            if (!algo.QuoteBarConsolidators.ContainsKey(symbol))
+            if (!_algo.QuoteBarConsolidators.ContainsKey(symbol))
             {
-                algo.QuoteBarConsolidators[symbol] = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
+                _algo.QuoteBarConsolidators[symbol] = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
             }
 
             if (security.Type == SecurityType.Equity)
             {
-                int samplePeriods = algo.resolution switch
+                int samplePeriods = _algo.resolution switch
                 {
                     Resolution.Daily => 1,
                     Resolution.Hour => 1,
@@ -54,25 +54,25 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     Resolution.Second => 300,
                     _ => 1
                 };
-                security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: algo.Periods(days: VolatilityPeriodDays) / samplePeriods, algo.resolution, TimeSpan.FromSeconds(samplePeriods));
+                security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: _algo.Periods(days: VolatilityPeriodDays) / samplePeriods, _algo.resolution, TimeSpan.FromSeconds(samplePeriods));
                 
-                foreach (var tradeBar in algo.HistoryWrap(symbol, algo.Periods(days: VolatilityPeriodDays + 2), algo.resolution))
+                foreach (var tradeBar in _algo.HistoryWrap(symbol, _algo.Periods(days: VolatilityPeriodDays + 2), _algo.resolution))
                 {
                     security.VolatilityModel.Update(security, tradeBar);
                 }
-                algo.Log($"SecurityInitializer.Initialize: {symbol} WarmedUp Volatility To: {security.VolatilityModel.Volatility}");
+                _algo.Log($"SecurityInitializer.Initialize: {symbol} WarmedUp Volatility To: {security.VolatilityModel.Volatility}");
 
                 // Initialize a Security Specific Hedge Band or Risk Limit object. Constitutes underlying, hence risk limit not just by security but also its derivatives.
                 // Adjust delta by underlying's volatility.
-                security.RiskLimit = new SecurityRiskLimit(security, delta100BpLong: algo.Cfg.RiskLimitEODDelta100BpUSDTotalLong, delta100BpShort: algo.Cfg.RiskLimitEODDelta100BpUSDTotalShort);
+                security.RiskLimit = new SecurityRiskLimit(security, delta100BpLong: _algo.Cfg.RiskLimitEODDelta100BpUSDTotalLong, delta100BpShort: _algo.Cfg.RiskLimitEODDelta100BpUSDTotalShort);
 
                 InitializeIVSurface(symbol);
-                algo.QuoteBarConsolidators[symbol].DataConsolidated += (object sender, QuoteBar consolidated) =>
+                _algo.QuoteBarConsolidators[symbol].DataConsolidated += (object sender, QuoteBar consolidated) =>
                 {
-                    if (algo.IsEventNewQuote(symbol))
+                    if (_algo.IsEventNewQuote(symbol))
                     {
-                        algo.IVBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
-                        algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                        _algo.IVBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                        _algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
                     }
                 };
             }
@@ -89,26 +89,26 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Initialize a Security Specific Hedge Band or Risk Limit object.
                 option.RiskLimit = new SecurityRiskLimit(option);
 
-                algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, algo);
-                algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, algo);
+                _algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, _algo);
+                _algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, _algo);
             }
 
             if (security.Resolution == Resolution.Tick)
             {
-                security.SetDataFilter(new OptionTickDataFilter(algo));
+                security.SetDataFilter(new OptionTickDataFilter(_algo));
             }
             WarmUpSecurity(security);
         }
 
         private void InitializeIVSurface(Symbol underlying)
         {
-            if (!algo.IVSurfaceRelativeStrikeBid.ContainsKey(underlying))
+            if (!_algo.IVSurfaceRelativeStrikeBid.ContainsKey(underlying))
             {
-                algo.IVSurfaceRelativeStrikeBid[underlying] = new IVSurfaceRelativeStrike(algo, underlying, QuoteSide.Bid);
+                _algo.IVSurfaceRelativeStrikeBid[underlying] = new IVSurfaceRelativeStrike(_algo, underlying, QuoteSide.Bid);
             }
-            if (!algo.IVSurfaceRelativeStrikeAsk.ContainsKey(underlying))
+            if (!_algo.IVSurfaceRelativeStrikeAsk.ContainsKey(underlying))
             {
-                algo.IVSurfaceRelativeStrikeAsk[underlying] = new IVSurfaceRelativeStrike(algo, underlying, QuoteSide.Ask);
+                _algo.IVSurfaceRelativeStrikeAsk[underlying] = new IVSurfaceRelativeStrike(_algo, underlying, QuoteSide.Ask);
             }
         }
 
@@ -117,7 +117,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             VolatilityBar volBar;
             Symbol symbol;
 
-            algo.Log($"SecurityInitializer.WarmUpSecurity: {security}");
+            _algo.Log($"SecurityInitializer.WarmUpSecurity: {security}");
 
 
             if (security.Type == SecurityType.Option)
@@ -127,11 +127,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (option.Underlying == null) return;
                 symbol = option.Symbol;
                 Symbol underlying = symbol.Underlying;
-                algo.IVSurfaceRelativeStrikeBid[option.Symbol.Underlying].RegisterSymbol(option);
-                algo.IVSurfaceRelativeStrikeAsk[option.Symbol.Underlying].RegisterSymbol(option);
+                _algo.IVSurfaceRelativeStrikeBid[option.Symbol.Underlying].RegisterSymbol(option);
+                _algo.IVSurfaceRelativeStrikeAsk[option.Symbol.Underlying].RegisterSymbol(option);
 
-                var volaSyms = algo.Securities.Keys.Where(s => s.Underlying == symbol);
-                var history = algo.History<VolatilityBar>(volaSyms, algo.Periods(days: 7), algo.resolution, fillForward: false);
+                var volaSyms = _algo.Securities.Keys.Where(s => s.Underlying == symbol);
+                var history = _algo.History<VolatilityBar>(volaSyms, _algo.Periods(days: 7), _algo.resolution, fillForward: false);
+
+                #if DEBUG
+                if (_algo.Cfg.SkipWarmUpSecurity) return;
+                #endif
 
                 foreach (DataDictionary<VolatilityBar> data in history)
                 {
@@ -149,8 +153,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }
                     if (bid != null)
                     {
-                        algo.IVBids[symbol].Update(bid);
-                        algo.IVAsks[symbol].Update(ask);
+                        _algo.IVBids[symbol].Update(bid);
+                        _algo.IVAsks[symbol].Update(ask);
                     }                    
                 }
 
