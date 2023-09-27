@@ -9,50 +9,55 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public Security Security { get; internal set; }
         public OptionContractWrap? OCW;
         private double? _hV;
+        private double? _nPV;
+        private double? _iVdS;
+        private int? _dte;
+
         private double? _delta;
         private double? _gamma;
-        private decimal? _gamma100Bp;
-        private double? _mVVega;
         private double? _deltaDecay;
-        private double? _dPdIV;
-        private double? _dGdP;
+        private double? _dS3;
         private double? _gammaDecay;
         private double? _dGammaDIV;
         private double? _theta;
-        private double? _dTdP;
+        private double? _thetaTotal;
         private double? _thetaDecay;
-        private double? _dTdIV;
         private double? _vega;
-        private double? _dDeltaDIV;
+        private double? _dSdIV;
         private double? _vegaDecay;
-        private double? _dVegadIV;
+        private double? _dIV2;
         private double? _rho;
-        private double? _nPV;
                
+        // Non-Greeks
         public double HV { get => _hV ?? (double)OCW.HistoricalVolatility(); }
+        public double NPV { get => _nPV ?? OCW.NPV(); }  // theoretical price
+        public double IVdS { get => _iVdS ?? OCW.IVdS(); }
+        public int DTE { get => _dte ?? OCW.DaysToExpiration(); }
 
-        // First order derivatives: dV / dt (Theta) ; dV / dP (Delta) ; dV / dIV (Vega)
+        // Greeks. 1st order followed by dS, dT, dIV. Then 3rd at end.
+        // dS
         public double Delta { get => _delta ?? OCW.Delta(); }  // dP ; sensitivity to underlying price}
         public double Gamma { get => _gamma ?? OCW.Gamma(); }  // dP2
-        public decimal Gamma100Bp { get => _gamma100Bp ?? OCW.GammaXBp(100); }  // dP2
-
-        // Second order derivatives using finite difference
-        public double MVVega { get => _mVVega ?? OCW.MVVega(); }
         public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(); }  // dPdT
-        public double DPdIV { get => _dPdIV ?? OCW.DDeltaDIV(); }  // dPdIV
-        public double DGdP { get => _dGdP ?? OCW.DGdP(); }  // dP3
-        public double GammaDecay { get => _gammaDecay ?? OCW.GammaDecay(); }  // dP2dT
-        public double DGammaDIV { get => _dGammaDIV ?? OCW.DGammaDIV(); }  // dP2dIV
+        public double DSdIV { get => _dSdIV ?? OCW.DSdIV(); }  // dVegadP ; Vanna
+        public double Vanna { get => DSdIV; }        
+        // dT
         public double Theta { get => _theta ?? OCW.Theta(); }  // dT ; sensitivity to time
-        public double DTdP { get => _dTdP ?? OCW.DTdP(); }  // dTdP
+        public double ThetaTillExpiry { get => _thetaTotal ?? OCW.ThetaTillExpiry(); }
         public double ThetaDecay { get => _thetaDecay ?? OCW.ThetaDecay(); }  // dT2
-        public double DTdIV { get => _dTdIV ?? OCW.DTdIV(); }  // dTdIV
+        // dIV
         public double Vega { get => _vega ?? OCW.Vega(); }  // dIV ; sensitivity to volatility
-        public double DDeltaDIV { get => _dDeltaDIV ?? OCW.DDeltaDIV(); }  // dVegadP ; Vanna
+        // Vanna - above in delta
         public double VegaDecay { get => _vegaDecay ?? OCW.VegaDecay(); }  // dIVdT
-        public double DVegadIV { get => _dVegadIV ?? OCW.DVegadIV(); }  // vomma
+        public double DIV2 { get => _dIV2 ?? OCW.DIV2(); }  // Vomma / Volga
+        // dR
         public double Rho { get => _rho ?? OCW.Rho(); }  // dR ; sensitivity to interest rate
-        public double NPV { get => _nPV ?? OCW.NPV(); }  // theoretical price
+
+        // 3rd order
+        public double DS3 { get => _dS3 ?? OCW.DS3(); }  // dP3
+        public double GammaDecay { get => _gammaDecay ?? OCW.GammaDecay(); }  // dP2dT
+        public double DS2dIV { get => _dGammaDIV ?? OCW.DS2dIV(); }  // dP2dIV
+
         public double DeltaZM(int direction)
         {  // Adjusted Delta
             return OCW.DeltaZM(direction);
@@ -80,49 +85,56 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             Security = security;
             _hV = (double)Security.VolatilityModel.Volatility;
+            _nPV = 0;
+            _iVdS = 0;
+            _dte = 0;
+
             _delta = 1;
             _gamma = 0;
-            _gamma100Bp = 0;
-            _mVVega = 0;
             _deltaDecay = 0;
-            _dPdIV = 0;
-            _dGdP = 0;
+            _dSdIV = 0;
+
+            _theta = 0;
+            _thetaTotal = 0;
+            _thetaDecay = 0;
+
+            _vega = 0;
+            _vegaDecay = 0;
+            _dIV2 = 0;
+
+            _rho = 0;
+
+            _dS3 = 0;
             _gammaDecay = 0;
             _dGammaDIV = 0;
-            _theta = 0;
-            _dTdP = 0;
-            _thetaDecay = 0;
-            _dTdIV = 0;
-            _vega = 0;
-            _dDeltaDIV = 0;
-            _vegaDecay = 0;
-            _dVegadIV = 0;
-            _rho = 0;
-            _nPV = 0;
         }
 
         public GreeksPlus Snap()
         {
             _hV = HV;
+            _nPV = NPV;
+            _iVdS = IVdS;
+            _dte = DTE;
+
             _delta = Delta;
             _gamma = Gamma;
-            _gamma100Bp = Gamma100Bp;
-            _mVVega = MVVega;
             _deltaDecay = DeltaDecay;
-            _dPdIV = DPdIV;
-            _dGdP = DGdP;
-            _gammaDecay = GammaDecay;
-            _dGammaDIV = DGammaDIV;
+            _dSdIV = DSdIV;
+
             _theta = Theta;
-            _dTdP = DTdP;
+            _thetaTotal = ThetaTillExpiry;
             _thetaDecay = ThetaDecay;
-            _dTdIV = DTdIV;
+
             _vega = Vega;
-            _dDeltaDIV = DDeltaDIV;
             _vegaDecay = VegaDecay;
-            _dVegadIV = DVegadIV;
+            _dIV2 = DIV2;
+
             _rho = Rho;
-            _nPV = NPV;
+
+            _dS3 = DS3;
+            _gammaDecay = GammaDecay;
+            _dGammaDIV = DS2dIV;            
+           
             return this;
         }
     }

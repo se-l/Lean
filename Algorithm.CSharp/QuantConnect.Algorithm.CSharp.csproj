@@ -60,9 +60,4 @@
       <PackagePath></PackagePath>
     </None>
   </ItemGroup>
-  <ItemGroup>
-    <Reference Include="QuantConnect.ToolBox">
-      <HintPath>..\ToolBox\bin\Release\QuantConnect.ToolBox.dll</HintPath>
-    </Reference>
-  </ItemGroup>
 </Project>

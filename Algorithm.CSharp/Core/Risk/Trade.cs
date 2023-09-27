@@ -120,6 +120,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double IVMid0 { get => (IVBid0 + IVAsk0) / 2; }
         public string Tag { get; internal set; } = "";
         public OrderEvent? OrderEvent = null;
+        public decimal SurfaceIVdSBid { get; internal set; } // not differentiating the options price here, but getting slope of strike skew.
+        public decimal SurfaceIVdSAsk { get; internal set; } // not differentiating the options price here, but getting slope of strike skew.
+        public decimal SurfaceIVdS
+        {
+            get
+            {
+                if (SurfaceIVdSBid == 0) { return SurfaceIVdSAsk; }
+                if (SurfaceIVdSAsk == 0) { return SurfaceIVdSBid; }
+                return (SurfaceIVdSBid + SurfaceIVdSAsk) / 2;
+            }
+        }
 
         /// <summary>
         /// For option expiration
@@ -215,7 +226,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
                 Bid0Underlying = SecurityType == SecurityType.Option ? order.OrderFillData.BidPriceUnderlying ?? Bid0 : Bid0;
                 Ask0Underlying = SecurityType == SecurityType.Option ? order.OrderFillData.AskPriceUnderlying ?? Ask0 : Ask0;
-                Quote = SecurityType == SecurityType.Option ? algo.Quotes[order.Id] : null;
+                if (SecurityType == SecurityType.Option && algo.Quotes.ContainsKey(order.Id))
+                {
+                    Quote = algo.Quotes[order.Id];
+                }
             }
 
             if (order.Type == OrderType.OptionExercise && Security.Type == SecurityType.Option)
@@ -242,6 +256,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             IVAsk0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
             IVPrice0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001) : 0;
             _ = Greeks;
+            SurfaceIVdSBid = (decimal)(_algo.IVSurfaceRelativeStrikeBid[UnderlyingSymbol].IVdS(Symbol) ?? 0);
+            SurfaceIVdSAsk = (decimal)(_algo.IVSurfaceRelativeStrikeAsk[UnderlyingSymbol].IVdS(Symbol) ?? 0);
         }
     }
 }

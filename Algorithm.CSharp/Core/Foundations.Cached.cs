@@ -8,6 +8,7 @@ using QuantConnect.Orders;
 using QuantConnect.Securities;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Securities.Option;
+using QuantConnect.Algorithm.CSharp.Core.Risk;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -204,6 +205,30 @@ namespace QuantConnect.Algorithm.CSharp.Core
         //        }
         //    }
         //}
+
+        /// <summary>
+        /// Adjust the target hedge risk by an amount corresponding to the put call ratio signal.
+        /// </summary>
+        /// <returns></returns>
+        public decimal TargetRiskPutCallRatio(Symbol underlying)
+        {
+            if (Cfg.PutCallRatioTargetRisks.ContainsKey(underlying.Value))
+            {
+                foreach (TargetRisk targetRisk in Cfg.PutCallRatioTargetRisks[underlying.Value])
+                {
+                    if (targetRisk.RangeLower <= PutCallRatios[underlying].Ratio() && PutCallRatios[underlying].Ratio() <= targetRisk.RangeUpper)
+                    {
+                        return targetRisk.Target100BpUSD;
+                    }
+                }
+            }
+            return 0;
+        }
+
+        public decimal Risk100BpRisk2USDDelta(Symbol symbol, decimal risk)
+        {
+            return risk * 100 / MidPrice(symbol);
+        }
         private void GetHedgeOptionWithUnderlyingZMBands(Symbol symbol)
         {
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
@@ -213,9 +238,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal zmOffset = PfRisk.RiskBandByUnderlying(symbol, Metric.ZMOffset);
             decimal riskDeltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
 
+            decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);// + SurfaceIVdSTotal;
+            var shortCall = Risk100BpRisk2USDDelta(underlying, TargetRiskPutCallRatio(underlying));
+            if (shortCall != 0)
+            {
+                Log($"PutCallRatio: shortCall={shortCall}, TargetRiskPutCallRatio(underlying)={TargetRiskPutCallRatio(underlying)}");
+            }
+            riskDeltaTotal += shortCall;
+
             if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
             {
-                Log($"{Time} GetHedgeOptionWithUnderlyingZMBands. zmOffset={zmOffset}, riskDeltaTotalNotZMFlat={riskDeltaTotal}.");
+                Log($"{Time} GetHedgeOptionWithUnderlyingZMBands. zmOffset={zmOffset}, riskDeltaTotalNotZMFlat={riskDeltaTotal}, deltaIVdSTotal={deltaIVdSTotal}");
                 ExecuteHedge(underlying, -riskDeltaTotal);  // Like standard delta hedging, but with ZM bands.
             }
             else

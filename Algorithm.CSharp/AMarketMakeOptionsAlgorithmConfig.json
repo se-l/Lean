@@ -3,7 +3,7 @@
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" ];  // Too much for 2 cores on a t3 instance.
-  "OptionTicker": [ "HPE" ],
+  "OptionTicker": [ "PFE" ],
   "LiquidateTicker": [],
   "OptionOrderQuantityDflt": 5,
   "VolatilityPeriodDays": 5,
@@ -91,20 +91,156 @@
       "X2": 0,
       "CapMin": -0.5,
       "CapMax": 0.5
+    },
+    "DELL-Delta100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0.000001,
+      "CapMin": -0.3,
+      "CapMax": 0.3
+    },
+    "DELL-Gamma100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0.00001,
+      "CapMin": -0.3,
+      "CapMax": 0.3,
+      "DTEThreshold": 0,
+      "DTEX0TargetRiskFront": -0,
+      "DTEX0TargetRisk": 0
+    },
+    "DELL-Events-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0.3,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
+    },
+    "DELL-Absolute-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
+    },
+    "CSCO-Delta100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0.000001,
+      "CapMin": -0.3,
+      "CapMax": 0.3
+    },
+    "CSCO-Gamma100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0.00001,
+      "CapMin": -0.3,
+      "CapMax": 0.3,
+      "DTEThreshold": 30,
+      "DTEX0TargetRiskFront": -30,
+      "DTEX0TargetRisk": 30
+    },
+    "CSCO-Events-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0.3,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
+    },
+    "CSCO-Absolute-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
+    },
+    "ORCL-Delta100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0.000001,
+      "CapMin": -0.3,
+      "CapMax": 0.3
+    },
+    "ORCL-Gamma100BpUSDTotal-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0.00001,
+      "CapMin": -0.3,
+      "CapMax": 0.3,
+      "DTEThreshold": 30,
+      "DTEX0TargetRiskFront": -30,
+      "DTEX0TargetRisk": 30
+    },
+    "ORCL-Events-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0.3,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
+    },
+    "ORCL-Absolute-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -0.5,
+      "CapMax": 0.5
     }
   },
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
   "IVSurfaceRelativeStrikeAlpha": {
     "HPE": 0.05,
-    "PFE": 0.15
+    "DELL": 0.05,
+    "ORCL": 0.05,
+    "CSCO": 0.05,
+    "PFE": 0.10
   },
   "SurfaceVerticalResetThreshold": 0.01,
-  "WarmUpDays": 2, // Reduce for debugging. Usually 2.
+  "WarmUpDays": 0, // Reduce for debugging. Usually 2.
   "LogOrderUpdates": false,
-  "SkipWarmUpSecurity": false, // for debugging. Usually false.
+  "SkipWarmUpSecurity": true, // for debugging. Usually false.
   "MinZMOffset": {
     "HPE": 20,
+    "DELL": 20,
     "PFE": 20
+  },
+  "PutCallRatioWarmUpDays": 3,
+  "PutCallRatioTargetRisks": {
+    "PFE": [
+      {
+        "RangeLower": 2,
+        "RangeUpper": 99,
+        "Target100BpUSD": 300
+      },
+      {
+        "RangeLower": -99,
+        "RangeUpper": -1,
+        "Target100BpUSD": 300
+      }
+    ]
+  },
+  "EOD2SODATMIVJumpThreshold": {
+    "_": 0.04
+  },
+  "IntradayIVSlopeTrendingRange": {
+    "_": [ 0.02, -0.02 ]
+  },
+  "DaysBeforeConsideringEarningsAnnouncement": {
+    "_": 7
+  },
+  "AtmIVIndicatorWindow": {
+    "_": 30
   }
 }

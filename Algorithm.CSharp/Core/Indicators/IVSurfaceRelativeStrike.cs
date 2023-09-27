@@ -12,43 +12,57 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
     public class IVSurfaceRelativeStrike : IDisposable
     {
-        private readonly List<OptionRight> OptionRights = new() { OptionRight.Call, OptionRight.Put };
-        public DateTime Time;
+        private readonly Foundations _algo;
         public Symbol Underlying { get; }
-        private readonly QuoteSide _side;
         public QuoteSide Side { get => _side; }
 
-        private readonly Foundations _algo;
+        // Surface
+        public DateTime Time;
+        private readonly List<OptionRight> OptionRights = new() { OptionRight.Call, OptionRight.Put };        
+        private readonly QuoteSide _side;        
         private readonly Dictionary<(OptionRight, DateTime, ushort), Bin> _bins = new();
         private readonly HashSet<DateTime> _expiries = new();
         private readonly Dictionary<DateTime, HashSet<decimal>> _strikes = new();
-        private readonly Dictionary<(DateTime, decimal), int> _samples = new();
 
+        // Smoothing
         private readonly Dictionary<(OptionRight, DateTime), ushort> _minBin = new();
         private readonly Dictionary<(OptionRight, DateTime), ushort> _maxBin = new();
         private readonly double Alpha;
         public readonly TimeSpan SamplingPeriod;
 
-
+        // CSV writer
         private readonly string _path;
         private readonly string _pathRaw;
         private readonly StreamWriter _writer;
         private readonly StreamWriter _writerRaw;
         private bool _headerWritten;
 
-        private Func<Symbol, IVQuoteIndicator> _ivQuote;
-        private decimal MidPriceUnderlying { get { return _algo.MidPrice(Underlying); } }
+        // Logs
+        private readonly Dictionary<(DateTime, decimal), int> _samples = new();
+        private const string _dateTimeFmt = "yyyy-MM-dd HH:mm:ss";
+        private const string _dateFmt = "yyyy-MM-dd";
         public enum Status
         {
             Samples,
             Smoothings
         }
-        private const string _dateTimeFmt = "yyyy-MM-dd HH:mm:ss";
-        private const string _dateFmt = "yyyy-MM-dd";
 
+        // EventHandlers
+        public delegate void EODATMEventHandler(object sender, IVQuote e);
+        public event EODATMEventHandler EODATMEvent;
+
+        private bool _updateFlag;
+        //private EODATMEventHandler _EODATMEventHandler;
+        //{
+        //    add { _EODATMEventHandler += value; }
+        //    remove { _EODATMEventHandler -= value; }
+        //}
+
+        private decimal MidPriceUnderlying { get { return _algo.MidPrice(Underlying); } }
         public Func<Symbol, double?> IV;
+        private Func<Symbol, IVQuoteIndicator> _ivQuote;
 
-        public IVSurfaceRelativeStrike(Foundations algo, Symbol underlying, QuoteSide side)
+        public IVSurfaceRelativeStrike(Foundations algo, Symbol underlying, QuoteSide side, bool createFile = false)
         {
             _algo = algo;
             Alpha = _algo.Cfg.IVSurfaceRelativeStrikeAlpha[underlying];
@@ -59,22 +73,30 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             IV = algo.Cache(GetIV, (Symbol symbol) => (_algo.Time, symbol), ttl: 10);
             _ivQuote = side == QuoteSide.Ask ? (Symbol s) => _algo.IVAsks[s] : (Symbol s) => _algo.IVBids[s];
 
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "IVSurface", Underlying.Value, $"{Side}.csv");
-            _pathRaw = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "IVSurface", Underlying.Value, $"{Side}Raw.csv");
-            if (File.Exists(_path))
+            if (createFile)
             {
-                File.Delete(_path);
+                _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "IVSurface", Underlying.Value, $"{Side}.csv");
+                _pathRaw = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "IVSurface", Underlying.Value, $"{Side}Raw.csv");
+                if (File.Exists(_path))
+                {
+                    File.Delete(_path);
+                }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(_path));
+                }
+                if (File.Exists(_pathRaw))
+                {
+                    File.Delete(_pathRaw);
+                }
+                _writer = new StreamWriter(_path, true);
+                _writerRaw = new StreamWriter(_pathRaw, true);
             }
-            else
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(_path));
-            }
-            if (File.Exists(_pathRaw))
-            {
-                File.Delete(_pathRaw);
-            }
-            _writer = new StreamWriter(_path, true);
-            _writerRaw = new StreamWriter(_pathRaw, true);
+        }
+
+        public void ScheduleUpdate()
+        {
+            _updateFlag = true;
         }
 
         public void RegisterSymbol(Option option)
@@ -136,6 +158,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 foreach (OptionRight optionRight in OptionRights)
                 {
                     var symbols = OptionSymbols(expiry, optionRight);
+                    if (!symbols.Any()) continue;
                     var maxStrike = symbols.Select(s => s.ID.StrikePrice).Max();
                     foreach (Symbol symbolRight in symbols)
                     {
@@ -455,7 +478,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return OptionRights.Select(right => _bins[(right, minExpiry, 100)]);
         }
 
-        public double AtmIVEWMA()
+        public double AtmIvEwma()
         {
             /// Mean is not good. Use weighted mean. Weight by distance.
             IEnumerable<double?> vols = ATMBins().Select(b => b.IVEWMA);
@@ -620,11 +643,66 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return binLog.ToString();
         }
 
+        public decimal DeltaMoneyness2DeltaPrice(Symbol symbol, decimal from, decimal to)
+        {
+            return MidPriceUnderlying / 100;
+        }
+
+        /// <summary>
+        /// Slope of strike skew around symbols's K
+        /// </summary>
+        public double? IVdS(Symbol symbol)
+        {
+            if (symbol.SecurityType != SecurityType.Option) { return 0; }
+
+            ushort binValueMid = (ushort)Math.Round(StrikePct(symbol.ID.StrikePrice));
+            
+            ushort binValueLeft = (ushort)(binValueMid - 1);
+            ushort binValueRight = (ushort)(binValueMid + 1);
+            Bin bin = GetBin(symbol.ID.OptionRight, symbol.ID.Date, binValueMid);
+            Bin binLeft = GetBin(symbol.ID.OptionRight, symbol.ID.Date, binValueLeft);
+            Bin binRight = GetBin(symbol.ID.OptionRight, symbol.ID.Date, binValueRight);
+            double? slopeLeft = (binLeft.IV - bin.IV) / (double)DeltaMoneyness2DeltaPrice(symbol, binValueLeft, bin.Value);
+            double? slopeRight = (bin.IV - binRight.IV) / (double)DeltaMoneyness2DeltaPrice(symbol, bin.Value, binValueRight);
+            //_algo.Log($"symbol={symbol}, slopeLeft={slopeLeft}, binValueLeft={binValueLeft}, binValueMid={bin.Value}, IVLeft ={binLeft.IV},  IVMid={bin.IV}, DeltaMoneyness2DeltaPrice={(double)DeltaMoneyness2DeltaPrice(symbol, binValueLeft, bin.Value)}");
+            return slopeLeft == null || slopeRight == null ? null : (slopeLeft + slopeRight) / 2;
+        }
+
+        public double? SkewStrike(DateTime? expiry = null)
+        {
+            DateTime _expiry = expiry ?? MinExpiry();
+            var call_skew = GetBin(OptionRight.Call, _expiry, 110).IV - GetBin(OptionRight.Call, _expiry, 90).IV;
+            var put_skew = GetBin(OptionRight.Put, _expiry, 110).IV - GetBin(OptionRight.Put, _expiry, 90).IV;
+            return (call_skew + put_skew) / 2;
+        }
+
+        public void OnEODATM()
+        {
+            EODATMEvent?.Invoke(this, new IVQuote(
+                Underlying,
+                Time,
+                MidPriceUnderlying,
+                0,
+                AtmIv()
+            ));
+        }
+
+        public void ProcessUpdateFlag()
+        {
+            if (_updateFlag)
+            {
+                Update();
+                _updateFlag = false;
+            }
+        }
+
         public void Dispose()
         {
             _writer.Flush();
+            _writer.Close();
             _writer.Dispose();
             _writerRaw.Flush();
+            _writerRaw.Close();
             _writerRaw.Dispose();
         }
     }

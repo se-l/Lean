@@ -30,5 +30,11 @@ namespace QuantConnect.Algorithm.CSharp
         public bool LogOrderUpdates { get; set; }
         public bool SkipWarmUpSecurity { get; set; }
         public Dictionary<string, double> MinZMOffset { get; set; }
+        public int PutCallRatioWarmUpDays { get; set; }
+        public Dictionary<string, List<TargetRisk>> PutCallRatioTargetRisks { get; set; }
+        public Dictionary<string, double> EOD2SODATMIVJumpThreshold { get; set; }
+        public Dictionary<string, (double, double)> IntradayIVSlopeTrendingRange { get; set; }
+        public Dictionary<string, int> DaysBeforeConsideringEarningsAnnouncement { get; set; }
+        public Dictionary<string, int> AtmIVIndicatorWindow { get; set; }
     }
 }

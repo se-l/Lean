@@ -15,6 +15,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
 {
     public static class Statics
     {
+        public const string CfgDefault = "_";
+        public const string VolatilityBar = "VolatilityBar";
+
         public static HashSet<Type> PrimitiveTypes = new()
         {
             typeof(decimal),
@@ -142,16 +145,25 @@ namespace QuantConnect.Algorithm.CSharp.Core
             GammaImplied100BpUSDTotal,
             Gamma500BpUSDTotal,
             GammaImplied500BpUSDTotal,
+            Speed,  // DGammaDSpotUnderlying
 
-            Theta,
             ThetaTotal,
-            ThetaUSDTotal,
-            Theta1DayUSD,
 
             Vega,
             VegaTotal,
-            VegaUSDTotal,
-            Vega100BpUSD,
+
+            Vanna,
+            VannaTotal,
+            Vanna100BpUSDTotal,
+
+            Volga,
+            Volga100BpUSDTotal,
+
+            DeltaIVdS,
+            DeltaIVdSTotal,
+            DeltaIVdS100BpUSDTotal,
+
+            BsmIVdSTotal,
 
             // Bands
             ZMOffset,
@@ -159,7 +171,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
             BandZMUpper,
 
             Events,
-            Absolute
+            Absolute,
+            PosWeightedIV
+        }
+        public static IEnumerable<T> ToIEnumerable<T>(this IEnumerator<T> enumerator)
+        {
+            while (enumerator.MoveNext())
+            {
+                yield return enumerator.Current;
+            }
         }
 
         public static decimal RoundTick(decimal x, decimal tickSize, bool? ceil = null, decimal? reference = null)
@@ -211,10 +231,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public static PropertyInfo[] GetProperties<T>(T obj) 
         {
             // typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);  Didnt work for GreeksPlus & PLExplain
-            if (obj is QCAlgorithm) {
+            if (obj is QCAlgorithm)
+            {
                 return new PropertyInfo[0];
             }
             return obj == null ? new PropertyInfo[0] : obj.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        }
+
+        public static MethodInfo[] GetMethods<T>(T obj)
+        {
+            return obj == null ? new MethodInfo[0] : obj.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance).Where(m => m.GetParameters().Length == 0).ToArray();
         }
 
         public static double[] LogReturns(double[] prices)
@@ -269,6 +295,30 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         header.UnionWith(ObjectsToHeaderNames(val, prefix: prefix + prop.Name + "."));
                     }
                 }
+
+                //var methods = GetMethods(obj);
+                //foreach (var m in methods)
+                //{
+                //    if (PrimitiveTypes.Contains(m.ReturnType) || ToStringTypes.Contains(m.ReturnType))
+                //    {
+                //        header.Add(prefix + m.Name);
+                //    }
+                //    else
+                //    {
+                //        object? val;
+                //        try
+                //        {
+                //            val = m.Invoke(obj, null);
+                //        }
+                //        catch (Exception e)
+                //        {
+                //            Logging.Log.Debug(e.ToString());
+                //            val = null;
+                //        }
+                //        header.UnionWith(ObjectsToHeaderNames(val, prefix: prefix + m.Name + "."));
+                //    }
+                //}
+
                 return header;
             }
         }
@@ -281,7 +331,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _ => throw new NotImplementedException(),
             };
         }
-
         public static string ValueFromPropSequence<T>(T obj, string[] propSequence)
         {
             object val = null;
@@ -299,9 +348,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         {
                             val = obj.GetType().GetProperty(propSequence[i]).GetValue(obj);
                         }
-                        catch
+                        catch (Exception e)
                         {
-                            Logging.Log.Error($"ValueFromPropSequence. Failed to get property for {obj} in {string.Join(",", propSequence)}.");
+                            Logging.Log.Error($"ValueFromPropSequence. Failed to get property for {obj} in {string.Join(",", propSequence)}. {e}");
                             return "";
                         }
                     }
@@ -318,9 +367,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         {
                             val = val.GetType().GetProperty(propSequence[i]).GetValue(val);
                         }
-                        catch
+                        catch (Exception e)
                         {
-                            Logging.Log.Error($"ValueFromPropSequence. Failed to get property for {obj} in {string.Join(",", propSequence)}.");
+                            Logging.Log.Error($"ValueFromPropSequence. Failed to get property for {obj} in {string.Join(",", propSequence)}. {e}");
                             return "";
                         }
                     }                    

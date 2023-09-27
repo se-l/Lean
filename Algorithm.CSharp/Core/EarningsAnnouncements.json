@@ -1,5 +1,23 @@
 [
   {
+    "Symbol": "CSCO",
+    "Date": "2023-08-16",
+    "EmbargoPrior": "2023-08-14",
+    "EmbargoPost": "2023-08-17"
+  },
+  {
+    "Symbol": "ORCL",
+    "Date": "2023-09-11",
+    "EmbargoPrior": "2023-09-09",
+    "EmbargoPost": "2023-09-12"
+  },
+  {
+    "Symbol": "DELL",
+    "Date": "2023-08-31",
+    "EmbargoPrior": "2023-08-29",
+    "EmbargoPost": "2023-09-01"
+  },
+  {
     "Symbol": "HPE",
     "Date": "2023-05-30",
     "EmbargoPrior": "2023-05-28",

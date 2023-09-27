@@ -43,7 +43,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public override bool IsReady => _samples > 0;
 
-        public IVQuoteIndicator(QuoteSide side, Option option, Foundations algo) : base($"IV {side} {option.Symbol}")
+        public IVQuoteIndicator(QuoteSide side, Option option, Foundations algo) : base($"IVQuoteIndicator {side} {option.Symbol}")
         {
             _side = side;
             _algo = algo;

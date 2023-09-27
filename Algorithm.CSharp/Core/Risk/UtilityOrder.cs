@@ -1,18 +1,20 @@
 using System;
+using System.IO;
+using System.Linq;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using System.IO;
-using System.Linq;
+using System.Collections.Generic;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
     // The CSV part is quite messy. Improve
     public class Utility : IDisposable
     {
-        private string _path;
+        private readonly string _path;
         private readonly StreamWriter _writer;
+        private bool _headerWritten;
         public Utility()
         {
             _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "UtilityOrder.csv");
@@ -25,93 +27,124 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Directory.CreateDirectory(Path.GetDirectoryName(_path));
             }
             _writer = new StreamWriter(_path, true);
-
-            _writer.WriteLine("Time,Symbol,Quantity,OrderDirection,Utility,UtilityRisk,UtilityProfit,UtilityProfitSpread},UtilityProfitVega");
         }
         public void Write(UtilityOrder utility)
         {
+            if (!_headerWritten)
+            {
+                _writer.WriteLine(utility.CsvHeader());
+                _headerWritten = true;
+            }
             _writer.WriteLine(utility.CsvRow());
         }
 
         public void Dispose()
         {
             _writer.Flush();
+            _writer.Close();
             _writer.Dispose();
         }
     }
+    /// <summary>
+    /// All Utilities in USD. Weighs easy-to-measure profit opportunities vs. uncertain Risk/Opportunities. Turning Risk into a USD estimate will be challenging and requires frequent review.
+    /// Each public instance attribute is exported to CSV if exported. Methods wont be.
+    /// Probably needs to be coupled more with Pricer to avoid unneccessary re-calculations.
+    /// A utility to me translates into a price. But some opportunities/risk may me cheaper than others - that's for the pricer to optimize.
+    /// </summary>
     public class UtilityOrder
     {
-        public Option Option;
-        public Symbol Symbol { get => Option.Symbol; }
-        public DateTime Time;
-        public decimal Quantity;
-        public OrderDirection OrderDirection;
-
+        // Constructor
         private readonly Foundations _algo;
+        public Option Option { get; internal set; }
+        public decimal Quantity { get; internal set; }
+        public Symbol Symbol { get => Option.Symbol; }
+        public DateTime Time { get; internal set; }
+        public OrderDirection OrderDirection { get; internal set; }
+        private decimal Multiplier { get => Option.ContractMultiplier; }
 
-        private double? _utilityProfit;
+        public double Utility { get => UtilityProfit + UtilityRisk; }
+        public double UtilityProfit
+        {
+            get =>
+            //UtilityProfitSpread +
+            //UtilityProfitVega +
+            IntradayVolatilityRisk;
+        }
+        public double UtilityRisk
+        {
+            get =>
+                UtilityRiskInventory +
+                UtilityRiskExpiry +
+                QuoteDiscounts;
+        }
+
         private double? _utilityProfitSpread;
+        private double UtilityProfitSpread { get => _utilityProfitSpread ??= GetUtilityProfitSpread(); }
         private double? _utilityProfitVega;
-        private double? _utilityRisk;
+        private double UtilityProfitVega { get => _utilityProfitVega ??= GetUtilityProfitVega(); }
 
-        public double Utility
-        {
-            // Utility functions. Not normed currently. Risk to Money and discount to a PV.
-            // Excluding UtilProfit for now as it is not comparable to UtilRisk and outsized UtilRisk.
-            get
-            {
-                //_utilityProfit ??= UtilityProfit();
-                _utilityRisk ??= UtilityRisk();
-                //return (double)(_utilityProfit + _utilityRisk);
-                return (double)_utilityRisk;
-            }
-        }
+        private double? _intradayVolatilityRisk;
+        public double IntradayVolatilityRisk { get => _intradayVolatilityRisk ??= GetIntradayVolatilityRisk(); }
 
-        public string CsvRow()
-        {
-            return $"{Time},{Symbol},{Quantity},{OrderDirection},{Utility},{_utilityRisk},{_utilityProfit},{_utilityProfitSpread},{_utilityProfitVega}";
-        }
+        private double? _utilityRiskInventory;
+        private double UtilityRiskInventory { get => _utilityRiskInventory ??= GetUtilityRiskInventory(); }
+        private double? _utilityRiskExpiry;
+        private double UtilityRiskExpiry { get => _utilityRiskExpiry ??= GetUtilityRiskExpiry(); }
+        private double? _quoteDiscounts;
+        public double QuoteDiscounts { get => _quoteDiscounts ??= GetQuoteDiscounts(); }
 
         public UtilityOrder(Foundations algo, Option option, decimal quantity)
         {
             _algo = algo;
             Option = option;
-            Time = algo.Time;
             Quantity = quantity;
-            OrderDirection = Num2Direction(quantity);
+            Time = _algo.Time;
+            OrderDirection = Num2Direction(Quantity);
 
-            // Calling Utility to snap the risk. Cached for future use.
+            // Calling Utility to snap the risk => cached for future use.
             _ = Utility;
         }
 
-        public void Export()
+        /// <summary>
+        /// Don't really want to increase inventory. Hard to Quantity. Attach price tag of 50...
+        /// </summary>
+        private double GetUtilityRiskInventory()
         {
-            _algo.Utility.Write(this);
+            return _algo.Portfolio[Symbol].Quantity * Quantity > 0 ? -30 * (double)Quantity : 0;
         }
-
-        public double UtilityRisk()
+        /// <summary>
+        /// To be refactored - these discounts are in the pricing function. There, they lower the price. Here, the reversed. Whatever we give discount for is because we want to sell or buy it.
+        /// Pricing may not necessarily wanna impact the utility. The discounts is always smaller than the utility.
+        /// </summary>
+        private double GetQuoteDiscounts()
         {
-            // Greater 1. Good for portfolio. Risk reducing. Negative: Risk increasing.
-            var _inventoryRisk = _algo.Portfolio[Symbol].Quantity * Quantity > 0 ? -1 : 0;  // for now, dont order in the same direction as position
-            var _expireRisk = OrderDirection == OrderDirection.Buy && (Option.Symbol.ID.Date - _algo.Time.Date).Days <= 1 ? -1 : 0;  // dont buy stuff about to expire
             var quoteDiscounts = _algo.GetQuoteDiscounts(new QuoteRequest<Option>(Option, Quantity));
-            return
-                _inventoryRisk +
-                _expireRisk + 
-                (1 / ( 1 - quoteDiscounts.Sum(qd => qd.SpreadFactor)));
+            var discount = (1 - quoteDiscounts.Sum(qd => qd.SpreadFactor));  // Whatever is discounted is because it's an opportunity or risk reduction, hence positive utility.
+            return discount * (double)(Quantity * Multiplier);
+        }
+        /// <summary>
+        /// Dont buy stuff about to expire. But that should be quantified. A risk is underlying moving after market close.
+        /// </summary>
+        private double GetUtilityRiskExpiry()
+        {
+            return OrderDirection == OrderDirection.Buy && (Option.Symbol.ID.Date - _algo.Time.Date).Days <= 1 ? -10 * (double)Quantity : 0;
         }
 
         /// <summary>
-        /// Spread and IVBid/Ask - IVEWMA Bid/Ask
+        /// Sell AM, Buy PM.
         /// </summary>
-        public double UtilityProfit()
+        private double GetIntradayVolatilityRisk()
         {
-            _utilityProfitSpread ??= UtilityProfitSpread();
-            _utilityProfitVega ??= UtilityProfitVega();
-            return (double)(_utilityProfitSpread + _utilityProfitVega);
+            if (_intradayVolatilityRisk != null) return (double)_intradayVolatilityRisk;
+
+            if (_algo.IntradayIVDirectionIndicators[Option.Underlying.Symbol].Direction().Length > 1) return 0;
+
+            double intraDayIVSlope = _algo.IntradayIVDirectionIndicators[Option.Underlying.Symbol].IntraDayIVSlope;
+            double fractionOfDayRemaining = 1 - _algo.IntradayIVDirectionIndicators[Option.Underlying.Symbol].FractionOfDay(_algo.Time);
+            return OptionContractWrap.E(_algo, Option, _algo.Time.Date).Vega() * intraDayIVSlope * fractionOfDayRemaining * (double)(Quantity * Option.ContractMultiplier);
         }
 
-        public double UtilityProfitSpread()
+        private double GetUtilityProfitSpread()
         {
             decimal midPrice = _algo.MidPrice(Symbol);
             var util = OrderDirection switch
@@ -122,7 +155,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             };
             return (double)util / 2;
         }
-        public double UtilityProfitVega()
+        private double GetUtilityProfitVega()
         {
             Symbol underlying = Symbol.Underlying;
 
@@ -153,6 +186,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _ => 0
             };
             return util;
+        }
+        private List<string>? _header;
+        public List<string> CsvHeader() => _header ??= ObjectsToHeaderNames(this).OrderBy(x => x).ToList();
+        public string CsvRow() => ToCsv(new[] { this }, _header, skipHeader: true);
+        public void Export()
+        {
+            _algo.Utility.Write(this);
         }
     }
 }

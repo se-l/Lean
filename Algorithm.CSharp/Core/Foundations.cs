@@ -20,9 +20,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations : QCAlgorithm
     {
-        private const string VolatilityBar = "VolatilityBar";
         public Resolution resolution;
         public Dictionary<Symbol, QuoteBarConsolidator> QuoteBarConsolidators = new();
+        public Dictionary<Symbol, TradeBarConsolidator> TradeBarConsolidators = new();
         public List<OrderEvent> OrderEvents = new();
         public Dictionary<Symbol, List<OrderTicket>> orderTickets = new();
         public OrderType orderType;
@@ -46,6 +46,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVAsk = new();
         public Dictionary<Symbol, IVTrade> IVTrades = new();
         public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVTrade = new();
+        public Dictionary<Symbol, PutCallRatioIndicator> PutCallRatios = new();
+        public Dictionary<Symbol, IntradayIVDirectionIndicator> IntradayIVDirectionIndicators = new();
+        public Dictionary<Symbol, AtmIVIndicator> AtmIVIndicators = new();
         // End
         public RiskRecorder RiskRecorder;
         public TickCounter TickCounterFilter;  // Not in use        
@@ -247,33 +250,33 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     sec.IsTradable
                     && sec.Type == SecurityType.Option
                     && (
-                        (                    
-                        // to be review with Gamma hedging. Selling option at ultra-high, near-expiry IVs with great gamma hedge could be extra profitable.
-                        (sec.Symbol.ID.Date - Time.Date).Days > 1  //  Currently unable to handle the unpredictable underlying dynamics in between option epiration and ITM assignment.
-                        && !sec.Symbol.IsCanonical()
-                        && sec.BidPrice != 0
-                        && sec.AskPrice != 0
-                        && IsLiquid(sec.Symbol, 5, Resolution.Daily)
-                        && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMinSignal)
-                        && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
-                        && (
-                            ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < Cfg.scopeContractMoneynessITM * MidPrice(sec.Symbol.Underlying)
-                            || (orderTickets.ContainsKey(sec.Symbol) && orderTickets[sec.Symbol].Count > 0 && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < (Cfg.scopeContractMoneynessITM + 0.05m) * MidPrice(sec.Symbol.Underlying))
+                            (                    
+                            // to be review with Gamma hedging. Selling option at ultra-high, near-expiry IVs with great gamma hedge could be extra profitable.
+                            (sec.Symbol.ID.Date - Time.Date).Days > 1  //  Currently unable to handle the unpredictable underlying dynamics in between option epiration and ITM assignment.
+                            && !sec.Symbol.IsCanonical()
+                            && sec.BidPrice != 0
+                            && sec.AskPrice != 0
+                            && IsLiquid(sec.Symbol, 5, Resolution.Daily)
+                            && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMinSignal)
+                            && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
+                            && (
+                                ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < Cfg.scopeContractMoneynessITM * MidPrice(sec.Symbol.Underlying)
+                                || (orderTickets.ContainsKey(sec.Symbol) && orderTickets[sec.Symbol].Count > 0 && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < (Cfg.scopeContractMoneynessITM + 0.05m) * MidPrice(sec.Symbol.Underlying))
+                            )
+                            && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
+                            && IVSurfaceRelativeStrikeBid[Underlying(sec.Symbol)].IsReady(sec.Symbol)
+                            && IVSurfaceRelativeStrikeAsk[Underlying(sec.Symbol)].IsReady(sec.Symbol)
+                            //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
+                            // Embargo
+                            && !(
+                                embargoedSymbols.Contains(sec.Symbol)
+                                //|| (((Option)sec).Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
+                            )
                         )
-                        && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
-                        && IVSurfaceRelativeStrikeBid[Underlying(sec.Symbol)].IsReady(sec.Symbol)
-                        && IVSurfaceRelativeStrikeAsk[Underlying(sec.Symbol)].IsReady(sec.Symbol)
-                        //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
-                        // Embargo
-                        && !(
-                            embargoedSymbols.Contains(sec.Symbol)
-                            //|| (((Option)sec).Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
-                        )
-                        ) 
-                        || 
+                        ||
                         (
-                        !(sec.Symbol.ID.Date <= Time.Date)
-                        && Portfolio[sec.Symbol].Quantity != 0  // Need to exit eventually
+                            !(sec.Symbol.ID.Date <= Time.Date)
+                            && Portfolio[sec.Symbol].Quantity != 0  // Need to exit eventually
                         )
                     )
                 )
@@ -294,7 +297,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     else if (utilBuy.Utility >= 0 && utilBuy.Utility > utilSell.Utility)
                     {
                         signals.Add(new Signal(symbol, OrderDirection.Buy, utilBuy));
-                    }                    
+                    }
                 }
             }
             return signals;

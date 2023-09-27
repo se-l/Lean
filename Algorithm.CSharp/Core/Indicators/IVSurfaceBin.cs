@@ -22,6 +22,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         private DateTime PreviousTime;
         public double? Epsilon { get => IV - IVEWMA; }
 
+        // Logs
         private uint _samples;
         private uint _smoothings;
         public uint Samples { get => _samples; }

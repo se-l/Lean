@@ -142,7 +142,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
             }
             return greeks;
         }
-
+        // dS
         public double Delta()
         {
             switch (SecurityType)
@@ -225,7 +225,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                 SecurityType.Option => (decimal)Delta() * Multiplier * Quantity
             };
         }
-        public decimal DeltaXBpUSDTotal(double x = 100)
+        public decimal DeltaXBpUSDTotal(double dS = 100)
         {
             //if (x==100)
             //{
@@ -233,8 +233,8 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
             //}            
             return SecurityType switch
             {
-                SecurityType.Equity => Mid1Underlying * (decimal)x * BP * Quantity,
-                SecurityType.Option => (decimal)(Delta() * x) * Mid1Underlying * BP * Multiplier * Quantity
+                SecurityType.Equity => Mid1Underlying * (decimal)dS * BP * Quantity,
+                SecurityType.Option => (decimal)(Delta() * dS) * Mid1Underlying * BP * Multiplier * Quantity
             };
         }
         public decimal DeltaImpliedTotal(double volatility)
@@ -254,6 +254,7 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
             };
         }
 
+        //dS2
         public double Gamma()
         {
             return GetGreeks1().Gamma;
@@ -292,70 +293,93 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                 _ => 0
             }; ;
         }
-
-        public decimal GammaXBpUSDTotal(double x = 100)
+        public decimal GammaXBpUSDTotal(double dS = 100)
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)(0.5 * Gamma() * Math.Pow((double)Mid1Underlying * x * (double)BP, 2)) * Multiplier * Quantity,
+                SecurityType.Option => (decimal)(0.5 * Gamma() * Math.Pow((double)Mid1Underlying * dS * (double)BP, 2)) * Multiplier * Quantity,
                 _ => 0
             };
         }
-        public decimal GammaImpliedXBpUSDTotal(double volatility, double x = 100)
+        // dSdIV
+        public decimal VannaXBpUSDTotal(decimal dIV = 100)  // How much USD costs a 1% change in IV and its change to Delta?
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)(0.5 * GammaImplied(volatility) * Math.Pow((double)Mid1Underlying * x * (double)BP, 2)) * Multiplier * Quantity,
+                // Change in Delta * Position
+                SecurityType.Option => (decimal)GetGreeks1().Vanna * BP * dIV * Mid0Underlying * Multiplier * Quantity,
                 _ => 0
             };
         }
+        public decimal VannaTotal() => (decimal)GetGreeks1().Vanna * Multiplier * Quantity;
+        public decimal BsmIVdS() => (decimal)GetGreeks1().IVdS;
 
-        // Below 2 simplifications assuming a pure options portfolio.
-        public double Theta()
+        public decimal BsmIVdSTotal() => BsmIVdS() * Multiplier * Quantity;
+        public decimal SurfaceIVdSBid => Trade1?.SurfaceIVdSBid ?? (decimal)(_algo.IVSurfaceRelativeStrikeBid[UnderlyingSymbol].IVdS(Symbol) ?? 0);
+        public decimal SurfaceIVdSAsk => Trade1?.SurfaceIVdSAsk ?? (decimal)(_algo.IVSurfaceRelativeStrikeAsk[UnderlyingSymbol].IVdS(Symbol) ?? 0);
+        public decimal SurfaceIVdS { get {
+            if (SurfaceIVdSBid == 0) { return SurfaceIVdSAsk; }
+            if (SurfaceIVdSAsk == 0) { return SurfaceIVdSBid; }
+            return (SurfaceIVdSBid + SurfaceIVdSAsk) / 2;
+        }}
+        public decimal SurfacedIVdSTotal => SurfaceIVdSAsk * Multiplier * Quantity;
+        public decimal DeltaIVdSTotal()
         {
-            return GetGreeks1().Theta;
+            return (decimal)GetGreeks1().Vega * SurfaceIVdS * Multiplier * Quantity;
         }
-
-        public decimal ThetaTotal()
+        public decimal DeltaIVdSXBpUSDTotal(decimal dS = 100)
+        {
+            return (decimal)GetGreeks1().Vega * SurfaceIVdS * Mid1Underlying * dS * BP * Multiplier * Quantity;
+        }
+        public decimal SpeedXBpUSDTotal(double dS = 100)
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)Theta() * Multiplier * Quantity,
+                SecurityType.Option => (decimal)((1/6.0) * GetGreeks1().DS3 * Math.Pow((double)Mid1Underlying * dS * (double)BP, 3)) * Multiplier * Quantity,
+                _ => 0
+            };
+        }
+        public decimal VegaXBpUSDTotal(double dIV = 100)
+        {
+            return SecurityType switch
+            {
+                SecurityType.Option => (decimal)(GetGreeks1().Vega * dIV) * BP * Multiplier * Quantity,
+                _ => 0
+            };
+        }
+        public decimal VolgaXBpUSDTotal(double dIV = 100)
+        {
+            return SecurityType switch
+            {
+                SecurityType.Option => (decimal)(GetGreeks1().DIV2 * Math.Pow(dIV * (double)BP, 2) * (double)(Multiplier * Quantity)),
+                _ => 0
+            };
+        }
+        public decimal GammaImpliedXBpUSDTotal(double volatility, double dS = 100)
+        {
+            return SecurityType switch
+            {
+                SecurityType.Option => (decimal)(0.5 * GammaImplied(volatility) * Math.Pow((double)Mid1Underlying * dS * (double)BP, 2)) * Multiplier * Quantity,
+                _ => 0
+            };
+        }
+        public decimal ThetaTillExpiryTotal()
+        {
+            return SecurityType switch
+            {
+                SecurityType.Option => (decimal)GetGreeks1().ThetaTillExpiry * Multiplier * Quantity,
                 _ => 0,
             };
         }
-        public decimal Theta1DayUSD()
-        {
-            return ThetaTotal() * Mid1Underlying;
-        }
+        public decimal ThetaTotal() => (decimal)GetGreeks1().Theta * Multiplier * Quantity;
 
-        // Summing up individual vegas. Only applicable to Ppi constructed from options, not for Ppi(SPY or any index)
-        public double Vega()
-        {
-            return SecurityType switch
-            {
-                SecurityType.Option => GetGreeks1().Vega,
-                _ => 0
-            };
-        }
-        public decimal Vega100BpUSD
-        {
-            get => VegaTotal * Mid1Underlying;
-        }
-
-        public decimal VegaTotal
-        {
-            get => SecurityType switch
-            {
-                SecurityType.Option => (decimal)GetGreeks1().Vega * Multiplier * Quantity,
-                _ => 0
-            };
-        }
-
+        // dIV
+        public double Vega() => GetGreeks1().Vega;
+        public decimal VegaTotal() => (decimal)GetGreeks1().Vega * Multiplier * Quantity;
         public double Ts0Sec { get => (Trade0.Ts0 - new DateTime(1970, 1, 1, 0, 0, 0)).TotalSeconds; }
         public decimal DP { get => P1 - Trade0.PriceFillAvg; }
         public decimal DeltaFillMid1 { get => P1 - Mid1; }
-        public decimal DPUnderlying { get => Mid1Underlying - Mid0Underlying; }
+        public decimal DS { get => Mid1Underlying - Mid0Underlying; }
         public decimal PL
         {
             get
@@ -369,7 +393,8 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
         {
             get => SecurityType switch
             {
-                SecurityType.Option => (Trade0.Greeks?.OCW?.DaysToExpiration(Trade0.Ts0.Date) ?? 0) - GetGreeks1()?.OCW?.DaysToExpiration(Ts1.Date) ?? 0,
+                SecurityType.Option => (int)(Trade0.Ts0.Date - Ts1.Date).TotalDays,
+                //SecurityType.Option => GetGreeks1().OCW.DaysToExpiration(Ts1.Date) - Trade0.Greeks.OCW.DaysToExpiration(Trade0.Ts0.Date),
                 _ => 0
             };
         }
@@ -391,21 +416,23 @@ namespace QuantConnect.Algoalgorithm.CSharp.Core.Risk
                     (double)(Quantity * Multiplier),  // Q over lifetime of position
                     Trade0.Delta2MidFill, // Realized on fill. Only use Trade0, otherwise double counting....
                     Trade0.Quantity * Multiplier,  // Trade fill Q at fill. Instant.
-                    premiumOnExpiry: PL - Trade0.Delta2MidFill * Trade0.Quantity * Multiplier  // Premium
+                    premiumOnExpiry: PL - Trade0.Delta2MidFill * Trade0.Quantity * Multiplier,  // Premium
+                    iVdS: (double)(Trade0?.SurfaceIVdS ?? SurfaceIVdS)
                     );
             }
             else
             {
                 return new PLExplain(
                     Trade0.Greeks,
-                    (double)DPUnderlying,
+                    (double)DS,
                     DDaysToExpiration,
                     DIVMid,
                     0,
                     (double)(Quantity * Multiplier),  // Q over lifetime of position
                     Trade0.Delta2MidFill, // Realized on fill. Only use Trade0, otherwise double counting....
                     Trade0.Quantity * Multiplier,  // Trade fill Q at fill. Instant.
-                    Trade0.Fee
+                    Trade0.Fee,
+                    iVdS: (double)(Trade0?.SurfaceIVdS ?? SurfaceIVdS)
                     );
             }
         }

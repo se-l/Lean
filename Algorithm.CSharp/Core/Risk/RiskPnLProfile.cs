@@ -1,11 +1,12 @@
 using Accord.Math;
+using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 using QuantConnect.Securities.Equity;
+using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -17,20 +18,33 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public readonly Equity Equity;
         public Symbol Symbol { get => Equity.Symbol; }
         public Dictionary<double, decimal> PnLProfile = Enumerable.Range(-10, 21).Select(i => (double)i).ToDictionary(i => i, i => 0m);
-        private readonly List<string> _header;
+        private bool _headerWritten;
+        private List<string> _header;
         private readonly string _path;
         private readonly StreamWriter _writer;
+        private List<Metric> metrics = new() { 
+            Metric.Delta, Metric.Gamma, Metric.Speed, Metric.DeltaIVdS, // dS
+            Metric.Vega, Metric.Vanna, Metric.Volga  // dIV
+        };
+        private Dictionary<Metric, Func<IEnumerable<Position>, double, decimal>> Metric2Function = new()
+        {
+            { Metric.Delta, (positions, pctChange) => positions.Sum(p => p.DeltaXBpUSDTotal(pctChange * 100)) },
+            { Metric.Gamma, (positions, pctChange) => positions.Sum(p => p.GammaXBpUSDTotal(pctChange * 100)) },
+            { Metric.Speed, (positions, pctChange) => positions.Sum(p => p.SpeedXBpUSDTotal(pctChange * 100)) },
+            { Metric.DeltaIVdS, (positions, pctChange) => positions.Sum(p => p.DeltaIVdSXBpUSDTotal((decimal)pctChange * 100)) },
+
+            { Metric.Vega, (positions, pctChange) => positions.Sum(p => p.VegaXBpUSDTotal(pctChange * 100)) },
+            { Metric.Volga, (positions, pctChange) => positions.Sum(p => p.VolgaXBpUSDTotal(pctChange * 100)) },
+            { Metric.Vanna, (positions, pctChange) => positions.Sum(p => p.VannaXBpUSDTotal((decimal)pctChange * 100)) },
+        };
 
         public RiskPnLProfile(Foundations algo, Equity equity)
         {
             _algo = algo;
             Equity = equity;
+
             _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "RiskPnLProfile", $"{Symbol.Value}.csv");
-            if (File.Exists(_path))
-            {
-                //File.Delete(_path);
-            }
-            else
+            if (!File.Exists(_path))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(_path));
             }
@@ -38,39 +52,65 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             {
                 AutoFlush = true
             };
-            _header = new List<string> { "Time", "Symbol" };
-            List<string> trailingHeader = PnLProfile.Keys.Sorted().Select(k => k.ToString()).ToList();
-            _header.AddRange(trailingHeader);
-            _writer.WriteLine(string.Join(",", _header));
+            //_header = new List<string> { "Time", "Symbol", "Metric" };
+            //List<string> trailingHeader = PnLProfile.Keys.Sorted().Select(k => k.ToString()).ToList();
+            //_header.AddRange(trailingHeader);
+            //_writer.WriteLine(string.Join(",", _header));
+        }
+
+        public bool WriteHeader()
+        {
+            if (_headerWritten) { return true; }
+
+            var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol).ToList();
+            if (positions.Select(p => p.SecurityType).Contains(SecurityType.Option) && positions.Select(p => p.SecurityType).Contains(SecurityType.Equity))
+            {
+                _header = positions.SelectMany(x => ObjectsToHeaderNames(x)).Distinct().OrderBy(x => x).ToList();
+                _writer.WriteLine(string.Join(",", _header));
+                _headerWritten = true;
+            }
+            return _headerWritten;
         }
 
         public void Update()
         {
-            // Update PnL profile
-            var midPrice = _algo.MidPrice(Symbol);
-            var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol);
+            if (!WriteHeader()) { return; }
 
-            foreach (double pctChange in PnLProfile.Keys)
-            {              
-                var deltaPnL = positions.Sum(t => t.DeltaXBpUSDTotal(pctChange * 100));
-                var gammaPnL = positions.Sum(t => t.GammaXBpUSDTotal(pctChange * 100));
-                PnLProfile[pctChange] = deltaPnL + gammaPnL;                
+            var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol && x.Quantity != 0);
+            if (positions.Any())
+            {
+                _writer.Write(ToCsv(positions, _header, skipHeader: true));
             }
-
-            // Update CSV export
-            string row = new StringBuilder()
-                .Append(_algo.Time.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture))
-                .Append(",")
-                .Append(Symbol.Value)
-                .Append(",")
-                .Append(string.Join(",", PnLProfile.Keys.OrderBy(k => k).Select(k => PnLProfile[k])))
-                .ToString();
-            _writer.WriteLine(row);
         }
+
+        //public void UpdateSums()
+        //{
+        //    // Update PnL profile
+        //    var time = _algo.Time.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        //    var midPrice = _algo.MidPrice(Symbol);
+        //    var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol);
+
+        //    foreach (Metric metric in metrics)
+        //    {
+        //        foreach (double pctChange in PnLProfile.Keys)
+        //        {
+        //            decimal metricPnL = Metric2Function[metric](positions, pctChange);
+        //            PnLProfile[pctChange] = metricPnL;
+        //        }
+
+        //        // Update CSV export
+        //        string row = new StringBuilder()
+        //            .Append($"{time},{Symbol.Value},{metric},")
+        //            .Append(string.Join(",", PnLProfile.Keys.OrderBy(k => k).Select(k => PnLProfile[k])))
+        //            .ToString();
+        //        _writer.WriteLine(row);
+        //    }   
+        //}
 
         public void Dispose()
         {
             _writer.Flush();
+            _writer.Close();
             _writer.Dispose();
         }
     }
