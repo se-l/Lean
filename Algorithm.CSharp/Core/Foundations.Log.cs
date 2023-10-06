@@ -8,6 +8,7 @@ using QuantConnect.Securities.Option;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -54,8 +55,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return tag;
         }
 
-        public string LogContract(Option contract, OrderDirection orderDirection, decimal? limitPrice = null, OrderType orderType=OrderType.Limit)
+        public string LogOptionOrder(Option contract, decimal quantity, decimal? limitPrice = null, OrderType orderType=OrderType.Limit)
         {
+            OrderDirection orderDirection = Num2Direction(quantity);
             decimal best_bid = contract.BidPrice;
             decimal best_ask = contract.AskPrice;
             string order_type_nm = orderType.ToString();
@@ -63,25 +65,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
             string tag = Humanize(new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },
-                { "topic", "CONTRACT" },
+                { "topic", "ORDER OPTION" },
                 { "OrderDirection", order_direction_nm },
+                { "Quantity", quantity.ToString() },
                 { "OrderType", order_type_nm },
-                { "Symbol", contract.Symbol.ToString() },
-                { "Price", limitPrice.ToString() },
+                { "Symbol", contract.Symbol.ToString() },                
                 { "PriceUnderlying", contract.Underlying.Price.ToString() },
                 { "BestBid", best_bid.ToString() },
+                { "Price", limitPrice.ToString() },
                 { "BestAsk", best_ask.ToString() }
             });
-            if (contract.StrikePrice != null)
-            {
-                tag += ", ";
-                tag += Humanize(new Dictionary<string, string>
-                {
-                    { "Strike", contract.StrikePrice.ToString() },
-                    { "Expiry", contract.Expiry.ToString() },
-                    { "Contract", contract.ToString() }
-                });
-            }
             Log(tag);
             return tag;
         }
@@ -124,8 +117,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             LogRisk(@event.Symbol);
             LogPnL(@event.Symbol);
-            //var trades = Transactions.GetOrders().Where(o => o.LastFillTime != null && o.Status != OrderStatus.Canceled).Select(order => new Trade(this, order));
-            //ExportToCsv(trades, Path.Combine(Directory.GetCurrentDirectory(), $"{Name}_trades_{Time:yyyyMMddHHmmss}.csv"));
         }
 
         public string LogOrderEvent(OrderEvent orderEvent)

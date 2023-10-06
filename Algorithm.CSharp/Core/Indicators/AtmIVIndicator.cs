@@ -20,9 +20,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public Symbol Symbol { get => Underlying.Symbol; }
         public int WarmUpPeriod => _window;
 
-        private Dictionary<DateTime, double> AtmIVsBid;
-        private Dictionary<DateTime, double> AtmIVsAsk;        
-        public double Current => (AtmIVsBid.Values.Where(x => x != 0).Mean() + AtmIVsAsk.Values.Where(x => x != 0).Mean()) / 2;
+        private Dictionary<DateTime, double> AtmIVsBid = new();
+        private Dictionary<DateTime, double> AtmIVsAsk = new();
+        private double _current;
+        public double Current => _current;
         private readonly int _window;
         public override bool IsReady => AtmIVsAsk.Values.Count >= _window;
 
@@ -34,6 +35,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public void Update(DateTime date, double iv, QuoteSide side)
         {
+            _algo.Log($"{_algo.Time} AtmIVIndicator.Update: {date} {iv} {side}");
             switch (side)
             {
                 case QuoteSide.Bid:
@@ -45,8 +47,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 default:
                     throw new NotImplementedException();
             }
-
             RemoveOldDates();
+            _current = (AtmIVsBid.Values.Where(x => x != 0).Mean() + AtmIVsAsk.Values.Where(x => x != 0).Mean()) / 2;
         }
 
         public void RemoveOldDates()

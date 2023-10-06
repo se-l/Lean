@@ -344,7 +344,7 @@ namespace QuantConnect.Data.Market
                 Symbol = config.Symbol
             };
 
-            var csv = line.ToCsv(5);
+            var csv = line.ToCsv(6);
             if (config.Resolution == Resolution.Daily || config.Resolution == Resolution.Hour)
             {
                 // hourly and daily have different time format, and can use slow, robust c# parser.
@@ -429,8 +429,11 @@ namespace QuantConnect.Data.Market
             volBar.Bid.Open = volBar.Bid.High = volBar.Bid.Low = volBar.Bid.Close = streamReader.GetDecimal();
             volBar.PriceAsk.Open = volBar.PriceAsk.High = volBar.PriceAsk.Low = streamReader.GetDecimal();
             volBar.Ask.Open = volBar.Ask.High = volBar.Ask.Low = volBar.Ask.Close = streamReader.GetDecimal();
-            var BidDelta = streamReader.GetDecimal();
-            var AskDelta = streamReader.GetDecimal();
+            if (config.Resolution != Resolution.Daily && config.Resolution != Resolution.Hour)
+            {
+                var BidDelta = streamReader.GetDecimal();
+                var AskDelta = streamReader.GetDecimal();
+            }   
 
             volBar.Value = volBar.Close;
 

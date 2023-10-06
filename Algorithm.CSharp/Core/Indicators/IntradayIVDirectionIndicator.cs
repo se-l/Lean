@@ -21,7 +21,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         private readonly double _tradingPeriod = TimeSpan.FromMinutes(6 * 60 + 30).TotalSeconds;
         private bool IsPM => FractionOfDay(_algo.Time) > 0.8;
         private readonly double _EOD2SODATMIVJumpThreshold;
-        private (double, double) _intradayIVSlopeTrendingRange;
+        private double[] _intradayIVSlopeTrendingRange;
 
         public IntradayIVDirectionIndicator(Foundations algo, Symbol underlying) : base($"IntradayIVDirectionIndicator {underlying}")
         {
@@ -43,8 +43,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             bool SodGtEod = (T0SODATMIV - _T1EODATMIV) > _EOD2SODATMIVJumpThreshold;
             OrderDirection IsTrending = IntraDayIVSlope switch
             {
-                var slope when slope > _intradayIVSlopeTrendingRange.Item1 => OrderDirection.Buy,
-                var slope when slope < _intradayIVSlopeTrendingRange.Item2 => OrderDirection.Sell,
+                var slope when slope > _intradayIVSlopeTrendingRange[0] => OrderDirection.Buy,
+                var slope when slope < _intradayIVSlopeTrendingRange[1] => OrderDirection.Sell,
                 _ => OrderDirection.Hold
             };
 
@@ -62,8 +62,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         }
         protected override decimal ComputeNextValue(IndicatorDataPoint input)
         {
+            _algo.Log($"{_algo.Time} IntradayIVDirectionIndicator.ComputeNextValue: {input.Time} {input.Value}");
             T0CurrentATMIV = (double)input.Value;
             IntraDayIVSlope = (T0CurrentATMIV - T0SODATMIV) / FractionOfDay(input.Time);
+            _algo.Log($"{_algo.Time} IntradayIVDirectionIndicator.ComputeNextValue: IntraDayIVSlope={IntraDayIVSlope}, T0CurrentATMIV={T0CurrentATMIV}, FractionOfDay={FractionOfDay(input.Time)}");
             return 0;
         }
         public void SetT1EODATMIV()

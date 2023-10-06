@@ -6,6 +6,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
     // Interface to get real-time greeks, as well as snapshots as of request time for different security types, option & equity.
     public class GreeksPlus
     {
+        private readonly Foundations _algo;
         public Security Security { get; internal set; }
         public OptionContractWrap? OCW;
         private double? _hV;
@@ -68,8 +69,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         }
 
 
-        public GreeksPlus(OptionContractWrap ocw)
+        public GreeksPlus(Foundations algo, OptionContractWrap ocw)
         {
+            _algo = algo;
             Security = ocw.Contract;
             OCW = ocw;
         }
@@ -77,12 +79,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// <summary>
         /// Equity GreeksPlus
         /// </summary>
-        public GreeksPlus(Security security)
+        public GreeksPlus(Foundations algo, Security security)
         {
             if (security.Type != SecurityType.Equity)
             {
                 throw new System.NotImplementedException();
             }
+            _algo = algo;
             Security = security;
             _hV = (double)Security.VolatilityModel.Volatility;
             _nPV = 0;
@@ -111,6 +114,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public GreeksPlus Snap()
         {
+            if (Security.Type == SecurityType.Option && Security.Symbol.ID.Date <= _algo.Time)
+            {
+                SnapExpired();
+                return this;
+            }
+
             _hV = HV;
             _nPV = NPV;
             _iVdS = IVdS;
@@ -136,6 +145,33 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _dGammaDIV = DS2dIV;            
            
             return this;
+        }
+
+        public void SnapExpired()
+        {
+            _hV = HV;
+            _nPV = 0;
+            _iVdS = 0;
+            _dte = 0;
+
+            _delta = 0;
+            _gamma = 0;
+            _deltaDecay = 0;
+            _dSdIV = 0;
+
+            _theta = 0;
+            _thetaTotal = 0;
+            _thetaDecay = 0;
+
+            _vega = 0;
+            _vegaDecay = 0;
+            _dIV2 = 0;
+
+            _rho = 0;
+
+            _dS3 = 0;
+            _gammaDecay = 0;
+            _dGammaDIV = 0;
         }
     }
 }

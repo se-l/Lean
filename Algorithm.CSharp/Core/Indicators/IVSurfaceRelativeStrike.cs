@@ -453,19 +453,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return StrikePct(option.Symbol.ID.StrikePrice, midPrice);
         }
 
-        public IEnumerable<Symbol> ATMContracts()
+        public IEnumerable<Symbol> ATMContracts(int minDTE = 5)
         {
-            var atmStrikeLower = _strikes[MinExpiry()].Where(x => x < MidPriceUnderlying).Max();
-            var atmStrikeUpper = _strikes[MinExpiry()].Where(x => x > MidPriceUnderlying).Min();
+            var atmStrikeLower = _strikes[MinExpiry(minDTE)].Where(x => x < MidPriceUnderlying).Max();
+            var atmStrikeUpper = _strikes[MinExpiry(minDTE)].Where(x => x > MidPriceUnderlying).Min();
             var atmStrikes = new HashSet<decimal>() { atmStrikeLower, atmStrikeUpper };
-            return _algo.Securities.Where(x => x.Key.SecurityType == SecurityType.Option && x.Key.Underlying == Underlying && x.Key.ID.Date == MinExpiry() && atmStrikes.Contains(x.Key.ID.StrikePrice)).Select(x => x.Key);
+            return _algo.Securities.Where(x => x.Key.SecurityType == SecurityType.Option && x.Key.Underlying == Underlying && x.Key.ID.Date == MinExpiry(minDTE) && atmStrikes.Contains(x.Key.ID.StrikePrice)).Select(x => x.Key);
         }
 
-        public IEnumerable<Bin> ATMBins()
+        public IEnumerable<Bin> ATMBins(int minDTE = 5)
         {
             // Should be warmed up. No null here.
             // Derive ATM volatility from the bin with value 100. OTM only. And smallest expiry.
-            var minExpiry = MinExpiry();
+            var minExpiry = MinExpiry(minDTE);
             foreach (OptionRight optionRight in OptionRights)
             {
                 if (!_bins.ContainsKey((optionRight, minExpiry, 100)))
@@ -490,26 +490,26 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return (double)vols.Mean();
         }
 
-        public double AtmIv()
+        public double AtmIv(int minDTE = 5)
         {
             /// Mean is not good. Use weighted mean. Weight by distance.
-            IEnumerable<double?> vols = ATMBins().Select(b => b.IV);
+            IEnumerable<double?> vols = ATMBins(minDTE).Select(b => b.IV);
             if (vols.Any(x => x == null))
             {
-                _algo.Error($"AtmIV is null for expiry={MinExpiry()}");
+                _algo.Error($"AtmIV is null for expiry={MinExpiry(minDTE)}");
                 return 0;
             }
             return (double)vols.Mean();
         }
 
-        public DateTime MinExpiry()
+        public DateTime MinExpiry(int minDTE = 0)
         {
-            return Expiries().Min();
+            return Expiries(minDTE).Min();
         }
 
-        public List<DateTime> Expiries()
+        public List<DateTime> Expiries(int minDTE = 0)
         {
-            return _expiries.Where(e => e > _algo.Time.Date).ToList();
+            return _expiries.Where(e => e > _algo.Time.Date + TimeSpan.FromDays(minDTE)).ToList();
         }
 
         public Dictionary<OptionRight, Dictionary<DateTime, Dictionary<decimal, double?>>> ToDictionary(decimal minBin = 70, decimal maxBin = 130, Func<Bin, double?>? binGetter = null)
@@ -668,9 +668,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return slopeLeft == null || slopeRight == null ? null : (slopeLeft + slopeRight) / 2;
         }
 
-        public double? SkewStrike(DateTime? expiry = null)
+        public double? SkewStrike(DateTime? expiry = null, int minDTE=5)
         {
-            DateTime _expiry = expiry ?? MinExpiry();
+            DateTime _expiry = expiry ?? MinExpiry(minDTE);
             var call_skew = GetBin(OptionRight.Call, _expiry, 110).IV - GetBin(OptionRight.Call, _expiry, 90).IV;
             var put_skew = GetBin(OptionRight.Put, _expiry, 110).IV - GetBin(OptionRight.Put, _expiry, 90).IV;
             return (call_skew + put_skew) / 2;

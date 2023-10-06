@@ -43,7 +43,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 HandleDesiredOrders(GetDesiredOrders());
 
                 PfRisk.IsRiskLimitExceededZMBands(orderEvent.Symbol);
-                RiskPnLProfiles[Underlying(orderEvent.Symbol)].Update();
+                RiskProfiles[Underlying(orderEvent.Symbol)].Update();
+
+                if (orderEvent.Status is OrderStatus.Filled)
+                {
+                    LimitIfTouchedOrderInternals.Remove(orderEvent.Symbol);
+                }
             }
 
             if (@event is EventRiskLimitExceeded riskLimitExceeded)

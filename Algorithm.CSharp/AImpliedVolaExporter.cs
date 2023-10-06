@@ -40,8 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 9, 26);
-            SetEndDate(2023, 9, 26);
+            SetStartDate(2023, 10, 5);
+            SetEndDate(2023, 10, 5);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -55,7 +55,7 @@ namespace QuantConnect.Algorithm.CSharp
             // Subscriptions
             optionTicker = new() { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
             //optionTicker = new() { "DELL", "ORCL",  };
-            optionTicker = new() { "HPE" };
+            optionTicker = new() { "HPE", "DELL" };
             ticker = optionTicker;
             symbolSubscribed = AddEquity(optionTicker.First(), resolution).Symbol;
 

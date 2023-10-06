@@ -325,11 +325,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return delta;
         }
 
-        public decimal DeltaXBp(int x = 100, double? volatility = null)
-        {
-            return (decimal)Delta(volatility) * _algo.MidPrice(UnderlyingSymbol) * x * BP;
-        }
-
         /// <summary>
         /// Vega component of Minimum Variance Delta
         /// </summary>
@@ -414,11 +409,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             SetHistoricalVolatility(hv0);
             return gamma;
         }
-
-        public decimal GammaXBp(int x = 100, double? volatility = null)
-        {
-            return (decimal)(0.5 * Gamma(volatility) * Math.Pow((double)_algo.MidPrice(UnderlyingSymbol) * x * (double)BP, 2));
-        }
         public double DeltaDecay()  // Charm
         {
             return FiniteDifferenceApproxTime(calculationDate, amOption, "delta");
@@ -430,7 +420,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             SetEvaluationDateToCalcDate();
             try
             {
-                return -(option ?? euOption).thetaPerDay();  // Different by 0.1 % from FD approach only. Likely much faster though. thetaPerDay() returns neg. values.
+                return (option ?? euOption).thetaPerDay();  // Different by 0.1 % from FD approach only. Likely much faster though. thetaPerDay() returns neg. values.
             }
             catch (Exception e)
             {
@@ -468,7 +458,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         }
         public double DS3()  // Speed
         {
-            return FiniteDifferenceApprox(spotQuote, amOption, 0.01, "gamma");
+            return FiniteDifferenceApprox(spotQuote, amOption, 0.05, "gamma");
         }
         public double Speed() => DS3();
         public double GammaDecay()
@@ -510,7 +500,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double Vanna() => DSdIV();
         public double DIV2()  // Vomma / Volga
         {
-            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "vega", d1perturbance: hvQuote);
+            return FiniteDifferenceApprox(hvQuote, amOption, 0.05, "vega", d1perturbance: hvQuote);
         }
         public double Volga() => DIV2();
 
@@ -538,7 +528,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return maturityDate - new Date(dt.Day, dt.Month, dt.Year);
             //return calendar.businessDaysBetween(new Date(dt.Day, dt.Month, dt.Year), maturityDate);
         }
-
+        /// <summary>
+        /// Looks wrong. Review against paper. Stuck to ACTUAL Days calculation elsewhere as stock impacting events can also happen on weekends...
+        /// </summary>
+        /// <returns></returns>
         public double TimeToMaturity()
         {
             return (maturityDate - calculationDate) / 252.0;
@@ -612,7 +605,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public void PerturbQuote(SimpleQuote quote, double q0, double d_pct = 0.01)
         {
-            if (q0 == 0)            {
+            if (q0 == 0)            
+            {
                 // Percentage perturbance will result in NaN / 0 division error, hence using absolute value
                 quote.setValue(d_pct);
             }
@@ -662,7 +656,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             
             if (derive == "vega" && d1perturbance != null)
             {
-                pPlus = FiniteDifferenceApprox(d1perturbance, option, d_pct); // VEGA
+                pPlus = FiniteDifferenceApprox(d1perturbance, option, d_pct);
             }
             else if (derive == "thetaPerDay")
             {
@@ -689,7 +683,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             if (derive == "vega" && d1perturbance != null)
             {
-                pMinus = FiniteDifferenceApprox(d1perturbance, option, d_pct); // VEGA
+                pMinus = FiniteDifferenceApprox(d1perturbance, option, d_pct);
             }
             else if (derive == "thetaPerDay")
             {

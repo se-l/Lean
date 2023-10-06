@@ -19,7 +19,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // In order to maintain good cash book, want to keep stocks low, but no need to give up much spread for that.
 
             double riskCurrent = (double)PfRisk.DerivativesRiskByUnderlying(qr.Symbol, riskDiscount.Metric);  // These 2 risk functions probably take 30% of CPU time in GetQuoteDiscounts.
-            double riskIfFilled = riskCurrent + (double)PfRisk.RiskAddedIfFilled(qr.Symbol, qr.Quantity, riskDiscount.Metric);
+            double riskIfFilled = riskCurrent + (double)PfRisk.RiskIfFilled(qr.Symbol, qr.Quantity, riskDiscount.Metric);
             //double riskBenefit = riskCurrent - riskIfFilled;
             // x0 is targetRisk in 100BpUnderlying Price Change
 

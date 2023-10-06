@@ -39,6 +39,7 @@ namespace QuantConnect.Securities
         private readonly object _sync = new object();
         private RollingWindow<double> _window;
         private double _samplesPerDay;
+        private readonly TimeSpan _openingTimeCutoff = new(9, 31, 0);
 
         /// <summary>
         /// Gets the volatility of the security as a percentage
@@ -162,7 +163,9 @@ namespace QuantConnect.Securities
             {
                 lock (_sync)
                 {
-                    if (_lastPrice > 0.0m)
+                    if (_lastPrice > 0.0m 
+                        && !(data.Time.TimeOfDay < _openingTimeCutoff && Math.Abs(data.Price / _lastPrice - 1) > .05m)  // ignore opening jumps with a retur greater x (earnings jumps)
+                        )
                     {
                         _needsUpdate = true;
                         _window.Add((double)(data.Price / _lastPrice) - 1.0);

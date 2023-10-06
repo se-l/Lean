@@ -8,7 +8,6 @@ namespace QuantConnect.Algorithm.CSharp
         public HashSet<string> HedgeTicker { get; set; }
         public HashSet<string> OptionTicker { get; set; }
         public HashSet<string> LiquidateTicker { get; set; }
-        public int OptionOrderQuantityDflt { get; set; }
         public int VolatilityPeriodDays { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMax { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMaxSignal { get; set; }
@@ -33,8 +32,13 @@ namespace QuantConnect.Algorithm.CSharp
         public int PutCallRatioWarmUpDays { get; set; }
         public Dictionary<string, List<TargetRisk>> PutCallRatioTargetRisks { get; set; }
         public Dictionary<string, double> EOD2SODATMIVJumpThreshold { get; set; }
-        public Dictionary<string, (double, double)> IntradayIVSlopeTrendingRange { get; set; }
+        public Dictionary<string, double[]> IntradayIVSlopeTrendingRange { get; set; }
         public Dictionary<string, int> DaysBeforeConsideringEarningsAnnouncement { get; set; }
         public Dictionary<string, int> AtmIVIndicatorWindow { get; set; }
+        public Dictionary<string, double> EarningsAnnouncementUtilityMinAtmIVElevation { get; set; }
+        public Dictionary<string, int> EarningsAnnouncementUtilityMinDTE { get; set; }
+        public Dictionary<string, decimal> TrailingHedgePct { get; set; }
+        public Dictionary<string, decimal> MaxOptionOrderQuantity { get; set; }
+        public Dictionary<string, decimal> TargetMaxEquityPositionUSD { get; set; }
     }
 }

@@ -1,5 +1,4 @@
 using Accord.Math;
-using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Util;
 using System;
@@ -10,40 +9,41 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
-    public class RiskPnLProfile: IDisposable
+    public class RiskProfile: IDisposable
     {
         // CSV export append each time on call. Implement Dispose here. Initialized in Initialize() method.
         // Given not using the CSVExport method, no need to implement each metric as attribute. Underlying Pct change just a parameter.        
         private readonly Foundations _algo;
         public readonly Equity Equity;
         public Symbol Symbol { get => Equity.Symbol; }
-        public Dictionary<double, decimal> PnLProfile = Enumerable.Range(-10, 21).Select(i => (double)i).ToDictionary(i => i, i => 0m);
         private bool _headerWritten;
         private List<string> _header;
         private readonly string _path;
         private readonly StreamWriter _writer;
-        private List<Metric> metrics = new() { 
-            Metric.Delta, Metric.Gamma, Metric.Speed, Metric.DeltaIVdS, // dS
-            Metric.Vega, Metric.Vanna, Metric.Volga  // dIV
-        };
-        private Dictionary<Metric, Func<IEnumerable<Position>, double, decimal>> Metric2Function = new()
-        {
-            { Metric.Delta, (positions, pctChange) => positions.Sum(p => p.DeltaXBpUSDTotal(pctChange * 100)) },
-            { Metric.Gamma, (positions, pctChange) => positions.Sum(p => p.GammaXBpUSDTotal(pctChange * 100)) },
-            { Metric.Speed, (positions, pctChange) => positions.Sum(p => p.SpeedXBpUSDTotal(pctChange * 100)) },
-            { Metric.DeltaIVdS, (positions, pctChange) => positions.Sum(p => p.DeltaIVdSXBpUSDTotal((decimal)pctChange * 100)) },
 
-            { Metric.Vega, (positions, pctChange) => positions.Sum(p => p.VegaXBpUSDTotal(pctChange * 100)) },
-            { Metric.Volga, (positions, pctChange) => positions.Sum(p => p.VolgaXBpUSDTotal(pctChange * 100)) },
-            { Metric.Vanna, (positions, pctChange) => positions.Sum(p => p.VannaXBpUSDTotal((decimal)pctChange * 100)) },
-        };
+        //public Dictionary<double, decimal> PnLProfile = Enumerable.Range(-10, 21).Select(i => (double)i).ToDictionary(i => i, i => 0m);
+        //private List<Metric> metrics = new() { 
+        //    Metric.Delta, Metric.Gamma, Metric.Speed, Metric.DeltaIVdS, // dS
+        //    Metric.Vega, Metric.Vanna, Metric.Volga  // dIV
+        //};
+        //private Dictionary<Metric, Func<IEnumerable<Position>, double, decimal>> Metric2Function = new()
+        //{
+        //    { Metric.Delta, (positions, pctChange) => positions.Sum(p => p.DeltaXBpUSDTotal(pctChange * 100)) },
+        //    { Metric.Gamma, (positions, pctChange) => positions.Sum(p => p.GammaXBpUSDTotal(pctChange * 100)) },
+        //    { Metric.Speed, (positions, pctChange) => positions.Sum(p => p.SpeedXBpUSDTotal(pctChange * 100)) },
+        //    { Metric.DeltaIVdS, (positions, pctChange) => positions.Sum(p => p.DeltaIVdSXBpUSDTotal((decimal)pctChange * 100)) },
 
-        public RiskPnLProfile(Foundations algo, Equity equity)
+        //    { Metric.Vega, (positions, pctChange) => positions.Sum(p => p.VegaXBpUSDTotal(pctChange * 100)) },
+        //    { Metric.Volga, (positions, pctChange) => positions.Sum(p => p.VolgaXBpUSDTotal(pctChange * 100)) },
+        //    { Metric.Vanna, (positions, pctChange) => positions.Sum(p => p.VannaXBpUSDTotal((decimal)pctChange * 100)) },
+        //};
+
+        public RiskProfile(Foundations algo, Equity equity)
         {
             _algo = algo;
             Equity = equity;
 
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "RiskPnLProfile", $"{Symbol.Value}.csv");
+            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", Symbol.Value, "RiskProfile.csv");
             if (!File.Exists(_path))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(_path));

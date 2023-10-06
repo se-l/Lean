@@ -172,8 +172,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             Events,
             Absolute,
-            PosWeightedIV
+            PosWeightedIV,
+
+            DeltaXBpUSDTotal,
+            GammaXBpUSDTotal,
+            SpeedXBpUSDTotal,
+            VegaXBpUSDTotal,
+            VannaXBpUSDTotal,
+            VolgaXpUSDTotal
         }
+        public static Metric[] DSMetrics = new Metric[] { Metric.DeltaXBpUSDTotal, Metric.GammaXBpUSDTotal, Metric.SpeedXBpUSDTotal };
+        public static Metric[] DIVMetrics = new Metric[] { Metric.VegaXBpUSDTotal, Metric.VannaXBpUSDTotal, Metric.VolgaXpUSDTotal };
         public static IEnumerable<T> ToIEnumerable<T>(this IEnumerator<T> enumerator)
         {
             while (enumerator.MoveNext())

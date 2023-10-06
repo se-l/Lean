@@ -31,7 +31,6 @@ using QuantConnect.Scheduling;
 using QuantConnect.Securities.Equity;
 using Newtonsoft.Json;
 using QuantConnect.Configuration;
-using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 
@@ -53,16 +52,18 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            //SetStartDate(2023, 8, 8);
-            //SetEndDate(2023, 9, 8);
-            SetStartDate(2023, 8, 16);
-            SetEndDate(2023, 9, 8);
+            SetStartDate(2023, 9, 29);
+            SetEndDate(2023, 10, 2);
+            //SetStartDate(2023, 10, 5);
+            //SetEndDate(2023, 10, 5);
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             UniverseSettings.Leverage = 1;
             Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText("EarningsAnnouncements.json"));
+            DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
+            EarningBySymbol = EarningsAnnouncements.GroupBy(ea => ea.Symbol).ToDictionary(g => g.Key, g => g.ToArray());
 
             mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - ScheduledEvent.SecurityEndOfDayDelta);  // 2mins before EOD EOD market close events fire
             orderType = OrderType.Limit;
@@ -101,7 +102,9 @@ namespace QuantConnect.Algorithm.CSharp
                         AbsoluteDiscounts[equity.Symbol] = new RiskDiscount(this, Cfg, equity.Symbol, Metric.Absolute);
                     }
                 }
-                RiskPnLProfiles[equity.Symbol] = new RiskPnLProfile(this, equity);
+                RiskProfiles[equity.Symbol] = new RiskProfile(this, equity);
+                UtilityWriters[equity.Symbol] = new UtilityWriter(equity);
+                OrderEventWriters[equity.Symbol] = new OrderEventWriter(this, equity);
             }
 
             Debug($"Subscribing to {subscriptions} securities");
@@ -116,6 +119,7 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), RunSignals);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
+            //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), SnapPositions);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportIVSurface);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), ExportPutCallRatios);
@@ -142,16 +146,8 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override void OnData(Slice slice)
         {
-            if (IsWarmingUp) return;
-
             foreach (Symbol symbol in slice.QuoteBars.Keys)
             {
-                if (IsEventNewQuote(symbol)) // also called in Consolidator. Should cache result at timestamp, update PriceCache and read here from cache.
-                {
-                    PublishEvent(new EventNewBidAsk(symbol));
-                }
-                PriceCache[symbol] = Securities[symbol].Cache.Clone();
-
                 if (symbol.SecurityType == SecurityType.Equity)
                 {
                     IVSurfaceRelativeStrikeBid[symbol].ScheduleUpdate();
@@ -162,7 +158,40 @@ namespace QuantConnect.Algorithm.CSharp
             equities.DoForEach(underlying => IVSurfaceRelativeStrikeBid[underlying].ProcessUpdateFlag());
             equities.DoForEach(underlying => IVSurfaceRelativeStrikeAsk[underlying].ProcessUpdateFlag());
 
+            if (IsWarmingUp) return;
+
+            foreach (Symbol symbol in slice.QuoteBars.Keys)
+            {
+                if (IsEventNewQuote(symbol)) // also called in Consolidator. Should cache result at timestamp, update PriceCache and read here from cache.
+                {
+                    PublishEvent(new EventNewBidAsk(symbol));
+                }
+                PriceCache[symbol] = Securities[symbol].Cache.Clone();
+            }
+            SubmitLimitIfTouchedOrder();
             RecordMarketData(slice);
+        }
+
+        /// <summary>
+        /// Currently only used for gamma scalping.
+        /// </summary>
+        public void SubmitLimitIfTouchedOrder()
+        {
+            LimitIfTouchedOrderInternals.DoForEach(kvp =>
+            {
+                Symbol symbol = kvp.Key;
+                OrderDirection direction = kvp.Value.Quantity < 0 ? OrderDirection.Sell : OrderDirection.Buy;
+                if (
+                    (direction == OrderDirection.Buy && Securities[symbol].Price >= kvp.Value.LimitPrice) ||
+                    (direction == OrderDirection.Sell && Securities[symbol].Price <= kvp.Value.LimitPrice)
+                )
+                {
+                    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "LimitIfTouchedOrder triggered" }, { "f", $"GetHedgeOptionWithUnderlying" },
+                                    { "Symbol", symbol}, { "OrderQuantity",  kvp.Value.Quantity.ToString() }, {"Price", kvp.Value.LimitPrice.ToString() } });
+                    OrderEquity(symbol, kvp.Value.Quantity, kvp.Value.LimitPrice, "LimitIfTouchedOrder triggered");
+                    LimitIfTouchedOrderInternals.Remove(symbol);
+                }                 
+            });
         }
 
         public void RecordMarketData(Slice slice)
@@ -197,7 +226,11 @@ namespace QuantConnect.Algorithm.CSharp
         public override void OnOrderEvent(OrderEvent orderEvent)
         {
             OrderEvents.Add(orderEvent);
-            LogOrderEvent(orderEvent);
+            if (orderEvent.Status == OrderStatus.Filled || orderEvent.Status == OrderStatus.PartiallyFilled)
+            {
+                LogOrderEvent(orderEvent);
+            }
+            OrderEventWriters[Underlying(orderEvent.Symbol)].Write(orderEvent);
 
             foreach (var tickets in orderTickets.Values)
             {
@@ -282,18 +315,21 @@ namespace QuantConnect.Algorithm.CSharp
             //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
             //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
             ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "PositionLifeCycle.csv"));
+            //ExportToCsv(Positions.Values.Where(p => p.Trade0.Quantity != 0), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "PositionLifeCycle.csv"));
             endOfDay = Time.Date;
         }
 
         public override void OnEndOfAlgorithm()
         {
             OnEndOfDay();
+            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "PositionLifeCycle.csv"));
             RiskRecorder.Dispose();
             IVSurfaceRelativeStrikeBid.Values.DoForEach(s => s.Dispose());
             IVSurfaceRelativeStrikeAsk.Values.DoForEach(s => s.Dispose());
-            RiskPnLProfiles.Values.DoForEach(s => s.Dispose());
+            RiskProfiles.Values.DoForEach(s => s.Dispose());
+            UtilityWriters.Values.DoForEach(s => s.Dispose());
+            OrderEventWriters.Values.DoForEach(s => s.Dispose());
             PutCallRatios.Values.DoForEach(s => s.Dispose());
-            Utility.Dispose();
             _diskDataCacheProvider.DisposeSafely();
         }
 
@@ -352,6 +388,11 @@ namespace QuantConnect.Algorithm.CSharp
             optionTicker.DoForEach(ticker => RiskRecorder.Record(ticker));
         }
 
+        public void SnapPositions()
+        {
+            Positions.Values.Where(p => p.Quantity != 0).DoForEach(p => p.Snap());
+        }
+
         public void ExportIVSurface()
         {           
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
@@ -367,6 +408,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (!IsMarketOpen(symbolSubscribed)) return;
 
+            LimitIfTouchedOrderInternals.Clear();
             foreach (string ticker in optionTicker)
             {
                 Equity equity = (Equity)Securities[ticker];

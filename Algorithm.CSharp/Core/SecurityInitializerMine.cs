@@ -84,7 +84,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.PutCallRatios[symbol] = new PutCallRatioIndicator((Equity)security, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
                 _algo.IntradayIVDirectionIndicators[symbol] = new IntradayIVDirectionIndicator(_algo, security.Symbol);
                 _algo.AtmIVIndicators[symbol] = new AtmIVIndicator(_algo, (Equity)security);
-                
+                _algo.IVSurfaceRelativeStrikeBid[symbol].EODATMEvent += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Bid);
+                _algo.IVSurfaceRelativeStrikeAsk[symbol].EODATMEvent += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Ask);
             }
 
             else if (security.Type == SecurityType.Option)
@@ -148,14 +149,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var volaSym = volaSyms.Any() ? volaSyms.First() : null;
                 if (volaSym != null)
                 {
-                    var historyFast = _algo.History<VolatilityBar>(volaSym, _algo.Periods(days: 7), _algo.resolution, fillForward: false);
+                    var historyFast = _algo.History<VolatilityBar>(volaSym, _algo.Periods(days: 0), _algo.resolution, fillForward: false);  // Zero Warm Up here, because it's covered during OnData SetWarmUp().
                     var historySlow = _algo.History<VolatilityBar>(volaSym, _algo.Periods(Resolution.Daily, days: 60), Resolution.Daily, fillForward: false);
                     // Need to synchronize the 2 histories. Otherwise fast day events update indicator before the slow second events, which would be ignore as no updates from past are processed by IVBid/Ask Indicator.
+                    //var history = historySlow;
                     using var history = new SynchronizingVolatilityBarEnumerator(new List<IEnumerator<VolatilityBar>>() { historyFast.GetEnumerator(), historySlow.GetEnumerator() });
 
                     // IV Bid Ask Indicators which produce events
                     // Slow one must stop before Fast one kicks in, otherwise time updates will be ignored...
                     foreach (VolatilityBar volBar in Statics.ToIEnumerable(history))
+                    //foreach (VolatilityBar volBar in history)
                     {
                         IVQuote bid = null;
                         IVQuote ask = null;
@@ -174,9 +177,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                             _algo.IVAsks[symbol].Update(ask);
                         }
                     }
-
-
-                    //history.Dispose();
                 }
 
                 // IV PutCall Ratios

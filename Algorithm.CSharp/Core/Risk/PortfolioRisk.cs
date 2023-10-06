@@ -1,4 +1,3 @@
-using QuantConnect.Algoalgorithm.CSharp.Core.Risk;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Securities;
@@ -27,8 +26,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         private readonly Foundations _algo;
         private static PortfolioRisk instance;
-        public readonly Func<Symbol, Metric, decimal> RiskBySymbol;
-        public readonly Func<Symbol, Metric, IEnumerable<Position>, double?, decimal> RiskByUnderlyingCached;
+        public readonly Func<Symbol, Metric, IEnumerable<Position>, double?, double?, decimal> RiskByUnderlyingCached;
 
         public static PortfolioRisk E(Foundations algo)
         {
@@ -38,23 +36,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public PortfolioRisk(Foundations algo)
         {
             _algo = algo;
-            //algo.Log($"{algo.Time}: PortfolioRisk.Constructor called.");
             TimeCreated = _algo.Time;
             TimeLastUpdated = _algo.Time;
-            //RiskBySymbol = _algo.Cache(GetRiskBySymbol, (Symbol symbol, Metric riskMetric) => (symbol, riskMetric, _algo.Time), ttl: 10);
-            RiskBySymbol = _algo.Cache(GetRiskBySymbol, (Symbol symbol, Metric riskMetric) => (symbol, riskMetric, _algo.Time));
-            //RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility) => (Underlying(symbol), metric, positions.Count(), volatility ?? 0, _algo.Time), clearCacheEvery: TimeSpan.FromMinutes(5));
-            RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility) => (Underlying(symbol), metric, positions.Count(), volatility ?? 0, _algo.Time));
-            //RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility) => (Underlying(symbol), metric, positions.Count(), volatility ?? 0, _algo.Time), ttl: 5);
+            RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility, double? dX) => (Underlying(symbol), metric, positions.Select(p => (p.Symbol.Value, p.Quantity)).ToHashSet(), volatility, dX, _algo.Time));
         }
 
-        private decimal RiskByUnderlying(Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility)
+        private decimal RiskByUnderlying(Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility, double? dX = null)
         {
             return metric switch
             {
                 Metric.DeltaTotal => positions.Sum(p => p.DeltaTotal()),
                 Metric.DeltaImpliedTotal => positions.Sum(p => p.DeltaImpliedTotal(AtmIVEWMA(symbol))),
 
+                Metric.DeltaXBpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(dX ?? 0)),
                 Metric.Delta100BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(100)),
                 Metric.DeltaImplied100BpUSDTotal => positions.Sum(p => p.DeltaImpliedXBpUSDTotal(AtmIVEWMA(symbol), 100)),
                 Metric.Delta500BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(500)),
@@ -63,17 +57,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Metric.Gamma => (decimal)positions.Sum(p => p.Gamma()),
                 Metric.GammaTotal => positions.Sum(p => p.GammaTotal()),
                 Metric.GammaImpliedTotal => (decimal)positions.Sum(p => p.GammaImplied(AtmIVEWMA(symbol))),
+                Metric.GammaXBpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(dX ?? 0)),
                 Metric.Gamma100BpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(100)),
                 Metric.GammaImplied100BpUSDTotal => positions.Sum(p => p.GammaImpliedXBpUSDTotal(100, AtmIVEWMA(symbol))),
                 Metric.Gamma500BpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(500)),
+                Metric.SpeedXBpUSDTotal => positions.Sum(p => p.SpeedXBpUSDTotal(dX ?? 0)),
                 Metric.GammaImplied500BpUSDTotal => positions.Sum(p => p.GammaImpliedXBpUSDTotal(500, AtmIVEWMA(symbol))),
                 Metric.Vega => (decimal)positions.Sum(p => p.Vega()),
                 Metric.VegaTotal => positions.Sum(p => p.VegaTotal()),
+                Metric.VegaXBpUSDTotal => positions.Sum(p => p.VegaXBpUSDTotal(dX ?? 0)),
                 Metric.VannaTotal => positions.Sum(p => p.VannaTotal()),
+                Metric.VannaXBpUSDTotal => positions.Sum(p => p.VannaXBpUSDTotal((decimal)(dX ?? 0))),
+                Metric.Vanna100BpUSDTotal => positions.Sum(p => p.VannaXBpUSDTotal(100)),
                 Metric.BsmIVdSTotal => positions.Sum(p => p.BsmIVdSTotal()),
                 Metric.DeltaIVdSTotal => positions.Sum(p => p.DeltaIVdSTotal()),
                 Metric.DeltaIVdS100BpUSDTotal => positions.Sum(p => p.DeltaIVdSXBpUSDTotal(100)),
-                Metric.Vanna100BpUSDTotal => positions.Sum(p => p.VannaXBpUSDTotal(100)),
+                Metric.VolgaXpUSDTotal => positions.Sum(p => p.VolgaXBpUSDTotal(dX ?? 0)),
                 Metric.Volga100BpUSDTotal => positions.Sum(p => p.VolgaXBpUSDTotal(100)),
                 Metric.ThetaTotal => positions.Sum(p => p.ThetaTotal()),
                 Metric.PosWeightedIV => positions.Any() ? positions.Sum(p => (decimal)p.IVMid1 * Math.Abs(p.Quantity)) / positions.Sum(p => Math.Abs(p.Quantity)) : 0,
@@ -81,7 +80,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             };
         }
 
-        public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, bool skipCache=false)
+        public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, double? dX = null, bool skipCache=false)
         {
             Symbol underlying = Underlying(symbol);
             var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
@@ -94,7 +93,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             positions = filter == null ? positions : filter(positions);
             if (!positions.Any()) return 0;
             
-            return skipCache ? RiskByUnderlying(symbol, metric, positions, volatility) : RiskByUnderlyingCached(symbol, metric, positions, volatility);
+            return skipCache ? RiskByUnderlying(symbol, metric, positions, volatility, dX) : RiskByUnderlyingCached(symbol, metric, positions, volatility, dX);
         }
 
         /// <summary>
@@ -103,6 +102,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal DerivativesRiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null)
         {
             return RiskByUnderlying(symbol, metric, volatility, positions => positions.Where(p => p.SecurityType == SecurityType.Option && p.Quantity != 0));
+        }
+        public decimal RiskBySymbol(Symbol symbol, Metric riskMetric)
+        {
+            return RiskByUnderlying(symbol, riskMetric, null, positions => positions.Where(p => p.Symbol == symbol && p.Quantity != 0));
         }
 
         public decimal RiskBandByUnderlying(Symbol symbol, Metric metric, double? volatility = null)
@@ -163,7 +166,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             return (_algo.CastGracefully(deltaZM - offsetZM), _algo.CastGracefully(deltaZM + offsetZM));
         }
-
+        /// <summary>
+        /// Ask IV strongly slopes up close to expiration (1-3 days), therefore rendering midIV not a good indicator. Would wanna use contracts expiring later. This will lead to a
+        /// jump in AtmIV when referenced contracts are switched. How to make it smooth?
+        /// </summary>
         public double AtmIV(Symbol symbol)
         {
             return (double)(_algo.IVSurfaceRelativeStrikeBid[Underlying(symbol)].AtmIv() + _algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIv()) / 2;
@@ -174,42 +180,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return (double)(_algo.IVSurfaceRelativeStrikeBid[Underlying(symbol)].AtmIvEwma() + _algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIvEwma()) / 2;
         }
 
-        public decimal RiskAddedIfFilled(Symbol symbol, decimal quantity, Metric riskMetric)
+        public decimal RiskIfFilled(Symbol symbol, decimal quantity, Metric riskMetric)
         {
-            return quantity * RiskBySymbol(symbol, riskMetric);
-        }
-
-        private decimal GetRiskBySymbol(Symbol symbol, Metric riskMetric)
-        {
-            OptionContractWrap ocw = null;
-            if (symbol.SecurityType == SecurityType.Option)
-            {
-                ocw = OptionContractWrap.E(_algo, (Option)_algo.Securities[symbol], _algo.Time.Date);
-                ocw.SetIndependents();
-            }
-            return (symbol.SecurityType, riskMetric) switch
-            {
-                // Delta
-                (SecurityType.Option, Metric.DeltaTotal) => 100 * (decimal)ocw.Delta(),
-                (SecurityType.Equity, Metric.DeltaTotal) => 1,
-                (SecurityType.Option, Metric.Delta100BpUSDTotal) => 100 * ocw.DeltaXBp(100),
-                (SecurityType.Equity, Metric.Delta100BpUSDTotal) => _algo.MidPrice(symbol),
-                (SecurityType.Option, Metric.DeltaImpliedTotal) => 100 * (decimal)ocw.Delta(volatility: AtmIVEWMA(symbol)),
-                (SecurityType.Equity, Metric.DeltaImpliedTotal) => 1,
-                (SecurityType.Option, Metric.DeltaImplied100BpUSDTotal) => 100 * ocw.DeltaXBp(100, volatility: AtmIVEWMA(symbol)),
-                (SecurityType.Equity, Metric.DeltaImplied100BpUSDTotal) => _algo.MidPrice(symbol),
-
-                // Gamma
-                (SecurityType.Option, Metric.Gamma100BpUSDTotal) => 100 * ocw.GammaXBp(100),
-                (SecurityType.Option, Metric.Gamma500BpUSDTotal) => 100 * ocw.GammaXBp(500),
-                (SecurityType.Equity, Metric.Gamma100BpUSDTotal) => 0,
-                (SecurityType.Equity, Metric.Gamma500BpUSDTotal) => 0,
-                (SecurityType.Option, Metric.GammaImplied100BpUSDTotal) => 100 * ocw.GammaXBp(100, volatility: AtmIVEWMA(symbol)),
-                (SecurityType.Option, Metric.GammaImplied500BpUSDTotal) => 100 * ocw.GammaXBp(500, volatility: AtmIVEWMA(symbol)),
-                (SecurityType.Equity, Metric.GammaImplied100BpUSDTotal) => 0,
-                (SecurityType.Equity, Metric.GammaImplied500BpUSDTotal) => 0,
-                _ => throw new NotImplementedException(riskMetric.ToString()),
-            };
+            Trade trade = new(_algo, symbol, quantity, _algo.MidPrice(symbol));
+            Position position = new(_algo, trade);
+            return RiskByUnderlyingCached(symbol, riskMetric, new List<Position>() { position }, null, null);
         }
 
         public decimal PortfolioValue(string method= "Mid")
@@ -280,6 +255,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
                 return true;
 
+            }
+            else
+            {
+                _algo.LimitIfTouchedOrderInternals.Remove(symbol);
             }
             return false;
         }
