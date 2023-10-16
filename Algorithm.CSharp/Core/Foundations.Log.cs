@@ -166,15 +166,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         public string LogRisk(Symbol symbol = null)
-        {
-            var d1 = new Dictionary<string, string>
+        {            
+            var symbols = symbol == null ? equities : new HashSet<Symbol> { symbol };
+            List<string> tagLines = new()
             {
-                { "ts", Time.ToString() },
-                { "topic", "RISK" },
-                { "Symbol", $"Equities: {string.Join(",", equities)}" },
+                Humanize(new Dictionary<string, string> { { "ts", Time.ToString() }, { "topic", "RISK" } })
             };
-            var d2 = PfRisk.ToDict(symbol).ToDictionary(x => x.Key, x => Math.Round(x.Value, 3).ToString());
-            string tag = Humanize(d1.Union(d2));
+            foreach (var _sym in symbols)
+            {
+                var d1 = new Dictionary<string, string>
+            {
+                { "Symbol", $"{_sym}" },
+            };
+                var d2 = PfRisk.ToDict(_sym).ToDictionary(x => x.Key, x => Math.Round(x.Value, 3).ToString());
+                tagLines.Add(Humanize(d1.Union(d2)));
+            }
+            string tag = string.Join(", ", tagLines);
             Log(tag);
 
             DiscordClient.Send(tag, DiscordChannel.Status, LiveMode);
@@ -186,27 +193,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
             var d1 = new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },
-                { "topic", "POSITIONS portfolio" },
+                { "topic", "POSITIONS" },
             };
-            // Refactor into sanity check and alert on mismatch...
-            //var d3 = Positions.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString());
-            var d2 = Portfolio.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString());
+            var d2 = Positions.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString());
             string tag = Humanize(d1.Union(d2));
             Log(tag);
 
-            d1 = new Dictionary<string, string>
-            {
-                { "ts", Time.ToString() },
-                { "topic", "POSITIONS internal" },
-            };
-            // Refactor into sanity check and alert on mismatch...
-            var d3 = Positions.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString());
-            if (!d3.OrderBy(x => x.Key).SequenceEqual(d2.OrderBy(x => x.Key)))
-            {
-                Error($"Portfolio and Positions mismatch!\n{Humanize(d1.Union(d3))}");
-            }            
-
             DiscordClient.Send(tag, DiscordChannel.Status, LiveMode);
+            return tag;
+        }
+
+        public string LogOrderTickets()
+        {
+            string tag = $"{Time} ORDERTICKETS" + 
+            string.Join(" | ", orderTickets.
+                    SelectMany(kvp => kvp.Value).ToList().
+                    Select(x => $"{x.Symbol.Value}, Status: {x.Status}, SubmitRequest.Status: {x.SubmitRequest.Status}"));
+            Log(tag);
             return tag;
         }
 

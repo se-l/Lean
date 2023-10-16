@@ -40,5 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, decimal> TrailingHedgePct { get; set; }
         public Dictionary<string, decimal> MaxOptionOrderQuantity { get; set; }
         public Dictionary<string, decimal> TargetMaxEquityPositionUSD { get; set; }
+        public Dictionary<string, decimal> SignalQuantityFraction { get; set; }
+        public Dictionary<string, decimal> TargetMarginAsFractionOfNLV { get; set; }
+        public Dictionary<string, double> MarginUtilScaleFactor { get; set; }
     }
 }

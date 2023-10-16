@@ -1,7 +1,5 @@
 using QuantConnect.Algorithm.CSharp.Core.Events;
-using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Securities;
-using QuantConnect.Securities.Option;
 using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
@@ -76,6 +74,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Metric.Volga100BpUSDTotal => positions.Sum(p => p.VolgaXBpUSDTotal(100)),
                 Metric.ThetaTotal => positions.Sum(p => p.ThetaTotal()),
                 Metric.PosWeightedIV => positions.Any() ? positions.Sum(p => (decimal)p.IVMid1 * Math.Abs(p.Quantity)) / positions.Sum(p => Math.Abs(p.Quantity)) : 0,
+
                 _ => throw new NotImplementedException(metric.ToString()),
             };
         }
@@ -83,7 +82,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, double? dX = null, bool skipCache=false)
         {
             Symbol underlying = Underlying(symbol);
-            var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
+            var positions = _algo.Positions.Values.ToList().Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
 
             if (metric == Metric.PosWeightedIV)
             {
@@ -212,7 +211,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             else
             {
                 return _algo.Portfolio.TotalPortfolioValue;
-            }            
+            }
         }
 
         // Refactor to a sigma / vola dependent move. not X %.
@@ -233,6 +232,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 { "Vanna100BpUSDTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.Vanna100BpUSDTotal)) },                
                 { "PosWeightedIV", underlyings.Sum(x => RiskByUnderlying(x, Metric.PosWeightedIV)) },
                 { "DeltaIVdS100BpUSDTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.DeltaIVdS100BpUSDTotal)) },
+                { "MarginUsedQC", _algo.Portfolio.TotalMarginUsed },
+                { "InitMargin", _algo.Portfolio.MarginMetrics.FullInitMarginReq },
+                { "MaintenanceMargin", _algo.Portfolio.MarginMetrics.FullMaintMarginReq },
             };
         }
 
@@ -247,11 +249,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             var riskDeltaDPdS = RiskByUnderlying(symbol, Metric.DeltaTotal);
             var deltaIVdSTotal = RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);
             decimal riskDeltaTotal = riskDeltaDPdS;// + riskDIVdS;
-            riskDeltaTotal += _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
+            decimal riskPutCallRatio = _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
+
+            riskDeltaTotal += riskPutCallRatio;
 
             if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
             {
-                _algo.Log($"{_algo.Time} IsRiskLimitExceededZM. riskDSTotal={riskDeltaTotal}, risk_delta_dP/dS={riskDeltaDPdS}, risk_delta_IV/dS={deltaIVdSTotal}");
+                _algo.Log($"{_algo.Time} IsRiskLimitExceededZM. riskDSTotal={riskDeltaTotal}, risk_delta_dP/dS={riskDeltaDPdS}, risk_delta_IV/dS={deltaIVdSTotal}, riskPutCallRatio={riskPutCallRatio}");
                 _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
                 return true;
 

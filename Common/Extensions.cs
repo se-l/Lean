@@ -3483,6 +3483,9 @@ namespace QuantConnect
             {
                 Twilio.Call();
             }
+
+            // Cancel all open limit orders. Below line not canceling anything on Runtime Error.
+            // algorithm.Transactions.GetOpenOrderTickets(t => t.OrderType == OrderType.Limit).ToList().DoForEach(t => t.Cancel());
         }
 
         /// <summary>

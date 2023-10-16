@@ -41,6 +41,14 @@ namespace QuantConnect
                 return Invariant($"Account {accountEvent.CurrencySymbol} Balance: {accountEvent.CashBalance:0.00}");
             }
         }
+        public static class MarginMetrics
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string ToString(Securities.MarginMetrics marginMetrics)
+            {
+                return Invariant($"Account InitMarginReq: {marginMetrics.FullInitMarginReq}, FullMaintMarginReq: {marginMetrics.FullMaintMarginReq:0.00}, EquityWithLoanValue: {marginMetrics.EquityWithLoanValue:0.00}, Leverage: {marginMetrics.Leverage:0.00}");
+            }
+        }
 
         /// <summary>
         /// Provides user-facing messages for the <see cref="Securities.BuyingPowerModel"/> class and its consumers or related classes

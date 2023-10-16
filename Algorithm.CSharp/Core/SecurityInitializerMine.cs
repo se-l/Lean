@@ -13,6 +13,7 @@ using QuantConnect.Data;
 using System.Collections.Generic;
 using QuantConnect.Algorithm.CSharp.Core.Synchronizer;
 using QuantConnect.Indicators;
+using QuantConnect.Securities.Cfd;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -36,13 +37,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (!_algo.LiveMode)
             {
-                // Margin Model
-                security.MarginModel = SecurityMarginModel.Null;
-                security.SetBuyingPowerModel(new NullBuyingPowerModel());
-
                 // Fill Model
                 security.SetFillModel(new FillModelMine());
             }
+            // Margin Model
+            //security.MarginModel = SecurityMarginModel.Null;
+            //security.SetBuyingPowerModel(new NullBuyingPowerModel());
 
             if (!_algo.QuoteBarConsolidators.ContainsKey(symbol))
             {
@@ -90,6 +90,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             else if (security.Type == SecurityType.Option)
             {
+                // Need to overrride fee model, given discounts by exchanges (NASDQAQM) matters significantly.
+
                 Option option = (Option)security;
                 option.PriceModel = new CurrentPriceOptionPriceModel();
                 option.SetOptionAssignmentModel(new DefaultOptionAssignmentModel(0, TimeSpan.FromDays(0)));  //CustomOptionAssignmentModel
@@ -127,6 +129,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.IVSurfaceRelativeStrikeAsk[underlying] = new IVSurfaceRelativeStrike(_algo, underlying, QuoteSide.Ask, true);
             }
         }
+        public DateTime HistoryRequestEndDate(Security security)
+        {
+            if (_algo.LiveMode && _algo.Time.TimeOfDay < new TimeSpan(9, 30, 0))
+            {
+                SecurityExchangeHours SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, security.Symbol, security.Type);
+                return Time.EachTradeableDay(SecurityExchangeHours, _algo.Time.Date.AddDays(-7), _algo.Time.Date.AddDays(-1)).Last();
+            }
+            else if (_algo.LiveMode && _algo.Time.TimeOfDay >= new TimeSpan(9, 30, 0))
+            {
+                return _algo.Time.Date;
+            }
+            else
+            {
+                return _algo.StartDate;
+            }
+        }
         public void WarmUpSecurity(Security security)
         {
             Symbol symbol;
@@ -149,6 +167,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var volaSym = volaSyms.Any() ? volaSyms.First() : null;
                 if (volaSym != null)
                 {
+                    DateTime end = HistoryRequestEndDate(security);
+                    //var historyFast = _algo.History<VolatilityBar>(volaSym, start, end, _algo.resolution, fillForward: false);  // Zero Warm Up here, because it's covered during OnData SetWarmUp().
                     var historyFast = _algo.History<VolatilityBar>(volaSym, _algo.Periods(days: 0), _algo.resolution, fillForward: false);  // Zero Warm Up here, because it's covered during OnData SetWarmUp().
                     var historySlow = _algo.History<VolatilityBar>(volaSym, _algo.Periods(Resolution.Daily, days: 60), Resolution.Daily, fillForward: false);
                     // Need to synchronize the 2 histories. Otherwise fast day events update indicator before the slow second events, which would be ignore as no updates from past are processed by IVBid/Ask Indicator.

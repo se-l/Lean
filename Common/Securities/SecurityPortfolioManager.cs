@@ -535,6 +535,7 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <see cref="GetMarginRemaining(decimal)"/>
         public decimal MarginRemaining => GetMarginRemaining(TotalPortfolioValue);
+        public MarginMetrics MarginMetrics = new();
 
         /// <summary>
         /// Gets the remaining margin on the account in the account's currency

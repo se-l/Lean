@@ -317,10 +317,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             double gammaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.GammaTotal);
             bool orderIfTouched = gammaTotal > 0;
 
-            if (orderIfTouched && ticket == null)
+            if (false && orderIfTouched && ticket == null)  /// Bug - need to ensure delta is zero before starting gamma scalping
             {
                 double deltaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.DeltaTotal);
-
+                Log($"GetEquityHedgeLimitOrderPrice.orderIfTouched: deltaTotal={deltaTotal}, gammaTotal={gammaTotal}");
                 if (!Cfg.TrailingHedgePct.TryGetValue(equity.Symbol.Value, out decimal trailingPct))
                 {
                     trailingPct = Cfg.TrailingHedgePct[CfgDefault];
@@ -334,7 +334,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 if (currentTouchPrice == 0)
                 {
-                    touchPrice = hypotheticalNewTouchPrice;
+                    touchPrice = hypotheticalNewTouchPrice; 
                 }
                 else
                 {

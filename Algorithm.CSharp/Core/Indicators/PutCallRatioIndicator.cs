@@ -137,7 +137,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public void Dispose()
         {
-            if (_writer == null) return;
+            if (_writer == null)
+            {
+                _algo.Log($"{this.GetType().BaseType.Name}.Write(): _writer is null.");
+                return;
+            }
+            else if (_writer.BaseStream == null)
+            {
+                _algo.Log($"{this.GetType().BaseType.Name}.Write(): _writer is closed.");
+                return;
+            }
+
             _writer.Flush();
             _writer.Close();
             _writer.Dispose();

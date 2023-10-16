@@ -30,27 +30,29 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public DateTime Time { get; internal set; }
         public OrderDirection OrderDirection { get; internal set; }
         private decimal Multiplier { get => Option.ContractMultiplier; }
-        public double Utility { get => UtilityProfit + UtilityRisk; }
-        public double UtilityProfit
-        {
-            get =>
-            //UtilityProfitSpread +  // That's always positive. Not good if option universe is to be split in 4 quadrants. Call/Put Buy/Sell, where only 1 is good for portfolio at a t 
-            // Include buy cheap vola vs sell expensive vola..
-            UtilityVega2HV +
-            UtilityTheta +
-            IntradayVolatilityRisk;
-        }
-        public double UtilityRisk
-        {
-            get =>
+        //public double Utility { get => UtilityProfit + UtilityRisk; }
+        public double Utility { get =>
+                UtilityProfitSpread +  // That's always positive. Not good if option universe is to be split in 4 quadrants. Call/Put Buy/Sell, where only 1 is good for portfolio at a t 
+                UtilityVega2HV +
+                UtilityTheta +
+                IntradayVolatilityRisk +
                 UtilityEarningsAnnouncment +
                 UtilityInventory +
                 UtilityRiskExpiry +  // Coz Theta impact somehow too small. Should make dependent on how much OTM. Just use delta. An optimization given there are many other terms to choose from.
                 UtilityCapitalCostPerDay +
                 UtilityEquityPosition +
-                UtilityGamma;  // Buy vs Sell
-                //UtilityVanna;  // Call vs Put & Buy vs Sell.
+                UtilityGamma +
+                UtilityLowDelta +
+                UtilityMargin;
+                //UtilityVanna;  // Call vs Put & Buy vs Sell.                
         }
+        //public double UtilityProfit { get => 0; }
+        //public double UtilityRisk { get => 0; }
+        private readonly HashSet<string> _utilitiesToLog = new() {
+            "UtilityVega2HV", "UtilityTheta", "IntradayVolatilityRisk", "UtilityEarningsAnnouncment", "UtilityInventory", "UtilityRiskExpiry",
+            "UtilityCapitalCostPerDay", "UtilityEquityPosition", "UtilityGamma", "UtilityLowDelta", "UtilityMargin",
+            "UtilityVanna", "UtilityTransactionCosts" // Currently not in Utility
+            };
 
         private double? _utilityProfitSpread;
         public double UtilityProfitSpread { get => _utilityProfitSpread ??= GetUtilityProfitSpread(); }
@@ -84,6 +86,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         private double? _utitlityVanna;
         public double UtilityVanna { get => _utitlityVanna ??= GetUtilityVanna(); }
+        private double? _utitlityLowDelta;
+        public double UtilityLowDelta { get => _utitlityLowDelta ??= GetUtilityLowDelta(); }
+
+        private double? _utitlityMargin;
+        public double UtilityMargin { get => _utitlityMargin ??= GetUtilityMargin(); }
 
         public UtilityOrder(Foundations algo, Option option, decimal quantity)
         {
@@ -150,16 +157,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             double scaleOrder = totalDerivativesDelta != 0 ? Math.Abs(orderDelta / totalDerivativesDelta) : 1;
             double scaleRelativeToOthertilities = 1.0 / 10;
 
-            if (cumEquityDelta > 0)
-            {
-                // Long position. Exponential punishment / reward. Starts becoming exponential after targetMaxEquityDelta.
-                totalEquityPosUtil = Math.Abs(cumEquityDelta + Math.Pow(Math.Max(0, cumEquityDelta - targetMaxEquityDelta), 2));
-            }
-            else
-            {
-                // Short equity position. Linear is enough.
-                totalEquityPosUtil = Math.Abs(cumEquityDelta);
-            }
+            totalEquityPosUtil = Math.Abs(Math.Abs(cumEquityDelta) + Math.Pow(Math.Max(0, Math.Abs(cumEquityDelta) - targetMaxEquityDelta), 2));
+            //if (cumEquityDelta > 0)
+            //{
+            //    // Long position. Exponential punishment / reward. Starts becoming exponential after targetMaxEquityDelta.
+            //    totalEquityPosUtil = Math.Abs(cumEquityDelta + Math.Pow(Math.Max(0, cumEquityDelta - targetMaxEquityDelta), 2));
+            //}
+            //else
+            //{
+            //    // Short equity position. Linear is enough.
+            //    totalEquityPosUtil = Math.Abs(Math.Abs(cumEquityDelta) + Math.Pow(Math.Max(0, Math.Abs(cumEquityDelta) - targetMaxEquityDelta), 2));
+            //    //totalEquityPosUtil = Math.Abs(cumEquityDelta);
+            //}
             //_algo.Log($"{_algo.Time} UTIL={totalEquityPosUtil * scaleOrder * scaleRelativeToOthertilities * negIfRiskAbsDeltaIncreasing}, totalEquityPosUtil={totalEquityPosUtil}, orderDelta={orderDelta}, totalDerivativesDelta={totalDerivativesDelta}, scaleOrder={scaleOrder}");
             return totalEquityPosUtil * scaleOrder * scaleRelativeToOthertilities * negIfRiskAbsDeltaIncreasing;
         }
@@ -193,6 +202,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             bool isAbsVannaIncreasing = vannaOrder * totalVanna > 0;
             return isAbsVannaIncreasing ? -Math.Abs(vannaOrder) : Math.Abs(vannaOrder);
         }
+        /// <summary>
+        /// 0.05 USD kinda options. Dont long'em
+        /// </summary>
+        /// <returns></returns>
+        private double GetUtilityLowDelta()
+        {
+            double delta = OptionContractWrap.E(_algo, Option, _algo.Time.Date).Delta();
+            return delta < 0.1 && Quantity > 0 ? -100 * (double)Quantity : 0;
+        }
 
         /// <summary>
         /// Dont buy stuff about to expire. But that should be quantified. A risk is underlying moving after market close.
@@ -220,7 +238,50 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private double GetUtilityProfitSpread()
         {
             decimal spread = (Option.AskPrice - Option.BidPrice) / 2;
-            return (double)(Quantity * Multiplier * spread);
+            return Math.Abs((double)(Quantity * Multiplier * spread));
+        }
+        
+        /// <summary>
+        /// Essentially an overall stress risk provile util. Stressing dS by +/- 15%. Becoming hugely influencial once algo excceeds a used margin threshold.
+        /// </summary>
+        /// <returns></returns>
+        private double GetUtilityMargin()
+        {
+            decimal initialMargin;
+            decimal targetMarginAsFractionOfNLV = _algo.Cfg.TargetMarginAsFractionOfNLV.TryGetValue(Underlying.Value, out targetMarginAsFractionOfNLV) ? targetMarginAsFractionOfNLV : _algo.Cfg.TargetMarginAsFractionOfNLV[CfgDefault];
+            double marginUtilScaleFactor = _algo.Cfg.MarginUtilScaleFactor.TryGetValue(Underlying.Value, out marginUtilScaleFactor) ? marginUtilScaleFactor : _algo.Cfg.MarginUtilScaleFactor[CfgDefault];
+
+            // Portfolio level
+            if (_algo.LiveMode)
+            {
+                initialMargin = _algo.Portfolio.MarginMetrics.FullInitMarginReq;
+            }
+            else
+            {
+                initialMargin = _algo.Portfolio.TotalMarginUsed;
+            }
+            //decimal excessLiquidity = _algo.Portfolio.MarginMetrics.ExcessLiquidity;
+            decimal marginExcessTarget = Math.Max(0, initialMargin - _algo.Portfolio.TotalPortfolioValue * targetMarginAsFractionOfNLV);
+
+            // Order Level - IB also offers WhatIf calcs for margin added, but would not want to rely on slow forth n back...
+            // Ignores the fact that simply a lot positions cause higher margin, need to stop increasing them eventually.
+            double stressedPnl = (double)_algo.RiskProfiles[Underlying].WhatIfMarginAdd(Symbol, Quantity);
+            // positive is good, positive pnl, good utility
+
+            double utilMargin = stressedPnl * marginUtilScaleFactor + 
+                                Math.Sign(stressedPnl) * Math.Min(Math.Pow((double)marginExcessTarget, 2), 1_000_000);  // Quadratic reward/punishment, once margin target has been exceeded
+            
+            if (marginExcessTarget > 0)
+            {
+                string noNewPositionTag = "";
+                if (_algo.Portfolio[Symbol].Quantity == 0)
+                {
+                    noNewPositionTag = $"No new positions when margin target exceeeded. ";
+                    utilMargin += -10000;
+                }
+                _algo.Log($"GetUtilityMargin: {Symbol} {Quantity}. {noNewPositionTag}initialMargin={initialMargin} Exceeded by marginExcessTarget={marginExcessTarget}. utilMargin={utilMargin} based on stressedPnl={stressedPnl}");
+            }
+            return utilMargin;
         }
         /// <summary>
         /// ( Realized Vola - Implied Vola ) * Vega.
@@ -348,10 +409,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             var str = $"UTILITYORDER: {Symbol} {OrderDirection} {Quantity} ";
             // Iterate over utility names building a string that contains the attribute whenever its value is non-zero
-            //, "UtilityVega2IVEwma", "UtilityProfitSpread"
-            foreach (var name in new HashSet<string>() { 
-                "UtilityTheta", "UtilityEquityPosition", "UtilityCapitalCostPerDay", "UtilityGamma", "UtilityVanna", "UtilityVega2HV", "UtilityEarningsAnnouncment", "UtilityRiskExpiry", "UtilityInventory", "UtilityTransactionCosts"
-            })
+            foreach (var name in _utilitiesToLog)
             {
                 double value = (double)this.GetPropertyValue(name);
                 if (value != 0)

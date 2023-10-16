@@ -179,7 +179,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             SpeedXBpUSDTotal,
             VegaXBpUSDTotal,
             VannaXBpUSDTotal,
-            VolgaXpUSDTotal
+            VolgaXpUSDTotal,
         }
         public static Metric[] DSMetrics = new Metric[] { Metric.DeltaXBpUSDTotal, Metric.GammaXBpUSDTotal, Metric.SpeedXBpUSDTotal };
         public static Metric[] DIVMetrics = new Metric[] { Metric.VegaXBpUSDTotal, Metric.VannaXBpUSDTotal, Metric.VolgaXpUSDTotal };
@@ -403,7 +403,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
 
-            foreach (var obj in objects)
+            foreach (var obj in objects.ToList())
             {
                 if (obj == null) continue;
                 csv.AppendLine(string.Join(",", headerNames.Select(name => ValueFromPropSequence(obj, name.Split(".")))));

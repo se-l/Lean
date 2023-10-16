@@ -74,6 +74,11 @@ namespace QuantConnect.Brokerages
         public event EventHandler<AccountEvent> AccountChanged;
 
         /// <summary>
+        /// Event that fires each time a user's brokerage maintenance margin is changed
+        /// </summary>
+        public event EventHandler<MarginMetrics> MaintenanceMarginChanged;
+
+        /// <summary>
         /// Event that fires when an error is encountered in the brokerage
         /// </summary>
         public event EventHandler<BrokerageMessageEvent> Message;
@@ -260,6 +265,24 @@ namespace QuantConnect.Brokerages
                 Log.Trace($"Brokerage.OnAccountChanged(): {e}");
 
                 AccountChanged?.Invoke(this, e);
+            }
+            catch (Exception err)
+            {
+                Log.Error(err);
+            }
+        }
+
+        /// <summary>
+        /// Event invocator for the AccountChanged event
+        /// </summary>
+        /// <param name="e">The AccountEvent</param>
+        protected virtual void OnMaintenanceMarginChanged(MarginMetrics e)
+        {
+            try
+            {
+                Log.Trace($"Brokerage.OnMaintenanceMarginChanged(): {e}");
+
+                MaintenanceMarginChanged?.Invoke(this, e);
             }
             catch (Exception err)
             {

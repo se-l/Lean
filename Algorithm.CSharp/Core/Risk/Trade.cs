@@ -119,7 +119,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double IVPrice0 { get; internal set; }
         public double IVMid0 { get => (IVBid0 + IVAsk0) / 2; }
         public string Tag { get; internal set; } = "";
-        public OrderEvent? OrderEvent = null;
         public decimal SurfaceIVdSBid { get; internal set; } // not differentiating the options price here, but getting slope of strike skew.
         public decimal SurfaceIVdSAsk { get; internal set; } // not differentiating the options price here, but getting slope of strike skew.
         public decimal SurfaceIVdS
@@ -164,11 +163,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Tag = "Simulated Fill derived from existing Portfolio Holding.";
         }
 
-        private Trade(Foundations algo, OrderEvent orderEvent, decimal quantity, string tag, decimal priceFillAvg)
+        private Trade(Foundations algo, Symbol symbol, decimal quantity, string tag, decimal priceFillAvg, DateTime fillTime)
         {
             _algo = algo;
             Fee = 0;
-            Symbol = orderEvent.Symbol;
+            Symbol = symbol;
             Quantity = quantity;
             Tag = tag;
 
@@ -184,10 +183,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Ask0Underlying = SecurityUnderlying.AskPrice;
             PriceFillAvg = priceFillAvg;
 
-
-            FirstFillTime = orderEvent.UtcTime.ConvertFromUtc(_algo.TimeZone);
-            
-            OrderEvent = orderEvent;
+            FirstFillTime = fillTime;
 
             SnapExpired();
         }
@@ -195,28 +191,35 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// <summary>
         /// OTM Option Expirations
         /// </summary>
-        public Trade(Foundations algo, OrderEvent orderEvent, decimal quantity) : this(algo, orderEvent, quantity, "Simulated option OTM expiry setting algo.Position to zero.", 0)
+        public Trade(Foundations algo, OrderEvent orderEvent, decimal quantity, bool isITM) : this(algo, orderEvent.Symbol, quantity, "Simulated option OTM expiry setting algo.Position to zero.", 0, orderEvent.UtcTime.ConvertFromUtc(algo.TimeZone))
         {
+            Tag = isITM ? "Simulated option ITM Exercise/Assignment setting algo.Position to zero." : "Simulated option OTM expiry setting algo.Position to zero.";
+            if (Security.Type == SecurityType.Equity)
+            {
+                PriceFillAvg = _algo.MidPrice(orderEvent.Symbol);
+                //PriceFillAvg = order?.OrderFillData.Price ?? Security.Price; // Should be strike price of the option and in Order.Price!
+            }
         }
 
         /// <summary>
         /// ITM Option Assignments / Exercise
         /// </summary>
-        public Trade(Foundations algo, OrderEvent orderEvent, OptionExerciseOrder order) : this(algo, orderEvent, order.Quantity, "Simulated option ITM Assignment/Exercise.", 0
-            )
-        {
-            if (Security.Type == SecurityType.Equity)
-            {
-                PriceFillAvg = order?.OrderFillData.Price ?? Security.Price; // Should be strike price of the option and in Order.Price!
-            }
-        }
+        //public Trade(Foundations algo, OrderEvent orderEvent, OptionExerciseOrder order) : this(algo, orderEvent.Symbol, orderEvent.FillQuantity, "Simulated option ITM Assignment/Exercise.", 0, orderEvent.UtcTime.ConvertFromUtc(algo.TimeZone)
+        //    )
+        //{
+        //    if (Security.Type == SecurityType.Equity)
+        //    {
+        //        PriceFillAvg = _algo.MidPrice(orderEvent.Symbol);
+        //        //PriceFillAvg = order?.OrderFillData.Price ?? Security.Price; // Should be strike price of the option and in Order.Price!
+        //    }
+        //}
 
         public Trade(Foundations algo, OrderEvent orderEvent, Order order)
         {
             _algo = algo;
             Fee = _algo.OrderFillDataTN1.TryGetValue(order.Id, out OrderFillData ofd) ? -ofd.Fee : -1;
             Symbol = order.Symbol;
-            Quantity = order.Quantity;
+            Quantity = orderEvent.FillQuantity;
             Tag = order.Tag;
 
             if (_algo.OrderFillDataTN1.TryGetValue(order.Id, out OrderFillData orderFillDataTN1))
@@ -252,7 +255,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             FirstFillTime = (DateTime)(order?.LastFillTime?.ConvertFromUtc(_algo.TimeZone) ?? order?.Time);
             Snap();
-            OrderEvent = orderEvent;
             Quote = algo.Quotes.TryGetValue(order.Id, out Quote<Option> quote) ? quote : null;
             UtilityOrder = algo.OrderTicket2UtilityOrder.TryGetValue(order.Id, out UtilityOrder utilityOrder) ? utilityOrder : null;
         }

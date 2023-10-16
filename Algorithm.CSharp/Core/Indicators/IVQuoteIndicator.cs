@@ -70,6 +70,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null)
         {
             if (quoteBar == null || quoteBar.EndTime <= Time) { return; }
+            if (quoteBar.Bid == null || quoteBar.Ask == null) 
+            {
+                _algo.Log($"{_algo.Time} IVQuoteIndicator.Update: Missing Bid/Ask encountered for {quoteBar.Symbol} {quoteBar.EndTime} {quoteBar.Bid} {quoteBar.Ask}");
+                return;
+            }
             Update(quoteBar.EndTime, GetQuote(quoteBar), underlyingMidPrice ?? _algo.MidPrice(Symbol.Underlying));
         }
 

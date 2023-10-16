@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using System.Collections.Generic;
 using QuantConnect.Securities.Equity;
@@ -10,11 +9,9 @@ using QuantConnect.Securities;
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
     // The CSV part is quite messy. Improve
-    public class OrderEventWriter : IDisposable
+    public class OrderEventWriter : Disposable
     {
-        private readonly Foundations _algo;
         private readonly string _path;
-        private readonly StreamWriter _writer;
         private bool _headerWritten;
         private List<string> _header = new() { "ts", "ID", "OrderDirection", "OrderStatus", "SecurityType", "Symbol", "Quantity", "FillQuantity", "LimitPrice", "FillPrice", "Fee", "PriceUnderlying", "BestBid", "BestAsk", "Delta2Mid" };
         public OrderEventWriter(Foundations algo, Equity equity)
@@ -44,21 +41,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             var row = new StringBuilder();
 
-            row.Append(_algo.Time);
-            row.Append(orderEvent.OrderId);
-            row.Append(order_direction_nm );
-            row.Append(order_status_nm );
-            row.Append(security_type_nm );
-            row.Append(symbol);
-            row.Append(orderEvent.Quantity);
-            row.Append(orderEvent.FillQuantity);
-            row.Append(orderEvent.LimitPrice);
-            row.Append(orderEvent.FillPrice);
-            row.Append(orderEvent.OrderFee);
-            row.Append(priceUnderlying);
-            row.Append(security.BidPrice);
-            row.Append(security.AskPrice);
-            row.Append((orderEvent.Quantity > 0 ? midPrice - orderEvent.LimitPrice : orderEvent.LimitPrice - midPrice).ToString() );
+            row.AppendJoin(",", new[] { 
+                _algo.Time.ToString(),
+                orderEvent.OrderId.ToString(),
+                order_direction_nm.ToString(),
+                order_status_nm.ToString(),
+                security_type_nm.ToString(),
+                symbol.ToString(),
+                orderEvent.Quantity.ToString(),
+                orderEvent.FillQuantity.ToString(),
+                orderEvent.LimitPrice.ToString(),
+                orderEvent.FillPrice.ToString(),
+                orderEvent.OrderFee.ToString(),
+                priceUnderlying.ToString(),
+                security.BidPrice.ToString(),
+                security.AskPrice.ToString(),
+                (orderEvent.Quantity > 0 ? midPrice - orderEvent.LimitPrice : orderEvent.LimitPrice - midPrice).ToString()
+            });
             //row.Append("IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(_algo, (Option)security, _algo.Time.Date).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, _algo.MidPrice(underlying), 0.001), 3).ToString() : "" );
             //row.Append("IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(_algo, (Option)security, _algo.Time.Date).IV(security.BidPrice, _algo.MidPrice(underlying), 0.001), 3).ToString() : "" );
             //row.Append("IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(_algo, (Option)security, _algo.Time.Date).IV(security.AskPrice, _algo.MidPrice(underlying), 0.001), 3).ToString() : "" );
@@ -69,18 +68,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public void Write(OrderEvent orderEvent)
         {
+            if (_writer == null)
+            {
+                _algo.Log($"OrderEventWriter.Write(): _writer is null.");
+                return;
+            }
+            else if (_writer.BaseStream == null)
+            {
+                _algo.Log($"OrderEventWriter.Write(): _writer is closed.");
+                return;
+            }
+
             if (!_headerWritten)
             {
                 _writer.WriteLine(string.Join(",", _header));
                 _headerWritten = true;
             }
             _writer.WriteLine(CsvRow(orderEvent));
-        }
-        public void Dispose()
-        {
-            _writer.Flush();
-            _writer.Close();
-            _writer.Dispose();
         }
     }
 }

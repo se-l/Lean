@@ -50,6 +50,11 @@ namespace QuantConnect.Algorithm.CSharp
             SetWarmUp(0);
         }
 
+        public override void OnBrokerageMessage(BrokerageMessageEvent messageEvent)
+        {
+            base.OnBrokerageMessage(messageEvent);
+        }
+
         public void LogToDisk()
         {
             //var pfRisk = PortfolioRisk.E(this);
@@ -62,6 +67,11 @@ namespace QuantConnect.Algorithm.CSharp
             Log($"TotalNetProfit: {Portfolio.TotalNetProfit}");
             Log($"TotalUnrealizedProfit: {Portfolio.TotalUnrealizedProfit}");
             Log($"TotalPortfolioValue: {Portfolio.TotalPortfolioValue}");
+            Log($"EquityWithLoanValue: {Portfolio.MarginMetrics.EquityWithLoanValue}");
+            Log($"InitMarginReq: {Portfolio.MarginMetrics.FullInitMarginReq}");
+            Log($"FullMaintMarginReq: {Portfolio.MarginMetrics.FullMaintMarginReq}");
+            Log($"QCMarginRemaining: {Portfolio.MarginRemaining}");
+            Log($"QCTotalMarginUsed: {Portfolio.TotalMarginUsed}");
         }
 
         public override void OnWarmupFinished()
@@ -81,6 +91,8 @@ namespace QuantConnect.Algorithm.CSharp
 
             LogRisk();
             LogPnL();
+            LogPositions();
+            LogOrderTickets();
             LogToDisk();
         }
     }

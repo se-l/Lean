@@ -173,7 +173,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         private void SetHistoricalVolatility(double? hv = null)
         {
-            hv ??= (double)HistoricalVolatility();
+            hv = hv == null || hv == 0 ? (double)HistoricalVolatility() : hv;
             hvQuote ??= new SimpleQuote(hv);
             if (hvQuote.value() != hv)
             {
@@ -318,7 +318,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             catch (Exception e)
             {
-                _algo.Error($"OptionContractWrap.Delta. Attempting FD. {e}");
+                _algo.Error($"OptionContractWrap.Delta. {Contract.Symbol} volatilityArg={volatility}, hvQuote={hvQuote.value()}, spotQuote={spotQuote.value()} Attempting FD. {e}");
                 delta = FiniteDifferenceApprox(spotQuote, amOption, 0.01, "NPV");
             }
             SetHistoricalVolatility(hv);
@@ -508,7 +508,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             if (resetCalcDate == true)
                 SetEvaluationDateToCalcDate();
-            return amOption.NPV();
+            try
+            {
+                return amOption.NPV();
+            }
+            catch (Exception e)
+            {
+                _algo.Error($"OptionContractWrap.NPV. {Contract.Symbol} resetCalcDateArg={resetCalcDate}, calculationDate={calculationDate}, hvQuote={hvQuote.value()}, spotQuote={spotQuote.value()}. {e}");
+                return 0;
+            }
         }
 
         /// <summary>
@@ -716,12 +724,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             else if (pPlus != null || method=="forward")
             {
                 var p0 = Invoke(option, derive);
+                if (p0 == null)
+                {
+                    _algo.Error($"FiniteDifferenceApprox.forward.Invoke failed. p0 is null. Returning 0. {option}, {derive}, {d_pct}, {method}");
+                    return 0;
+                }
                 var stepSize = q0 == 0 ? d_pct : q0 * d_pct;
                 result = ((double)pPlus - (double)p0) / stepSize;
             }
             else if (pMinus != null || method=="backward")
             {
                 var p0 = Invoke(option, derive);
+                if (p0 == null)
+                {
+                    _algo.Error($"FiniteDifferenceApprox.backward.Invoke failed. p0 is null. Returning 0. {option}, {derive}, {d_pct}, {method}");
+                    return 0;
+                }
                 var stepSize = q0 == 0 ? d_pct : q0 * d_pct;
                 result = ((double)p0 - (double)pMinus) / stepSize;
             }

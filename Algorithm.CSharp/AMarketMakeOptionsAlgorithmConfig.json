@@ -3,7 +3,7 @@
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" ];  // Too much for 2 cores on a t3 instance.
-  "OptionTicker": [ "DELL" ],
+  "OptionTicker": [ "HPE", "DELL" ],
   "LiquidateTicker": [],
   "VolatilityPeriodDays": 5,
 
@@ -255,6 +255,15 @@
     "_": 10
   },
   "TargetMaxEquityPositionUSD": {
-    "_": 5000
+    "_": 4000
+  },
+  "TargetMarginAsFractionOfNLV": {
+    "_": 0.5
+  },
+  "SignalQuantityFraction": {
+    "_": 2
+  },
+  "MarginUtilScaleFactor": {
+    "_": 0.005
   }
 }

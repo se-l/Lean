@@ -64,6 +64,11 @@ namespace QuantConnect.Interfaces
         event EventHandler<AccountEvent> AccountChanged;
 
         /// <summary>
+        /// Event that fires each time a user's brokerage maintenance margin is changed
+        /// </summary>
+        event EventHandler<MarginMetrics> MaintenanceMarginChanged;
+
+        /// <summary>
         /// Event that fires when a message is received from the brokerage
         /// </summary>
         event EventHandler<BrokerageMessageEvent> Message;

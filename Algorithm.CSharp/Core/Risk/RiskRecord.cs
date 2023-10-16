@@ -65,7 +65,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal DeltaIVdS100BpUSDTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdS100BpUSDTotal);
         //public decimal PnL => Position.AllLifeCycles(_algo).Where(p => p.UnderlyingSymbol == Symbol).Sum(p => p.PL);
         public decimal PnL => _algo.Positions.Values.Where(p => p.UnderlyingSymbol == Symbol).Sum(p => p.PL);
-
+        public decimal TotalMarginUsed => _algo.Portfolio.TotalMarginUsed;
+        public decimal MarginRemaining => _algo.Portfolio.MarginRemaining;
         public RiskRecord(Foundations algo, PortfolioRisk pfRisk, Equity equity)
         {
             _algo = algo;
@@ -83,10 +84,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
     }
 
-    public class RiskRecorder : IDisposable
+    public class RiskRecorder : Disposable
     {
-        private readonly Foundations _algo;
-        private readonly StreamWriter _writer;
         private readonly string _path;
         public readonly List<string> riskRecordsHeader = typeof(RiskRecord).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(prop => prop.Name).ToList();
         public RiskRecorder(Foundations algo)
@@ -114,11 +113,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             List<RiskRecord> riskRecords = new() { new RiskRecord(_algo, _algo.PfRisk, (Equity)_algo.Securities[ticker]) };
             string csv = ToCsv(riskRecords, riskRecordsHeader, skipHeader: true);
             _writer.Write(csv);
-        }
-        public void Dispose()
-        {
-            _writer.Flush();
-            _writer.Dispose();
         }
     }
 }

@@ -381,6 +381,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public decimal ThetaTotal(decimal dT = 1) => (decimal)GetGreeks1().Theta * Multiplier * Quantity * dT;
 
+        public decimal IntrinsicValue1 => SecurityType switch
+        {
+            SecurityType.Option => Option.GetPayOff(Trade1?.Mid0Underlying ?? Mid1Underlying),
+            _ => 0
+        };
+        public bool IsITM1 => IntrinsicValue1 > 0;
+        public bool IsExercised { get => (Trade1?.Tag.Contains("Automatic Exercise") ?? false) || (Trade1?.Tag.Contains("Simulated option") ?? false); }  // improve, together with LifeCycleUpdate
+
         // dIV
         public double Vega() => GetGreeks1().Vega;
         public decimal VegaTotal() => (decimal)GetGreeks1().Vega * Multiplier * Quantity;
@@ -392,8 +400,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             get
             {
-                var pl = (P1 - Trade0.P0) * Quantity * Multiplier + Trade0.Fee;
-                return pl;
+                decimal pl;
+                if (IsExercised && IsITM1)
+                {
+                    // (K - S) - P_option
+                    pl = IntrinsicValue1 * Multiplier * Quantity - Trade0.P0 * Quantity * Multiplier;
+                }else
+                {
+                    pl = (P1 - Trade0.P0) * Quantity * Multiplier;
+                }                
+                return pl + Trade0.Fee;
             }
         }
         public double DDaysToExpiration
@@ -407,7 +423,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public double IVPrice1 { get => IVMid1; }
         public double DIVMid { get => IVMid1 - Trade0.IVMid0; }
-        public bool IsExercised {  get => (Trade1?.Tag.Contains("Automatic Exercise") ?? false) || (Trade1?.Tag.Contains("Simulated option") ?? false); }  // improve, together with LifeCycleUpdate
         private PLExplain _pLExplain { get; set; }
         public PLExplain PLExplain { get => _pLExplain ??= GetPLExplain(); }  // public getter for easy CSV export
 

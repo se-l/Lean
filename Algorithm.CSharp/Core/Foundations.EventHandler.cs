@@ -38,6 +38,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 UpdateOrderFillData(orderEvent);
                 UpdatePositionLifeCycle(orderEvent);
+                
                 LogOnEventOrderFill(orderEvent);
 
                 HandleDesiredOrders(GetDesiredOrders());
@@ -49,6 +50,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     LimitIfTouchedOrderInternals.Remove(orderEvent.Symbol);
                 }
+
+                InternalAudit();
             }
 
             if (@event is EventRiskLimitExceeded riskLimitExceeded)

@@ -8,13 +8,13 @@ using QuantConnect.Securities.Equity;
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
     // The CSV part is quite messy. Improve
-    public class UtilityWriter : IDisposable
+    public class UtilityWriter : Disposable
     {
         private readonly string _path;
-        private readonly StreamWriter _writer;
         private bool _headerWritten;
-        public UtilityWriter(Equity equity)
+        public UtilityWriter(Foundations algo, Equity equity)
         {
+            _algo = algo;
             _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", equity.Symbol.Value, "UtilityOrder.csv");
             if (File.Exists(_path))
             {
@@ -37,13 +37,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _headerWritten = true;
             }
             _writer.Write(CsvRow(utility));
-        }
-
-        public void Dispose()
-        {
-            _writer.Flush();
-            _writer.Close();
-            _writer.Dispose();
         }
     }
 }

@@ -165,6 +165,11 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 HandleAccountChanged(account);
             };
 
+            _brokerage.MaintenanceMarginChanged += (sender, maintenanceMargin) =>
+            {
+                HandleMaintenanceMarginChanged(maintenanceMargin);
+            };
+
             _brokerage.OptionPositionAssigned += (sender, fill) =>
             {
                 HandlePositionAssigned(fill);
@@ -1280,6 +1285,14 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 // override the current cash value so we're always guaranteed to be in sync with the brokerage's push updates
                 _algorithm.Portfolio.CashBook[account.CurrencySymbol].SetAmount(account.CashBalance);
             }
+        }
+        /// <summary>
+        /// Maintenance Margin change event
+        /// </summary>
+        private void HandleMaintenanceMarginChanged(MarginMetrics marginMetrics)
+        {
+            _algorithm.Portfolio.MarginMetrics = marginMetrics;
+            Log.Trace($"BrokerageTransactionHandler.HandleMaintenanceMarginChanged(): MaintenanceMargin: {marginMetrics.FullMaintMarginReq}");            
         }
 
         /// <summary>

@@ -43,7 +43,7 @@ namespace QuantConnect.Algorithm.CSharp
     {
         private DateTime endOfDay;
         DiskDataCacheProvider _diskDataCacheProvider = new();
-        Dictionary<(Resolution, Symbol, TickType), LeanDataWriter> writers = new();
+        Dictionary<(Resolution, Symbol, TickType), LeanDataWriter> writers = new();  
 
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
@@ -52,14 +52,12 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 9, 29);
-            SetEndDate(2023, 10, 2);
-            //SetStartDate(2023, 10, 5);
-            //SetEndDate(2023, 10, 5);
-            SetCash(100_000);
+            SetStartDate(2023, 9, 25);
+            SetEndDate(2023, 9, 25);
+            SetCash(30_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
-            UniverseSettings.Leverage = 1;
+            UniverseSettings.Leverage = 10;
             Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText("EarningsAnnouncements.json"));
             DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
@@ -103,7 +101,7 @@ namespace QuantConnect.Algorithm.CSharp
                     }
                 }
                 RiskProfiles[equity.Symbol] = new RiskProfile(this, equity);
-                UtilityWriters[equity.Symbol] = new UtilityWriter(equity);
+                UtilityWriters[equity.Symbol] = new UtilityWriter(this, equity);
                 OrderEventWriters[equity.Symbol] = new OrderEventWriter(this, equity);
             }
 
@@ -116,7 +114,7 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Leaves EOD Equity hedges.
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(30)), LogRiskSchedule);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), RunSignals);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
             //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), SnapPositions);
@@ -232,9 +230,12 @@ namespace QuantConnect.Algorithm.CSharp
             }
             OrderEventWriters[Underlying(orderEvent.Symbol)].Write(orderEvent);
 
-            foreach (var tickets in orderTickets.Values)
+            lock (orderTickets)
             {
-                tickets.RemoveAll(t => orderFilledCanceledInvalid.Contains(t.Status));
+                foreach (var tickets in orderTickets.Values)
+                {
+                    tickets.RemoveAll(t => orderFilledCanceledInvalid.Contains(t.Status));
+                }
             }
             PublishEvent(orderEvent);
         }
