@@ -273,6 +273,10 @@ namespace QuantConnect.Securities
             return _orderProcessor.GetOpenOrderTickets(filter ?? (x => true));
         }
 
+        public IEnumerable<OrderRequest> SubmitRequestsUnprocessed => _orderProcessor.SubmitRequestsUnprocessed;
+        public IEnumerable<OrderRequest> UpdateRequestsUnprocessed => _orderProcessor.UpdateRequestsUnprocessed;
+        public IEnumerable<OrderRequest> CancelRequestsUnprocessed => _orderProcessor.CancelRequestsUnprocessed;
+
         /// <summary>
         /// Gets an enumerable of opened <see cref="OrderTicket"/> matching the specified <paramref name="filter"/>
         /// However, this method can be confused with the override that takes a Symbol as parameter. For this reason

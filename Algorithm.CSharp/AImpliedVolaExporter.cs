@@ -28,6 +28,8 @@ using QuantConnect.Data.Market;
 using QuantConnect.Scheduling;
 using QuantConnect.Securities.Option;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using Newtonsoft.Json;
+using QuantConnect.Configuration;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -38,10 +40,13 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override void Initialize()
         {
-            // Configurable Settings
+            AImpliedVolatilityExporterConfig Cfg = JsonConvert.DeserializeObject<AImpliedVolatilityExporterConfig>(File.ReadAllText("AImpliedVolatilityExporterConfig.json"));
+            // Configurable Settings            
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 10, 13);
-            SetEndDate(2023, 10, 13);
+            SetStartDate(Cfg.StartDate);
+            SetEndDate(Cfg.EndDate);
+            Log($"Start Date: {StartDate}");
+            Log($"End Date: {EndDate}");
             SetCash(100_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -53,29 +58,22 @@ namespace QuantConnect.Algorithm.CSharp
             AssignCachedFunctions();
 
             // Subscriptions
-            optionTicker = new() { "HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" };
-            //optionTicker = new() { "CSCO", };
-            optionTicker = new() { "HPE", "DELL" };
-            ticker = optionTicker;
-            symbolSubscribed = AddEquity(optionTicker.First(), resolution).Symbol;
+            symbolSubscribed = AddEquity(Cfg.Ticker.First(), resolution).Symbol;
 
             int subscriptions = 0;
-            foreach (string ticker in ticker)
+            foreach (string ticker in Cfg.Ticker)
             {
                 var equity = AddEquity(ticker, resolution: resolution, fillForward: false);
 
                 subscriptions++;
                 equities.Add(equity.Symbol);
 
-                if (optionTicker.Contains(ticker))
-                {
-                    var option = QuantConnect.Symbol.CreateCanonicalOption(equity.Symbol, Market.USA, $"?{equity.Symbol}");
-                    options.Add(option);
-                    subscriptions += AddOptionIfScoped(option);
-                }
+                var option = QuantConnect.Symbol.CreateCanonicalOption(equity.Symbol, Market.USA, $"?{equity.Symbol}");
+                options.Add(option);
+                subscriptions += AddOptionIfScoped(option);
             }
 
-            Debug($"Subscribing to {subscriptions} securities");
+            Log($"Subscribing to {subscriptions} securities");
             SetUniverseSelection(new ManualUniverseSelectionModel(equities));
 
             PfRisk = PortfolioRisk.E(this);
@@ -83,11 +81,6 @@ namespace QuantConnect.Algorithm.CSharp
             // Scheduled functions
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(new TimeSpan(1, 0, 0)), UpdateUniverseSubscriptions);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(new TimeSpan(16, 0, 0)), WriteIV);
-
-            //SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, equity1, SecurityType.Equity);
-            //var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-5), StartDate).TakeLast(1).First();
-            //Log($"WarmUp TimeSpan: {timeSpan}");
-            //SetWarmUp(timeSpan);
         }
         public override void OnData(Slice data)
         {
@@ -187,7 +180,7 @@ namespace QuantConnect.Algorithm.CSharp
                 Option option = security as Option;
                 Symbol symbol = option.Symbol;
                 
-                var dataDirectory = @"C:\repos\trade\data";
+                var dataDirectory = Config.Get("data-folder");
                 var filePath = LeanData.GenerateZipFilePath(dataDirectory, symbol, Time, option.Resolution, TickType.Quote).ToString();
                 string filePathQuote = filePath.Replace("quote", "iv_quote");
                 if (!File.Exists(filePath))

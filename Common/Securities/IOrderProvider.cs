@@ -79,6 +79,10 @@ namespace QuantConnect.Securities
         /// <param name="filter">Delegate used to filter the orders</param>
         /// <returns>All filtered open orders this order provider currently holds</returns>
         List<Order> GetOpenOrders(Func<Order, bool> filter = null);
+
+        IEnumerable<OrderRequest> SubmitRequestsUnprocessed { get; }
+        IEnumerable<OrderRequest> UpdateRequestsUnprocessed { get; }
+        IEnumerable<OrderRequest> CancelRequestsUnprocessed { get; }
     }
 
     /// <summary>

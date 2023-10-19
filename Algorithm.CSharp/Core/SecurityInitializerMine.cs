@@ -86,6 +86,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.AtmIVIndicators[symbol] = new AtmIVIndicator(_algo, (Equity)security);
                 _algo.IVSurfaceRelativeStrikeBid[symbol].EODATMEvent += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Bid);
                 _algo.IVSurfaceRelativeStrikeAsk[symbol].EODATMEvent += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Ask);
+                _algo.UnderlyingMovedX[symbol] = new UnderlyingMovedX((Equity)security);
+                _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[symbol], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
             }
 
             else if (security.Type == SecurityType.Option)

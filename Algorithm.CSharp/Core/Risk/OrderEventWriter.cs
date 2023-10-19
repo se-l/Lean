@@ -5,15 +5,24 @@ using QuantConnect.Orders;
 using System.Text;
 using QuantConnect.Securities.Option;
 using QuantConnect.Securities;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using System.Globalization;
+using System.Linq;
+using System;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
-    // The CSV part is quite messy. Improve
     public class OrderEventWriter : Disposable
     {
         private readonly string _path;
         private bool _headerWritten;
-        private List<string> _header = new() { "ts", "ID", "OrderDirection", "OrderStatus", "SecurityType", "Symbol", "Quantity", "FillQuantity", "LimitPrice", "FillPrice", "Fee", "PriceUnderlying", "BestBid", "BestAsk", "Delta2Mid" };
+        private List<string> _header = new() { "ts", "OrderId", "BrokerId", "OrderDirection", "OrderStatus", "SecurityType", "Underlying", "Symbol", "Quantity", "FillQuantity", 
+            "LimitPrice", "FillPrice", "Fee", "PriceUnderlying", "BestBid", "BestAsk", "Delta2Mid", "OrderType", 
+            "SubmitRequest.Status", "SubmitRequest.Time",
+            "CancelRequest.Status", "CancelRequest.Time",
+            "LastUpdateRequest.Status", "LastUpdateRequest.Time",
+            "Tag",
+        };
         public OrderEventWriter(Foundations algo, Equity equity)
         {
             _algo = algo;
@@ -28,63 +37,98 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             _writer = new StreamWriter(_path, true);
         }
-        public string CsvRow(OrderEvent orderEvent)
+
+        public string CsvRow(OrderTicket orderTicket)
         {
-            Symbol symbol = orderEvent.Symbol;
+            if (orderTicket == null) return "";
+
+            Symbol symbol = orderTicket.Symbol;
             Security security = _algo.Securities[symbol];
-            // Symbol underlying = Underlying(symbol);
-            string order_status_nm = orderEvent.Status.ToString();
-            string order_direction_nm = orderEvent.Direction.ToString();
+            Symbol underlying = Underlying(symbol);
+            Order? order = _algo.Transactions.GetOrderById(orderTicket.OrderId);  // If existing tickets, might not have an order, only ticket in cache
+            string order_status_nm = orderTicket.Status.ToString();
+            string order_direction_nm = Num2Direction(orderTicket.Quantity).ToString();
             string security_type_nm = security.Type.ToString();
             decimal midPrice = _algo.MidPrice(symbol);
             decimal priceUnderlying = security.Type == SecurityType.Option ? ((Option)security).Underlying.Price : security.Price;
+            decimal limitPrice = orderTicket.OrderType == OrderType.Limit ? orderTicket.Get(OrderField.LimitPrice) : 0;
+            decimal fillPrice = orderTicket.AverageFillPrice;
+            decimal delta2Mid = fillPrice != 0 ? (orderTicket.Quantity > 0 ? midPrice - fillPrice : fillPrice - midPrice) : (orderTicket.Quantity > 0 ? midPrice - limitPrice : limitPrice - midPrice);
 
             var row = new StringBuilder();
 
-            row.AppendJoin(",", new[] { 
-                _algo.Time.ToString(),
-                orderEvent.OrderId.ToString(),
-                order_direction_nm.ToString(),
-                order_status_nm.ToString(),
-                security_type_nm.ToString(),
-                symbol.ToString(),
-                orderEvent.Quantity.ToString(),
-                orderEvent.FillQuantity.ToString(),
-                orderEvent.LimitPrice.ToString(),
-                orderEvent.FillPrice.ToString(),
-                orderEvent.OrderFee.ToString(),
-                priceUnderlying.ToString(),
-                security.BidPrice.ToString(),
-                security.AskPrice.ToString(),
-                (orderEvent.Quantity > 0 ? midPrice - orderEvent.LimitPrice : orderEvent.LimitPrice - midPrice).ToString()
-            });
-            //row.Append("IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(_algo, (Option)security, _algo.Time.Date).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, _algo.MidPrice(underlying), 0.001), 3).ToString() : "" );
-            //row.Append("IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(_algo, (Option)security, _algo.Time.Date).IV(security.BidPrice, _algo.MidPrice(underlying), 0.001), 3).ToString() : "" );
-            //row.Append("IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(_algo, (Option)security, _algo.Time.Date).IV(security.AskPrice, _algo.MidPrice(underlying), 0.001), 3).ToString() : "" );
-            //row.Append("IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? _algo.IVSurfaceRelativeStrikeBid[underlying].IV(symbol).ToString() : "" );
-            //row.Append("IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? _algo.IVSurfaceRelativeStrikeAsk[underlying].IV(symbol).ToString() : "");
-
+            try
+            {
+                row.AppendJoin(",", new[] {
+                    _algo.Time.ToString(CultureInfo.InvariantCulture),
+                    orderTicket.OrderId.ToString(CultureInfo.InvariantCulture),
+                    string.Join(",", order?.BrokerId ?? new List<string>()),
+                    order_direction_nm.ToString(),
+                    order_status_nm.ToString(),
+                    security_type_nm.ToString(),
+                    underlying.Value,
+                    symbol.ToString(),
+                    orderTicket.Quantity.ToString(CultureInfo.InvariantCulture),
+                    orderTicket.QuantityFilled.ToString(CultureInfo.InvariantCulture),
+                    limitPrice.ToString(CultureInfo.InvariantCulture),
+                    fillPrice.ToString(CultureInfo.InvariantCulture),
+                    order?.OrderFillData?.Fee.ToString(CultureInfo.InvariantCulture) ?? "",
+                    priceUnderlying.ToString(CultureInfo.InvariantCulture),
+                    security.BidPrice.ToString(CultureInfo.InvariantCulture),
+                    security.AskPrice.ToString(CultureInfo.InvariantCulture),
+                    delta2Mid.ToString(CultureInfo.InvariantCulture),
+                    orderTicket.OrderType.ToString(),
+                    orderTicket.SubmitRequest.Status.ToString(),
+                    orderTicket.SubmitRequest.Time.ToString(CultureInfo.InvariantCulture),
+                    orderTicket.CancelRequest?.Status.ToString(CultureInfo.InvariantCulture),
+                    orderTicket.CancelRequest?.Time.ToString(CultureInfo.InvariantCulture),
+                    orderTicket.UpdateRequests.Any() ? orderTicket.UpdateRequests[orderTicket.UpdateRequests.Count - 1].Status.ToString(CultureInfo.InvariantCulture) : "",
+                    orderTicket.UpdateRequests.Any() ? orderTicket.UpdateRequests[orderTicket.UpdateRequests.Count - 1].Time.ToString(CultureInfo.InvariantCulture) : "",
+                });
+            }
+            catch (Exception e)
+            {
+                _algo.Error($"OrderEventWriter.CsvRow: {e.Message}");
+                return "";
+            }
             return row.ToString();
         }
         public void Write(OrderEvent orderEvent)
         {
+            if (!IsValidWriter()) return;
+            OrderTicket orderTicket = _algo.Transactions.GetOrderTicket(orderEvent.OrderId);
+            if (orderTicket == null)
+            {
+                _algo.Log($"{_algo.Time} OrderEventWriter.Write No orderTicket found for OrderId: {orderEvent.OrderId}");
+                return;
+            }
+            _writer.WriteLine(CsvRow(orderTicket));
+        }
+
+        public void Write(OrderTicket orderTicket)
+        {
+            if (!IsValidWriter()) return;
+            _writer.WriteLine(CsvRow(orderTicket));
+        }
+
+        private bool IsValidWriter()
+        {
             if (_writer == null)
             {
-                _algo.Log($"OrderEventWriter.Write(): _writer is null.");
-                return;
+                _algo.Log($"OrderEventWriter.CheckWriter(): _writer is null.");
+                return false;
             }
             else if (_writer.BaseStream == null)
             {
-                _algo.Log($"OrderEventWriter.Write(): _writer is closed.");
-                return;
+                _algo.Log($"OrderEventWriter.CheckWriter(): _writer is closed.");
+                return false;
             }
-
             if (!_headerWritten)
             {
                 _writer.WriteLine(string.Join(",", _header));
                 _headerWritten = true;
             }
-            _writer.WriteLine(CsvRow(orderEvent));
+            return true;
         }
     }
 }

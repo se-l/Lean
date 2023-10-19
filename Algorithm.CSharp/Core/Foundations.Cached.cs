@@ -212,14 +212,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
             
             SecurityRiskLimit riskLimit = Securities[underlying].RiskLimit;
 
-
             if (riskDelta100BpUSDTotal > riskLimit.Delta100BpLong || riskDelta100BpUSDTotal < riskLimit.Delta100BpShort)
             {
                 ExecuteHedge(underlying, EquityHedgeQuantity(underlying));
             }
             else 
             {
-                Log($"{Time} GetHedgeOptionWithUnderlying. Fill Event for {symbol}, but cannot no non-zero quantity in Portfolio. Expect this function to be called only when risk is exceeded.");
+                Log($"{Time} GetHedgeOptionWithUnderlying. Not hedging because riskDelta100BpUSDTotal={riskDelta100BpUSDTotal} for symbol={symbol}.");
             }
         }
 
@@ -250,12 +249,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //      Long  Gamma + Trending    -> Hedge less  (let delta run)
             //      Long  Gamma + Range Bound -> Hedge often (hedges are winners)
 
-            //var optionPositions = pfRisk.Positions.Where(x => x.UnderlyingSymbol == underlying & x.SecurityType == SecurityType.Option);            
-            //var biases = optionPositions.Select(p => p.Delta(implied: true)).Select(d => d-0.5 <= 0 ? -0.05 : 0.05);
-            //riskDeltaTotal += (decimal)biases.Sum()*100;
-            //var volaBias = -0.01;  // Current Strat is just selling call/puts expecting vola decline over time. hedgingVolatilityBias[NUM2DIRECTION[Math.Sign(quantity)]];
-            //riskDeltaTotal = pfRisk.RiskByUnderlying(symbol, Metric.DeltaTotalImplied, volatility: IVAtm(symbol) + volaBias);
-
             List<OrderTicket> tickets = orderTickets.TryGetValue(symbol, out tickets) ? tickets : new List<OrderTicket>();
             quantity = Math.Round(quantity, 0);
 
@@ -264,6 +257,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 decimal orderedQuantityMarket = tickets.Where(t => t.OrderType == OrderType.Market).Sum(t => t.Quantity);
                 quantity -= orderedQuantityMarket;
+                if (orderedQuantityMarket != 0)
+                {
+                    Log($"{Time} ExecuteHedge: Market Order present for {symbol} {orderedQuantityMarket}.");
+                }
             }
             // Hedge is taken through EventHandler -> UpdateLimitOrderEquity.
             bool anyLimitOrders = tickets.Where(t => t.OrderType == OrderType.Limit).Any();
@@ -281,15 +278,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     default:
                         switch (orderType)
                         {
+                            case OrderType.Market:
                             case OrderType.Limit:
-                                QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New OrderEquity" }, { "f", $"GetHedgeOptionWithUnderlying" },
+                                QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New OrderEquity" }, { "f", $"ExecuteHedge" },
                                     { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
-                                OrderEquity(symbol, quantity, price, orderType: OrderType.Limit);
+                                OrderEquity(symbol, quantity, price, orderType: orderType);
                                 break;
                             case OrderType.LimitIfTouched:
                                 if (!LimitIfTouchedOrderInternals.ContainsKey(symbol))
                                 {
-                                    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New LimitIfTouchedOrderInternals" }, { "f", $"GetHedgeOptionWithUnderlying" },
+                                    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New LimitIfTouchedOrderInternals" }, { "f", $"ExecuteHedge" },
                                     { "Symbol", symbol}, { "MidPrice", MidPrice(symbol).ToString() },  { "TouchPrice", price.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
                                 }
                                 LimitIfTouchedOrderInternals[symbol] = new LimitIfTouchedOrderInternal(symbol, quantity, price, price);
@@ -298,7 +296,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                                 throw new NotImplementedException();
                         }
                         break;
-                }                
+                }
+            }
+            else
+            {
+                Log($"{Time} ExecuteHedge: Not hedging because quantity={quantity}, anyLimitOrders={anyLimitOrders}, orders={string.Join(",", tickets.Where(t => t.OrderType == OrderType.Limit))}.");
             }
         }
         /// <summary>
@@ -349,7 +351,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Update existing price if price moved away
                 // Ensure Touch Entries remaining if gamma < 0
                 LimitIfTouchedOrderInternals.Remove(equity.Symbol);
-                return (MidPrice(equity.Symbol), OrderType.Limit);
+                return (MidPrice(equity.Symbol), OrderType.Market);
             }
         }
 

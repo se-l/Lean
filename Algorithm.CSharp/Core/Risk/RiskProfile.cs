@@ -95,16 +95,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (_algo.Time != timeLastStressed)
             {
                 position0Cache = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol && x.Quantity != 0).ToList();
-                stressDsPlus0Cache = Math.Min(StressTest(position0Cache, 10), 0);
-                stressDsMinus0Cache = Math.Min(StressTest(position0Cache, -10), 0);
+                stressDsPlus0Cache = Math.Min(StressTest(position0Cache, 5), 0);
+                stressDsMinus0Cache = Math.Min(StressTest(position0Cache, -5), 0);
                 timeLastStressed = _algo.Time;
             }
 
             //var positions1 = position0Cache.Append(position).ToList();
             //_algo.Log($"Checking {symbol} {quantity} {positions1.Count} positions.");
             List<Position> positions1 = new() { position };
-            decimal stressDsPlus1 = Math.Min(stressDsPlus0Cache + StressTest(positions1, 10), 0);
-            decimal stressDsMinus1 = Math.Min(stressDsMinus0Cache + StressTest(positions1, -10), 0);
+            decimal stressDsPlus1 = Math.Min(stressDsPlus0Cache + StressTest(positions1, 5), 0);
+            decimal stressDsMinus1 = Math.Min(stressDsMinus0Cache + StressTest(positions1, -5), 0);
             //decimal stressDIVPlus1 = StressTest(positions1, 0, 0.15);
             //decimal stressDIVMinus1 = StressTest(positions1, 0, -0.15);
             // _algo.Log($"{_algo.Time} WhatIfMarginAdd: {symbol} {quantity} stressDsPlus1={stressDsPlus1}, stressDsMinus1={stressDsMinus1}");

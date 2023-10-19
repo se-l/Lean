@@ -59,6 +59,20 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
         /// </summary>
         protected IBusyCollection<OrderRequest> _orderRequestQueue;
 
+        /// <summary>
+        /// OrderRequest queue for unprocessed submit requests.
+        /// </summary>
+        // Dictionary due to absence of ConcurrentHashSet
+        protected ConcurrentDictionary<OrderRequest, byte> _submitRequestsUnprocessed = new();
+        /// <summary>
+        /// OrderRequest queue for unprocessed update requests.
+        /// </summary>
+        protected ConcurrentDictionary<OrderRequest, byte> _updateRequestsUnprocessed = new();
+        /// <summary>
+        /// OrderRequest queue for unprocessed cancel requests.
+        /// </summary>
+        protected ConcurrentDictionary<OrderRequest, byte> _cancelRequestsUnprocessed = new();
+
         private Thread _processingThread;
         private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
 
@@ -130,6 +144,10 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 return _completeOrderTickets;
             }
         }
+
+        public IEnumerable<OrderRequest> SubmitRequestsUnprocessed => _submitRequestsUnprocessed.Keys;
+        public IEnumerable<OrderRequest> UpdateRequestsUnprocessed => _updateRequestsUnprocessed.Keys;
+        public IEnumerable<OrderRequest> CancelRequestsUnprocessed => _cancelRequestsUnprocessed.Keys;
 
         /// <summary>
         /// Gets the current number of orders that have been processed
@@ -280,6 +298,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             {
                 _openOrderTickets.TryAdd(ticket.OrderId, ticket);
                 _completeOrderTickets.TryAdd(ticket.OrderId, ticket);
+                _submitRequestsUnprocessed.TryAdd(request, 0);
                 _orderRequestQueue.Add(request);
 
                 // wait for the transaction handler to set the order reference into the new order ticket,
@@ -390,6 +409,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 else
                 {
                     request.SetResponse(OrderResponse.Success(request), OrderRequestStatus.Processing);
+                    _updateRequestsUnprocessed.TryAdd(request, 0);
                     _orderRequestQueue.Add(request);
                 }
             }
@@ -464,6 +484,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
 
                     // send the request to be processed
                     request.SetResponse(OrderResponse.Success(request), OrderRequestStatus.Processing);
+                    _cancelRequestsUnprocessed.TryAdd(request, 0);
                     _orderRequestQueue.Add(request);
                 }
             }
@@ -721,12 +742,15 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             {
                 case OrderRequestType.Submit:
                     response = HandleSubmitOrderRequest((SubmitOrderRequest)request);
+                    _submitRequestsUnprocessed.TryRemove(request, out _);
                     break;
                 case OrderRequestType.Update:
                     response = HandleUpdateOrderRequest((UpdateOrderRequest)request);
+                    _updateRequestsUnprocessed.TryRemove(request, out _);
                     break;
                 case OrderRequestType.Cancel:
                     response = HandleCancelOrderRequest((CancelOrderRequest)request);
+                    _cancelRequestsUnprocessed.TryRemove(request, out _);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();

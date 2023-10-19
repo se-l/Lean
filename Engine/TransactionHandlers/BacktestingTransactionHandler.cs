@@ -100,7 +100,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             // we submit the order request our selves
             Run();
 
-            if (!ticket.OrderSet.WaitOne(0))
+            if (!ticket.OrderSet.WaitOne(10))
             {
                 // this could happen if there was some error handling the order
                 // and it was not set

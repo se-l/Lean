@@ -29,6 +29,7 @@ namespace QuantConnect.Algorithm.CSharp
         public bool LogOrderUpdates { get; set; }
         public bool SkipWarmUpSecurity { get; set; }
         public Dictionary<string, double> MinZMOffset { get; set; }
+        public Dictionary<string, decimal> MaxZMOffset { get; set; }
         public int PutCallRatioWarmUpDays { get; set; }
         public Dictionary<string, List<TargetRisk>> PutCallRatioTargetRisks { get; set; }
         public Dictionary<string, double> EOD2SODATMIVJumpThreshold { get; set; }
@@ -43,5 +44,7 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, decimal> SignalQuantityFraction { get; set; }
         public Dictionary<string, decimal> TargetMarginAsFractionOfNLV { get; set; }
         public Dictionary<string, double> MarginUtilScaleFactor { get; set; }
+        public int MinSubmitRequestsUnprocessedBlockingSubmit { get; set; }
+        public int MinCancelRequestsUnprocessedBlockingSubmit { get; set; }
     }
 }

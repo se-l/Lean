@@ -1,8 +1,11 @@
+using Fasterflect;
+using ProtoBuf.Meta;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Securities;
 using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
@@ -141,7 +144,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public decimal ZMOffset(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
         {
-            return Math.Max(_algo.CastGracefully(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), (decimal)_algo.Cfg.MinZMOffset[underlying]);
+            decimal minOffset = (decimal)(_algo.Cfg.MinZMOffset.TryGetValue(underlying, out double _minOffset) ? _minOffset : _algo.Cfg.MinZMOffset[CfgDefault]);
+            decimal maxOffset = _algo.Cfg.MaxZMOffset.TryGetValue(underlying, out maxOffset) ? maxOffset : _algo.Cfg.MaxZMOffset[CfgDefault];
+            return Math.Min(Math.Max(_algo.CastGracefully(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), minOffset), maxOffset);
         }
 
         public (decimal, decimal) ZMBands(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
@@ -153,7 +158,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             double deltaZM = positions.Select(p => DeltaZM(p, volatility)).Sum();
             double offsetZM = Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum());
             // For high quantities, offset goes towards +/- 1, not good. Hence using sqrt(deltaZM) as minimum.
-            offsetZM = Math.Min(Math.Max(offsetZM, Math.Pow(Math.Abs(deltaZM), 0.5)), _algo.Cfg.MinZMOffset[underlying]);
+            double minOffset = (_algo.Cfg.MinZMOffset.TryGetValue(underlying, out minOffset) ? minOffset : _algo.Cfg.MinZMOffset[CfgDefault]);
+            offsetZM = Math.Min(Math.Max(offsetZM, Math.Pow(Math.Abs(deltaZM), 0.5)), minOffset);
 
             // Debug why bands can be zero despite options postions open
             if (deltaZM == 0 && offsetZM == 0)
@@ -237,6 +243,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 { "MaintenanceMargin", _algo.Portfolio.MarginMetrics.FullMaintMarginReq },
             };
         }
+        /// <summary>
+        /// While waiting for an equity hedge to fill, delta risk may have flipped in the meantime warranting a cancellation of the hedge order.
+        /// </summary>
+        public void CancelDeltaIncreasingEquityTickets(Symbol underlying, decimal riskDelta)
+        {
+            if (_algo.orderTickets.TryGetValue(underlying, out var tickets))
+            {
+                lock (tickets)
+                {
+                    foreach (var t in tickets.ToList().Where(t => !_algo.orderCanceledOrPending.Contains(t.Status) && t?.CancelRequest == null && t.Quantity * riskDelta > 0))
+                    {                        
+                        string tag = $"{_algo.Time} CancelDeltaIncreasingEquityTickets. Cancelling ticket {t.OrderId} for {t.Symbol} with quantity {t.Quantity} because riskDelta={riskDelta}.";
+                        _algo.Log(tag);
+                        t.Cancel(tag);                        
+                    }
+                }
+            }
+        }
 
         public bool IsRiskLimitExceededZMBands(Symbol symbol)
         {
@@ -253,17 +277,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             riskDeltaTotal += riskPutCallRatio;
 
+            CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
+
             if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
             {
-                _algo.Log($"{_algo.Time} IsRiskLimitExceededZM. riskDSTotal={riskDeltaTotal}, risk_delta_dP/dS={riskDeltaDPdS}, risk_delta_IV/dS={deltaIVdSTotal}, riskPutCallRatio={riskPutCallRatio}");
+                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, risk_delta_dP/dS={riskDeltaDPdS}, risk_delta_IV/dS={deltaIVdSTotal}, zmOffset={zmOffset}, riskPutCallRatio={riskPutCallRatio}");
                 _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
                 return true;
 
+            }
+            else if (Math.Abs(riskDeltaTotal) > 50)
+            {
+                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, risk_delta_dP/dS={riskDeltaDPdS}, risk_delta_IV/dS={deltaIVdSTotal}, zmOffset={zmOffset}, riskPutCallRatio ={riskPutCallRatio}");
             }
             else
             {
                 _algo.LimitIfTouchedOrderInternals.Remove(symbol);
             }
+
             return false;
         }
 

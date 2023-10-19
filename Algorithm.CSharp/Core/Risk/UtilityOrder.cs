@@ -251,15 +251,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             decimal targetMarginAsFractionOfNLV = _algo.Cfg.TargetMarginAsFractionOfNLV.TryGetValue(Underlying.Value, out targetMarginAsFractionOfNLV) ? targetMarginAsFractionOfNLV : _algo.Cfg.TargetMarginAsFractionOfNLV[CfgDefault];
             double marginUtilScaleFactor = _algo.Cfg.MarginUtilScaleFactor.TryGetValue(Underlying.Value, out marginUtilScaleFactor) ? marginUtilScaleFactor : _algo.Cfg.MarginUtilScaleFactor[CfgDefault];
 
-            // Portfolio level
-            if (_algo.LiveMode)
-            {
-                initialMargin = _algo.Portfolio.MarginMetrics.FullInitMarginReq;
-            }
-            else
-            {
-                initialMargin = _algo.Portfolio.TotalMarginUsed;
-            }
+            initialMargin = _algo.InitialMargin();
             //decimal excessLiquidity = _algo.Portfolio.MarginMetrics.ExcessLiquidity;
             decimal marginExcessTarget = Math.Max(0, initialMargin - _algo.Portfolio.TotalPortfolioValue * targetMarginAsFractionOfNLV);
 
@@ -279,7 +271,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     noNewPositionTag = $"No new positions when margin target exceeeded. ";
                     utilMargin += -10000;
                 }
-                _algo.Log($"GetUtilityMargin: {Symbol} {Quantity}. {noNewPositionTag}initialMargin={initialMargin} Exceeded by marginExcessTarget={marginExcessTarget}. utilMargin={utilMargin} based on stressedPnl={stressedPnl}");
+                //_algo.Log($"GetUtilityMargin: {Symbol} {Quantity}. {noNewPositionTag}initialMargin={initialMargin} Exceeded by marginExcessTarget={marginExcessTarget}. utilMargin={utilMargin} based on stressedPnl={stressedPnl}");
             }
             return utilMargin;
         }

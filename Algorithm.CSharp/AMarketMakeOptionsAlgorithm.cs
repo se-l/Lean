@@ -33,7 +33,6 @@ using Newtonsoft.Json;
 using QuantConnect.Configuration;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
-
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
@@ -52,8 +51,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Configurable Settings
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 9, 25);
-            SetEndDate(2023, 9, 25);
+            SetStartDate(2023, 10, 9);
+            SetEndDate(2023, 10, 18);
             SetCash(30_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
@@ -103,6 +102,7 @@ namespace QuantConnect.Algorithm.CSharp
                 RiskProfiles[equity.Symbol] = new RiskProfile(this, equity);
                 UtilityWriters[equity.Symbol] = new UtilityWriter(this, equity);
                 OrderEventWriters[equity.Symbol] = new OrderEventWriter(this, equity);
+                UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => RunSignals();
             }
 
             Debug($"Subscribing to {subscriptions} securities");
@@ -116,13 +116,12 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), RunSignals);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), RunSignals); // not event driven, bad. Essentially
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then.
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed), OnMarketClose);
             //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), SnapPositions);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportIVSurface);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), ExportPutCallRatios);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then.
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed), OnMarketClose);
             // Turn Limit Equity into EOD before market close...
 
             // WARMUP
@@ -168,6 +167,7 @@ namespace QuantConnect.Algorithm.CSharp
             }
             SubmitLimitIfTouchedOrder();
             RecordMarketData(slice);
+            if (SignalsLastRun < Time - TimeSpan.FromMinutes(30)) { RunSignals(); }
         }
 
         /// <summary>
@@ -223,6 +223,7 @@ namespace QuantConnect.Algorithm.CSharp
         }
         public override void OnOrderEvent(OrderEvent orderEvent)
         {
+            ConsumeSignal();
             OrderEvents.Add(orderEvent);
             if (orderEvent.Status == OrderStatus.Filled || orderEvent.Status == OrderStatus.PartiallyFilled)
             {
@@ -243,21 +244,6 @@ namespace QuantConnect.Algorithm.CSharp
         public override void OnAssignmentOrderEvent(OrderEvent assignmentEvent)
         {
             Log($"OnAssignmentOrderEvent: {assignmentEvent}");
-        }
-
-        /// <summary>
-        /// Event driven: On MarketOpen, OnFill, OnRiskProfileChanges / Thresholds crossed
-        /// </summary>
-        public void RunSignals()
-        {
-            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed) || Time.TimeOfDay <= mmWindow.Start || Time.TimeOfDay >= mmWindow.End) return;
-            if (!OnWarmupFinishedCalled)
-            {
-                OnWarmupFinished();
-            }
-
-            var signals = GetDesiredOrders();
-            HandleDesiredOrders(signals);
         }
 
         public List<Symbol> AddOptionIfScoped(Symbol option)
@@ -322,6 +308,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         public override void OnEndOfAlgorithm()
         {
+            //_signalSubmittingThread.StopSafely(TimeSpan.FromMilliseconds(100));
             OnEndOfDay();
             ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "PositionLifeCycle.csv"));
             RiskRecorder.Dispose();
@@ -356,6 +343,7 @@ namespace QuantConnect.Algorithm.CSharp
         public override void OnWarmupFinished()
         {
             IEnumerable<OrderTicket> openTransactions = Transactions.GetOpenOrderTickets();
+            
             Log($"Adding Open Transactions to OrderTickets: {openTransactions.Count()}");
             foreach (OrderTicket ticket in openTransactions)
             {
@@ -410,10 +398,10 @@ namespace QuantConnect.Algorithm.CSharp
             if (!IsMarketOpen(symbolSubscribed)) return;
 
             LimitIfTouchedOrderInternals.Clear();
-            foreach (string ticker in optionTicker)
+            foreach (string ticker in ticker)
             {
                 Equity equity = (Equity)Securities[ticker];
-                Log($"HedgeDeltaFlat EOD: {equity.Symbol}");
+                Log($"{Time} HedgeDeltaFlat: {equity.Symbol}");
                 HedgeOptionWithUnderlying(equity.Symbol);
             }
         }

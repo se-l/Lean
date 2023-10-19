@@ -136,7 +136,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 { "ts", Time.ToString() },
                 { "topic", "ORDER EVENT" },
-                { "ID", orderEvent.OrderId.ToString() },
+                { "OrderId", orderEvent.OrderId.ToString() },
                 { "OrderDirection", order_direction_nm },
                 { "OrderStatus", order_status_nm },
                 { "SecurityType", security_type_nm },
