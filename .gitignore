@@ -289,3 +289,6 @@ Results/
 /Algorithm.CSharp/Core/Archive.cs
 /ToolBox/Resources/config.json
 /ToolBox/Properties/Resources.resx
+
+#Data moved to ext drive
+Data/
