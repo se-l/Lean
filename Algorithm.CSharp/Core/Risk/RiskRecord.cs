@@ -10,6 +10,9 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
+    /// <summary>
+    /// A snap shot of current positions, their risk at pnl up to now. Excludes closed positions, hence the final pnl of this file is not the same as the final pnl of the algorithm.
+    /// </summary>
     public class RiskRecord
     {
         private readonly Foundations _algo;
@@ -63,7 +66,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal PosWeightedIV => _pfRisk.RiskByUnderlying(Symbol, Metric.PosWeightedIV);
         public decimal DeltaIVdSTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdSTotal);
         public decimal DeltaIVdS100BpUSDTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdS100BpUSDTotal);
-        //public decimal PnL => Position.AllLifeCycles(_algo).Where(p => p.UnderlyingSymbol == Symbol).Sum(p => p.PL);
         public decimal PnL => _algo.Positions.Values.Where(p => p.UnderlyingSymbol == Symbol).Sum(p => p.PL);
         public decimal TotalMarginUsed => _algo.Portfolio.TotalMarginUsed;
         public decimal MarginRemaining => _algo.Portfolio.MarginRemaining;
@@ -73,8 +75,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _pfRisk = pfRisk;
             _equity = equity;
             _optionHoldings = _algo.Securities.Where(kvp => kvp.Key.SecurityType == SecurityType.Option && kvp.Key.Underlying == Symbol).Select(kvp => kvp.Value.Holdings);
-            //_plExplains = Position.AllLifeCycles(_algo).Where(p => p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain);
-            _plExplains = _algo.Positions.Values.Where(p => p.Quantity != 0 && p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain);
+            _plExplains = _algo.Positions.Values.Where(p => p.Quantity != 0 && p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain.Update(new PositionSnap(_algo, p.Symbol)));
 
             if (DeltaTotal * Delta100BpUSDTotal < 0)
             {

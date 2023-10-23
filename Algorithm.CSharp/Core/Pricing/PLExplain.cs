@@ -77,7 +77,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private double DR(double r1) => r1 - r0;
         private decimal DIVdS(decimal iVdS1) => iVdS1 - iVdS0;
 
-        public void Update(PositionSnap snap, decimal? premiumOnExpiry = null)
+        public PLExplain Update(PositionSnap snap, decimal? premiumOnExpiry = null)
         {
             double dS = (double)DS(_position.Trade1?.Mid0Underlying ?? snap.Mid0Underlying);
             double dT = DT(_position.Trade1?.Ts0 ?? snap.Ts0);
@@ -129,6 +129,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 PL_Theta + PL_ThetaDecay + // dT
                 PL_Vega + PL_VegaDecay + PL_Volga + // dIV
                 PL_Rho;  // dR
+
+            return this;
         }
     }
 }

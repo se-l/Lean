@@ -433,8 +433,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             LastSnap = new PositionSnap(_algo, Symbol);
             _pLExplain ??= new PLExplain(_algo, this);
-            _pLExplain.Update(LastSnap);
-            return _pLExplain;
+            return _pLExplain.Update(LastSnap);
         }
 
         /// <summary>
