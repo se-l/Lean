@@ -1,0 +1,31 @@
+version: '3.4'
+
+services:
+  amm.1:
+    image: sebastianluen/amm:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      no_cache: true
+    environment:
+      - StartDate=2023-07-24
+      - EndDate=2023-07-25
+    volumes:
+      - type: bind
+        source: C:/repos/quantconnect/Lean/Launcher/bin/Runs
+        target: /repos/quantconnect/Lean/Launcher/bin/Runs
+    privileged: true
+
+  # amm.2:
+  #   image: sebastianluen/amm:latest
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - StartDate=2023-04-24
+  #     - EndDate=2023-04-25
+  #   volumes:
+  #     - type: bind
+  #       source: C:/repos/quantconnect/Lean/Launcher/bin/Runs
+  #       target: /repos/quantconnect/Lean/Launcher/bin/Runs
+  #   privileged: true

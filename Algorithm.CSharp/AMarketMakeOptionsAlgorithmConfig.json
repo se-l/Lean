@@ -1,4 +1,6 @@
 {
+  "StartDate": "2023-07-24",
+  "EndDate": "2023-07-25",
   "HedgeTicker": [],
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
@@ -211,10 +213,10 @@
   "LogOrderUpdates": false,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
   "MinZMOffset": {
-    "_":  20
+    "_": 20
   },
   "MaxZMOffset": {
-    "_":  50
+    "_": 50
   },
   "PutCallRatioWarmUpDays": 3,
   "PutCallRatioTargetRisks": {
@@ -259,7 +261,7 @@
     "_": 4000
   },
   "TargetMarginAsFractionOfNLV": {
-    "_": 0.005
+    "_": 0.5
   },
   "SignalQuantityFraction": {
     "_": 2
@@ -267,6 +269,6 @@
   "MarginUtilScaleFactor": {
     "_": 0.5
   },
-  "MinSubmitRequestsUnprocessedBlockingSubmit": 3,
-  "MinCancelRequestsUnprocessedBlockingSubmit": 5
+  "MinSubmitRequestsUnprocessedBlockingSubmit": 10,
+  "MinCancelRequestsUnprocessedBlockingSubmit": 10
 }

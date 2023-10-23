@@ -1,11 +1,8 @@
-using Fasterflect;
-using ProtoBuf.Meta;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Securities;
 using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
@@ -146,7 +143,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             decimal minOffset = (decimal)(_algo.Cfg.MinZMOffset.TryGetValue(underlying, out double _minOffset) ? _minOffset : _algo.Cfg.MinZMOffset[CfgDefault]);
             decimal maxOffset = _algo.Cfg.MaxZMOffset.TryGetValue(underlying, out maxOffset) ? maxOffset : _algo.Cfg.MaxZMOffset[CfgDefault];
-            return Math.Min(Math.Max(_algo.CastGracefully(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), minOffset), maxOffset);
+            return Math.Min(Math.Max(CastGracefully(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), minOffset), maxOffset);
         }
 
         public (decimal, decimal) ZMBands(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
@@ -169,7 +166,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     _algo.Log($"ZM Bands are zero for {positions.Count()} positions with quantity {quantity}. DeltaZMs: {positions.Select(p => DeltaZM(p, volatility)).ToList()}");
                 }                
             }
-            return (_algo.CastGracefully(deltaZM - offsetZM), _algo.CastGracefully(deltaZM + offsetZM));
+            return (CastGracefully(deltaZM - offsetZM), CastGracefully(deltaZM + offsetZM));
         }
         /// <summary>
         /// Ask IV strongly slopes up close to expiration (1-3 days), therefore rendering midIV not a good indicator. Would wanna use contracts expiring later. This will lead to a
@@ -256,7 +253,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     {                        
                         string tag = $"{_algo.Time} CancelDeltaIncreasingEquityTickets. Cancelling ticket {t.OrderId} for {t.Symbol} with quantity {t.Quantity} because riskDelta={riskDelta}.";
                         _algo.Log(tag);
-                        t.Cancel(tag);                        
+                        _algo.Cancel(t, tag);
                     }
                 }
             }

@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
@@ -15,7 +14,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public UtilityWriter(Foundations algo, Equity equity)
         {
             _algo = algo;
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", equity.Symbol.Value, "UtilityOrder.csv");
+            _path = Path.Combine(Globals.PathAnalytics, equity.Symbol.Value, "UtilityOrder.csv");
             if (File.Exists(_path))
             {
                 File.Delete(_path);

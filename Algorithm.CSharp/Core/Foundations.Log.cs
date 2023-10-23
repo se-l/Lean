@@ -7,6 +7,7 @@ using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Contracts;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
@@ -32,48 +33,30 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return tag;
         }
 
-        public string LogOrder(Security security, OrderType order_type, float quantity)
+        public string LogOrderTicket(OrderTicket ticket)
         {
-            string security_type_nm = security.Type.ToString();
-            string order_type_nm = order_type.ToString();
-            OrderDirection order_direction = quantity > 0 ? OrderDirection.Buy : OrderDirection.Sell;
+            Security security = Securities[ticket.Symbol];
+            string security_type_nm = ticket.Symbol.SecurityType.ToString();
+            string order_type_nm = ticket.OrderType.ToString();
+            OrderDirection order_direction = ticket.Quantity > 0 ? OrderDirection.Buy : OrderDirection.Sell;
             string order_direction_nm = order_direction.ToString();
-            string tag = Humanize(new Dictionary<string, string>
+            decimal ticketPrice = ticket.OrderType == OrderType.Limit ? ticket.Get(OrderField.LimitPrice) : ticket.AverageFillPrice;
+            Security underlying = Securities[Underlying(ticket.Symbol)];
+
+            string tag = Humanize(new Dictionary<string, string>()
             {
                 { "ts", Time.ToString() },
-                { "topic", "ORDER" },
+                { "topic", "ORDERTICKET" },
                 { "OrderDirection", order_direction_nm },
                 { "OrderType", order_type_nm },
                 { "SecurityType", security_type_nm },
-                { "Symbol", security.Symbol.ToString() },
-                { "Quantity", Math.Abs(quantity).ToString() },
-                { "Price", security.Price.ToString() },
+                { "Symbol", ticket.Symbol.ToString() },
+                { "Quantity", ticket.Quantity.ToString() },
+                { "TicketPrice", ticketPrice.ToString() },
+                { "Status", ticket.Status.ToString() },
                 { "BestBidPrice", security.BidPrice.ToString() },
-                { "BestAskPrice", security.AskPrice.ToString() }
-            });
-            Log(tag);
-            return tag;
-        }
-
-        public string LogOptionOrder(Option contract, decimal quantity, decimal? limitPrice = null, OrderType orderType=OrderType.Limit)
-        {
-            OrderDirection orderDirection = Num2Direction(quantity);
-            decimal best_bid = contract.BidPrice;
-            decimal best_ask = contract.AskPrice;
-            string order_type_nm = orderType.ToString();
-            string order_direction_nm = orderDirection.ToString();
-            string tag = Humanize(new Dictionary<string, string>
-            {
-                { "ts", Time.ToString() },
-                { "topic", "ORDER OPTION" },
-                { "OrderDirection", order_direction_nm },
-                { "Quantity", quantity.ToString() },
-                { "OrderType", order_type_nm },
-                { "Symbol", contract.Symbol.ToString() },                
-                { "PriceUnderlying", contract.Underlying.Price.ToString() },
-                { "BestBid", best_bid.ToString() },
-                { "Price", limitPrice.ToString() },
-                { "BestAsk", best_ask.ToString() }
+                { "BestAskPrice", security.AskPrice.ToString() },
+                { "PriceUnderlying", underlying.Price.ToString() },
             });
             Log(tag);
             return tag;

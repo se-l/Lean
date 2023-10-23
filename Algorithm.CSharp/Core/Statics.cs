@@ -421,6 +421,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             File.WriteAllText(filePath, ToCsv(objects));
         }
+        public static decimal CastGracefully(double originalValue)
+        {
+            if (originalValue >= (double)decimal.MinValue && originalValue <= (double)decimal.MaxValue)
+            {
+                // The original value is within the valid range for a decimal
+                return (decimal)originalValue;
+            }
+            else
+            {
+                // The original value is out of the valid range
+                return 0; // Round to zero
+            }
+        }
 
         public static Func<TArgs, TResult> Cache<TCacheKey, TArgs, TResult>(Func<TArgs, TResult> decorated, Func<TArgs, TCacheKey> genCacheKey)
         {

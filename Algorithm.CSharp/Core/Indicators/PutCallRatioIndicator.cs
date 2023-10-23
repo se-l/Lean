@@ -54,7 +54,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Symbol = equity.Symbol;
             Equity = equity;
 
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", Symbol.Value, "PutCallRatios.csv");
+            _path = Path.Combine(Globals.PathAnalytics, Symbol.Value, "PutCallRatios.csv");
             if (File.Exists(_path))
             {
                 File.Delete(_path);

@@ -1,0 +1,44 @@
+#
+#   LEAN Foundation Docker Container 20201214
+#   Cross platform deployment for multiple brokerages
+#   Intended to be used in conjunction with Dockerfile. This is just the foundation common OS+Dependencies required.
+
+# Use base system for cleaning up wayward processes
+FROM phusion/baseimage:focal-1.0.0
+
+MAINTAINER Sebastian Lueneburg <sebastian.lueneburg@gmail.com>
+
+# Use baseimage-docker's init system.
+CMD ["/sbin/my_init"]
+
+# Install OS Packages:
+# Misc tools for running Python.NET and IB inside a headless container.
+RUN apt-get update && apt-get -y install wget curl unzip \
+   && apt-get install -y git bzip2 zlib1g-dev \
+   xvfb libxrender1 libxtst6 libxi6 libglib2.0-dev libopenmpi-dev libstdc++6 openmpi-bin \
+   pandoc libcurl4-openssl-dev libgtk2.0.0 build-essential \
+   && apt-get clean && apt-get autoclean && apt-get autoremove --purge -y \
+   && rm -rf /var/lib/apt/lists/*
+
+# Install vsdbg for remote C# debugging in Visual Studio and Visual Studio Code
+RUN wget https://aka.ms/getvsdbgsh -O - 2>/dev/null | /bin/sh /dev/stdin -v 16.9.20122.2 -l /root/vsdbg
+
+# Install package to mount cifs
+RUN apt-get update && apt-get install -y cifs-utils
+
+# Install IB Gateway: Installs to /root/ibgateway
+COPY ibgateway-latest-standalone-linux-x64-10.25.lk.sh ./
+RUN mkdir -p /root/ibgateway && \
+    chmod 777 ibgateway-latest-standalone-linux-x64-10.25.lk.sh && \
+    ./ibgateway-latest-standalone-linux-x64-10.25.lk.sh -q -dir /root/ibgateway && \
+    rm ibgateway-latest-standalone-linux-x64-10.25.lk.sh
+
+# Install dotnet 6 sdk & runtime
+RUN wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
+    dpkg -i packages-microsoft-prod.deb && \
+    apt-get update; \
+    apt-get install -y apt-transport-https && \
+    apt-get update && \
+    apt-get install -y dotnet-sdk-6.0 && \
+    rm packages-microsoft-prod.deb && \
+    apt-get clean && apt-get autoclean && apt-get autoremove --purge -y && rm -rf /var/lib/apt/lists/*

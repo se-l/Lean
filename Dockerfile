@@ -1,25 +1,18 @@
 #
 #   LEAN Docker Container 20200522
 #   Cross platform deployment for multiple brokerages
-#
 
 # Use base system
-FROM quantconnect/lean:foundation
+FROM sebastianluen/lean:latest
 
-MAINTAINER QuantConnect <contact@quantconnect.com>
+MAINTAINER Sebastian Lueneburg <sebastian.lueneburg@gmail.com>
 
-#Install debugpy and PyDevD for remote python debugging
-RUN pip install --no-cache-dir ptvsd==4.3.2 debugpy~=1.5.1 pydevd-pycharm~=201.8538.36
+COPY ./Launcher/bin/Debug/ /repos/quantconnect/Lean/Launcher/bin/Debug/
+RUN rm -f /repos/quantconnect/Lean/Launcher/bin/Debug/log.txt
 
-# Install vsdbg for remote C# debugging in Visual Studio and Visual Studio Code
-RUN wget https://aka.ms/getvsdbgsh -O - 2>/dev/null | /bin/sh /dev/stdin -v 16.9.20122.2 -l /root/vsdbg
+# Prepare mounting external hard drive
+RUN mkdir -p /repos/quantconnect/Lean/Data
+COPY ./run.sh /run.sh
+RUN chmod +x run.sh
 
-COPY ./DataLibraries /Lean/Launcher/bin/Debug/
-COPY ./Lean/Launcher/bin/Debug/ /Lean/Launcher/bin/Debug/
-COPY ./Lean/Optimizer.Launcher/bin/Debug/ /Lean/Optimizer.Launcher/bin/Debug/
-COPY ./Lean/Report/bin/Debug/ /Lean/Report/bin/Debug/
-
-# Can override with '-w'
-WORKDIR /Lean/Launcher/bin/Debug
-
-ENTRYPOINT [ "dotnet", "QuantConnect.Lean.Launcher.dll" ]
+ENTRYPOINT [ "./run.sh" ]

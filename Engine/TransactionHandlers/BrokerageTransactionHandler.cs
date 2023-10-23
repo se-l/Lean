@@ -63,15 +63,15 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
         /// OrderRequest queue for unprocessed submit requests.
         /// </summary>
         // Dictionary due to absence of ConcurrentHashSet
-        protected ConcurrentDictionary<OrderRequest, byte> _submitRequestsUnprocessed = new();
+        protected ConcurrentDictionary<int, SubmitOrderRequest> _submitRequestsUnprocessed = new();
         /// <summary>
-        /// OrderRequest queue for unprocessed update requests.
+        /// OrderId queue for unprocessed update requests.
         /// </summary>
-        protected ConcurrentDictionary<OrderRequest, byte> _updateRequestsUnprocessed = new();
+        protected ConcurrentDictionary<int, UpdateOrderRequest> _updateRequestsUnprocessed = new();
         /// <summary>
-        /// OrderRequest queue for unprocessed cancel requests.
+        /// OrderId queue for unprocessed cancel requests.
         /// </summary>
-        protected ConcurrentDictionary<OrderRequest, byte> _cancelRequestsUnprocessed = new();
+        protected ConcurrentDictionary<int, CancelOrderRequest> _cancelRequestsUnprocessed = new();
 
         private Thread _processingThread;
         private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
@@ -145,9 +145,9 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             }
         }
 
-        public IEnumerable<OrderRequest> SubmitRequestsUnprocessed => _submitRequestsUnprocessed.Keys;
-        public IEnumerable<OrderRequest> UpdateRequestsUnprocessed => _updateRequestsUnprocessed.Keys;
-        public IEnumerable<OrderRequest> CancelRequestsUnprocessed => _cancelRequestsUnprocessed.Keys;
+        public IEnumerable<OrderRequest> SubmitRequestsUnprocessed => _submitRequestsUnprocessed.Values;
+        public IEnumerable<OrderRequest> UpdateRequestsUnprocessed => _updateRequestsUnprocessed.Values;
+        public IEnumerable<OrderRequest> CancelRequestsUnprocessed => _cancelRequestsUnprocessed.Values;
 
         /// <summary>
         /// Gets the current number of orders that have been processed
@@ -298,7 +298,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             {
                 _openOrderTickets.TryAdd(ticket.OrderId, ticket);
                 _completeOrderTickets.TryAdd(ticket.OrderId, ticket);
-                _submitRequestsUnprocessed.TryAdd(request, 0);
+                _submitRequestsUnprocessed.TryAdd(request.OrderId, request);
                 _orderRequestQueue.Add(request);
 
                 // wait for the transaction handler to set the order reference into the new order ticket,
@@ -409,7 +409,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 else
                 {
                     request.SetResponse(OrderResponse.Success(request), OrderRequestStatus.Processing);
-                    _updateRequestsUnprocessed.TryAdd(request, 0);
+                    _updateRequestsUnprocessed.TryAdd(request.OrderId, request);
                     _orderRequestQueue.Add(request);
                 }
             }
@@ -484,7 +484,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
 
                     // send the request to be processed
                     request.SetResponse(OrderResponse.Success(request), OrderRequestStatus.Processing);
-                    _cancelRequestsUnprocessed.TryAdd(request, 0);
+                    _cancelRequestsUnprocessed.TryAdd(request.OrderId, request);
                     _orderRequestQueue.Add(request);
                 }
             }
@@ -742,15 +742,27 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             {
                 case OrderRequestType.Submit:
                     response = HandleSubmitOrderRequest((SubmitOrderRequest)request);
-                    _submitRequestsUnprocessed.TryRemove(request, out _);
+                    if (!_submitRequestsUnprocessed.TryRemove(request.OrderId, out _))
+                    {
+                        _updateRequestsUnprocessed.TryRemove(request.OrderId, out _);
+                        _cancelRequestsUnprocessed.TryRemove(request.OrderId, out _);
+                    }
                     break;
                 case OrderRequestType.Update:
                     response = HandleUpdateOrderRequest((UpdateOrderRequest)request);
-                    _updateRequestsUnprocessed.TryRemove(request, out _);
+                    if (!_updateRequestsUnprocessed.TryRemove(request.OrderId, out _)) 
+                    {
+                        _cancelRequestsUnprocessed.TryRemove(request.OrderId, out _);
+                        _submitRequestsUnprocessed.TryRemove(request.OrderId, out _);
+                    };
                     break;
                 case OrderRequestType.Cancel:
                     response = HandleCancelOrderRequest((CancelOrderRequest)request);
-                    _cancelRequestsUnprocessed.TryRemove(request, out _);
+                    if (!_cancelRequestsUnprocessed.TryRemove(request.OrderId, out _))
+                    {
+                        _updateRequestsUnprocessed.TryRemove(request.OrderId, out _);
+                        _submitRequestsUnprocessed.TryRemove(request.OrderId, out _);
+                    };
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -758,6 +770,23 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
 
             // mark request as processed
             request.SetResponse(response, OrderRequestStatus.Processed);
+
+            foreach (var kvp in _cancelRequestsUnprocessed.ToList())
+            {
+                if (kvp.Value.Time < (_algorithm.UtcTime - TimeSpan.FromMinutes(5)))
+                {
+                    Log.Error($"BrokerageTransactionHandler.HandleOrderRequest(): Cancel request for order id  {kvp.Key} has been outstanding for more than 5 minutes, request will be removed. Investigate! Status:");
+                    _cancelRequestsUnprocessed.TryRemove(kvp.Key, out _);
+                }
+            }
+            foreach (var kvp in _submitRequestsUnprocessed.ToList())
+            {
+                if (kvp.Value.Time < (_algorithm.UtcTime - TimeSpan.FromMinutes(5)))
+                {
+                    Log.Error($"BrokerageTransactionHandler.HandleOrderRequest(): Submit request for order id  {kvp.Key} has been outstanding for more than 5 minutes, request will be removed. Investigate! Status:");
+                    _submitRequestsUnprocessed.TryRemove(kvp.Key, out _);
+                }
+            }
         }
 
         /// <summary>

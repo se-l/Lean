@@ -280,7 +280,17 @@ namespace QuantConnect.Orders
         /// <returns>The <see cref="OrderResponse"/> from updating the order</returns>
         public OrderResponse Update(UpdateOrderFields fields)
         {
-            _transactionManager.UpdateOrder(new UpdateOrderRequest(_transactionManager.UtcTime, SubmitRequest.OrderId, fields));
+            var request = new UpdateOrderRequest(_transactionManager.UtcTime, SubmitRequest.OrderId, fields);
+            lock (_cancelRequestLock)
+            {
+                // don't submit update request if cancel request is processing, would invalidate the cancelation leading to unintended fills.
+                if (_cancelRequest != null && _cancelRequest.Status != OrderRequestStatus.Error)
+                {
+                    return OrderResponse.Error(request, OrderResponseErrorCode.RequestCanceled,
+                        Messages.OrderTicket.CancelRequestAlreadySubmitted(this));
+                }
+            }
+            _transactionManager.UpdateOrder(request);
             return _updateRequests.Last().Response;
         }
 

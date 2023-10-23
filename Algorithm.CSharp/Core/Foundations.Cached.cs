@@ -255,11 +255,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // subtract pending Market order fills
             if (tickets.Any())
             {
-                decimal orderedQuantityMarket = tickets.Where(t => t.OrderType == OrderType.Market).Sum(t => t.Quantity);
+                var marketOrders = tickets.Where(t => t.OrderType == OrderType.Market).ToList();
+                decimal orderedQuantityMarket = marketOrders.Sum(t => t.Quantity);
                 quantity -= orderedQuantityMarket;
                 if (orderedQuantityMarket != 0)
                 {
-                    Log($"{Time} ExecuteHedge: Market Order present for {symbol} {orderedQuantityMarket}.");
+                    Log($"{Time} ExecuteHedge: Market Orders present for {symbol} {orderedQuantityMarket} OrderId={string.Join(", ", marketOrders.Select(t => t.OrderId))}.");
                 }
             }
             // Hedge is taken through EventHandler -> UpdateLimitOrderEquity.

@@ -34,7 +34,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             { Metric.Volga, (positions, pctChange) => positions.Sum(p => p.VolgaXBpUSDTotal(pctChange * 100)) },
             { Metric.Vanna, (positions, pctChange) => positions.Sum(p => p.VannaXBpUSDTotal((decimal)pctChange * 100)) },
         };
-        private DateTime timeLastStressed = default;
+        private DateTime timeLastStressed;
         private List<Position> position0Cache;
         private decimal stressDsPlus0Cache;
         private decimal stressDsMinus0Cache;
@@ -44,7 +44,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _algo = algo;
             Equity = equity;
 
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", Symbol.Value, "RiskProfile.csv");
+            _path = Path.Combine(Globals.PathAnalytics, Symbol.Value, "RiskProfile.csv");
             if (!File.Exists(_path))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(_path));

@@ -26,7 +26,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public OrderEventWriter(Foundations algo, Equity equity)
         {
             _algo = algo;
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", equity.Symbol.Value, "OrderEvents.csv");
+            _path = Path.Combine(Globals.PathAnalytics, equity.Symbol.Value, "OrderEvents.csv");
             if (File.Exists(_path))
             {
                 File.Delete(_path);

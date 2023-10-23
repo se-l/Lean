@@ -434,6 +434,8 @@ namespace QuantConnect.Lean.Engine
             }
             finally
             {
+                File.Copy("./log.txt", Path.Combine(Globals.PathAnalytics, "log.txt"));
+
                 //No matter what for live mode; make sure we've set algorithm status in the API for "not running" conditions:
                 if (_liveMode && algorithmManager.State != AlgorithmStatus.Running && algorithmManager.State != AlgorithmStatus.RuntimeError)
                     SystemHandlers.Api.SetAlgorithmStatus(job.AlgorithmId, algorithmManager.State);

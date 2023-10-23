@@ -3,6 +3,7 @@ using QuantConnect.Securities;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Option;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -285,8 +286,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             IVAsk0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
             IVPrice0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001) : 0;
             _ = Greeks;
-            SurfaceIVdSBid = (decimal)(_algo.IVSurfaceRelativeStrikeBid[UnderlyingSymbol].IVdS(Symbol) ?? 0);
-            SurfaceIVdSAsk = (decimal)(_algo.IVSurfaceRelativeStrikeAsk[UnderlyingSymbol].IVdS(Symbol) ?? 0);
+            SurfaceIVdSBid = CastGracefully(_algo.IVSurfaceRelativeStrikeBid[UnderlyingSymbol].IVdS(Symbol) ?? 0);
+            SurfaceIVdSAsk = CastGracefully(_algo.IVSurfaceRelativeStrikeAsk[UnderlyingSymbol].IVdS(Symbol) ?? 0);
         }
 
         private void SnapExpired()

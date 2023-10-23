@@ -14,6 +14,8 @@
  *
 */
 
+using System;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using QuantConnect.Configuration;
@@ -54,6 +56,8 @@ namespace QuantConnect
             {
                 CacheDataFolder = cacheLocation;
             }
+
+            PathAnalytics = GetPathAnalytics();
         }
 
         /// <summary>
@@ -83,6 +87,16 @@ namespace QuantConnect
             }
 
             return result;
+        }
+        public static string PathAnalytics { get; private set; }
+        public static string GetPathAnalytics()
+        {
+            // print whether this executes in Debug or Release mode
+            string mode = Config.Get("environment") == "backtesting" ? "" : "-" + Config.Get("ib-account");
+            string folderName = $"Analytics-{DateTime.UtcNow.ToString("yyMMddHHmmss")}-{Config.Get("environment")}{mode}-{Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)}";
+            string path = Path.Combine($"../Runs/", folderName);
+            Directory.CreateDirectory(path);
+            return path;
         }
     }
 }

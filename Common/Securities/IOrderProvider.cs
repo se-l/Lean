@@ -86,7 +86,7 @@ namespace QuantConnect.Securities
     }
 
     /// <summary>
-    /// Provides extension methods for the <see cref="IOrderProvider"/> interface
+    /// Provides extension methods for the <see cref="IOrderProvider"/> OrderRequesterface
     /// </summary>
     public static class OrderProviderExtensions
     {

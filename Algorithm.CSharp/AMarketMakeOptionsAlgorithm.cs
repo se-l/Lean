@@ -49,15 +49,17 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override void Initialize()
         {
-            // Configurable Settings
+            Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json")).OverrideWithEnvironmentVariables();
+            File.Copy("./AMarketMakeOptionsAlgorithmConfig.json", Path.Combine(Globals.PathAnalytics, "AMarketMakeOptionsAlgorithmConfig.json"));
+
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(2023, 10, 9);
-            SetEndDate(2023, 10, 18);
+            SetStartDate(Cfg.StartDate);
+            SetEndDate(Cfg.EndDate);
             SetCash(30_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             UniverseSettings.Leverage = 10;
-            Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
+
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText("EarningsAnnouncements.json"));
             DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
             EarningBySymbol = EarningsAnnouncements.GroupBy(ea => ea.Symbol).ToDictionary(g => g.Key, g => g.ToArray());
@@ -301,8 +303,8 @@ namespace QuantConnect.Algorithm.CSharp
             LogPortfolioHighLevel();
             //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
             //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
-            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "PositionLifeCycle.csv"));
-            //ExportToCsv(Positions.Values.Where(p => p.Trade0.Quantity != 0), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "PositionLifeCycle.csv"));
+            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
+            //ExportToCsv(Positions.Values.Where(p => p.Trade0.Quantity != 0), Path.Combine(_pathAnalytics, "PositionLifeCycle.csv"));
             endOfDay = Time.Date;
         }
 
@@ -310,7 +312,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             //_signalSubmittingThread.StopSafely(TimeSpan.FromMilliseconds(100));
             OnEndOfDay();
-            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "PositionLifeCycle.csv"));
+            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
             RiskRecorder.Dispose();
             IVSurfaceRelativeStrikeBid.Values.DoForEach(s => s.Dispose());
             IVSurfaceRelativeStrikeAsk.Values.DoForEach(s => s.Dispose());

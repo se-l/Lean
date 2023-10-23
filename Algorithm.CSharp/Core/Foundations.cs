@@ -18,7 +18,9 @@ using QuantConnect.Util;
 using QuantConnect.Brokerages;
 using System.Globalization;
 using System.Collections.Concurrent;
-using System.Threading;
+using System.IO;
+using QuantConnect.Configuration;
+using System.Diagnostics.Contracts;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -87,7 +89,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public HashSet<OrderStatus> orderStatusFilled = new() { OrderStatus.Filled, OrderStatus.PartiallyFilled };
         public HashSet<OrderStatus> orderCanceledOrPending = new() { OrderStatus.CancelPending, OrderStatus.Canceled };
-        public HashSet<OrderStatus> orderFilledCanceledInvalid = new() { OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Invalid, OrderStatus.CancelPending };
+        public HashSet<OrderStatus> orderFilledCanceledInvalid = new() { OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Invalid };
         public HashSet<OrderStatus> orderSubmittedPartialFilledUpdated = new() { OrderStatus.PartiallyFilled, OrderStatus.Submitted, OrderStatus.UpdateSubmitted };
         public HashSet<SecurityType> securityTypeOptionEquity = new() { SecurityType.Equity, SecurityType.Option };
         public record MMWindow(TimeSpan Start, TimeSpan End);
@@ -112,7 +114,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (_signalQueue.IsEmpty) return;
                 if (Transactions.CancelRequestsUnprocessed.Any() || Transactions.SubmitRequestsUnprocessed.Count() >= Cfg.MinSubmitRequestsUnprocessedBlockingSubmit)
                 {
-                    Log($"{Time} ConsumeSignal. WAITING with signal submission: Queue Length: {_signalQueue.Count()}, CancelRequestsUnprocessed #: {Transactions.CancelRequestsUnprocessed.Count()}, SubmitRequestsUnprocessed #: {Transactions.SubmitRequestsUnprocessed.Count()}");
+                    Log($"{Time} ConsumeSignal. WAITING with signal submission: Queue Length: {_signalQueue.Count()}, " +
+                        $"CancelRequestsUnprocessed #: {Transactions.CancelRequestsUnprocessed.Count()}: {string.Join(", ",Transactions.CancelRequestsUnprocessed.Select(r => r.OrderId))}, " +
+                        $"SubmitRequestsUnprocessed #: {Transactions.SubmitRequestsUnprocessed.Count()}: {string.Join(", ", Transactions.SubmitRequestsUnprocessed.Select(r => r.OrderId))}");
                     return;
                 }
 
@@ -149,20 +153,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Resolution.Second => (days * 24 * 60 * 60),
                 _ => 1,
             };
-        }
-
-        public decimal CastGracefully(double originalValue)
-        {
-            if (originalValue >= (double)decimal.MinValue && originalValue <= (double)decimal.MaxValue)
-            {
-                // The original value is within the valid range for a decimal
-                return (decimal)originalValue;
-            }
-            else
-            {
-                // The original value is out of the valid range
-                return 0; // Round to zero
-            }
         }
 
         public decimal MidPrice(Symbol symbol)
@@ -426,7 +416,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (ticketsToCancel.Any())
                 {
                     Log($"{Time} HandleDesiredOrders. Canceling {ticketsToCancel.Count} tickets.");
-                    ticketsToCancel.ForEach(t => t.Cancel());
+                    ticketsToCancel.ForEach(t => Cancel(t));
                 }
 
                 // Sort the signals. Risk reducing first, then risk accepting. Can be done based on their UtilMargin. The larger the safer.
@@ -462,7 +452,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 foreach (var t in tickets.Where(t => t.Status != OrderStatus.Invalid && t.Symbol.SecurityType == SecurityType.Option).ToList())
                 {
                     QuickLog(new Dictionary<string, string>() { { "topic", "CANCEL" }, { "action", $"CancelOpenTickets. Canceling {t.Symbol}. EndOfDay" } });
-                    t.Cancel();
+                    Cancel(t);
                 }
             }
         }
@@ -542,7 +532,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                     if (ticket.Quantity * quantity <= 0)
                     {
-                        QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"IsOrderValid. {symbol}. IB does not allow opposite-side simultaneous order. Not processing..." } });
+                        QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"IsOrderValid. {symbol}. IB does not allow opposite-side simultaneous order: OrderId: {ticket.OrderId}. Not processing..." } });
                         return false;
                     }
                 }
@@ -561,13 +551,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return false;
             }
 
-            if (Transactions.CancelRequestsUnprocessed.Count() >= Cfg.MinCancelRequestsUnprocessedBlockingSubmit)
+            if (Transactions.CancelRequestsUnprocessed.Count() >= Cfg.MinCancelRequestsUnprocessedBlockingSubmit && symbol.SecurityType != SecurityType.Equity)
             {
                 QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION" }, { "msg", $"CancelRequests awaiting processing {Transactions.CancelRequestsUnprocessed.Count()}. Not submitting..." } });
                 return false;
             }
 
-            if (Transactions.SubmitRequestsUnprocessed.Count() >= Cfg.MinSubmitRequestsUnprocessedBlockingSubmit)
+            if (Transactions.SubmitRequestsUnprocessed.Count() >= Cfg.MinSubmitRequestsUnprocessedBlockingSubmit && symbol.SecurityType != SecurityType.Equity)
             {
                 QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION" }, { "msg", $"SubmitRequest awaiting processing {Transactions.SubmitRequestsUnprocessed.Count()}. Not submitting..." } });
                 return false;
@@ -603,15 +593,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
             OrderTicket ticket = Transactions.GetOrderTicket(orderId);
             if (ticket?.CancelRequest == null && ticket.SubmitRequest.Status == OrderRequestStatus.Unprocessed)
             {
-                Log($"{Time} CancelOrderTicketIfUnprocessed {ticket.Symbol} Status: {ticket.Status} remained Unprocessed for {sec} sec after new submission. Canceling lean id {ticket.OrderId}");
-                ticket.Cancel();
+                Log($"{Time} CancelOrderTicketIfUnprocessed: {ticket.Symbol} Status: {ticket.Status} remained Unprocessed for {sec} sec after new submission. Canceling lean id {ticket.OrderId}");
+                Cancel(ticket);
             }
             else if (ticket?.CancelRequest == null && $"{ticket.Status}" == $"{OrderStatus.New}" && $"{ticket.SubmitRequest.Status}" == $"{OrderRequestStatus.Error}")
             {
+                // SubmitRequest.Status is initialized with error.
                 // true even if log prints false, therefore evaluating as string now..
                 // SubmitRequest.Status=Processed. 15. Remains in bad submission state after 52 seconds. Canceling.
-                Log($"OrderTicket {ticket}. {ticket.Symbol} {ticket.Quantity} {ticket.Status} SubmitRequest.Status={ticket.SubmitRequest.Status}. {ticket.SubmitRequest.OrderId}. Remains in bad submission state after {sec} seconds. Canceling.");
-                ticket.Cancel();
+                Log($"{Time} CancelOrderTicketIfUnprocessed: OrderTicket {ticket}. {ticket.Symbol} {ticket.Quantity} {ticket.Status} SubmitRequest.Status={ticket.SubmitRequest.Status}. {ticket.SubmitRequest.OrderId}. Remains in bad submission state after {sec} seconds. Canceling.");
+                Cancel(ticket);
             };
         }
         public void OrderEquity(Symbol symbol, decimal quantity, decimal limitPrice, string tag = "", OrderType orderType = OrderType.Market)
@@ -623,7 +614,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 OrderType.Limit =>  LimitOrder(symbol, quantity, RoundTick(limitPrice, TickSize(symbol)), tag),
                 OrderType.Market => MarketOrder(symbol, (int)quantity, tag: tag, asynchronous: LiveMode),
                 _ => throw new NotImplementedException($"OrderType {orderType} not implemented")
-            };            
+            };
+            LogOrderTicket(orderTicket);
             StoreOrderTicket(orderTicket);
         }
         public OrderTicket? OrderOptionContract(Signal signal, OrderType orderType = OrderType.Limit, string tag = "")
@@ -647,15 +639,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return null;
             }
 
-            tag = LogOptionOrder(contract, quantity, limitPrice, orderType) + tag;
-
             OrderTicket orderTicket = orderType switch
             {
                 OrderType.Limit => LimitOrder(contract.Symbol, quantity, limitPrice, tag),
                 OrderType.Market => MarketOrder(contract.Symbol, (int)quantity, tag: tag, asynchronous: LiveMode),
                 _ => throw new NotImplementedException($"OrderType {orderType} not implemented")
             };
-            
+            LogOrderTicket(orderTicket);
             StoreOrderTicket(orderTicket, quote, signal.UtilityOrder);
             return orderTicket;
         }
@@ -691,7 +681,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     if (idealLimitPrice == 0 || quote.Quantity == 0)
                     {
                         Log($"{Time}: UpdateLimitPriceContract. Received 0 price or quantity for submitted order. Canceling {symbol}. Quote: {quote}. Not trading...");
-                        ticket.Cancel();
+                        Cancel(ticket);
                         return;
                     }
                     idealLimitPrice = RoundTick(idealLimitPrice, tickSize);
@@ -702,7 +692,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         if (idealLimitPrice < tickSize)
                         {
                             Log($"{Time}: CANCEL LIMIT Symbol{symbol}: Price too small: {limitPrice}");
-                            ticket.Cancel();
+                            Cancel(ticket);
                         }
                         else
                         {
@@ -736,6 +726,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
+        public OrderResponse Cancel(OrderTicket ticket, string tag = "")
+        {
+            Log($"{Time} Cancel: {ticket.Symbol} OrderId={ticket.OrderId} Status={ticket.Status} {ticket}");
+            var response = ticket.Cancel(tag);
+            OrderEventWriters[Underlying(ticket.Symbol)].Write(ticket);
+            return response;
+        }
+
         public decimal EquityHedgeQuantity(Symbol underlying) => -PfRisk.RiskByUnderlying(underlying, Metric.DeltaTotal);
 
         public void UpdateLimitOrderEquity(Equity equity, decimal? quantity = null)
@@ -747,7 +745,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (cnt > 1)
                 {
                     Log($"{Time}: CANCEL LIMIT Symbol{equity.Symbol}: Too many orders");
-                    ticket.Cancel();
+                    Cancel(ticket);
                     continue;
                 }
                 cnt++;
@@ -762,7 +760,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 //if (orderType == OrderType.LimitIfTouched)
                 //{
                 //    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", $"Cancel Order Ticket. Turned into LimitIfTouched" }, { "f", $"UpdateLimitOrderEquity" } });
-                //    ticket.Cancel();
+                //    Cancel(ticket);
                 //    continue;
                 //}
 
@@ -914,7 +912,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }
                 }
             }
-            ticketToCancel.ForEach(t => t.Cancel());
+            ticketToCancel.ForEach(t => Cancel(t));
 
         }
         public void InitializePositionsFromPortfolio()

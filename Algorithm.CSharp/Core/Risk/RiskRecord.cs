@@ -91,7 +91,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public RiskRecorder(Foundations algo)
         {
             _algo = algo;
-            _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "RiskRecords.csv");
+            _path = Path.Combine(Globals.PathAnalytics, "RiskRecords.csv");
             
             if (File.Exists(_path))
             {

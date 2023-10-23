@@ -75,8 +75,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
             if (createFile)
             {
-                _path = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "IVSurface", Underlying.Value, $"{Side}.csv");
-                _pathRaw = Path.Combine(Directory.GetCurrentDirectory(), "Analytics", "IVSurface", Underlying.Value, $"{Side}Raw.csv");
+                _path = Path.Combine(Globals.PathAnalytics, "IVSurface", Underlying.Value, $"{Side}.csv");
+                _pathRaw = Path.Combine(Globals.PathAnalytics, "IVSurface", Underlying.Value, $"{Side}Raw.csv");
                 if (File.Exists(_path))
                 {
                     File.Delete(_path);
