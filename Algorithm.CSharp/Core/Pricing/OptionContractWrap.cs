@@ -24,8 +24,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public Func<double, double, double> GammaCached;
 
         private readonly Foundations _algo;
-        private static readonly Dictionary<string, OptionContractWrap> instances = new();
-        private static readonly object lockObject = new();
+        private static readonly Dictionary<(Symbol, DateTime), OptionContractWrap> instances = new();
 
         private readonly DayCounter dayCounter;
         private readonly Calendar calendar;        
@@ -50,10 +49,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private List<Date> dividendExDates;
         private List<double> dividendAmounts;
 
-        /// <summary>
-        /// Cached constructor
-        /// </summary>
-        private static Func<DateTime, Securities.Option.Option, string> genCacheKey = (date, contract) => $"{contract.Symbol}{date}";
+        //private static Func<DateTime, Securities.Option.Option, (Symbol, DateTime)> genCacheKey = (date, contract) => (contract.Symbol, date);
 
         private (decimal, decimal, double) GenCacheKeyIV(decimal? spotPriceContract, decimal? spotPriceUnderlying, double accuracy= 0.001)
         {
@@ -118,15 +114,32 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public static OptionContractWrap E(Foundations algo, Securities.Option.Option contract, DateTime calculationDate)
         {
-            string singletonKey = genCacheKey(calculationDate, contract);
+            (Symbol, DateTime) singletonKey = (contract.Symbol, calculationDate);
             if (!instances.ContainsKey(singletonKey))
             {
-                lock (lockObject)
+                lock (instances)
                 {
                     instances[singletonKey] = new OptionContractWrap(algo, contract, calculationDate);
                 }
             }
             return instances[singletonKey];
+        }
+
+        public static int ClearCache(DateTime upToDate)
+        {
+            int count = 0;
+            lock (instances)
+            {
+                foreach (var key in instances.Keys)
+                {
+                    if (key.Item2 < upToDate)
+                    {
+                        instances.Remove(key);
+                        count ++;
+                    }
+                }
+            }
+            return count;
         }
 
         public void SetIndependents(decimal? spotUnderlyingPrice = null, decimal? spotPrice = null, double? volatility = null)

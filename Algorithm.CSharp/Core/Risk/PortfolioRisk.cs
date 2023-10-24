@@ -24,7 +24,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         private readonly Foundations _algo;
         private static PortfolioRisk instance;
-        public readonly Func<Symbol, Metric, IEnumerable<Position>, double?, double?, decimal> RiskByUnderlyingCached;
+        public Func<Symbol, Metric, IEnumerable<Position>, double?, double?, decimal> RiskByUnderlyingCached;
 
         public static PortfolioRisk E(Foundations algo)
         {
@@ -36,6 +36,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _algo = algo;
             TimeCreated = _algo.Time;
             TimeLastUpdated = _algo.Time;
+            ResetCache();
+        }
+
+        public void ResetCache()
+        {
             RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility, double? dX) => (Underlying(symbol), metric, positions.Select(p => (p.Symbol.Value, p.Quantity)).ToHashSet(), volatility, dX, _algo.Time));
         }
 

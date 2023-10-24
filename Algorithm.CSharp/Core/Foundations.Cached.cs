@@ -9,8 +9,6 @@ using QuantConnect.Securities;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
-using Fasterflect;
-using static QuantConnect.Algorithm.CSharp.Core.Foundations;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -151,24 +149,24 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Symbol underlying = Underlying(symbol);
 
             decimal zmOffset = PfRisk.RiskBandByUnderlying(symbol, Metric.ZMOffset);
-            decimal riskDeltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+            decimal riskDeltaTotal = DeltaMV(symbol);
 
-            decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);// + SurfaceIVdSTotal;
-            var shortCall = Risk100BpRisk2USDDelta(underlying, TargetRiskPutCallRatio(underlying));
-            if (shortCall != 0)
-            {
-                Log($"PutCallRatio: shortCall={shortCall}, TargetRiskPutCallRatio(underlying)={TargetRiskPutCallRatio(underlying)}");
-            }
-            riskDeltaTotal += shortCall;
+            // Developed for Pfizer. Skip for now.
+            //var shortCall = Risk100BpRisk2USDDelta(underlying, TargetRiskPutCallRatio(underlying));
+            //if (shortCall != 0)
+            //{
+            //    Log($"PutCallRatio: shortCall={shortCall}, TargetRiskPutCallRatio(underlying)={TargetRiskPutCallRatio(underlying)}");
+            //}
+            //riskDeltaTotal += shortCall;
 
             if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
             {
-                Log($"{Time} GetHedgeOptionWithUnderlyingZMBands. zmOffset={zmOffset}, riskDeltaTotalNotZMFlat={riskDeltaTotal}, deltaIVdSTotal={deltaIVdSTotal}");
+                Log($"{Time} GetHedgeOptionWithUnderlyingZMBands: zmOffset={zmOffset}, riskDeltaTotal={riskDeltaTotal}");
                 ExecuteHedge(underlying, -riskDeltaTotal);  // Like standard delta hedging, but with ZM bands.
             }
             else
             {
-                Log($"{Time} GetHedgeOptionWithUnderlying. Fill Event for {symbol}, but cannot no non-zero quantity in Portfolio. Expect this function to be called only when risk is exceeded.");
+                Log($"{Time} GetHedgeOptionWithUnderlying: Fill Event for {symbol}, but cannot no non-zero quantity in Portfolio. Expect this function to be called only when risk is exceeded.");
             }
         }
         private void GetHedgeOptionWithUnderlyingZM(Symbol symbol)
@@ -204,22 +202,36 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
 
-            decimal riskDelta100BpUSDTotal;
-            decimal riskDeltaTotal;
+            decimal riskDelta100BpUSD = 0;
             Symbol underlying = Underlying(symbol);
 
-            riskDelta100BpUSDTotal = PfRisk.RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal);
-            
+            decimal delta100BpUSDTotal = PfRisk.RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal);
+            riskDelta100BpUSD += delta100BpUSDTotal;
+            decimal deltaIVdS100BpUSD = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdS100BpUSDTotal);  // MV
+            riskDelta100BpUSD += deltaIVdS100BpUSD;
+
             SecurityRiskLimit riskLimit = Securities[underlying].RiskLimit;
 
-            if (riskDelta100BpUSDTotal > riskLimit.Delta100BpLong || riskDelta100BpUSDTotal < riskLimit.Delta100BpShort)
+            if (riskDelta100BpUSD > riskLimit.Delta100BpLong || riskDelta100BpUSD < riskLimit.Delta100BpShort)
             {
                 ExecuteHedge(underlying, EquityHedgeQuantity(underlying));
             }
             else 
             {
-                Log($"{Time} GetHedgeOptionWithUnderlying. Not hedging because riskDelta100BpUSDTotal={riskDelta100BpUSDTotal} for symbol={symbol}.");
+                Log($"{Time} GetHedgeOptionWithUnderlying. Not hedging because riskDelta100BpUSD={riskDelta100BpUSD}, delta100BpUSDTotal={delta100BpUSDTotal}, deltaIVdS100BpUSD={deltaIVdS100BpUSD} for symbol={symbol}.");
             }
+        }
+
+        public decimal DeltaMV(Symbol symbol)
+        {
+            decimal deltaMVTotal = 0;
+            decimal deltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+            decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);  // MV
+
+            deltaMVTotal += deltaTotal;
+            deltaMVTotal += deltaIVdSTotal;
+            Log($"{Time} DeltaMV {symbol}: deltaMVTotal={deltaMVTotal}, deltaTotal={deltaTotal}, deltaIVdSTotal={deltaIVdSTotal}");
+            return deltaMVTotal;
         }
 
         public class LimitIfTouchedOrderInternal
@@ -267,8 +279,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             bool anyLimitOrders = tickets.Where(t => t.OrderType == OrderType.Limit).Any();
 
             if (quantity != 0 && !anyLimitOrders)
-            {                
-                (price, orderType) = GetEquityHedgeLimitOrderPrice(equity);
+            {
+                orderType = GetEquityHedgeOrderType(equity);
+                price = GetEquityHedgePrice(equity, orderType);
 
                 // Place new order. Market if no position yet, otherwise limit
                 switch (Portfolio[symbol].Quantity)
@@ -305,25 +318,44 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
         /// <summary>
+        /// Ensure Delta is zero before starting a new LiT.
+        /// </summary>
+        /// <param name="equity"></param>
+        /// <returns></returns>
+        public OrderType GetEquityHedgeOrderType(Equity equity)
+        {
+            return OrderType.Market;
+            // To be developed
+            if (Time >= Time.Date + mmWindow.End)
+            {
+                return OrderType.Market;
+            }
+            decimal deltaMV = DeltaMV(equity.Symbol);
+            if (deltaMV > Cfg.RiskLimitGammaScalpDeltaTotalLong || deltaMV < Cfg.RiskLimitGammaScalpDeltaTotalShort)
+            {
+                return OrderType.Limit;
+            }
+            double gammaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.GammaTotal);
+            if (gammaTotal > 0)
+            {
+                Log($"{Time} GetEquityHedgeOrderType: {equity}, deltaMV={deltaMV}, gammaTotal={gammaTotal}");
+                return OrderType.LimitIfTouched;
+            }
+
+            return OrderType.Limit;            
+        }
+        /// <summary>
         /// Gamma long - trailing limit orders.
         /// Gamma short - hedge more tightly - midPrice Limit Orders.
         /// </summary>
-        public (decimal, OrderType) GetEquityHedgeLimitOrderPrice(Equity equity, OrderTicket? ticket = null)
+        public decimal GetEquityHedgePrice(Equity equity, OrderType orderType, OrderTicket? ticket = null)
         {
             decimal touchPrice;
             decimal price;
-            // more aggressively hedge for immediate fill as time delay caused losses.
-            // obviously deserves a model to optimize.
-            // decimal midPriceUnderlying = MidPrice(option.Underlying.Symbol);
-            // var ideal_limit_price = ticket.Quantity > 0 ? equity.BidPrice : equity.AskPrice;
-            // return riskUSD > 0 ? equity.BidPrice : equity.AskPrice;
-            double gammaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.GammaTotal);
-            bool orderIfTouched = gammaTotal > 0;
 
-            if (false && orderIfTouched && ticket == null)  /// Bug - need to ensure delta is zero before starting gamma scalping
+            if (orderType == OrderType.LimitIfTouched)
             {
                 double deltaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.DeltaTotal);
-                Log($"GetEquityHedgeLimitOrderPrice.orderIfTouched: deltaTotal={deltaTotal}, gammaTotal={gammaTotal}");
                 if (!Cfg.TrailingHedgePct.TryGetValue(equity.Symbol.Value, out decimal trailingPct))
                 {
                     trailingPct = Cfg.TrailingHedgePct[CfgDefault];
@@ -345,14 +377,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     touchPrice = deltaTotal > 0 ? Math.Max(hypotheticalNewTouchPrice, currentTouchPrice) : Math.Min(hypotheticalNewTouchPrice, currentTouchPrice);
                 }
                 // Only return a price, if price has been touched
-                return (touchPrice, OrderType.LimitIfTouched);
+                return touchPrice;
+            }
+            else if (orderType == OrderType.Market)
+            {
+                return 0;
             }
             else
             {
                 // Update existing price if price moved away
                 // Ensure Touch Entries remaining if gamma < 0
                 LimitIfTouchedOrderInternals.Remove(equity.Symbol);
-                return (MidPrice(equity.Symbol), OrderType.Market);
+                return MidPrice(equity.Symbol);
             }
         }
 

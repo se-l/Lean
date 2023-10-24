@@ -25,6 +25,8 @@ namespace QuantConnect.Algorithm.CSharp
         public double ZMRiskAversion { get; set; }
         public double ZMProportionalTransactionCost { get; set; }
         public Dictionary<string, DiscountParams> DiscountParams { get; set; }
+        public decimal RiskLimitGammaScalpDeltaTotalLong { get; set; }
+        public decimal RiskLimitGammaScalpDeltaTotalShort { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalLong { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
         public Dictionary<string, double> IVSurfaceRelativeStrikeAlpha { get; set; }

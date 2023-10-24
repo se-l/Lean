@@ -30,8 +30,8 @@ using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Scheduling;
 using QuantConnect.Securities.Equity;
 using Newtonsoft.Json;
-using QuantConnect.Configuration;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -41,8 +41,6 @@ namespace QuantConnect.Algorithm.CSharp
     public partial class AMarketMakeOptionsAlgorithm : Foundations
     {
         private DateTime endOfDay;
-        DiskDataCacheProvider _diskDataCacheProvider = new();
-        Dictionary<(Resolution, Symbol, TickType), LeanDataWriter> writers = new();  
 
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
@@ -64,7 +62,7 @@ namespace QuantConnect.Algorithm.CSharp
             DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
             EarningBySymbol = EarningsAnnouncements.GroupBy(ea => ea.Symbol).ToDictionary(g => g.Key, g => g.ToArray());
 
-            mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - ScheduledEvent.SecurityEndOfDayDelta);  // 2mins before EOD EOD market close events fire
+            mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - ScheduledEvent.SecurityEndOfDayDelta - TimeSpan.FromMinutes(5));  // 10mins before EOD market close events fire
             orderType = OrderType.Limit;
 
             SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays));
@@ -114,17 +112,19 @@ namespace QuantConnect.Algorithm.CSharp
 
             // SCHEDULED EVENTS
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Leaves EOD Equity hedges.
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), RunSignals);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, 3), HedgeDeltaFlat); // Meeds to fill within a minute, otherwise canceled. Refactor to turn to MarketOrder then.
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed), OnMarketClose);
-            //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), SnapPositions);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
+
+            // Before EOD - stop trading & overnight hedge
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Stop MM
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, 5), HedgeDeltaFlat);  // Equity delta neutral hedge
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed), OnMarketClose);  // just some logging & cache clearing
+
+            // Logging events
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportIVSurface);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), ExportPutCallRatios);
-            // Turn Limit Equity into EOD before market close...
 
             // WARMUP
             SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
@@ -168,7 +168,7 @@ namespace QuantConnect.Algorithm.CSharp
                 PriceCache[symbol] = Securities[symbol].Cache.Clone();
             }
             SubmitLimitIfTouchedOrder();
-            RecordMarketData(slice);
+            PfRisk.ResetCache();
             if (SignalsLastRun < Time - TimeSpan.FromMinutes(30)) { RunSignals(); }
         }
 
@@ -194,35 +194,6 @@ namespace QuantConnect.Algorithm.CSharp
             });
         }
 
-        public void RecordMarketData(Slice slice)
-        {
-            // Move into consolidator events. Not driving any biz logic.
-            // Record data for restarts and next day comparison with history. Avoid conflict with Paper on same instance by running this for live mode only.
-            if (LiveMode && Config.Get("ib-trading-mode") == "live")
-            {
-                foreach (KeyValuePair<Symbol, QuoteBar> kvp in slice.QuoteBars)
-                {
-                    Symbol symbol = kvp.Key;
-                    var dataW = new List<BaseData>() { kvp.Value };
-
-                    var writer = writers.TryGetValue((resolution, symbol, TickType.Quote), out LeanDataWriter dataWriter)
-                        ? dataWriter
-                        : writers[(resolution, symbol, TickType.Quote)] = new LeanDataWriter(resolution, symbol, Config.Get("data-folder"), TickType.Quote, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
-                    writer.Write(dataW);
-                }
-
-                foreach (KeyValuePair<Symbol, TradeBar> kvp in slice.Bars)
-                {
-                    Symbol symbol = kvp.Key;
-                    var dataW = new List<BaseData>() { kvp.Value };
-
-                    var writer = writers.TryGetValue((resolution, symbol, TickType.Trade), out LeanDataWriter dataWriter)
-                        ? dataWriter
-                        : writers[(resolution, symbol, TickType.Quote)] = new LeanDataWriter(resolution, symbol, Config.Get("data-folder"), TickType.Trade, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
-                    writer.Write(dataW);
-                }
-            }
-        }
         public override void OnOrderEvent(OrderEvent orderEvent)
         {
             ConsumeSignal();
@@ -301,16 +272,12 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (IsWarmingUp || Time.Date == endOfDay) { return; }
             LogPortfolioHighLevel();
-            //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
-            //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
             ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
-            //ExportToCsv(Positions.Values.Where(p => p.Trade0.Quantity != 0), Path.Combine(_pathAnalytics, "PositionLifeCycle.csv"));
             endOfDay = Time.Date;
         }
 
         public override void OnEndOfAlgorithm()
         {
-            //_signalSubmittingThread.StopSafely(TimeSpan.FromMilliseconds(100));
             OnEndOfDay();
             ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
             RiskRecorder.Dispose();
@@ -320,16 +287,16 @@ namespace QuantConnect.Algorithm.CSharp
             UtilityWriters.Values.DoForEach(s => s.Dispose());
             OrderEventWriters.Values.DoForEach(s => s.Dispose());
             PutCallRatios.Values.DoForEach(s => s.Dispose());
-            _diskDataCacheProvider.DisposeSafely();
         }
 
         public void OnMarketOpen()
         {
             if (IsWarmingUp) { return; }
 
+            // New day => Securities may have fallen into scope for trading embargo.
             embargoedSymbols = Securities.Keys.Where(s => EarningsAnnouncements.Where(ea => ea.Symbol == s.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()).ToHashSet();
 
-            CancelGammaHedgeBeyondScope();
+            //CancelGammaHedgeBeyondScope();  // pending removal
 
             // Trigger events
             foreach (Security security in Securities.Values.Where(s => s.Type == SecurityType.Equity))  // because risk is hedged by underlying
@@ -340,6 +307,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             LogRisk();
             LogPnL();
+            LogPositions();
         }
 
         public override void OnWarmupFinished()
@@ -412,6 +380,8 @@ namespace QuantConnect.Algorithm.CSharp
         {
             optionTicker.DoForEach(ticker => IVSurfaceRelativeStrikeBid[ticker].OnEODATM());
             optionTicker.DoForEach(ticker => IVSurfaceRelativeStrikeAsk[ticker].OnEODATM());
+
+            Log($"{Time} OptionContractWrap.ClearCache: Removed {OptionContractWrap.ClearCache(Time - TimeSpan.FromDays(3))} instances."); ;
         }
     }
 }

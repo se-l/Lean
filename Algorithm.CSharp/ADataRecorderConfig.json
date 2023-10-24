@@ -1,0 +1,6 @@
+{
+  "StartDate": "2023-08-01",
+  "EndDate": "2023-08-03",
+  "Ticker": [ "DELL", "HPE" ],
+  "DataFolderOut": "../../../Data/trade/dataLive"
+}

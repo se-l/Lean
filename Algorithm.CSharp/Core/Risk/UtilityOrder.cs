@@ -141,6 +141,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             return (double)CapitalCostPerDay(deltaOrder);
         }
+        /// <summary>
+        /// Somewhat double encodede together with MarginUtuil. Unify!
+        /// </summary>
+        /// <returns></returns>
         private double GetUtilityEquityPosition()
         {
             double totalEquityPosUtil;
@@ -157,7 +161,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             double scaleOrder = totalDerivativesDelta != 0 ? Math.Abs(orderDelta / totalDerivativesDelta) : 1;
             double scaleRelativeToOthertilities = 1.0 / 10;
 
-            totalEquityPosUtil = Math.Abs(Math.Abs(cumEquityDelta) + Math.Pow(Math.Max(0, Math.Abs(cumEquityDelta) - targetMaxEquityDelta), 2));
+            totalEquityPosUtil = Math.Abs(Math.Abs(orderDelta) + Math.Pow(Math.Max(0, Math.Abs(cumEquityDelta) - targetMaxEquityDelta), 2));
             //if (cumEquityDelta > 0)
             //{
             //    // Long position. Exponential punishment / reward. Starts becoming exponential after targetMaxEquityDelta.
@@ -252,8 +256,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             double marginUtilScaleFactor = _algo.Cfg.MarginUtilScaleFactor.TryGetValue(Underlying.Value, out marginUtilScaleFactor) ? marginUtilScaleFactor : _algo.Cfg.MarginUtilScaleFactor[CfgDefault];
 
             initialMargin = _algo.InitialMargin();
+            if (initialMargin == 0) return 0;  // No Position whatsover. Algo start.
+
             //decimal excessLiquidity = _algo.Portfolio.MarginMetrics.ExcessLiquidity;
-            decimal marginExcessTarget = Math.Max(0, initialMargin - _algo.Portfolio.TotalPortfolioValue * targetMarginAsFractionOfNLV);
+            decimal marginExcessTarget = Math.Abs(Math.Min(0, _algo.Portfolio.TotalPortfolioValue * targetMarginAsFractionOfNLV - initialMargin));
 
             // Order Level - IB also offers WhatIf calcs for margin added, but would not want to rely on slow forth n back...
             // Ignores the fact that simply a lot positions cause higher margin, need to stop increasing them eventually.
@@ -271,7 +277,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     noNewPositionTag = $"No new positions when margin target exceeeded. ";
                     utilMargin += -10000;
                 }
-                //_algo.Log($"GetUtilityMargin: {Symbol} {Quantity}. {noNewPositionTag}initialMargin={initialMargin} Exceeded by marginExcessTarget={marginExcessTarget}. utilMargin={utilMargin} based on stressedPnl={stressedPnl}");
+                _algo.Log($"GetUtilityMargin: {Symbol} {Quantity}. {noNewPositionTag}initialMargin={initialMargin} Exceeded by marginExcessTarget={marginExcessTarget}. utilMargin={utilMargin} based on stressedPnl={stressedPnl}");
             }
             return utilMargin;
         }

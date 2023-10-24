@@ -18,9 +18,6 @@ using QuantConnect.Util;
 using QuantConnect.Brokerages;
 using System.Globalization;
 using System.Collections.Concurrent;
-using System.IO;
-using QuantConnect.Configuration;
-using System.Diagnostics.Contracts;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -393,7 +390,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             else
             {
-                return Portfolio.TotalMarginUsed;
+                return Portfolio.TotalMarginUsed / 5;  // IB's Portfolio Margining requires a much lower margin.
             }
         }
 
@@ -512,7 +509,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             // Timing
-            if (IsWarmingUp || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End)
+            if (IsWarmingUp || 
+                (Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End && symbol.SecurityType == SecurityType.Option)  // Delta hedging with Equity anytime.
+                )
             {
                 QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"Not time to trade yet." } });
                 return false;
@@ -734,7 +733,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return response;
         }
 
-        public decimal EquityHedgeQuantity(Symbol underlying) => -PfRisk.RiskByUnderlying(underlying, Metric.DeltaTotal);
+        public decimal EquityHedgeQuantity(Symbol underlying)
+        {
+            decimal deltaTotal = PfRisk.RiskByUnderlying(underlying, Metric.DeltaTotal);
+            decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(underlying, Metric.DeltaIVdSTotal);  // MV
+            Log($"{Time} EquityHedgeQuantity: DeltaTotal={deltaTotal}, deltaIVdSTotal={deltaIVdSTotal}");
+            return -deltaTotal - deltaIVdSTotal;
+        } 
 
         public void UpdateLimitOrderEquity(Equity equity, decimal? quantity = null)
         {
@@ -754,7 +759,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 decimal ts = TickSize(ticket.Symbol);
                 decimal ticketPrice = ticket.Get(OrderField.LimitPrice);
-                (decimal idealLimitPrice, orderType) = GetEquityHedgeLimitOrderPrice(equity, ticket);
+                orderType = GetEquityHedgeOrderType(equity);
+                decimal idealLimitPrice = GetEquityHedgePrice(equity, orderType, ticket);
 
                 // Currently, existing tickets cannot turn into LimitIfTouched. They'd rather be canceled.
                 //if (orderType == OrderType.LimitIfTouched)
@@ -897,6 +903,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         private static readonly HashSet<OrderStatus> skipOrderStatus = new() { OrderStatus.Canceled, OrderStatus.Filled, OrderStatus.Invalid, OrderStatus.CancelPending };
 
+        /// <summary>
+        /// Not in use. Cancels any long options (pos gamma) that mature within a time span. Not configured. Function pending deletion.
+        /// </summary>
         public void CancelGammaHedgeBeyondScope()
         {
             var tickets = orderTickets.Values.SelectMany(x => x).Where(t => !skipOrderStatus.Contains(t.Status)).ToList();  // ToList() -> Avoids concurrent modification error
