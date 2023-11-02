@@ -19,7 +19,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using QuantConnect.Brokerages;
-using QuantConnect.Indicators;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Logging;
@@ -72,6 +71,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
         /// OrderId queue for unprocessed cancel requests.
         /// </summary>
         protected ConcurrentDictionary<int, CancelOrderRequest> _cancelRequestsUnprocessed = new();
+        protected ConcurrentDictionary<string, OrderStatus> _ocaGroupStatus = new();
 
         private Thread _processingThread;
         private readonly CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
@@ -148,6 +148,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
         public IEnumerable<OrderRequest> SubmitRequestsUnprocessed => _submitRequestsUnprocessed.Values;
         public IEnumerable<OrderRequest> UpdateRequestsUnprocessed => _updateRequestsUnprocessed.Values;
         public IEnumerable<OrderRequest> CancelRequestsUnprocessed => _cancelRequestsUnprocessed.Values;
+        public ConcurrentDictionary<string, OrderStatus> OcaGroupStatus => _ocaGroupStatus;
 
         /// <summary>
         /// Gets the current number of orders that have been processed
@@ -323,6 +324,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 ticket.SetOrder(order);
                 _completeOrderTickets.TryAdd(ticket.OrderId, ticket);
                 _completeOrders.TryAdd(order.Id, order);
+                UpdateOcaGroupStatus(order.OcaGroup, order.Status);
 
                 HandleOrderEvent(new OrderEvent(order,
                     _algorithm.UtcTime,
@@ -476,6 +478,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                     _cancelPendingOrders.Set(order.Id, order.Status);
                     // update the order status
                     order.Status = OrderStatus.CancelPending;
+                    UpdateOcaGroupStatus(order.OcaGroup, order.Status);
 
                     // notify the algorithm with an order event
                     HandleOrderEvent(new OrderEvent(order,
@@ -495,6 +498,29 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             }
 
             return ticket;
+        }
+
+        private int OcaOrderStatusRank(OrderStatus orderStatus)
+        {
+            return orderStatus switch { OrderStatus.PartiallyFilled => 1, OrderStatus.Filled => 2, OrderStatus.CancelPending => 3, OrderStatus.Canceled => 4, _ => 0 };
+        }
+
+        /// <summary>
+        /// Records order status within Oca Group. Status reflects status of any individual order until PartialFill -> Filled -> CancelPending -> Canceled.
+        /// </summary>
+        /// <param name="ocaGroup"></param>
+        /// <param name="orderStatus"></param>
+        private void UpdateOcaGroupStatus(string ocaGroup, OrderStatus orderStatus)
+        {
+            if (ocaGroup == null) return;
+            lock (_ocaGroupStatus)
+            {
+                OrderStatus currentStatus = _ocaGroupStatus.TryGetValue(ocaGroup ?? "", out currentStatus) ? currentStatus : OrderStatus.None;
+                if (OcaOrderStatusRank(orderStatus) > OcaOrderStatusRank(currentStatus))
+                {
+                    _ocaGroupStatus[ocaGroup] = orderStatus;
+                }
+            }
         }
 
         /// <summary>
@@ -1122,6 +1148,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                     _cancelPendingOrders.UpdateOrRemove(order.Id, orderEvent.Status);
                     // set the status of our order object based on the fill event
                     order.Status = orderEvent.Status;
+                    UpdateOcaGroupStatus(order.OcaGroup, order.Status);
 
                     orderEvent.Id = order.GetNewId();
 

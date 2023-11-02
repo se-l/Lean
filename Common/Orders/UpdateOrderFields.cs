@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  * 
@@ -39,7 +39,13 @@ namespace QuantConnect.Orders
         /// Specify to update the trigger price of the order
         /// </summary>
         public decimal? TriggerPrice { get; set; }
-        
+        public decimal? Delta { get; set; }
+        public decimal? StartingPrice { get; set; }
+        public decimal? StockRefPrice { get; set; }
+        public decimal? UnderlyingRangeLow { get; set; }
+        public decimal? UnderlyingRangeHigh { get; set; }
+        public decimal? IV { get; set; }
+
         /// <summary>
         /// Specify to update the order's tag
         /// </summary>

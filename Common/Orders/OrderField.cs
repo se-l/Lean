@@ -33,6 +33,13 @@ namespace QuantConnect.Orders
         /// <summary>
         /// The trigger price for a <see cref="LimitIfTouchedOrder"/> (2)
         /// </summary>
-        TriggerPrice
+        TriggerPrice,
+
+        Delta,
+        StartingPrice,
+        StockRefPrice,
+        UnderlyingRangeLow,
+        UnderlyingRangeHigh
+
     }
 }

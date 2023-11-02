@@ -176,6 +176,21 @@ namespace QuantConnect.Orders.Serialization
         [JsonProperty("limit-price", DefaultValueHandling = DefaultValueHandling.Ignore)]
         public decimal? LimitPrice { get; set; }
 
+        [JsonProperty("oca-group", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public string OcaGroup { get; set; }
+        [JsonProperty("oca-type", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public int OcaType { get; set; }
+        [JsonProperty("delta", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal? Delta { get; set; }
+        [JsonProperty("starting-price", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal? StartingPrice { get; set; }
+        [JsonProperty("stock-ref-price", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal? StockRefPrice { get; set; }
+        [JsonProperty("underlying-range-low", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal? UnderlyingRangeLow { get; set; }
+        [JsonProperty("underlying-range-high", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public decimal? UnderlyingRangeHigh { get; set; }       
+
         /// <summary>
         /// The time in force type
         /// </summary>
@@ -272,6 +287,15 @@ namespace QuantConnect.Orders.Serialization
                 LimitPrice = limitIfTouched.LimitPrice;
                 TriggerPrice = limitIfTouched.TriggerPrice;
                 TriggerTouched = limitIfTouched.TriggerTouched;
+            }
+            else if (order.Type == OrderType.PeggedToStock)
+            {
+                var peggedToStock = order as PeggedToStockOrder;
+                Delta = peggedToStock.Delta;
+                StartingPrice = peggedToStock.StartingPrice;
+                StockRefPrice = peggedToStock.StockRefPrice;
+                UnderlyingRangeLow = peggedToStock.UnderlyingRangeLow;
+                UnderlyingRangeHigh = peggedToStock.UnderlyingRangeHigh;
             }
 
             GroupOrderManager = order.GroupOrderManager;

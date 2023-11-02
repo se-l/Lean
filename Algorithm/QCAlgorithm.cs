@@ -50,6 +50,7 @@ using Index = QuantConnect.Securities.Index.Index;
 using QuantConnect.Securities.CryptoFuture;
 using QuantConnect.Algorithm.Framework.Alphas.Analysis;
 using QuantConnect.Algorithm.Framework.Portfolio.SignalExports;
+using Elastic.Clients.Elasticsearch;
 
 namespace QuantConnect.Algorithm
 {
@@ -122,6 +123,8 @@ namespace QuantConnect.Algorithm
         private readonly HistoryRequestFactory _historyRequestFactory;
 
         private IApi _api;
+
+        private readonly ElasticsearchClient _elasticsearchClient = new();
 
         /// <summary>
         /// QCAlgorithm Base Class Constructor - Initialize the underlying QCAlgorithm components.
@@ -2494,6 +2497,11 @@ namespace QuantConnect.Algorithm
             Debug(message.ToStringInvariant());
         }
 
+        public class ESMsg
+        {
+            string Message;
+        }
+
         /// <summary>
         /// Added another method for logging if user guessed.
         /// </summary>
@@ -2505,6 +2513,9 @@ namespace QuantConnect.Algorithm
         {
             if (!_liveMode && message == "") return;
             _logMessages.Enqueue(message);
+
+            //var msg = new { Message = message };
+            //_elasticsearchClient.IndexAsync(msg, "my-first-index");
         }
 
         /// <summary>

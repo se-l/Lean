@@ -41,6 +41,7 @@ namespace QuantConnect.Algorithm.CSharp
         public override void Initialize()
         {
             AImpliedVolatilityExporterConfig Cfg = JsonConvert.DeserializeObject<AImpliedVolatilityExporterConfig>(File.ReadAllText("AImpliedVolatilityExporterConfig.json"));
+            Cfg.OverrideWithEnvironmentVariables<AImpliedVolatilityExporterConfig>();
             // Configurable Settings            
             UniverseSettings.Resolution = resolution = Resolution.Second;
             SetStartDate(Cfg.StartDate);

@@ -13,15 +13,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public OrderDirection OrderDirection { get => Num2Direction(Quantity); }
         public decimal Quantity;
         public decimal Price { get; internal set; }
+        public double IVPrice { get; internal set; }
         public IEnumerable<QuoteDiscount> QuoteDiscounts;
         public string QuoteDiscountsString { get => string.Join(",", QuoteDiscounts.Select(qd => qd.ToString())); }
         public double SpreadFactor { get; internal set; }
 
-        public Quote(Option option, decimal quantity, decimal price, IEnumerable<QuoteDiscount> quoteDiscounts)
+        public Quote(Option option, decimal quantity, decimal price, double ivPrice, IEnumerable<QuoteDiscount> quoteDiscounts)
         {
             Option = option;
             Quantity = quantity;
             Price = price;
+            IVPrice = ivPrice;
             QuoteDiscounts = quoteDiscounts;
             SpreadFactor = quoteDiscounts.Sum(qd => qd.SpreadFactor);
         }

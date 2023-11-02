@@ -8,6 +8,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations : QCAlgorithm
     {
+        /// <summary>
+        /// To be refactored into C# native event handler notation
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="event"></param>
+        /// <param name="condition"></param>
         public void PublishEvent<T>(T @event, Func<bool> condition = null)
             where T : class
             //

@@ -319,20 +319,35 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         private double ExpectedVegaUtil(Symbol underlying, double fwdVol)
         {
+            var ivBid = _algo.IVBids[Symbol].IVBidAsk.IV;
+            var ivAsk = _algo.IVAsks[Symbol].IVBidAsk.IV;
             double iv = OrderDirection switch
             {
-                OrderDirection.Buy => _algo.IVBids[Symbol].IVBidAsk.IV,
-                OrderDirection.Sell => _algo.IVAsks[Symbol].IVBidAsk.IV,
+                OrderDirection.Buy => ivBid,
+                OrderDirection.Sell => ivAsk,
                 _ => 0
             };
             if (iv == 0) { return 0; }
 
             var ocw = OptionContractWrap.E(_algo, Option, _algo.Time.Date);
             ocw.SetIndependents(_algo.MidPrice(underlying), _algo.MidPrice(Symbol), fwdVol);
-            double vega = ocw.Vega();
+            var midIV = (ivBid + ivAsk) / 2;
 
-            double util = (fwdVol - iv) * vega * (double)(Quantity * Option.ContractMultiplier);
-            int dte = Symbol.ID.Date.Subtract(_algo.Time.Date).Days;
+            double vega = ocw.Vega(fwdVol);
+
+            // Favors selling skewed wings.
+            double util = (iv - fwdVol) * vega * (double)(Quantity * Option.ContractMultiplier);
+            int dte = Symbol.ID.Date.Subtract(_algo.Time.Date).Days;  // TO divide by DTE is not quite useful. There'll be short term IV ups & downs to be exploited. My offers must be at the kinks of the IV surface.
+            // temp fix
+            dte = Math.Min(dte, 5);
+
+            // Punish selling weirdly low IVs. To be investigated. saw once 16% where usually ~30%.
+            if (midIV < fwdVol && Quantity < 0) 
+            {
+                //_algo.Log($"GetUtilityVega2HV: Preventing selling low IV: {Symbol} {Quantity}. iv={iv} < fwdVol={fwdVol}. util={util} reduced by 1000");
+                util -= 1000;
+            };
+
             return util / dte;
         }
 

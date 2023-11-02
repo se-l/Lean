@@ -389,9 +389,9 @@ namespace QuantConnect.Algorithm
         /// <param name="orderProperties">The order properties to use. Defaults to <see cref="DefaultOrderProperties"/></param>
         /// <returns>The order ticket instance.</returns>
         [DocumentationAttribute(TradingAndOrders)]
-        public OrderTicket LimitOrder(Symbol symbol, int quantity, decimal limitPrice, string tag = "", IOrderProperties orderProperties = null)
+        public OrderTicket LimitOrder(Symbol symbol, int quantity, decimal limitPrice, string tag = "", IOrderProperties orderProperties = null, string ocaGroup = "", int ocaType = 0)
         {
-            return LimitOrder(symbol, (decimal)quantity, limitPrice, tag, orderProperties);
+            return LimitOrder(symbol, (decimal)quantity, limitPrice, tag, orderProperties, ocaGroup);
         }
 
         /// <summary>
@@ -404,9 +404,9 @@ namespace QuantConnect.Algorithm
         /// <param name="orderProperties">The order properties to use. Defaults to <see cref="DefaultOrderProperties"/></param>
         /// <returns>The order ticket instance.</returns>
         [DocumentationAttribute(TradingAndOrders)]
-        public OrderTicket LimitOrder(Symbol symbol, double quantity, decimal limitPrice, string tag = "", IOrderProperties orderProperties = null)
+        public OrderTicket LimitOrder(Symbol symbol, double quantity, decimal limitPrice, string tag = "", IOrderProperties orderProperties = null, string ocaGroup = "", int ocaType = 0)
         {
-            return LimitOrder(symbol, quantity.SafeDecimalCast(), limitPrice, tag, orderProperties);
+            return LimitOrder(symbol, quantity.SafeDecimalCast(), limitPrice, tag, orderProperties, ocaGroup);
         }
 
         /// <summary>
@@ -419,10 +419,25 @@ namespace QuantConnect.Algorithm
         /// <param name="orderProperties">The order properties to use. Defaults to <see cref="DefaultOrderProperties"/></param>
         /// <returns>The order ticket instance.</returns>
         [DocumentationAttribute(TradingAndOrders)]
-        public OrderTicket LimitOrder(Symbol symbol, decimal quantity, decimal limitPrice, string tag = "", IOrderProperties orderProperties = null)
+        public OrderTicket LimitOrder(Symbol symbol, decimal quantity, decimal limitPrice, string tag = "", IOrderProperties orderProperties = null, string ocaGroup = "", int ocaType = 0)
         {
             var security = Securities[symbol];
-            var request = CreateSubmitOrderRequest(OrderType.Limit, security, quantity, tag, limitPrice: limitPrice, properties: orderProperties ?? DefaultOrderProperties?.Clone());
+            var request = CreateSubmitOrderRequest(OrderType.Limit, security, quantity, tag, limitPrice: limitPrice, properties: orderProperties ?? DefaultOrderProperties?.Clone(), ocaGroup: ocaGroup, ocaType: ocaType);
+
+            return SubmitOrderRequest(request);
+        }
+        public OrderTicket PeggedToStockOrder(Symbol symbol, decimal quantity, decimal delta, decimal startingPrice, decimal stockReferencePrice, decimal underlyingRangeLow, decimal underlyingLyingRangeHigh, string tag = "", IOrderProperties orderProperties = null)
+        {
+            var security = Securities[symbol];
+            if (security.Type != SecurityType.Option)
+            {
+                throw new ArgumentException("PeggedToStockOrder is only supported for options");
+            }
+            if (delta < 1 || delta > 100)
+            {
+                throw new ArgumentException("PeggedToStockOrder delta must be between 1 and 100");
+            }
+            var request = new SubmitOrderRequest(OrderType.PeggedToStock, security.Type, security.Symbol, quantity, delta, startingPrice, stockReferencePrice, underlyingRangeLow, underlyingLyingRangeHigh, UtcTime, tag, orderProperties ?? DefaultOrderProperties?.Clone(), null);
 
             return SubmitOrderRequest(request);
         }
@@ -1390,9 +1405,9 @@ namespace QuantConnect.Algorithm
         }
 
         private SubmitOrderRequest CreateSubmitOrderRequest(OrderType orderType, Security security, decimal quantity, string tag, IOrderProperties properties,
-            decimal stopPrice = 0m, decimal limitPrice = 0m,  decimal triggerPrice = 0m, GroupOrderManager groupOrderManager = null)
+            decimal stopPrice = 0m, decimal limitPrice = 0m,  decimal triggerPrice = 0m, GroupOrderManager groupOrderManager = null, string ocaGroup = "", int ocaType = 0)
         {
-            return new SubmitOrderRequest(orderType, security.Type, security.Symbol, quantity, stopPrice, limitPrice, triggerPrice, UtcTime, tag, properties, groupOrderManager);
+            return new SubmitOrderRequest(orderType, security.Type, security.Symbol, quantity, stopPrice, limitPrice, triggerPrice, UtcTime, tag, properties, groupOrderManager, ocaGroup, ocaType);
         }
 
         private static void CheckComboOrderSizing(List<Leg> legs, decimal quantity)

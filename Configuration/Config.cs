@@ -115,7 +115,12 @@ namespace QuantConnect.Configuration
         {
             var environments = new List<string>();
             JToken currentEnvironment = Settings.Value;
-            var env = currentEnvironment["environment"];
+            string systemEnvValue = Environment.GetEnvironmentVariable("environment");
+            if (!string.IsNullOrEmpty(systemEnvValue))
+            {
+                Log.Trace(Invariant($"Config.GetEnvironment(): Environment variable found. environment: {systemEnvValue}"));
+            }
+            var env = string.IsNullOrEmpty(systemEnvValue) ? currentEnvironment["environment"] : systemEnvValue;
             while (currentEnvironment != null && env != null)
             {
                 var currentEnv = env.Value<string>();
@@ -142,6 +147,13 @@ namespace QuantConnect.Configuration
         {
             // special case environment requests
             if (key == "environment") return GetEnvironment();
+
+            string systemEnvValue = Environment.GetEnvironmentVariable(key);
+            if (!string.IsNullOrEmpty(systemEnvValue))
+            {
+                Log.Trace(Invariant($"Config.Get(): Environment variable found. {key}: {systemEnvValue}"));
+                return systemEnvValue;
+            }
 
             var token = GetToken(Settings.Value, key);
             if (token == null)

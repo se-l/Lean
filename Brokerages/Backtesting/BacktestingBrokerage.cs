@@ -49,6 +49,7 @@ namespace QuantConnect.Brokerages.Backtesting
         private readonly ConcurrentDictionary<int, Order> _pending;
         private readonly object _needsScanLock = new object();
         private readonly HashSet<Symbol> _pendingOptionAssignments = new HashSet<Symbol>();
+        private readonly Dictionary<string, HashSet<int>> _ocaOrderGroups = new();
 
         /// <summary>
         /// This is the algorithm under test
@@ -143,6 +144,16 @@ namespace QuantConnect.Brokerages.Backtesting
                 { Status = OrderStatus.Submitted };
                 OnOrderEvent(submitted);
 
+                if (!order.OcaGroup.IsNullOrEmpty())
+                {
+                    if (!_ocaOrderGroups.TryGetValue(order.OcaGroup, out var orderIds))
+                    {
+                        orderIds = new HashSet<int>();
+                        _ocaOrderGroups[order.OcaGroup] = orderIds;
+                    }
+                    orderIds.Add(order.Id);
+                }
+
                 return true;
             }
             return false;
@@ -202,6 +213,14 @@ namespace QuantConnect.Brokerages.Backtesting
             if (!order.TryGetGroupOrders(TryGetOrder, out var orders))
             {
                 return false;
+            }
+
+            // OCA orders
+            HashSet<int> ocaOrderIds = _ocaOrderGroups.TryGetValue(order.OcaGroup, out ocaOrderIds) ? ocaOrderIds : new() { } ;
+            if (!ocaOrderIds.IsNullOrEmpty())
+            {
+                Log.Trace($"BacktestingBrokerage.CancelOrder(): OCA GroupId: {order.OcaGroup}, OrderIds:{string.Join(", ", ocaOrderIds)}");
+                orders.AddRange(ocaOrderIds.Select(TryGetOrder).Where(x => x != null));
             }
 
             var result = true;

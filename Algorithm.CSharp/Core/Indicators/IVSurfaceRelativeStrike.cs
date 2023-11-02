@@ -643,11 +643,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return binLog.ToString();
         }
 
-        public decimal DeltaMoneyness2DeltaPrice(Symbol symbol, decimal from, decimal to)
-        {
-            return MidPriceUnderlying / 100;
-        }
-
         /// <summary>
         /// Slope of strike skew around symbols's K
         /// </summary>
@@ -662,9 +657,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Bin bin = GetBin(symbol.ID.OptionRight, symbol.ID.Date, binValueMid);
             Bin binLeft = GetBin(symbol.ID.OptionRight, symbol.ID.Date, binValueLeft);
             Bin binRight = GetBin(symbol.ID.OptionRight, symbol.ID.Date, binValueRight);
-            double? slopeLeft = (binLeft.IV - bin.IV) / (double)DeltaMoneyness2DeltaPrice(symbol, binValueLeft, bin.Value);
-            double? slopeRight = (bin.IV - binRight.IV) / (double)DeltaMoneyness2DeltaPrice(symbol, bin.Value, binValueRight);
-            //_algo.Log($"symbol={symbol}, slopeLeft={slopeLeft}, binValueLeft={binValueLeft}, binValueMid={bin.Value}, IVLeft ={binLeft.IV},  IVMid={bin.IV}, DeltaMoneyness2DeltaPrice={(double)DeltaMoneyness2DeltaPrice(symbol, binValueLeft, bin.Value)}");
+            double dSLeft = (binLeft.Value - bin.Value) * (double)MidPriceUnderlying / 100;
+            double dSRight = (bin.Value - binRight.Value) * (double)MidPriceUnderlying / 100;
+            double? slopeLeft = (binLeft.IVEWMA - bin.IVEWMA) / dSLeft;
+            double? slopeRight = (bin.IVEWMA - binRight.IVEWMA) / dSRight;
+            //_algo.Log($"symbol={symbol}, slopeLeft={slopeLeft}, binValueLeft={binValueLeft}, binValueMid={bin.Value}, IVLeft ={binLeft.IV},  IVMid={bin.IV}");
             return slopeLeft == null || slopeRight == null ? null : (slopeLeft + slopeRight) / 2;
         }
 
@@ -674,6 +671,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             var call_skew = GetBin(OptionRight.Call, _expiry, 110).IV - GetBin(OptionRight.Call, _expiry, 90).IV;
             var put_skew = GetBin(OptionRight.Put, _expiry, 110).IV - GetBin(OptionRight.Put, _expiry, 90).IV;
             return (call_skew + put_skew) / 2;
+        }
+
+        public double? SkewStrikeOTMPut(DateTime? expiry = null, int minDTE = 5)
+        {
+            DateTime _expiry = expiry ?? MinExpiry(minDTE);
+            var call_skew = GetBin(OptionRight.Call, _expiry, 110).IV - GetBin(OptionRight.Call, _expiry, 90).IV;
+            var put_skew = GetBin(OptionRight.Put, _expiry, 110).IV - GetBin(OptionRight.Put, _expiry, 90).IV;
+            return (call_skew + put_skew) / 2;
+        }
+
+        public double? SkewTerm(int minDTE= 5) 
+        {
+            return 0;
         }
 
         public void OnEODATM()

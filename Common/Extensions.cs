@@ -2386,6 +2386,11 @@ namespace QuantConnect
             var limitPrice = 0m;
             var stopPrice = 0m;
             var triggerPrice = 0m;
+            decimal delta = 0m;
+            decimal? startingPrice = null;
+            decimal? stockRefPrice = null;
+            decimal? underlyingRangeLow = null;
+            decimal? underlyingRangeHigh = null;
 
             switch (order.Type)
             {
@@ -2419,24 +2424,58 @@ namespace QuantConnect
                 case OrderType.ComboLimit:
                     limitPrice = order.GroupOrderManager.LimitPrice;
                     break;
+                case OrderType.PeggedToStock:
+                    var peggedToStockOrder = order as PeggedToStockOrder;
+                    delta = peggedToStockOrder.Delta;
+                    startingPrice = peggedToStockOrder.StartingPrice;
+                    stockRefPrice = peggedToStockOrder.StockRefPrice;
+                    underlyingRangeLow = peggedToStockOrder.UnderlyingRangeLow;
+                    underlyingRangeHigh = peggedToStockOrder.UnderlyingRangeHigh;
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
 
-            var submitOrderRequest = new SubmitOrderRequest(order.Type,
-                order.SecurityType,
-                order.Symbol,
-                order.Quantity,
-                stopPrice,
-                limitPrice,
-                triggerPrice,
-                order.Time,
-                order.Tag,
-                order.Properties,
-                order.GroupOrderManager);
+            SubmitOrderRequest submitOrderRequest;
+
+            switch (order.Type)
+            {
+                case OrderType.PeggedToStock:
+                    submitOrderRequest = new SubmitOrderRequest(
+                        order.Type,
+                        order.SecurityType,
+                        order.Symbol,
+                        order.Quantity,
+                        delta,
+                        startingPrice,
+                        stockRefPrice,
+                        underlyingRangeLow,
+                        underlyingRangeHigh,
+                        order.Time,
+                        order.Tag,
+                        order.Properties,
+                        order.GroupOrderManager);
+                    break;
+
+                default:
+                    submitOrderRequest = new SubmitOrderRequest(
+                        order.Type,
+                        order.SecurityType,
+                        order.Symbol,
+                        order.Quantity,
+                        stopPrice,
+                        limitPrice,
+                        triggerPrice,
+                        order.Time,
+                        order.Tag,
+                        order.Properties,
+                        order.GroupOrderManager);
+                    break;
+            }
 
             submitOrderRequest.SetOrderId(order.Id);
-            var orderTicket = new OrderTicket(transactionManager, submitOrderRequest);
+            var orderTicket = new OrderTicket(transactionManager,
+                submitOrderRequest);
             orderTicket.SetOrder(order);
             return orderTicket;
         }

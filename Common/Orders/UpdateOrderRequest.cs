@@ -49,6 +49,11 @@ namespace QuantConnect.Orders
         /// Gets the new trigger price of the order, null to not change the trigger price
         /// </summary>
         public decimal? TriggerPrice { get; private set; }
+        public decimal? Delta { get; private set; }
+        public decimal? StartingPrice { get; private set; }
+        public decimal? StockReferencePrice { get; private set; }
+        public decimal? UnderlyingRangeLow { get; private set; }
+        public decimal? UnderlyingRangeHigh { get; private set; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="UpdateOrderRequest"/> class
@@ -63,6 +68,11 @@ namespace QuantConnect.Orders
             LimitPrice = fields.LimitPrice;
             StopPrice = fields.StopPrice;
             TriggerPrice = fields.TriggerPrice;
+            Delta = fields.Delta;
+            StartingPrice = fields.StartingPrice;
+            StockReferencePrice = fields.StockRefPrice;
+            UnderlyingRangeLow = fields.UnderlyingRangeLow;
+            UnderlyingRangeHigh = fields.UnderlyingRangeHigh;
         }
 
         /// <summary>

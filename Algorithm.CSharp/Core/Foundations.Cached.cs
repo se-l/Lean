@@ -226,11 +226,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             decimal deltaMVTotal = 0;
             decimal deltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
-            decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);  // MV
+            //decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);  // MV
 
             deltaMVTotal += deltaTotal;
-            deltaMVTotal += deltaIVdSTotal;
-            Log($"{Time} DeltaMV {symbol}: deltaMVTotal={deltaMVTotal}, deltaTotal={deltaTotal}, deltaIVdSTotal={deltaIVdSTotal}");
+            //deltaMVTotal += deltaIVdSTotal;
+            // Log($"{Time} DeltaMV {symbol}: deltaMVTotal={deltaMVTotal}, deltaTotal={deltaTotal}, deltaIVdSTotal={deltaIVdSTotal}");
             return deltaMVTotal;
         }
 

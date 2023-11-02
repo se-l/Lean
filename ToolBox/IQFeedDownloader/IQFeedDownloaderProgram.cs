@@ -83,7 +83,7 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
                 }
                 
                 //var lookupClient = LookupClientFactory.CreateNew(NumberOfClients);
-                var lookupClient = LookupClientFactory.CreateNew(Config.Get("iqfeed-host-lookup", "127.0.0.1"), Int32.Parse(Config.Get("iqfeed-port-lookup", "9100"), CultureInfo.InvariantCulture), NumberOfClients);
+                var lookupClient = LookupClientFactory.CreateNew(Config.Get("iqfeed-host", "127.0.0.1"), 9100, NumberOfClients);
                 lookupClient.Connect();
 
                 // Create IQFeed downloader instance

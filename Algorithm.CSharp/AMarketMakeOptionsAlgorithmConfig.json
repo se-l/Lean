@@ -1,6 +1,6 @@
 {
-  "StartDate": "2023-10-10",
-  "EndDate": "2023-10-19",
+  "StartDate": "2023-10-18",
+  "EndDate": "2023-10-31",
   "HedgeTicker": [],
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
@@ -52,7 +52,7 @@
     },
     "HPE-Absolute-discount-params": {
       "TargetRisk": 0,
-      "X0": 0,
+      "X0": -0.2,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -122,7 +122,7 @@
     },
     "DELL-Absolute-discount-params": {
       "TargetRisk": 0,
-      "X0": 0,
+      "X0": -0.4,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -211,7 +211,7 @@
     "PFE": 0.10
   },
   "SurfaceVerticalResetThreshold": 0.01,
-  "WarmUpDays": 3, // Reduce for debugging. Usually 2.
+  "WarmUpDays": 2, // Reduce for debugging. Usually 2.
   "LogOrderUpdates": false,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
   "MinZMOffset": {
@@ -271,6 +271,8 @@
   "MarginUtilScaleFactor": {
     "_": 0.1
   },
-  "MinSubmitRequestsUnprocessedBlockingSubmit": 10,
-  "MinCancelRequestsUnprocessedBlockingSubmit": 10
+  "MinSubmitRequestsUnprocessedBlockingSubmit": 5,
+  "MinCancelRequestsUnprocessedBlockingSubmit": 3,
+  "PeggedToStockDeltaRangeOffsetFactor": 0.05,
+  "MinimumIVOffsetBeforeUpdatingPeggedOptionOrder": 0.003
 }

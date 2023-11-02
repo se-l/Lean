@@ -21,6 +21,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
 using Python.Runtime;
+using System.Collections.Concurrent;
 
 namespace QuantConnect.Securities
 {
@@ -276,6 +277,7 @@ namespace QuantConnect.Securities
         public IEnumerable<OrderRequest> SubmitRequestsUnprocessed => _orderProcessor.SubmitRequestsUnprocessed;
         public IEnumerable<OrderRequest> UpdateRequestsUnprocessed => _orderProcessor.UpdateRequestsUnprocessed;
         public IEnumerable<OrderRequest> CancelRequestsUnprocessed => _orderProcessor.CancelRequestsUnprocessed;
+        public ConcurrentDictionary<string, OrderStatus> OcaGroupStatus => _orderProcessor.OcaGroupStatus;
 
         /// <summary>
         /// Gets an enumerable of opened <see cref="OrderTicket"/> matching the specified <paramref name="filter"/>

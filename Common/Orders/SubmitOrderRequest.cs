@@ -87,6 +87,28 @@ namespace QuantConnect.Orders
             get; private set;
         }
 
+        public decimal Delta
+        {
+            get; private set;
+        }
+
+        public decimal? StartingPrice
+        {
+            get; private set;
+        }
+        public decimal? StockRefPrice
+        {
+            get; private set;
+        }
+        public decimal? UnderlyingRangeLow
+        {
+            get; private set;
+        }
+        public decimal? UnderlyingRangeHigh
+        {
+            get; private set;
+        }
+
         /// <summary>
         /// Gets the order properties for this request
         /// </summary>
@@ -99,6 +121,30 @@ namespace QuantConnect.Orders
         /// Gets the manager for the combo order. If null, the order is not a combo order.
         /// </summary>
         public GroupOrderManager GroupOrderManager
+        {
+            get; private set;
+        }
+
+        /// <summary>
+        /// OneCancelsAll Group
+        /// </summary>
+        public int OcaType 
+        {
+            get; private set;
+        }
+    
+        /// <summary>
+        /// OneCancelsAll Group
+        /// </summary>
+        public string OcaGroup
+        {
+            get; private set;
+        }
+        
+        /// <summary>
+        /// Exchange order should be routed to or has been submitted to
+        /// </summary>
+        public string Exchange
         {
             get; private set;
         }
@@ -129,7 +175,9 @@ namespace QuantConnect.Orders
             DateTime time,
             string tag,
             IOrderProperties properties = null,
-            GroupOrderManager groupOrderManager = null
+            GroupOrderManager groupOrderManager = null,
+            string ocaGroup = "",
+            int ocaType = 0
             )
             : base(time, (int) OrderResponseErrorCode.UnableToFindOrder, tag)
         {
@@ -142,6 +190,8 @@ namespace QuantConnect.Orders
             StopPrice = stopPrice;
             TriggerPrice = triggerPrice;
             OrderProperties = properties;
+            OcaGroup = ocaGroup;
+            OcaType = ocaType;
         }
 
         /// <summary>
@@ -168,10 +218,55 @@ namespace QuantConnect.Orders
             DateTime time,
             string tag,
             IOrderProperties properties = null,
-            GroupOrderManager groupOrderManager = null
+            GroupOrderManager groupOrderManager = null,
+            string ocaGroup = "",
+            int ocaType = 0
             )
-            : this(orderType, securityType, symbol, quantity, stopPrice, limitPrice, 0, time, tag, properties, groupOrderManager)
+            : this(orderType, securityType, symbol, quantity, stopPrice, limitPrice, 0, time, tag, properties, groupOrderManager, ocaGroup, ocaType)
         {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SubmitOrderRequest"/> class for pegged orders.
+        /// The <see cref="OrderRequest.OrderId"/> will default to <see cref="OrderResponseErrorCode.UnableToFindOrder"/>
+        /// </summary>
+        /// <param name="orderType">The order type to be submitted</param>
+        /// <param name="securityType">The symbol's <see cref="SecurityType"/></param>
+        /// <param name="symbol">The symbol to be traded</param>
+        /// <param name="quantity">The number of units to be ordered</param>
+        /// <param name="delta">Delta in %</param>
+        /// <param name="startingPrice">Option starting price</param>
+        /// <param name="stockRefPrice">Underlying</param>
+        /// <param name="underlyingRangeLow">Order is canceled if underlying price moves below</param>
+        /// <param name="underlyingRangeHigh">Order is canceled if underlying price moves above</param>
+        /// <param name="time">The time this request was created</param>
+        /// <param name="tag">A custom tag for this request</param>
+        /// <param name="properties">The order properties for this request</param>
+        /// <param name="groupOrderManager">The manager for this combo order</param>
+        public SubmitOrderRequest(
+            OrderType orderType,
+            SecurityType securityType,
+            Symbol symbol,
+            decimal quantity,
+            decimal delta,
+            decimal? startingPrice,
+            decimal? stockRefPrice,
+            decimal? underlyingRangeLow,
+            decimal? underlyingRangeHigh,
+            DateTime time,
+            string tag,
+            IOrderProperties properties = null,
+            GroupOrderManager groupOrderManager = null,
+            string ocaGroup = "",
+            int ocaType = 0
+            )
+            : this(orderType, securityType, symbol, quantity, 0, 0, 0, time, tag, properties, groupOrderManager, ocaGroup, ocaType)
+        {
+            Delta = delta;
+            StartingPrice = startingPrice;
+            StockRefPrice = stockRefPrice;
+            UnderlyingRangeLow = underlyingRangeLow;
+            UnderlyingRangeHigh = underlyingRangeHigh;
         }
 
         /// <summary>

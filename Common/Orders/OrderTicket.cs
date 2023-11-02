@@ -136,6 +136,27 @@ namespace QuantConnect.Orders
         }
 
         /// <summary>
+        /// Gets the OCA group for this order
+        /// </summary>
+        public string OcaGroup
+        {
+            get { return _order == null ? _submitRequest.OcaGroup : _order.OcaGroup; }
+        }
+
+        /// <summary>
+        /// Gets the OCA group for this order
+        /// </summary>
+        public int OcaType
+        {
+            get { return _order == null ? _submitRequest.OcaType : _order.OcaType; }
+        }
+
+        public string Exchange
+        {
+            get { return _order == null ? _submitRequest.Exchange : _order.Exchange; }
+        }
+
+        /// <summary>
         /// Gets the <see cref="SubmitOrderRequest"/> that initiated this order
         /// </summary>
         public SubmitOrderRequest SubmitRequest
@@ -265,6 +286,21 @@ namespace QuantConnect.Orders
                 case OrderField.TriggerPrice:
                     return AccessOrder<LimitIfTouchedOrder>(this, field, o => o.TriggerPrice, r => r.TriggerPrice);
 
+                case OrderField.Delta:
+                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.Delta, r => r.Delta);
+
+                case OrderField.StartingPrice:
+                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.StartingPrice ?? 0, r => r.StartingPrice ?? 0);
+
+                case OrderField.StockRefPrice:
+                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.StockRefPrice ?? 0, r => r.StockRefPrice ?? 0);
+
+                case OrderField.UnderlyingRangeLow:
+                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.UnderlyingRangeLow ?? 0, r => r.UnderlyingRangeLow ?? 0);
+
+                case OrderField.UnderlyingRangeHigh:
+                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.UnderlyingRangeHigh ?? 0, r => r.UnderlyingRangeHigh ?? 0);
+
                 default:
                     throw new ArgumentOutOfRangeException(nameof(field), field, null);
             }
@@ -338,6 +374,20 @@ namespace QuantConnect.Orders
             var fields = new UpdateOrderFields()
             {
                 LimitPrice = limitPrice,
+                Tag = tag
+            };
+            return Update(fields);
+        }
+
+        public OrderResponse UpdatePeggedToStockOrder(decimal delta, decimal startingPrice, decimal stockRefPrice, decimal? underlyingRangeLow = null, decimal? underlyingRangeHigh = null, string tag = null)
+        {
+            var fields = new UpdateOrderFields()
+            {
+                Delta = delta,
+                StartingPrice = startingPrice,
+                StockRefPrice = stockRefPrice,
+                UnderlyingRangeLow = underlyingRangeLow,
+                UnderlyingRangeHigh = underlyingRangeHigh,
                 Tag = tag
             };
             return Update(fields);

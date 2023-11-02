@@ -47,7 +47,8 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override void Initialize()
         {
-            Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json")).OverrideWithEnvironmentVariables();
+            Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
+            Cfg.OverrideWithEnvironmentVariables<AMarketMakeOptionsAlgorithmConfig>();
             File.Copy("./AMarketMakeOptionsAlgorithmConfig.json", Path.Combine(Globals.PathAnalytics, "AMarketMakeOptionsAlgorithmConfig.json"));
 
             UniverseSettings.Resolution = resolution = Resolution.Second;
@@ -78,7 +79,7 @@ namespace QuantConnect.Algorithm.CSharp
             int subscriptions = 0;
             foreach (string ticker in ticker)
             {
-                var equity = AddEquity(ticker, resolution: resolution, fillForward: false);
+                var equity = AddEquity(ticker, resolution: resolution, Market.USA, fillForward: false);
                 symbolSubscribed ??= equity.Symbol;
 
                 subscriptions++;

@@ -53,10 +53,13 @@ namespace QuantConnect.Orders
         /// <param name="limitPrice">Price the order should be filled at if a limit order</param>
         /// <param name="tag">User defined data tag for this order</param>
         /// <param name="properties">The order properties for this order</param>
-        public LimitOrder(Symbol symbol, decimal quantity, decimal limitPrice, DateTime time, string tag = "", IOrderProperties properties = null)
+        /// <param name="ocaGroup"></param>
+        public LimitOrder(Symbol symbol, decimal quantity, decimal limitPrice, DateTime time, string tag = "", IOrderProperties properties = null, string ocaGroup = "", int ocaType = 0)
             : base(symbol, quantity, time, tag, properties)
         {
             LimitPrice = limitPrice;
+            OcaGroup = ocaGroup;
+            OcaType = ocaType;
 
             if (string.IsNullOrEmpty(tag))
             {

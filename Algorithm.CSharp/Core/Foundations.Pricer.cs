@@ -183,7 +183,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 Error($"GetQuote: Missing IV indicator for {qr.Symbol}. Expected to have been filled in securityInitializer. Quoting 0.");
                 Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, quoteDiscounts);
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts);
             }
 
             double? bidIV = IVSurfaceRelativeStrikeBid[qr.Symbol.Underlying].IV(qr.Symbol);
@@ -192,7 +192,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 Error($"GetQuote: IVSurface: BidIV > AskIV for {qr.Symbol.Underlying} {qr.Symbol.ID.Date} {qr.Symbol.ID.OptionRight} {qr.Symbol.ID.StrikePrice} {bidIV} {askIV}");
                 //Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, quoteDiscounts);
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts);
             }
 
             smoothedIVPrice = (decimal?)IVStrikePrice(ocw, qr.OrderDirection);
@@ -209,7 +209,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 Error($"GetQuote: IVStrikePrice returned invalid price. smoothedIVPrice={smoothedIVPrice}. Quoting 0.");
                 //Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, quoteDiscounts);
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts);
             }
 
             smoothedIVPrice = qr.OrderDirection switch
@@ -229,7 +229,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // For tight spreads, a tickSize difference of, e.g., 0.01 can make a signiicant difference in terms of IV spread. Therefore, the price is rounded defensively away from midPrice.
             decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection == OrderDirection.Buy ? false : true);
-
+            double ivPrice = (double)ocw.IV(price, MidPrice(qr.Symbol.Underlying), 0.001);
             //if (true) //qr.Symbol.Value == "PFE   240119C00038000" && Time.TimeOfDay > new TimeSpan(0, 9, 49) & Time.TimeOfDay < new TimeSpan(0, 9, 50))
             //{
             //    Log($"option: {qr.Symbol}");
@@ -242,7 +242,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //    Log($"price : {price}");
             //    Log($"priceRounded : {priceRounded}");
             //}
-            return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, quoteDiscounts);
+            return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, ivPrice, quoteDiscounts);
         }
     }
 }

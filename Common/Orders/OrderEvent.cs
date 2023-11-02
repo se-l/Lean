@@ -192,6 +192,13 @@ namespace QuantConnect.Orders
         public bool IsInTheMoney { get; set; }
 
         /// <summary>
+        /// Any message from the exchange.
+        /// </summary>
+        [DefaultValue(""), JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        [ProtoMember(18)]
+        public string Exchange { get; set; }
+
+        /// <summary>
         /// Order Event empty constructor required for json converter
         /// </summary>
         public OrderEvent()
@@ -218,7 +225,8 @@ namespace QuantConnect.Orders
             decimal fillPrice,
             decimal fillQuantity,
             OrderFee orderFee,
-            string message = ""
+            string message = "",
+            string exchange = ""
             )
         {
             OrderId = orderId;
@@ -232,6 +240,7 @@ namespace QuantConnect.Orders
             OrderFee = orderFee;
             Message = message;
             IsAssignment = false;
+            Exchange = exchange;
         }
 
         /// <summary>

@@ -33,15 +33,16 @@ namespace QuantConnect.Algorithm.CSharp
     /// </summary>
     public partial class ADataRecorder : Foundations
     {
+        new ADataRecorderConfig Cfg; // code smell
         DiskDataCacheProvider _diskDataCacheProvider = new();
         Dictionary<(Resolution, Symbol, TickType), LeanDataWriter> writers = new();
-        ADataRecorderConfig Cfg = JsonConvert.DeserializeObject<ADataRecorderConfig>(File.ReadAllText("ADataRecorderConfig.json")).OverrideWithEnvironmentVariables();
-
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
         /// </summary>
         public override void Initialize()
-        {            
+        {
+            ADataRecorderConfig Cfg = JsonConvert.DeserializeObject<ADataRecorderConfig>(File.ReadAllText("ADataRecorderConfig.json"));
+            Cfg.OverrideWithEnvironmentVariables<ADataRecorderConfig>();
             File.Copy("./ADataRecorderConfig.json", Path.Combine(Globals.PathAnalytics, "ADataRecorderConfig.json"));
 
             UniverseSettings.Resolution = resolution = Resolution.Second;

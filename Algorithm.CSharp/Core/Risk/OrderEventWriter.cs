@@ -9,6 +9,7 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using System.Globalization;
 using System.Linq;
 using System;
+using Accord.Math;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -16,12 +17,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
     {
         private readonly string _path;
         private bool _headerWritten;
-        private List<string> _header = new() { "ts", "OrderId", "BrokerId", "OrderDirection", "OrderStatus", "SecurityType", "Underlying", "Symbol", "Quantity", "FillQuantity", 
+        private List<string> _header = new() { "Ts", "TimeMS", "OrderId", "BrokerId", "OrderDirection", "OrderStatus", "SecurityType", "Underlying", "Symbol", "Quantity", "FillQuantity", 
             "LimitPrice", "FillPrice", "Fee", "PriceUnderlying", "BestBid", "BestAsk", "Delta2Mid", "OrderType", 
-            "SubmitRequest.Status", "SubmitRequest.Time",
-            "CancelRequest.Status", "CancelRequest.Time",
-            "LastUpdateRequest.Status", "LastUpdateRequest.Time",
-            "Tag",
+            "SubmitRequest.Status", "SubmitRequest.Time", "SubmitRequest.TimeMS",
+            "CancelRequest.Status", "CancelRequest.Time", "CancelRequest.TimeMS",
+            "LastUpdateRequest.Status", "LastUpdateRequest.Time", "LastUpdateRequest.TimeMS",
+            "Tag", "TimeOrderLastUpdated", "TimeOrderLastUpdatedMS",
+            "Exchange", "OcaGroup", "OcaType"
         };
         public OrderEventWriter(Foundations algo, Equity equity)
         {
@@ -54,42 +56,62 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             decimal limitPrice = orderTicket.OrderType == OrderType.Limit ? orderTicket.Get(OrderField.LimitPrice) : 0;
             decimal fillPrice = orderTicket.AverageFillPrice;
             decimal delta2Mid = fillPrice != 0 ? (orderTicket.Quantity > 0 ? midPrice - fillPrice : fillPrice - midPrice) : (orderTicket.Quantity > 0 ? midPrice - limitPrice : limitPrice - midPrice);
+            DateTime timeOrderLastUpdated = orderTicket.Time.ConvertFromUtc(_algo.TimeZone);
+            long timeOrderLastUpdatedMs = timeOrderLastUpdated.Ticks / TimeSpan.TicksPerMillisecond;
 
             var row = new StringBuilder();
 
-            try
+            // refactor to try catch every single cell and append cell by cell to avoid missing out on entire rows
+            (string?, Func<string>)[] headerFunc =
             {
-                row.AppendJoin(",", new[] {
-                    _algo.Time.ToString(CultureInfo.InvariantCulture),
-                    orderTicket.OrderId.ToString(CultureInfo.InvariantCulture),
-                    string.Join(",", order?.BrokerId ?? new List<string>()),
-                    order_direction_nm.ToString(),
-                    order_status_nm.ToString(),
-                    security_type_nm.ToString(),
-                    underlying.Value,
-                    symbol.ToString(),
-                    orderTicket.Quantity.ToString(CultureInfo.InvariantCulture),
-                    orderTicket.QuantityFilled.ToString(CultureInfo.InvariantCulture),
-                    limitPrice.ToString(CultureInfo.InvariantCulture),
-                    fillPrice.ToString(CultureInfo.InvariantCulture),
-                    order?.OrderFillData?.Fee.ToString(CultureInfo.InvariantCulture) ?? "",
-                    priceUnderlying.ToString(CultureInfo.InvariantCulture),
-                    security.BidPrice.ToString(CultureInfo.InvariantCulture),
-                    security.AskPrice.ToString(CultureInfo.InvariantCulture),
-                    delta2Mid.ToString(CultureInfo.InvariantCulture),
-                    orderTicket.OrderType.ToString(),
-                    orderTicket.SubmitRequest.Status.ToString(),
-                    orderTicket.SubmitRequest.Time.ToString(CultureInfo.InvariantCulture),
-                    orderTicket.CancelRequest?.Status.ToString(CultureInfo.InvariantCulture),
-                    orderTicket.CancelRequest?.Time.ToString(CultureInfo.InvariantCulture),
-                    orderTicket.UpdateRequests.Any() ? orderTicket.UpdateRequests[orderTicket.UpdateRequests.Count - 1].Status.ToString(CultureInfo.InvariantCulture) : "",
-                    orderTicket.UpdateRequests.Any() ? orderTicket.UpdateRequests[orderTicket.UpdateRequests.Count - 1].Time.ToString(CultureInfo.InvariantCulture) : "",
-                });
-            }
-            catch (Exception e)
+                ("Ts", () => _algo.Time.ToString("yyyyMMdd HHmmss", CultureInfo.InvariantCulture) ),
+                ("TimeMS", () => (_algo.Time.Ticks / TimeSpan.TicksPerMillisecond).ToString(CultureInfo.InvariantCulture) ),
+                ("OrderId", () => orderTicket.OrderId.ToString(CultureInfo.InvariantCulture) ),
+                ("BrokerId", () => string.Join(",", order?.BrokerId ?? new List<string>()) ),
+                ("OrderDirection", () => order_direction_nm.ToString() ),
+                ("OrderStatus", () => order_status_nm.ToString() ),
+                ("SecurityType", () => security_type_nm.ToString() ),
+                ("Underlying", () => underlying.Value),
+                ("Symbol", () => symbol.ToString() ),
+                ("Quantity", () => orderTicket.Quantity.ToString(CultureInfo.InvariantCulture) ),
+                ("FillQuantity", () => orderTicket.QuantityFilled.ToString(CultureInfo.InvariantCulture) ),
+                ("LimitPrice", () => limitPrice.ToString(CultureInfo.InvariantCulture) ),
+                ("FillPrice", () => fillPrice.ToString(CultureInfo.InvariantCulture) ),
+                ("Fee", () => order?.OrderFillData?.Fee.ToString(CultureInfo.InvariantCulture) ?? ""),
+                ("PriceUnderlying", () => priceUnderlying.ToString(CultureInfo.InvariantCulture) ),
+                ("BestBid", () => security.BidPrice.ToString(CultureInfo.InvariantCulture) ),
+                ("BestAsk", () => security.AskPrice.ToString(CultureInfo.InvariantCulture) ),
+                ("Delta2Mid", () => delta2Mid.ToString(CultureInfo.InvariantCulture) ),
+                ("OrderType", () => orderTicket.OrderType.ToString() ),
+                ("SubmitRequestStatus", () => orderTicket.SubmitRequest.Status.ToString() ),
+                ("SubmitRequestTime", () => orderTicket.SubmitRequest.Time.ConvertFromUtc(_algo.TimeZone).ToString("yyyyMMdd HHmmss", CultureInfo.InvariantCulture) ),
+                ("SubmitRequestTimeMS", () => (orderTicket.SubmitRequest.Time.ConvertFromUtc(_algo.TimeZone).Ticks / TimeSpan.TicksPerMillisecond).ToString(CultureInfo.InvariantCulture) ),
+                ("CancelRequestStatus", () => orderTicket.CancelRequest?.Status.ToString(CultureInfo.InvariantCulture) ),
+                ("CancelRequestTime", () => orderTicket.CancelRequest?.Time.ConvertFromUtc(_algo.TimeZone).ToString("yyyyMMdd HHmmss", CultureInfo.InvariantCulture) ),
+                ("CancelRequestTimeMS", () => orderTicket.CancelRequest == null ? "" : (orderTicket.CancelRequest.Time.ConvertFromUtc(_algo.TimeZone).Ticks / TimeSpan.TicksPerMillisecond).ToString(CultureInfo.InvariantCulture) ),
+                ("LastUpdateRequestStatus", () => orderTicket.UpdateRequests.Any() ? orderTicket.UpdateRequests[orderTicket.UpdateRequests.Count - 1].Status.ToString(CultureInfo.InvariantCulture) : ""),
+                ("LastUpdateRequestTime", () => orderTicket.UpdateRequests.Any() ? orderTicket.UpdateRequests[orderTicket.UpdateRequests.Count - 1].Time.ConvertFromUtc(_algo.TimeZone).ToString("yyyyMMdd HHmmss", CultureInfo.InvariantCulture) : ""),
+                ("LastUpdateRequestTimeMS", () => orderTicket.UpdateRequests.Any() ? (orderTicket.UpdateRequests[orderTicket.UpdateRequests.Count - 1].Time.ConvertFromUtc(_algo.TimeZone).Ticks / TimeSpan.TicksPerMillisecond).ToString(CultureInfo.InvariantCulture) : ""),
+                ("Tag", () => orderTicket.Tag ),
+                ("TimeOrderLastUpdated", () => timeOrderLastUpdated.ToString("yyyyMMdd HHmmss", CultureInfo.InvariantCulture)),
+                ("TimeOrderLastUpdatedMS", () => timeOrderLastUpdatedMs.ToString(CultureInfo.InvariantCulture)),
+                ("Exchange", () => order?.Exchange?.ToString()),
+                ("OcaGroup", () => order?.OcaGroup),
+                ("OcaType", () => order?.OcaType.ToString(CultureInfo.InvariantCulture)),
+            };            
+
+            foreach (var (col, func) in headerFunc)
             {
-                _algo.Error($"OrderEventWriter.CsvRow: {e.Message}");
-                return "";
+                try
+                {
+                   row.Append(func()?.Replace(",", "|") ?? "");
+                }
+                catch (Exception e)
+                {
+                    _algo.Error($"OrderEventWriter.CsvRow: {col} - {e.Message}");
+                    row.Append("");
+                }
+                row.Append(",");
             }
             return row.ToString();
         }
@@ -130,6 +152,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             return true;
         }
+
+        
     }
 }
 

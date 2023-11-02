@@ -73,7 +73,12 @@ namespace QuantConnect.Orders
         /// <summary>
         ///  Combo Leg Limit Order Type - (10)
         /// </summary>
-        ComboLegLimit
+        ComboLegLimit,
+
+        /// <summary>
+        ///  Pegged To Stock Order Type - (11)
+        /// </summary>
+        PeggedToStock,
     }
 
     /// <summary>

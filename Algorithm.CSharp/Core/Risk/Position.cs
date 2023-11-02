@@ -109,6 +109,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public DateTime Ts1 { get => Trade1?.Ts0 ?? _algo.Time; }
         public decimal Bid1 { get => Trade1?.Bid0 ?? Security.BidPrice; }
         public decimal Ask1 { get => Trade1?.Ask0 ?? Security.AskPrice; }
+
         public double IVBid1
         {
             get => Trade1?.IVBid0 ?? SecurityType switch
@@ -171,6 +172,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     throw new NotSupportedException();
             }
         }
+
+        public double DeltaMVRealized => DS == 0 ? 0 : ((double)DPMid - DeltaRealizedThetaContribution) / (double)DS;
+
+        public double DeltaRealizedThetaContribution => Greeks1.Theta * DTDays;
 
         public double DeltaZM(double? volatility = null)
         {
@@ -394,8 +399,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal VegaTotal() => (decimal)GetGreeks1().Vega * Multiplier * Quantity;
         public double Ts0Sec { get => (Trade0.Ts0 - new DateTime(1970, 1, 1, 0, 0, 0)).TotalSeconds; }
         public decimal DP { get => P1 - Trade0.PriceFillAvg; }
+        public decimal DPMid { get => Trade1?.Mid0 ?? Mid1 - Trade0.Mid0; }
         public decimal DeltaFillMid1 { get => P1 - Mid1; }
         public decimal DS { get => Mid1Underlying - Mid0Underlying; }
+        public double DTDays { get => (Ts1 - Trade0.Ts0).TotalSeconds / 86400; }
+        public decimal DSPct { get => 100 * (Mid1Underlying / Mid0Underlying - 1); }
         public decimal PL
         {
             get

@@ -67,7 +67,8 @@ namespace QuantConnect.Brokerages
             OrderType.ComboMarket,
             OrderType.ComboLimit,
             OrderType.ComboLegLimit,
-            OrderType.OptionExercise
+            OrderType.OptionExercise,
+            OrderType.PeggedToStock
         };
 
         /// <summary>

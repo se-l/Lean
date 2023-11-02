@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Drawing;
 using System.Linq;
 using System.Threading;
 using Newtonsoft.Json;
@@ -24,6 +25,7 @@ using QuantConnect.Orders.Serialization;
 using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Positions;
+using Twilio.Http;
 
 namespace QuantConnect.Orders
 {
@@ -165,6 +167,23 @@ namespace QuantConnect.Orders
         public decimal AbsoluteQuantity => Math.Abs(Quantity);
 
         /// <summary>
+        /// Groups order bu unique key, eg, OCA<OrderId>
+        /// </summary>
+        public string OcaGroup { get; internal set; }
+
+        /// <summary>
+        /// 1	Cancel all remaining orders with block.*
+        /// 2	Remaining orders are proportionately reduced in size with block.*
+        /// 3	Remaining orders are proportionately reduced in size with no block.
+        /// </summary>
+        public int OcaType { get; internal set; }
+
+        /// <summary>
+        /// Exchange order should be routed to or has been submitted to
+        /// </summary>
+        public string Exchange { get; set; }
+
+        /// <summary>
         /// Gets the executed value of this order. If the order has not yet filled,
         /// then this will return zero.
         /// </summary>
@@ -179,7 +198,6 @@ namespace QuantConnect.Orders
         /// Gets the price data at the time the order was submitted
         /// </summary>
         public OrderSubmissionData OrderSubmissionData { get; internal set; }
-
 
         /// <summary>
         /// Gets the price data at the time the order was submitted
@@ -401,7 +419,15 @@ namespace QuantConnect.Orders
                 serializedOrder.LimitPrice ?? 0,
                 serializedOrder.StopPrice ?? 0,
                 serializedOrder.TriggerPrice ?? 0,
-                serializedOrder.GroupOrderManager);
+                serializedOrder.GroupOrderManager,
+                serializedOrder.OcaGroup,
+                serializedOrder.OcaType,
+                serializedOrder.Delta ?? 0,
+                serializedOrder.StartingPrice ?? 0,
+                serializedOrder.StockRefPrice ?? 0,
+                serializedOrder.UnderlyingRangeLow ?? 0,
+                serializedOrder.UnderlyingRangeHigh ?? 0
+                );
 
             order.OrderSubmissionData = new OrderSubmissionData(serializedOrder.SubmissionBidPrice,
                 serializedOrder.SubmissionAskPrice,
@@ -440,11 +466,14 @@ namespace QuantConnect.Orders
         public static Order CreateOrder(SubmitOrderRequest request)
         {
             return CreateOrder(request.OrderId, request.OrderType, request.Symbol, request.Quantity, request.Time,
-                 request.Tag, request.OrderProperties, request.LimitPrice, request.StopPrice, request.TriggerPrice, request.GroupOrderManager);
+                 request.Tag, request.OrderProperties, request.LimitPrice, request.StopPrice, request.TriggerPrice, request.GroupOrderManager, request.OcaGroup, request.OcaType,
+                 request.Delta, request.StartingPrice, request.StockRefPrice, request.UnderlyingRangeLow, request.UnderlyingRangeHigh
+                 );
         }
 
         private static Order CreateOrder(int orderId, OrderType type, Symbol symbol, decimal quantity, DateTime time,
-            string tag, IOrderProperties properties, decimal limitPrice, decimal stopPrice, decimal triggerPrice, GroupOrderManager groupOrderManager)
+            string tag, IOrderProperties properties, decimal limitPrice, decimal stopPrice, decimal triggerPrice, GroupOrderManager groupOrderManager, string ocaGroup, int ocaType,
+            decimal delta, decimal? startingPrice, decimal? stockRefPrice, decimal? underlyingRangeLow, decimal? underlyingRangeHigh)
         {
             Order order;
             switch (type)
@@ -452,9 +481,8 @@ namespace QuantConnect.Orders
                 case OrderType.Market:
                     order = new MarketOrder(symbol, quantity, time, tag, properties);
                     break;
-
                 case OrderType.Limit:
-                    order = new LimitOrder(symbol, quantity, limitPrice, time, tag, properties);
+                    order = new LimitOrder(symbol, quantity, limitPrice, time, tag, properties, ocaGroup, ocaType);
                     break;
 
                 case OrderType.StopMarket:
@@ -491,6 +519,10 @@ namespace QuantConnect.Orders
 
                 case OrderType.ComboMarket:
                     order = new ComboMarketOrder(symbol, quantity, time, groupOrderManager, tag, properties);
+                    break;
+
+                case OrderType.PeggedToStock:
+                    order = new PeggedToStockOrder(symbol, quantity, delta, startingPrice, stockRefPrice, underlyingRangeLow, underlyingRangeHigh, time, tag, properties);
                     break;
 
                 default:

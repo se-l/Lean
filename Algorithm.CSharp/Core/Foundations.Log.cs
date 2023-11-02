@@ -7,7 +7,6 @@ using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Contracts;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
@@ -54,6 +53,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "Quantity", ticket.Quantity.ToString() },
                 { "TicketPrice", ticketPrice.ToString() },
                 { "Status", ticket.Status.ToString() },
+                { "OCAGroup/Type", $"{ticket.OcaGroup}/{ticket.OcaType}" },
                 { "BestBidPrice", security.BidPrice.ToString() },
                 { "BestAskPrice", security.AskPrice.ToString() },
                 { "PriceUnderlying", underlying.Price.ToString() },
@@ -114,6 +114,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             string security_type_nm = security.Type.ToString();
             Symbol underlying = orderEvent.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[orderEvent.Symbol]).Underlying.Symbol : orderEvent.Symbol;
             string symbol = orderEvent.Symbol.ToString();
+            Order order = Transactions.GetOrderById(orderEvent.OrderId);
 
             string tag = Humanize(new Dictionary<string, string>
             {
@@ -125,6 +126,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "SecurityType", security_type_nm },
                 { "Symbol", symbol },
                 { "Quantity", orderEvent.Quantity.ToString() },
+                { "OCAGroup/Type", $"{order.OcaGroup}/{order.OcaType}" },
                 { "FillQuantity", orderEvent.FillQuantity.ToString() },
                 { "LimitPrice", orderEvent.LimitPrice.ToString() },
                 { "FillPrice", orderEvent.FillPrice.ToString() },

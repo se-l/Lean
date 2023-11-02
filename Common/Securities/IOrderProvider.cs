@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using QuantConnect.Orders;
 
@@ -83,6 +84,7 @@ namespace QuantConnect.Securities
         IEnumerable<OrderRequest> SubmitRequestsUnprocessed { get; }
         IEnumerable<OrderRequest> UpdateRequestsUnprocessed { get; }
         IEnumerable<OrderRequest> CancelRequestsUnprocessed { get; }
+        ConcurrentDictionary<string, OrderStatus> OcaGroupStatus { get; }
     }
 
     /// <summary>

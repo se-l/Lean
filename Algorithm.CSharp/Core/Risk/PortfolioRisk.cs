@@ -226,10 +226,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public Dictionary<string, decimal> ToDict(Symbol symbol = null)
         {
             var underlyings = symbol == null ? _algo.equities : new HashSet<Symbol>() { Underlying(symbol) };
+
             return new Dictionary<string, decimal>()
             {
                 { "EquityPosition", underlyings.Sum(x => _algo.Portfolio[x].Quantity) },
                 { "DeltaTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.DeltaTotal)) },
+                { "DeltaIVdSTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.DeltaIVdSTotal)) },
                 { "Delta100BpUSDTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.Delta100BpUSDTotal)) },
                 //{ "Delta500BpUSDTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.Delta500BpUSDTotal)) },
                 { "GammaTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.GammaTotal)) },
@@ -268,29 +270,29 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             if (_algo.IsWarmingUp) { return false; }
 
+            decimal riskDeltaTotal = 0;
             Security security = _algo.Securities[symbol];
             Symbol underlying = Underlying(symbol);
 
             decimal zmOffset = RiskBandByUnderlying(symbol, Metric.ZMOffset);
-            var riskDeltaDPdS = RiskByUnderlying(symbol, Metric.DeltaTotal);
-            var deltaIVdSTotal = RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);
-            decimal riskDeltaTotal = riskDeltaDPdS;// + riskDIVdS;
-            decimal riskPutCallRatio = _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
+            var deltaMVTotal = _algo.DeltaMV(symbol);
+            decimal riskPutCallRatio = 0;// _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
 
+            riskDeltaTotal += deltaMVTotal;
             riskDeltaTotal += riskPutCallRatio;
 
             CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
 
             if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
             {
-                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, risk_delta_dP/dS={riskDeltaDPdS}, risk_delta_IV/dS={deltaIVdSTotal}, zmOffset={zmOffset}, riskPutCallRatio={riskPutCallRatio}");
+                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, zmOffset={zmOffset}, riskPutCallRatio={riskPutCallRatio}");
                 _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
                 return true;
 
             }
             else if (Math.Abs(riskDeltaTotal) > 50)
             {
-                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, risk_delta_dP/dS={riskDeltaDPdS}, risk_delta_IV/dS={deltaIVdSTotal}, zmOffset={zmOffset}, riskPutCallRatio ={riskPutCallRatio}");
+                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: ?NOT EXCEEDED WHY? HIGH OFFSET? riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, zmOffset={zmOffset}, riskPutCallRatio ={riskPutCallRatio}");
             }
             else
             {

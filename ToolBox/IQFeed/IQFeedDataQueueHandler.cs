@@ -78,7 +78,7 @@ namespace QuantConnect.ToolBox.IQFeed
             _symbols = new HashSet<Symbol>();
             _underlyings = new Dictionary<Symbol, Symbol>();
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
-            LookupClient lookupClient = LookupClientFactory.CreateNew(Config.Get("iqfeed-host-lookup", "localhost"), Int32.Parse(Config.Get("iqfeed-port-lookup", "9100"), CultureInfo.InvariantCulture), NumberOfClients);
+            LookupClient lookupClient = LookupClientFactory.CreateNew(Config.Get("iqfeed-host", "localhost"), 9100, NumberOfClients);
             lookupClient.Connect();
             IQFeedDataQueueUniverseProvider universeProvider = new IQFeedDataQueueUniverseProvider();
             _historyProvider = new IQFeedFileHistoryProvider(lookupClient, universeProvider, MarketHoursDatabase.FromDataFolder());            

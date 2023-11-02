@@ -1,31 +1,93 @@
 version: '3.4'
 
 services:
-  amm.1:
+  amm.trader.1:
     image: sebastianluen/amm:latest
+    environment:
+      - environment=live-interactive-iqfeed
+      - algorithm-type-name=AMarketMakeOptionsAlgorithm
     build:
       context: .
       dockerfile: Dockerfile
       no_cache: true
-    environment:
-      - StartDate=2023-07-24
-      - EndDate=2023-07-25
     volumes:
       - type: bind
         source: C:/repos/quantconnect/Lean/Launcher/bin/Runs
         target: /repos/quantconnect/Lean/Launcher/bin/Runs
     privileged: true
 
-  # amm.2:
-  #   image: sebastianluen/amm:latest
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile
-  #   environment:
-  #     - StartDate=2023-04-24
-  #     - EndDate=2023-04-25
-  #   volumes:
-  #     - type: bind
-  #       source: C:/repos/quantconnect/Lean/Launcher/bin/Runs
-  #       target: /repos/quantconnect/Lean/Launcher/bin/Runs
-  #   privileged: true
+  data-recorder.1:
+    image: sebastianluen/amm:latest
+    environment:
+      - environment=live-iqfeed
+      - algorithm-type-name=ADataRecorder
+      - Ticker=HPE,DELL
+    build:
+      context: .
+      dockerfile: Dockerfile
+      no_cache: true
+    volumes:
+      - type: bind
+        source: C:/repos/quantconnect/Lean/Launcher/bin/Runs
+        target: /repos/quantconnect/Lean/Launcher/bin/Runs
+    privileged: true
+
+  iqfeed:
+    image: jaikumarm/iqfeed:v62025-w8
+    container_name: iqfeed
+    ports:
+     - "5009:5009"
+     - "9100:9100"
+     - "9200:9200"
+     - "9300:9300"
+     - "9400:9400"
+     - "8088:8080"
+     - "5901:5900"
+    environment:
+      IQFEED_PRODUCT_ID: IQLINK
+      IQFEED_LOGIN: <your login>
+      IQFEED_PASSWORD: <your password>
+    volumes:
+      - /var/log/iqfeed:/root/DTN/IQFeed
+      - /var/log/distdnnd:/var/log/distdnnd
+    healthcheck:
+      test: ["CMD", "python3", "/root/is_iqfeed_running.py"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 5m
+
+  backtester.1:
+    image: sebastianluen/amm:latest
+    environment:
+      - environment=backtesting
+      - algorithm-type-name=AMarketMakeOptionsAlgorithm
+      - StartDate=2023-10-30
+      - EndDate=2023-10-30
+      - Ticker=HPE,DELL
+    build:
+      context: .
+      dockerfile: Dockerfile
+      no_cache: true
+    volumes:
+      - type: bind
+        source: C:/repos/quantconnect/Lean/Launcher/bin/Runs
+        target: /repos/quantconnect/Lean/Launcher/bin/Runs
+    privileged: true
+
+  ivexporter:
+    image: sebastianluen/amm:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+    - environment=backtesting
+    - algorithm-type-name=AImpliedVolaExporter
+    - StartDate=2023-10-30
+    - EndDate=2023-10-30
+    - Ticker=HPE,DELL
+    volumes:
+      - type: bind
+        source: C:/repos/quantconnect/Lean/Launcher/bin/Runs
+        target: /repos/quantconnect/Lean/Launcher/bin/Runs
+    privileged: true

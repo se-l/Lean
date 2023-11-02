@@ -5,6 +5,7 @@ using QuantConnect.Orders.Fees;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
+using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
 {
@@ -14,8 +15,39 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
 
         public override OrderEvent LimitFill(Security asset, LimitOrder order)
         {
-            decimal limitPrice = order.LimitPrice;
-            decimal quantity = order.Quantity;
+            return InternalLimitFill(asset, order, order.LimitPrice, order.Quantity);
+        }
+
+        public override OrderEvent PeggedToStockFill(Security asset, PeggedToStockOrder order)
+        {
+            
+            //Initialise;
+            var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
+            var fill = new OrderEvent(order, utcTime, OrderFee.Zero);
+
+            //If its cancelled don't need anymore checks:
+            if (order.Status == OrderStatus.Canceled) return fill;
+
+            //Get the range of prices in the last bar:
+            var orderDirection = order.Direction;
+            var prices = GetPricesCheckingPythonWrapper(asset, orderDirection);
+            var pricesEndTime = prices.EndTime.ConvertToUtc(asset.Exchange.TimeZone);
+
+            // do not fill on stale data
+            if (pricesEndTime <= order.Time) return fill;
+
+            Option option = (Option)asset;
+            decimal midPriceUnderlying = (option.Underlying.BidPrice + option.Underlying.AskPrice) / 2;
+            decimal limitPrice = order.StartingPriceInternal + 0.01m * order.Delta * (midPriceUnderlying - order.StockRefPriceInternal);
+
+            return InternalLimitFill(asset, order, limitPrice, order.Quantity);
+        }
+
+        /// <summary>
+        /// Default limit order fill model in the base security class.
+        /// </summary>
+        private OrderEvent InternalLimitFill(Security asset, Order order, decimal limitPrice, decimal quantity)
+        {
             //Initialise;
             var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
             //bool aggressive = order.Time == utcTime;
@@ -42,7 +74,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             switch (orderDirection)
             {
                 case OrderDirection.Buy:
-                    
+
                     if (prices.Low <= limitPrice)
                     {
                         //Set order fill:
@@ -56,7 +88,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
                     }
                     break;
                 case OrderDirection.Sell:
-                    
+
                     if (prices.High > limitPrice || (prices.High == limitPrice && asset.AskPrice > limitPrice))  // better: if AskPrice was lowered after my limitPrice, I should be filled, first in order book.
                     {
                         fill.Status = OrderStatus.Filled;

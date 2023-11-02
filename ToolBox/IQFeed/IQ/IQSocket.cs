@@ -67,23 +67,14 @@ namespace QuantConnect.ToolBox.IQFeed
     {
         public static int GetPort(PortType portType)
         {
-            var port = 0;
-            switch (portType)
+            return portType switch
             {
-                case PortType.Level1:
-                    port = Int32.Parse(Config.Get("iqfeed-port-level1", "5009"), CultureInfo.InvariantCulture);
-                    break;
-                case PortType.Lookup:
-                    port = Int32.Parse(Config.Get("iqfeed-port-lookup", "9100"), CultureInfo.InvariantCulture); 
-                    break;
-                case PortType.Level2:
-                    port = Int32.Parse(Config.Get("iqfeed-port-level2", "9200"), CultureInfo.InvariantCulture); ;
-                    break;
-                case PortType.Admin:
-                    port = Int32.Parse(Config.Get("iqfeed-port-admin", "9300"), CultureInfo.InvariantCulture); ;
-                    break;
-            }
-            return port;
+                PortType.Level1 => 5009,
+                PortType.Lookup => 9100,
+                PortType.Level2 => 9200,
+                PortType.Admin => 9300,
+                _ => 0
+            };
         }
         public static IPAddress GetIp(string host)
         {
@@ -98,14 +89,7 @@ namespace QuantConnect.ToolBox.IQFeed
 
         public static IPEndPoint GetEndPoint(PortType portType)
         {
-            return portType switch
-            {
-                PortType.Level1 => new IPEndPoint(GetIp(Config.Get("iqfeed-host-level1", "127.0.0.1")), GetPort(portType)),
-                PortType.Lookup => new IPEndPoint(GetIp(Config.Get("iqfeed-host-lookup", "127.0.0.1")), GetPort(portType)),
-                PortType.Level2 => new IPEndPoint(GetIp(Config.Get("iqfeed-host-level2", "127.0.0.1")), GetPort(portType)),
-                PortType.Admin => new IPEndPoint(GetIp(Config.Get("iqfeed-host-admin", "127.0.0.1")), GetPort(portType))
-            };
-            //return new IPEndPoint(GetIp(Config.Get("iqfeed-host", "127.0.0.1")), GetPort(portType));
+            return new IPEndPoint(GetIp(Config.Get("iqfeed-host", "127.0.0.1")), GetPort(portType));
         }
 
         public static Socket GetSocket()
