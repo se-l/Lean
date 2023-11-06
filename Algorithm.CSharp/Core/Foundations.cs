@@ -107,6 +107,57 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
+        public double MidIV(Symbol symbol, double defaultSpread = 0.005)
+        {
+            double bidIV = IVBids[symbol].IVBidAsk.IV;
+            double askIV = IVAsks[symbol].IVBidAsk.IV;
+
+            if (bidIV == 0 && askIV == 0)
+            {
+                return 0;
+            }
+            else if (bidIV == 0)
+            {
+                return askIV - defaultSpread / 2;
+            }
+            else if (askIV == 0)
+            {
+                return bidIV + defaultSpread / 2;
+            }
+            else
+            {
+                return (bidIV + askIV) / 2;
+            }
+        }
+
+        public double MidIVEWMA(Symbol symbol, double defaultSpread = 0.005)
+        {
+            double bidIV = IVSurfaceRelativeStrikeBid[symbol.Underlying].IV(symbol) ?? 0;
+            double askIV = IVSurfaceRelativeStrikeAsk[symbol.Underlying].IV(symbol) ?? 0;
+
+            if (bidIV == 0 && askIV == 0)
+            {
+                return 0;
+            }
+            else if (bidIV == 0)
+            {
+                return askIV - defaultSpread / 2;
+            }
+            else if (askIV == 0)
+            {
+                return bidIV + defaultSpread / 2;
+            }
+            else
+            {
+                return (bidIV + askIV) / 2;
+            }
+        }
+
+        public double ForwardIV(Symbol symbol, double defaultSpread = 0.005)
+        {
+            return MidIVEWMA(symbol);
+        }
+
         public void AlertLateOrderRequests()
         {
             var lateCancelRequests = Transactions.CancelRequestsUnprocessed.Where(r => Time - r.Time > TimeSpan.FromSeconds(15));

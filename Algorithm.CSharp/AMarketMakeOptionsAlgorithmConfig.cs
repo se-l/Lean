@@ -8,8 +8,7 @@ namespace QuantConnect.Algorithm.CSharp
     {
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
-        public HashSet<string> HedgeTicker { get; set; }
-        public HashSet<string> OptionTicker { get; set; }
+        public HashSet<string> Ticker { get; set; }
         public HashSet<string> LiquidateTicker { get; set; }
         public int VolatilityPeriodDays { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMax { get; set; }
@@ -28,6 +27,8 @@ namespace QuantConnect.Algorithm.CSharp
         public decimal RiskLimitGammaScalpDeltaTotalShort { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalLong { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
+        public decimal RiskLimitHedgeDeltaTotalLong { get; set; }
+        public decimal RiskLimitHedgeDeltaTotalShort { get; set; }
         public Dictionary<string, double> IVSurfaceRelativeStrikeAlpha { get; set; }
         public double SurfaceVerticalResetThreshold { get; set; }
         public int WarmUpDays { get; set; }

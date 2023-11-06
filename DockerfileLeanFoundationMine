@@ -27,11 +27,11 @@ RUN wget https://aka.ms/getvsdbgsh -O - 2>/dev/null | /bin/sh /dev/stdin -v 16.9
 RUN apt-get update && apt-get install -y cifs-utils && apt-get install -y dnsutils
 
 # Install IB Gateway: Installs to /root/ibgateway
-COPY ibgateway-latest-standalone-linux-x64-10.25.lk.sh ./
 RUN mkdir -p /root/ibgateway && \
-    chmod 777 ibgateway-latest-standalone-linux-x64-10.25.lk.sh && \
-    ./ibgateway-latest-standalone-linux-x64-10.25.lk.sh -q -dir /root/ibgateway && \
-    rm ibgateway-latest-standalone-linux-x64-10.25.lk.sh
+    wget -q https://cdn.quantconnect.com/interactive/ibgateway-stable-standalone-linux-x64.v10.19.2a.sh && \
+    chmod 777 ibgateway-stable-standalone-linux-x64.v10.19.2a.sh && \
+    ./ibgateway-stable-standalone-linux-x64.v10.19.2a.sh -q -dir /root/ibgateway && \
+    rm ibgateway-stable-standalone-linux-x64.v10.19.2a.sh
 
 # Install dotnet 6 sdk & runtime
 RUN wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \

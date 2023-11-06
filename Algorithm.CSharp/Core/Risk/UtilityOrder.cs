@@ -33,7 +33,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         //public double Utility { get => UtilityProfit + UtilityRisk; }
         public double Utility { get =>
                 UtilityProfitSpread +  // That's always positive. Not good if option universe is to be split in 4 quadrants. Call/Put Buy/Sell, where only 1 is good for portfolio at a t 
-                UtilityVega2HV +
+                UtilityVega2IVEwma +
                 UtilityTheta +
                 IntradayVolatilityRisk +
                 UtilityEarningsAnnouncment +
@@ -41,7 +41,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 UtilityRiskExpiry +  // Coz Theta impact somehow too small. Should make dependent on how much OTM. Just use delta. An optimization given there are many other terms to choose from.
                 UtilityCapitalCostPerDay +
                 UtilityEquityPosition +
-                UtilityGamma +
+                UtilityGammaRisk +
                 UtilityLowDelta +
                 UtilityMargin;
                 //UtilityVanna;  // Call vs Put & Buy vs Sell.                
@@ -49,18 +49,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         //public double UtilityProfit { get => 0; }
         //public double UtilityRisk { get => 0; }
         private readonly HashSet<string> _utilitiesToLog = new() {
-            "UtilityVega2HV", "UtilityTheta", "IntradayVolatilityRisk", "UtilityEarningsAnnouncment", "UtilityInventory", "UtilityRiskExpiry",
-            "UtilityCapitalCostPerDay", "UtilityEquityPosition", "UtilityGamma", "UtilityLowDelta", "UtilityMargin",
-            "UtilityVanna", "UtilityTransactionCosts" // Currently not in Utility
+            "UtilityVega2IVEwma", "UtilityTheta", "IntradayVolatilityRisk", "UtilityEarningsAnnouncment", "UtilityInventory", "UtilityRiskExpiry",
+            "UtilityCapitalCostPerDay", "UtilityEquityPosition", "UtilityGammaRisk", "UtilityLowDelta", "UtilityMargin",
+            "UtilityVannaRisk", "UtilityTransactionCosts" // Currently not in Utility
             };
 
         private double? _utilityProfitSpread;
         public double UtilityProfitSpread { get => _utilityProfitSpread ??= GetUtilityProfitSpread(); }
         private double? _utilityVega2IVEwma;
         public double UtilityVega2IVEwma { get => _utilityVega2IVEwma ??= GetUtilityVega2IVEwma(); }
-
-        private double? _utilityVega2HV;
-        public double UtilityVega2HV { get => _utilityVega2HV ??= GetUtilityVega2HV(); }
 
         private double? _intradayVolatilityRisk;
         public double IntradayVolatilityRisk { get => _intradayVolatilityRisk ??= GetIntradayVolatilityRisk(); }
@@ -81,11 +78,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double UtilityEquityPosition { get => _utilityEquityPosition ??= GetUtilityEquityPosition(); }
         private double? _utitlityTransactionCosts;
         public double UtilityTransactionCosts { get => _utitlityTransactionCosts ??= GetUtilityTransactionCosts(); }
-        private double? _utitlityGamma;
-        public double UtilityGamma { get => _utitlityGamma ??= GetUtilityGamma(); }
+        private double? _utitlityGammaRisk;
+        public double UtilityGammaRisk { get => _utitlityGammaRisk ??= GetUtilityGammaRisk(); }
 
-        private double? _utitlityVanna;
-        public double UtilityVanna { get => _utitlityVanna ??= GetUtilityVanna(); }
+        private double? _utitlityGammaScalping;
+        public double UtilityGammaScalping { get => _utitlityGammaScalping ??= GetUtilityGammaScalping(); }
+
+        private double? _utitlityVannaRisk;
+        public double UtilityVannaRisk { get => _utitlityVannaRisk ??= GetUtilityVannaRisk(); }
         private double? _utitlityLowDelta;
         public double UtilityLowDelta { get => _utitlityLowDelta ??= GetUtilityLowDelta(); }
 
@@ -191,20 +191,37 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// Reducing Exposure increases Util. Pos Gamma exposure yields gamma scalping profits. Neg loses it. Is offset by theta. Would need a way to quantity gamma scalping profits.
         /// </summary>
         /// <returns></returns>
-        private double GetUtilityGamma()
+        private double GetUtilityGammaRisk()
         {
             var totalGamma = (double)_algo.PfRisk.DerivativesRiskByUnderlying(Underlying, Metric.GammaTotal);
             var gammaOrder = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, Metric.GammaTotal);
             bool isAbsGammaIncreasing = gammaOrder * totalGamma > 0;
             return isAbsGammaIncreasing ? -Math.Abs(gammaOrder) : Math.Abs(gammaOrder);
         }
-        
-        private double GetUtilityVanna()
+        private double GetUtilityGammaScalping()
+        {
+            // Depends on whether gamma scalping is active and at which vola we hedge: Future realized! Also depends on hedging frequency as return is quadratic in dS.
+            return 0;
+        }
+
+        /// <summary>
+        /// Vanna relies on dIV. To get the daily utility, would need IV forecasts. This is here is just the risk controller, keeping total Vanna low.
+        /// </summary>
+        /// <returns></returns>
+        private double GetUtilityVannaRisk()
         {
             var totalVanna = (double)_algo.PfRisk.DerivativesRiskByUnderlying(Underlying, Metric.Vanna100BpUSDTotal);
             var vannaOrder = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, Metric.Vanna100BpUSDTotal);
             bool isAbsVannaIncreasing = vannaOrder * totalVanna > 0;
             return isAbsVannaIncreasing ? -Math.Abs(vannaOrder) : Math.Abs(vannaOrder);
+        }
+
+        /// <summary>
+        /// VegaSkew
+        /// </summary>
+        private double GetUtilityVanna()
+        {
+            return 0;
         }
         /// <summary>
         /// 0.05 USD kinda options. Dont long'em
@@ -234,9 +251,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             if (_algo.IntradayIVDirectionIndicators[Option.Underlying.Symbol].Direction().Length > 1) return 0;
 
+            double iv = (_algo.IVAsks[Symbol].IVBidAsk.IV + _algo.IVBids[Symbol].IVBidAsk.IV) / 2;
             double intraDayIVSlope = _algo.IntradayIVDirectionIndicators[Option.Underlying.Symbol].IntraDayIVSlope;
             double fractionOfDayRemaining = 1 - _algo.IntradayIVDirectionIndicators[Option.Underlying.Symbol].FractionOfDay(_algo.Time);
-            return OptionContractWrap.E(_algo, Option, _algo.Time.Date).Vega() * intraDayIVSlope * fractionOfDayRemaining * (double)(Quantity * Option.ContractMultiplier);
+            return OptionContractWrap.E(_algo, Option, _algo.Time.Date).Vega(iv) * intraDayIVSlope * fractionOfDayRemaining * (double)(Quantity * Option.ContractMultiplier);
         }
 
         private double GetUtilityProfitSpread()
@@ -281,70 +299,40 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             return utilMargin;
         }
+
+
         /// <summary>
-        /// ( Realized Vola - Implied Vola ) * Vega.
-        /// Here Realized Vola is the EWMA of IV.
-        /// Preliminary assumption for vola: constant.
-        /// Needs to converted into a daily expected util/PV.
-        /// </summary>
+        /// Ignoring moving S, hence ignoring skew.surface ATM IV is slightly decreasing over lifetime. Skew closer to maturity will get steeper.
+        /// Earning money from vega only when IV is significantly above forecasted IV. Not trying to capture theta here...
+        /// 
+        /// Easier thinking in Delta/IV Currado Su surface. Less skew, more linear...
+        /// So would a slow moving IV measured in DTE to have an anchor, essentially looking to forecast IV, not HV.
+        /// 
+        /// Combines Skew, surface and term structure.
+        /// /// </summary>
         private double GetUtilityVega2IVEwma()
         {
             Symbol underlying = Symbol.Underlying;
-            
-            double fwdVol = OrderDirection switch
-            {
-                OrderDirection.Buy => _algo.IVSurfaceRelativeStrikeBid.ContainsKey(underlying) ? _algo.IVSurfaceRelativeStrikeBid[underlying].IV(Symbol) : 0,
-                OrderDirection.Sell => _algo.IVSurfaceRelativeStrikeAsk.ContainsKey(underlying) ? _algo.IVSurfaceRelativeStrikeAsk[underlying].IV(Symbol) : 0,
-                _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {OrderDirection}")
-            } ?? 0;
-            if (fwdVol == 0) { return 0; }
-
-            return ExpectedVegaUtil(underlying, fwdVol);
-        }
-
-        /// <summary>
-        /// ( Realized Vola - Implied Vola ) * Vega.
-        /// Here Realized Vola is Historical Vola.
-        /// Preliminary assumption for vola: constant.
-        /// </summary>
-        private double GetUtilityVega2HV()
-        {
-            Symbol underlying = Symbol.Underlying;
-            
-            double fwdVol = (double)ExpectedRealizedVolatility(underlying);
-            if (fwdVol == 0) { return 0; }
-
-            return ExpectedVegaUtil(underlying, fwdVol);
-        }
-
-        private double ExpectedVegaUtil(Symbol underlying, double fwdVol)
-        {
-            var ivBid = _algo.IVBids[Symbol].IVBidAsk.IV;
-            var ivAsk = _algo.IVAsks[Symbol].IVBidAsk.IV;
-            double iv = OrderDirection switch
-            {
-                OrderDirection.Buy => ivBid,
-                OrderDirection.Sell => ivAsk,
-                _ => 0
-            };
-            if (iv == 0) { return 0; }
+            double midIV = _algo.MidIV(Symbol);
+            if (midIV == 0) { return 0; }
 
             var ocw = OptionContractWrap.E(_algo, Option, _algo.Time.Date);
-            ocw.SetIndependents(_algo.MidPrice(underlying), _algo.MidPrice(Symbol), fwdVol);
-            var midIV = (ivBid + ivAsk) / 2;
+            ocw.SetIndependents(_algo.MidPrice(underlying), _algo.MidPrice(Symbol), midIV);
+            double vega = ocw.Vega(midIV);
 
-            double vega = ocw.Vega(fwdVol);
+            double expectedIV = _algo.ForwardIV(Symbol);
 
             // Favors selling skewed wings.
-            double util = (iv - fwdVol) * vega * (double)(Quantity * Option.ContractMultiplier);
-            int dte = Symbol.ID.Date.Subtract(_algo.Time.Date).Days;  // TO divide by DTE is not quite useful. There'll be short term IV ups & downs to be exploited. My offers must be at the kinks of the IV surface.
-            // temp fix
-            dte = Math.Min(dte, 5);
+            double util = (expectedIV - midIV) * vega * (double)(Quantity * Option.ContractMultiplier);
+
+            // int dte = Symbol.ID.Date.Subtract(_algo.Time.Date).Days;  // To divide by DTE is not quite useful. There'll be short term IV ups & downs to be exploited. My offers must be at the kinks of the IV surface.
+            int dte = 1;  // Expecting intraday return to expected IV levels. To be remodeled. Math.Min(dte, 5);
 
             // Punish selling weirdly low IVs. To be investigated. saw once 16% where usually ~30%.
+            double fwdVol = (double)ExpectedRealizedVolatility(underlying);
             if (midIV < fwdVol && Quantity < 0) 
             {
-                //_algo.Log($"GetUtilityVega2HV: Preventing selling low IV: {Symbol} {Quantity}. iv={iv} < fwdVol={fwdVol}. util={util} reduced by 1000");
+                //_algo.Log($"GetUtilityVega2HV: Preventing selling low IV: {Symbol} {Quantity}. iv={iv} < fwdIV={fwdIV}. util={util} reduced by 1000");
                 util -= 1000;
             };
 

@@ -44,6 +44,8 @@ namespace QuantConnect.Algorithm.CSharp
             ADataRecorderConfig Cfg = JsonConvert.DeserializeObject<ADataRecorderConfig>(File.ReadAllText("ADataRecorderConfig.json"));
             Cfg.OverrideWithEnvironmentVariables<ADataRecorderConfig>();
             File.Copy("./ADataRecorderConfig.json", Path.Combine(Globals.PathAnalytics, "ADataRecorderConfig.json"));
+            string dataFolderOut = string.IsNullOrEmpty(Cfg.DataFolderOut) ? Config.Get("data-folder") : Cfg.DataFolderOut;
+            Log("DATA FOLDER OUT: " + dataFolderOut);
 
             UniverseSettings.Resolution = resolution = Resolution.Second;
             SetStartDate(Cfg.StartDate);

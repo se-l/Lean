@@ -115,14 +115,16 @@ namespace QuantConnect.Configuration
         {
             var environments = new List<string>();
             JToken currentEnvironment = Settings.Value;
-            string systemEnvValue = Environment.GetEnvironmentVariable("environment");
+            string? systemEnvValue = Environment.GetEnvironmentVariable("environment");
             if (!string.IsNullOrEmpty(systemEnvValue))
             {
                 Log.Trace(Invariant($"Config.GetEnvironment(): Environment variable found. environment: {systemEnvValue}"));
             }
             var env = string.IsNullOrEmpty(systemEnvValue) ? currentEnvironment["environment"] : systemEnvValue;
+
             while (currentEnvironment != null && env != null)
             {
+                Log.Trace(Invariant($"Config.GetEnvironment(): Environment variable found. env: {env}"));
                 var currentEnv = env.Value<string>();
                 environments.Add(currentEnv);
                 var moreEnvironments = currentEnvironment["environments"];
@@ -134,6 +136,7 @@ namespace QuantConnect.Configuration
                 currentEnvironment = moreEnvironments[currentEnv];
                 env = currentEnvironment["environment"];
             }
+            Log.Trace(Invariant($"Config.GetEnvironment(): {string.Join(".", environments)}"));
             return string.Join(".", environments);
         }
 
@@ -418,13 +421,12 @@ namespace QuantConnect.Configuration
         {
             return GetToken(settings, key, settings.SelectToken(key));
         }
-
         private static JToken GetToken(JToken settings, string key, JToken current)
         {
             var environmentSetting = settings.SelectToken("environment");
             if (environmentSetting != null)
             {
-                var environmentSettingValue = environmentSetting.Value<string>();
+                var environmentSettingValue = Environment.GetEnvironmentVariable("environment") ?? environmentSetting.Value<string>();
                 if (!string.IsNullOrWhiteSpace(environmentSettingValue))
                 {
                     var environment = settings.SelectToken("environments." + environmentSettingValue);

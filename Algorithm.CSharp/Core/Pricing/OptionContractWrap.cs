@@ -192,9 +192,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             hvQuote ??= new SimpleQuote(hv);
             if (hvQuote.value() != hv)
             {
-                hvQuote.setValue(0.29);
+                hvQuote.setValue(hv);
             }
-            hvQuote.setValue(0.29);
+            hvQuote.setValue(hv);
             //algo.Log($"{algo.Time} {Contract.Symbol} HV: {algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility}");
         }
 
@@ -348,14 +348,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// <summary>
         /// Vega component of Minimum Variance Delta
         /// </summary>
-        public double MVVega()
+        public double MVVega(double iv)
         {
             SetEvaluationDateToCalcDate();
             //Settings.setEvaluationDate(algo.Time.Date);
             //https://www.researchgate.net/publication/226498536
             //https://drive.google.com/drive/folders/10g-QYf17V5pEQEJ5aeNu4RGbtm4tJse3
             // The slope of the curve of IV vs strike price. In paper about 0.05 +/- 0.01
-            return Vega() * IVdS();
+            return Vega(iv) * IVdS(iv);
         }
 
         public double KappaZM(double sigma)
@@ -498,21 +498,25 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return FiniteDifferenceApproxTime(calculationDate, amOption, "gamma");
             //return FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, spotQuote, hvQuote, riskFreeRateQuote, "gamma");
         }
-        public double DS2dIV()
+        public double DS2dIV(double impliedVolatility)
         {
-            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "gamma");
+            SetSanityCheckVol(impliedVolatility);
+            var dS2dIV = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "gamma");
+            SetHistoricalVolatility();
+            return dS2dIV;
         }
 
-        public double Vega(double? volatility = null)
+        public double Vega(double impliedVolatility)
         {
             double vega;
             SetEvaluationDateToCalcDate();
             double hv0 = hvQuote.value();
-            SetSanityCheckVol(volatility);
+            SetSanityCheckVol(impliedVolatility);
             if (hvQuote.value() == 0) return 0;
 
             try
             {
+                //_algo.Log($"OptionContractWrap.Vega: impliedVolatility={impliedVolatility}, hvQuote={hvQuote.value()}, hv={HistoricalVolatility()}");
                 vega = VegaCached(hvQuote, spotQuote.value());
             }
             catch (Exception e)
@@ -521,7 +525,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 vega = 0;
             }
 
-            SetHistoricalVolatility(hv0);
+            SetHistoricalVolatility();
             return vega;
         }    
 
@@ -530,11 +534,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return FiniteDifferenceApproxTime(calculationDate, euOption, "thetaPerDay");
             //return FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, spotQuote, hvQuote, riskFreeRateQuote, "thetaPerDay");
         }
-        public double VegaDecay()  // Veta
-       
+        public double VegaDecay(double iv)  // Veta       
         {
-            return FiniteDifferenceApproxTime(calculationDate, amOption, "vega");
+            SetSanityCheckVol(iv);
+            var dVegadT = FiniteDifferenceApproxTime(calculationDate, amOption, "vega");
             //return FiniteDifferenceApproxTime(calculationDate, optionType, strikePrice, spotQuote, hvQuote, riskFreeRateQuote, "vega") / 100;
+            SetHistoricalVolatility();
+            return dVegadT;
         }
         public double Rho()
 
@@ -542,16 +548,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return FiniteDifferenceApprox(riskFreeRateQuote, amOption, 0.01, "NPV");
         }
 
-        public double DSdIV()  // Vanna, same as dSdIV
+        public double DSdIV(double impliedVolatility)  // Vanna, same as dSdIV
         {
-            return FiniteDifferenceApprox(hvQuote, amOption, 0.01, "delta");
+            SetSanityCheckVol(impliedVolatility);
+            var dSdIV = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "delta");
+            SetHistoricalVolatility();
+            return dSdIV;
         }
-        public double Vanna() => DSdIV();
-        public double DIV2()  // Vomma / Volga
+        public double Vanna(double impliedVolatility) => DSdIV(impliedVolatility);
+        public double DIV2(double impliedVolatility)  // Vomma / Volga
         {
-            return FiniteDifferenceApprox(hvQuote, amOption, 0.05, "vega", d1perturbance: hvQuote);
+            SetSanityCheckVol(impliedVolatility);
+            var volga = FiniteDifferenceApprox(hvQuote, amOption, 0.05, "vega", d1perturbance: hvQuote);
+            SetHistoricalVolatility();
+            return volga;
         }
-        public double Volga() => DIV2();
+        public double Volga(double impliedVolatility) => DIV2(impliedVolatility);
 
         public double NPV(bool? resetCalcDate = true)
         {
@@ -594,9 +606,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return (maturityDate - calculationDate) / 252.0;
             //return calendar.businessDaysBetween(calculationDate, maturityDate) / 252.0;
         }
-        public double IVdS()  // How much IV changes with underlying price. That's not a BSM greek, not differentiating with respect to option price.
+        public double IVdS(double iv)  // How much IV changes with underlying price. That's not a BSM greek, not differentiating with respect to option price.
         {
-            return FiniteDifferenceApprox(spotQuote, amOption, 0.01, "IV");
+            SetSanityCheckVol(iv);
+            var dIVdS = FiniteDifferenceApprox(spotQuote, amOption, 0.01, "IV");
+            SetHistoricalVolatility();
+            return dIVdS;
         }
 
         public BlackScholesMertonProcess GetBSMP(Date calculationDate, Handle<Quote> spotQuote, Handle<Quote> hvQuote, Handle<Quote> rfQuote, Quote dividendRateQuote)

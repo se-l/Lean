@@ -60,7 +60,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     Resolution.Second => 300,
                     _ => 1
                 };
-                security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: _algo.Periods(days: VolatilityPeriodDays) / samplePeriods, _algo.resolution, TimeSpan.FromSeconds(samplePeriods));
+
+                int totalRollingPeriods = (int)(VolatilityPeriodDays * 6.5 * 60 * 60 / samplePeriods);
+                security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: totalRollingPeriods, _algo.resolution, TimeSpan.FromSeconds(samplePeriods));
                 
                 foreach (var tradeBar in _algo.HistoryWrap(symbol, _algo.Periods(days: VolatilityPeriodDays + 2), _algo.resolution))
                 {

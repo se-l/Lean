@@ -1,5 +1,6 @@
 
 using QuantConnect.Securities;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 {
@@ -9,6 +10,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private readonly Foundations _algo;
         public Security Security { get; internal set; }
         public OptionContractWrap? OCW;
+        private double? _iV;
         private double? _hV;
         private double? _nPV;
         private double? _iVdS;
@@ -31,8 +33,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                
         // Non-Greeks
         public double HV { get => _hV ?? (double)OCW.HistoricalVolatility(); }
+        //public double IV { get => _iV ?? OCW.IV(_algo.MidPrice(Security.Symbol), _algo.MidPrice(Underlying(Security.Symbol)), 0.001); }
+        public double IV { get => _iV ?? _algo.MidIV(Security.Symbol); }
         public double NPV { get => _nPV ?? OCW.NPV(); }  // theoretical price
-        public double IVdS { get => _iVdS ?? OCW.IVdS(); }
+        public double IVdS { get => _iVdS ?? OCW.IVdS(IV); }
         public int DTE { get => _dte ?? OCW.DaysToExpiration(); }
 
         // Greeks. 1st order followed by dS, dT, dIV. Then 3rd at end.
@@ -40,24 +44,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double Delta { get => _delta ?? OCW.Delta(); }  // dP ; sensitivity to underlying price}
         public double Gamma { get => _gamma ?? OCW.Gamma(); }  // dP2
         public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(); }  // dPdT
-        public double DSdIV { get => _dSdIV ?? OCW.DSdIV(); }  // dVegadP ; Vanna
+        public double DSdIV { get => _dSdIV ?? OCW.DSdIV(IV); }  // dVegadP ; Vanna
         public double Vanna { get => DSdIV; }        
         // dT
         public double Theta { get => _theta ?? OCW.Theta(); }  // dT ; sensitivity to time
         public double ThetaTillExpiry { get => _thetaTotal ?? OCW.ThetaTillExpiry(); }
         public double ThetaDecay { get => _thetaDecay ?? OCW.ThetaDecay(); }  // dT2
         // dIV
-        public double Vega { get => _vega ?? OCW.Vega(); }  // dIV ; sensitivity to volatility
+        public double Vega { get => _vega ?? OCW.Vega(IV); }  // dIV ; sensitivity to volatility
         // Vanna - above in delta
-        public double VegaDecay { get => _vegaDecay ?? OCW.VegaDecay(); }  // dIVdT
-        public double DIV2 { get => _dIV2 ?? OCW.DIV2(); }  // Vomma / Volga
+        public double VegaDecay { get => _vegaDecay ?? OCW.VegaDecay(IV); }  // dIVdT
+        public double DIV2 { get => _dIV2 ?? OCW.DIV2(IV); }  // Vomma / Volga
         // dR
         public double Rho { get => _rho ?? OCW.Rho(); }  // dR ; sensitivity to interest rate
 
         // 3rd order
         public double DS3 { get => _dS3 ?? OCW.DS3(); }  // dP3
         public double GammaDecay { get => _gammaDecay ?? OCW.GammaDecay(); }  // dP2dT
-        public double DS2dIV { get => _dGammaDIV ?? OCW.DS2dIV(); }  // dP2dIV
+        public double DS2dIV { get => _dGammaDIV ?? OCW.DS2dIV(IV); }  // dP2dIV
 
         public double DeltaZM(int direction)
         {  // Adjusted Delta
@@ -68,6 +72,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return OCW.DeltaZMOffset(direction);  // Zakamulin bands are made of option deltas only, hence no default 1 for equity.
         }
 
+        public void SetIV(double iV)
+        {
+            _iV = iV;
+        }
 
         public GreeksPlus(Foundations algo, OptionContractWrap ocw)
         {
@@ -87,6 +95,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             _algo = algo;
             Security = security;
+            _iV = 0;
             _hV = (double)Security.VolatilityModel.Volatility;
             _nPV = 0;
             _iVdS = 0;
@@ -120,6 +129,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 return this;
             }
 
+            _hV = IV;
             _hV = HV;
             _nPV = NPV;
             _iVdS = IVdS;
@@ -149,6 +159,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public void SnapExpired()
         {
+            _iV = 0;
             _hV = HV;
             _nPV = 0;
             _iVdS = 0;

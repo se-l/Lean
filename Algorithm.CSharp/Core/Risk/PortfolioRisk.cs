@@ -266,6 +266,41 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
         }
 
+        public bool IsRiskLimitExceedingBand(Symbol symbol)
+        {
+            if (_algo.IsWarmingUp) { return false; }
+
+            decimal riskDeltaTotal = 0;
+            Security security = _algo.Securities[symbol];
+            Symbol underlying = Underlying(symbol);
+
+            var deltaMVTotal = _algo.DeltaMV(symbol);
+            decimal riskPutCallRatio = 0;// _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
+
+            riskDeltaTotal += deltaMVTotal;
+            riskDeltaTotal += riskPutCallRatio;
+
+            CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
+
+            if (riskDeltaTotal > _algo.Cfg.RiskLimitHedgeDeltaTotalLong || riskDeltaTotal < _algo.Cfg.RiskLimitHedgeDeltaTotalShort)
+            {
+                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, riskPutCallRatio={riskPutCallRatio}");
+                _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
+                return true;
+
+            }
+            else if (Math.Abs(riskDeltaTotal) > 50)
+            {
+                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: ?NOT EXCEEDED WHY? HIGH OFFSET? riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, riskPutCallRatio={riskPutCallRatio}");
+            }
+            else
+            {
+                _algo.LimitIfTouchedOrderInternals.Remove(symbol);
+            }
+
+            return false;
+        }
+
         public bool IsRiskLimitExceededZMBands(Symbol symbol)
         {
             if (_algo.IsWarmingUp) { return false; }

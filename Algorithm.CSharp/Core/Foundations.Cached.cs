@@ -202,6 +202,27 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
 
+            Symbol underlying = Underlying(symbol);
+            decimal deltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+
+            if (deltaTotal > Cfg.RiskLimitHedgeDeltaTotalLong || deltaTotal < Cfg.RiskLimitHedgeDeltaTotalShort)
+            {
+                ExecuteHedge(underlying, EquityHedgeQuantity(underlying));
+            }
+            else 
+            {
+                Log($"{Time} GetHedgeOptionWithUnderlying. Not hedging because deltaTotal={deltaTotal} for symbol={symbol}.");
+            }
+        }
+        /// <summary>
+        /// Closely related to GedHedgeWithIndex, but hedges with the underlying instead of the index.
+        /// To avoid dynamic over hedging, best used rarely. For example once per fill only.
+        /// To be refactored with a more generic hedging function searching for the best hedge given the current portfolio.
+        /// </summary>
+        private void GetHedgeOptionWithUnderlyingUSD(Symbol symbol)
+        {
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
+
             decimal riskDelta100BpUSD = 0;
             Symbol underlying = Underlying(symbol);
 
@@ -216,7 +237,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 ExecuteHedge(underlying, EquityHedgeQuantity(underlying));
             }
-            else 
+            else
             {
                 Log($"{Time} GetHedgeOptionWithUnderlying. Not hedging because riskDelta100BpUSD={riskDelta100BpUSD}, delta100BpUSDTotal={delta100BpUSDTotal}, deltaIVdS100BpUSD={deltaIVdS100BpUSD} for symbol={symbol}.");
             }

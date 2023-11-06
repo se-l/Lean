@@ -1,11 +1,10 @@
 {
-  "StartDate": "2023-10-18",
-  "EndDate": "2023-10-31",
-  "HedgeTicker": [],
+  "StartDate": "2023-09-01",
+  "EndDate": "2023-09-04",
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" ];  // Too much for 2 cores on a t3 instance.
-  "OptionTicker": [ "DELL", "HPE" ],
+  "Ticker": [ "DELL", "HPE" ],
   "LiquidateTicker": [],
   "VolatilityPeriodDays": 5,
 
@@ -52,7 +51,7 @@
     },
     "HPE-Absolute-discount-params": {
       "TargetRisk": 0,
-      "X0": -0.2,
+      "X0": -0.0,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -122,7 +121,7 @@
     },
     "DELL-Absolute-discount-params": {
       "TargetRisk": 0,
-      "X0": -0.4,
+      "X0": -0.0,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -203,6 +202,8 @@
   "RiskLimitGammaScalpDeltaTotalShort": -5,
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
+  "RiskLimitHedgeDeltaTotalLong": 5,
+  "RiskLimitHedgeDeltaTotalShort": -5,
   "IVSurfaceRelativeStrikeAlpha": {
     "HPE": 0.05,
     "DELL": 0.05,
@@ -211,7 +212,7 @@
     "PFE": 0.10
   },
   "SurfaceVerticalResetThreshold": 0.01,
-  "WarmUpDays": 2, // Reduce for debugging. Usually 2.
+  "WarmUpDays": 3, // Reduce for debugging. Usually 2.
   "LogOrderUpdates": false,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
   "MinZMOffset": {

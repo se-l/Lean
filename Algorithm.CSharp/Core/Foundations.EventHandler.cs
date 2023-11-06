@@ -36,7 +36,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         UpdateLimitPrice(symbol);
                     }
                     UpdateLimitPrice(newBidAsk.Symbol);
-                    PfRisk.IsRiskLimitExceededZMBands(newBidAsk.Symbol);
+                    PfRisk.IsRiskLimitExceedingBand(newBidAsk.Symbol);
                 }
             }
 
@@ -49,7 +49,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 RunSignals();
 
-                PfRisk.IsRiskLimitExceededZMBands(orderEvent.Symbol);
+                PfRisk.IsRiskLimitExceedingBand(orderEvent.Symbol);
                 RiskProfiles[Underlying(orderEvent.Symbol)].Update();
 
                 if (orderEvent.Status is OrderStatus.Filled)

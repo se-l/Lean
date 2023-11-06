@@ -71,7 +71,7 @@ namespace QuantConnect.Algorithm.CSharp
             AssignCachedFunctions();
 
             // Subscriptions
-            optionTicker = Cfg.OptionTicker;
+            optionTicker = Cfg.Ticker;
             ticker = optionTicker;
             symbolSubscribed = null;// AddEquity(optionTicker.First(), resolution).Symbol;
             liquidateTicker = Cfg.LiquidateTicker;
@@ -303,7 +303,7 @@ namespace QuantConnect.Algorithm.CSharp
             foreach (Security security in Securities.Values.Where(s => s.Type == SecurityType.Equity))  // because risk is hedged by underlying
             {
                 PublishEvent(new EventNewBidAsk(security.Symbol));
-                PfRisk.IsRiskLimitExceededZMBands(security.Symbol);
+                PfRisk.IsRiskLimitExceedingBand(security.Symbol);
             }
 
             LogRisk();
