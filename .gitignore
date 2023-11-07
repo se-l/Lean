@@ -295,3 +295,4 @@ Data/
 /launchSettings.json
 /Launcher/config.json
 docker-compose.yml
+!run.sh

@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -25,13 +26,18 @@ namespace QuantConnect.Algorithm.CSharp
                         HashSet<string> convertedValue = envValue.Split(",").ToHashSet();
                         attr.SetValue(this, convertedValue);
                     }
+                    else if (attr.PropertyType.GenericTypeArguments.Length > 0 && attr.PropertyType?.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+                    {
+                        var convertedValue = JsonConvert.DeserializeObject(envValue, attr.PropertyType);
+                        attr.SetValue(this, convertedValue);
+                    }
                     else
                     {
                         var convertedValue = Convert.ChangeType(envValue, attr.PropertyType);
                         attr.SetValue(this, convertedValue);
                         
                     }
-                    Console.WriteLine($"{typeof(T)}: Overriding {attr.Name} with {envValue}");
+                    Console.WriteLine($"OverrideWithEnvironmentVariables: {typeof(T)}, {attr.Name}: {envValue}");
                 }
             }
         }
