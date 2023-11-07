@@ -27,8 +27,8 @@ namespace QuantConnect.Algorithm.CSharp
         public decimal RiskLimitGammaScalpDeltaTotalShort { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalLong { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
-        public decimal RiskLimitHedgeDeltaTotalLong { get; set; }
-        public decimal RiskLimitHedgeDeltaTotalShort { get; set; }
+        public Dictionary<string, decimal> RiskLimitHedgeDeltaTotalLong { get; set; }
+        public Dictionary<string, decimal> RiskLimitHedgeDeltaTotalShort { get; set; }
         public Dictionary<string, double> IVSurfaceRelativeStrikeAlpha { get; set; }
         public double SurfaceVerticalResetThreshold { get; set; }
         public int WarmUpDays { get; set; }

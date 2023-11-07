@@ -202,8 +202,12 @@
   "RiskLimitGammaScalpDeltaTotalShort": -5,
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
-  "RiskLimitHedgeDeltaTotalLong": 5,
-  "RiskLimitHedgeDeltaTotalShort": -5,
+  "RiskLimitHedgeDeltaTotalLong": {
+    "_": 15
+  },
+  "RiskLimitHedgeDeltaTotalShort": {
+    "_": -15
+  },
   "IVSurfaceRelativeStrikeAlpha": {
     "HPE": 0.05,
     "DELL": 0.05,

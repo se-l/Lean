@@ -32,8 +32,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
         public void OnNewBidAskEventCheckRiskLimits(object? sender, NewBidAskEventArgs newBidAsk)
         {
-            if(newBidAsk.Symbol.SecurityType == SecurityType.Equity)
-            {                
+            if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)
+            {
                 PfRisk.IsRiskLimitExceedingBand(newBidAsk.Symbol);
             }
         }
@@ -43,7 +43,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             switch (e.LimitType)
             {
                 case RiskLimitType.Delta:
-                    HedgeOptionWithUnderlyingZMBands(e.Symbol);
+                    HedgeOptionWithUnderlying(e.Symbol);
                     break;
             }
         }

@@ -22,7 +22,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         private readonly Foundations _algo;
         public SecurityInitializerMine(IBrokerageModel brokerageModel, Foundations algo, ISecuritySeeder securitySeeder, int volatilityPeriodDays)
-        : base(brokerageModel, securitySeeder) {
+        : base(brokerageModel, securitySeeder)
+        {
             _algo = algo;
             VolatilityPeriodDays = volatilityPeriodDays;
         }
@@ -62,7 +63,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 int totalRollingPeriods = (int)(VolatilityPeriodDays * 6.5 * 60 * 60 / samplePeriods);
                 security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: totalRollingPeriods, _algo.resolution, TimeSpan.FromSeconds(samplePeriods));
-                
+
                 foreach (var tradeBar in _algo.HistoryWrap(symbol, _algo.Periods(days: VolatilityPeriodDays + 2), _algo.resolution))
                 {
                     security.VolatilityModel.Update(security, tradeBar);
@@ -89,6 +90,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.IVSurfaceRelativeStrikeAsk[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Ask);
                 _algo.UnderlyingMovedX[symbol] = new UnderlyingMovedX((Equity)security);
                 _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[symbol], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
+
+                _algo.SignalsLastRun[security.Symbol] = DateTime.MinValue;
+                _algo.IsSignalsRunning[security.Symbol] = false;
             }
 
             else if (security.Type == SecurityType.Option)
@@ -108,7 +112,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, _algo);
                 _algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, _algo);
                 _algo.IVBids[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceRelativeStrikeBid[option.Symbol.Underlying].ScheduleUpdate();
-                _algo.IVAsks[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceRelativeStrikeAsk[option.Symbol.Underlying].ScheduleUpdate();                
+                _algo.IVAsks[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceRelativeStrikeAsk[option.Symbol.Underlying].ScheduleUpdate();
 
                 _algo.PutCallRatios[option.Symbol] = new PutCallRatioIndicator(option, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
                 _algo.RegisterIndicator(option.Symbol, _algo.PutCallRatios[option.Symbol], _algo.TradeBarConsolidators[option.Symbol], (IBaseData b) => ((TradeBar)b)?.Volume ?? 0);

@@ -103,7 +103,7 @@ namespace QuantConnect.Algorithm.CSharp
                 RiskProfiles[equity.Symbol] = new RiskProfile(this, equity);
                 UtilityWriters[equity.Symbol] = new UtilityWriter(this, equity);
                 OrderEventWriters[equity.Symbol] = new OrderEventWriter(this, equity);
-                UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => RunSignals();
+                UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => RunSignals(e);
             }
             RealizedPLExplainWriter = new(this);
 
@@ -114,7 +114,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             // SCHEDULED EVENTS
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), RunSignals);
+            //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), () => RunSignals());
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
 
             // Before EOD - stop trading & overnight hedge
@@ -180,7 +180,11 @@ namespace QuantConnect.Algorithm.CSharp
             }
             SubmitLimitIfTouchedOrder();
             PfRisk.ResetCache();
-            if (SignalsLastRun < Time - TimeSpan.FromMinutes(30)) { RunSignals(); }
+
+            foreach (Symbol underlying in equities)
+            {
+                if (SignalsLastRun[underlying] < Time - TimeSpan.FromMinutes(30)) RunSignals(underlying);
+            }
         }
 
         /// <summary>
@@ -201,7 +205,7 @@ namespace QuantConnect.Algorithm.CSharp
                                     { "Symbol", symbol}, { "OrderQuantity",  kvp.Value.Quantity.ToString() }, {"Price", kvp.Value.LimitPrice.ToString() } });
                     OrderEquity(symbol, kvp.Value.Quantity, kvp.Value.LimitPrice, "LimitIfTouchedOrder triggered");
                     LimitIfTouchedOrderInternals.Remove(symbol);
-                }                 
+                }
             });
         }
 
@@ -229,7 +233,7 @@ namespace QuantConnect.Algorithm.CSharp
 
                 LogOnEventOrderFill(orderEvent);
 
-                RunSignals();
+                RunSignals(orderEvent.Symbol);
 
                 PfRisk.IsRiskLimitExceedingBand(orderEvent.Symbol);
                 RiskProfiles[Underlying(orderEvent.Symbol)].Update();
@@ -257,7 +261,7 @@ namespace QuantConnect.Algorithm.CSharp
             List<Symbol> subscribedSymbol = new();
             foreach (var symbol in contractSymbols)
             {
-                if ( Securities.ContainsKey(symbol) && Securities[symbol].IsTradable ) continue;  // already subscribed
+                if (Securities.ContainsKey(symbol) && Securities[symbol].IsTradable) continue;  // already subscribed
 
                 Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
                 // Todo: move the period parameter to a config
@@ -337,7 +341,7 @@ namespace QuantConnect.Algorithm.CSharp
         public override void OnWarmupFinished()
         {
             IEnumerable<OrderTicket> openTransactions = Transactions.GetOpenOrderTickets();
-            
+
             Log($"Adding Open Transactions to OrderTickets: {openTransactions.Count()}");
             foreach (OrderTicket ticket in openTransactions)
             {
@@ -377,7 +381,7 @@ namespace QuantConnect.Algorithm.CSharp
         }
 
         public void ExportIVSurface()
-        {           
+        {
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
             IVSurfaceRelativeStrikeBid.Values.Union(IVSurfaceRelativeStrikeAsk.Values).DoForEach(s => s.WriteCsvRows());
         }

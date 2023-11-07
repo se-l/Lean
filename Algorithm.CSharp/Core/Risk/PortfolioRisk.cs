@@ -1,5 +1,7 @@
+using Fasterflect;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Securities;
+using QuantConnect.Securities.Cfd;
 using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
@@ -84,7 +86,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             };
         }
 
-        public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, double? dX = null, bool skipCache=false)
+        public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, double? dX = null, bool skipCache = false)
         {
             Symbol underlying = Underlying(symbol);
             var positions = _algo.Positions.Values.ToList().Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
@@ -96,7 +98,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             positions = filter == null ? positions : filter(positions);
             if (!positions.Any()) return 0;
-            
+
             return skipCache ? RiskByUnderlying(symbol, metric, positions, volatility, dX) : RiskByUnderlyingCached(symbol, metric, positions, volatility, dX);
         }
 
@@ -117,7 +119,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             (decimal, decimal) tupZMBands = (0, 0);
             Symbol underlying = Underlying(symbol);
             var positions = _algo.Positions.Values.Where(p => p.UnderlyingSymbol == underlying && p.SecurityType == SecurityType.Option && p.Quantity != 0);
-            
+
             if (!positions.Any()) return 0;
             if (new HashSet<Metric>() { Metric.BandZMLower, Metric.BandZMUpper }.Contains(metric))
             {
@@ -169,7 +171,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 if (positions.Count() > 0)
                 {
                     _algo.Log($"ZM Bands are zero for {positions.Count()} positions with quantity {quantity}. DeltaZMs: {positions.Select(p => DeltaZM(p, volatility)).ToList()}");
-                }                
+                }
             }
             return (CastGracefully(deltaZM - offsetZM), CastGracefully(deltaZM + offsetZM));
         }
@@ -181,7 +183,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return (double)(_algo.IVSurfaceRelativeStrikeBid[Underlying(symbol)].AtmIv() + _algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIv()) / 2;
         }
-        
+
         public double AtmIVEWMA(Symbol symbol)
         {
             return (double)(_algo.IVSurfaceRelativeStrikeBid[Underlying(symbol)].AtmIvEwma() + _algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIvEwma()) / 2;
@@ -194,7 +196,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return RiskByUnderlyingCached(symbol, riskMetric, new List<Position>() { position }, null, null);
         }
 
-        public decimal PortfolioValue(string method= "Mid")
+        public decimal PortfolioValue(string method = "Mid")
         {
             if (method == "Mid")
             {
@@ -214,7 +216,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             else if (method == "PnlMidPerOptionAbsQuantity")
             {
-                return (_algo.Positions.Values.Any() && _algo.Positions.Values.Where(p => p.SecurityType == SecurityType.Option).Select(p => Math.Abs(p.Quantity)).Sum() > 0) ? (_algo.Portfolio.TotalPortfolioValue - _algo.TotalPortfolioValueSinceStart) / _algo.Positions.Values.Where(p => p.SecurityType == SecurityType.Option).Select(p=>Math.Abs(p.Quantity)).Sum() : 0;
+                return (_algo.Positions.Values.Any() && _algo.Positions.Values.Where(p => p.SecurityType == SecurityType.Option).Select(p => Math.Abs(p.Quantity)).Sum() > 0) ? (_algo.Portfolio.TotalPortfolioValue - _algo.TotalPortfolioValueSinceStart) / _algo.Positions.Values.Where(p => p.SecurityType == SecurityType.Option).Select(p => Math.Abs(p.Quantity)).Sum() : 0;
             }
             else
             {
@@ -239,7 +241,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 { "Gamma500BpUSDTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.Gamma500BpUSDTotal)) },
                 { "ThetaTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.ThetaTotal)) },
                 { "Vega%Total", underlyings.Sum(x => RiskByUnderlying(x, Metric.VegaTotal)) / 100 },
-                { "Vanna100BpUSDTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.Vanna100BpUSDTotal)) },                
+                { "Vanna100BpUSDTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.Vanna100BpUSDTotal)) },
                 { "PosWeightedIV", underlyings.Sum(x => RiskByUnderlying(x, Metric.PosWeightedIV)) },
                 { "DeltaIVdS100BpUSDTotal", underlyings.Sum(x => RiskByUnderlying(x, Metric.DeltaIVdS100BpUSDTotal)) },
                 { "MarginUsedQC", _algo.Portfolio.TotalMarginUsed },
@@ -257,7 +259,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 lock (tickets)
                 {
                     foreach (var t in tickets.ToList().Where(t => !_algo.orderCanceledOrPending.Contains(t.Status) && t?.CancelRequest == null && t.Quantity * riskDelta > 0))
-                    {                        
+                    {
                         string tag = $"{_algo.Time} CancelDeltaIncreasingEquityTickets. Cancelling ticket {t.OrderId} for {t.Symbol} with quantity {t.Quantity} because riskDelta={riskDelta}.";
                         _algo.Log(tag);
                         _algo.Cancel(t, tag);
@@ -282,7 +284,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
 
-            if (riskDeltaTotal > _algo.Cfg.RiskLimitHedgeDeltaTotalLong || riskDeltaTotal < _algo.Cfg.RiskLimitHedgeDeltaTotalShort)
+            decimal riskLimitHedgeDeltaTotalLong = _algo.Cfg.RiskLimitHedgeDeltaTotalLong.TryGetValue(underlying.Value, out riskLimitHedgeDeltaTotalLong) ? riskLimitHedgeDeltaTotalLong : _algo.Cfg.RiskLimitHedgeDeltaTotalLong[CfgDefault];
+            decimal riskLimitHedgeDeltaTotalShort = _algo.Cfg.RiskLimitHedgeDeltaTotalShort.TryGetValue(underlying.Value, out riskLimitHedgeDeltaTotalShort) ? riskLimitHedgeDeltaTotalShort : _algo.Cfg.RiskLimitHedgeDeltaTotalShort[CfgDefault];
+
+            if (riskDeltaTotal > riskLimitHedgeDeltaTotalLong || riskDeltaTotal < riskLimitHedgeDeltaTotalShort)
             {
                 _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, riskPutCallRatio={riskPutCallRatio}");
                 _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));

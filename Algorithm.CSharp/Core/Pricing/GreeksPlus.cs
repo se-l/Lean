@@ -1,6 +1,5 @@
 
 using QuantConnect.Securities;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 {
@@ -30,11 +29,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private double? _vegaDecay;
         private double? _dIV2;
         private double? _rho;
-               
+
         // Non-Greeks
         public double HV { get => _hV ?? (double)OCW.HistoricalVolatility(); }
         //public double IV { get => _iV ?? OCW.IV(_algo.MidPrice(Security.Symbol), _algo.MidPrice(Underlying(Security.Symbol)), 0.001); }
-        public double IV { get => _iV ?? _algo.MidIV(Security.Symbol); }
+        public double IV
+        {
+            get
+            {
+                if (_iV != null && _iV != 0) return _iV ?? 0;
+
+                _iV = _algo.MidIV(Security.Symbol);
+                return _iV ?? 0;
+            }
+        }
         public double NPV { get => _nPV ?? OCW.NPV(); }  // theoretical price
         public double IVdS { get => _iVdS ?? OCW.IVdS(IV); }
         public int DTE { get => _dte ?? OCW.DaysToExpiration(); }
@@ -45,7 +53,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double Gamma { get => _gamma ?? OCW.Gamma(); }  // dP2
         public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(); }  // dPdT
         public double DSdIV { get => _dSdIV ?? OCW.DSdIV(IV); }  // dVegadP ; Vanna
-        public double Vanna { get => DSdIV; }        
+        public double Vanna { get => DSdIV; }
         // dT
         public double Theta { get => _theta ?? OCW.Theta(); }  // dT ; sensitivity to time
         public double ThetaTillExpiry { get => _thetaTotal ?? OCW.ThetaTillExpiry(); }
@@ -152,8 +160,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             _dS3 = DS3;
             _gammaDecay = GammaDecay;
-            _dGammaDIV = DS2dIV;            
-           
+            _dGammaDIV = DS2dIV;
+
             return this;
         }
 

@@ -9,6 +9,7 @@ using QuantConnect.Securities;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
+using Fasterflect;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -158,7 +159,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
             {
                 Log($"{Time} GetHedgeOptionWithUnderlyingZMBands: zmOffset={zmOffset}, riskDeltaTotal={riskDeltaTotal}");
-                ExecuteHedge(underlying, -riskDeltaTotal);  // Like standard delta hedging, but with ZM bands.
+                ExecuteHedge(underlying, Math.Round(-riskDeltaTotal, 0));  // Like standard delta hedging, but with ZM bands.
             }
             else
             {
@@ -177,12 +178,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             Symbol underlying = Underlying(symbol);
             decimal deltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+            decimal riskLimitHedgeDeltaTotalLong = Cfg.RiskLimitHedgeDeltaTotalLong.TryGetValue(underlying.Value, out riskLimitHedgeDeltaTotalLong) ? riskLimitHedgeDeltaTotalLong : Cfg.RiskLimitHedgeDeltaTotalLong[CfgDefault];
+            decimal riskLimitHedgeDeltaTotalShort = Cfg.RiskLimitHedgeDeltaTotalShort.TryGetValue(underlying.Value, out riskLimitHedgeDeltaTotalShort) ? riskLimitHedgeDeltaTotalShort : Cfg.RiskLimitHedgeDeltaTotalShort[CfgDefault];
 
-            if (deltaTotal > Cfg.RiskLimitHedgeDeltaTotalLong || deltaTotal < Cfg.RiskLimitHedgeDeltaTotalShort)
+            if (deltaTotal > riskLimitHedgeDeltaTotalLong || deltaTotal < riskLimitHedgeDeltaTotalShort)
             {
                 ExecuteHedge(underlying, EquityHedgeQuantity(underlying));
             }
-            else 
+            else
             {
                 Log($"{Time} GetHedgeOptionWithUnderlying. Not hedging because deltaTotal={deltaTotal} for symbol={symbol}.");
             }
@@ -256,19 +259,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //      Long  Gamma + Range Bound -> Hedge often (hedges are winners)
 
             List<OrderTicket> tickets = orderTickets.TryGetValue(symbol, out tickets) ? tickets : new List<OrderTicket>();
-            quantity = Math.Round(quantity, 0);
 
-            // subtract pending Market order fills
-            if (tickets.Any())
-            {
-                var marketOrders = tickets.Where(t => t.OrderType == OrderType.Market).ToList();
-                decimal orderedQuantityMarket = marketOrders.Sum(t => t.Quantity);
-                quantity -= orderedQuantityMarket;
-                if (orderedQuantityMarket != 0)
-                {
-                    Log($"{Time} ExecuteHedge: Market Orders present for {symbol} {orderedQuantityMarket} OrderId={string.Join(", ", marketOrders.Select(t => t.OrderId))}.");
-                }
-            }
             // Hedge is taken through EventHandler -> UpdateLimitOrderEquity.
             bool anyLimitOrders = tickets.Where(t => t.OrderType == OrderType.Limit).Any();
 
@@ -316,9 +307,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         /// <param name="equity"></param>
         /// <returns></returns>
-        public OrderType GetEquityHedgeOrderType(Equity equity)
+        public OrderType GetEquityHedgeOrderType(Equity equity, OrderTicket? ticket = null)
         {
-            return OrderType.Market;
+            if (ticket != null && ticket.UpdateRequests.Count > 0)
+            {
+                return OrderType.Market;
+            }
+            return OrderType.Limit;
             // To be developed
             if (Time >= Time.Date + mmWindow.End)
             {
@@ -336,7 +331,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return OrderType.LimitIfTouched;
             }
 
-            return OrderType.Limit;            
+            return OrderType.Limit;
         }
         /// <summary>
         /// Gamma long - trailing limit orders.
@@ -347,42 +342,50 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal touchPrice;
             decimal price;
 
-            if (orderType == OrderType.LimitIfTouched)
+            switch (orderType)
             {
-                double deltaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.DeltaTotal);
-                if (!Cfg.TrailingHedgePct.TryGetValue(equity.Symbol.Value, out decimal trailingPct))
-                {
-                    trailingPct = Cfg.TrailingHedgePct[CfgDefault];
-                };
-                // If currently long, Touch is x% below, the point at which we'll short.
-                decimal priceFactor = deltaTotal > 0 ? (1-trailingPct) : (1+trailingPct);                
-                decimal hypotheticalNewTouchPrice = priceFactor * MidPrice(equity.Symbol);
+                case OrderType.LimitIfTouched:
+                    double deltaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.DeltaTotal);
+                    if (!Cfg.TrailingHedgePct.TryGetValue(equity.Symbol.Value, out decimal trailingPct))
+                    {
+                        trailingPct = Cfg.TrailingHedgePct[CfgDefault];
+                    };
+                    // If currently long, Touch is x% below, the point at which we'll short.
+                    decimal priceFactor = deltaTotal > 0 ? (1 - trailingPct) : (1 + trailingPct);
+                    decimal hypotheticalNewTouchPrice = priceFactor * MidPrice(equity.Symbol);
 
-                // If Touched Price. Removed on every equity fill.
-                decimal currentTouchPrice = LimitIfTouchedOrderInternals.TryGetValue(equity.Symbol, out LimitIfTouchedOrderInternal limitIfTouchedOrderInternal) ? limitIfTouchedOrderInternal.TriggerPrice : 0;
+                    // If Touched Price. Removed on every equity fill.
+                    decimal currentTouchPrice = LimitIfTouchedOrderInternals.TryGetValue(equity.Symbol, out LimitIfTouchedOrderInternal limitIfTouchedOrderInternal) ? limitIfTouchedOrderInternal.TriggerPrice : 0;
 
-                if (currentTouchPrice == 0)
-                {
-                    touchPrice = hypotheticalNewTouchPrice; 
-                }
-                else
-                {
-                    // Update touch price if price moved in a profitable direction now > trailingPct away.
-                    touchPrice = deltaTotal > 0 ? Math.Max(hypotheticalNewTouchPrice, currentTouchPrice) : Math.Min(hypotheticalNewTouchPrice, currentTouchPrice);
-                }
-                // Only return a price, if price has been touched
-                return touchPrice;
-            }
-            else if (orderType == OrderType.Market)
-            {
-                return 0;
-            }
-            else
-            {
-                // Update existing price if price moved away
-                // Ensure Touch Entries remaining if gamma < 0
-                LimitIfTouchedOrderInternals.Remove(equity.Symbol);
-                return MidPrice(equity.Symbol);
+                    if (currentTouchPrice == 0)
+                    {
+                        touchPrice = hypotheticalNewTouchPrice;
+                    }
+                    else
+                    {
+                        // Update touch price if price moved in a profitable direction now > trailingPct away.
+                        touchPrice = deltaTotal > 0 ? Math.Max(hypotheticalNewTouchPrice, currentTouchPrice) : Math.Min(hypotheticalNewTouchPrice, currentTouchPrice);
+                    }
+                    // Only return a price, if price has been touched
+                    return touchPrice;
+                case OrderType.Market:
+                    return 0;
+                case OrderType.Limit:
+                    if (ticket == null)
+                    {
+                        return MidPrice(equity.Symbol);
+                    }
+                    else if (ticket.UpdateRequests.Count > 0) // Price apparently moving away. Fill quickly.
+                    {
+                        // Unlikely to fall into this as it'll be turned into a market order.
+                        return ticket.Quantity > 0 ? equity.AskPrice : equity.BidPrice;
+                    }
+                    else
+                    {
+                        return MidPrice(equity.Symbol);
+                    }
+                default:
+                    return 0;
             }
         }
 
@@ -408,7 +411,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //fillForward, extendedMarketHours, dataMappingMode, dataNormalizationMode, contractDepthOffset
         }
 
-        private IEnumerable<QuoteBar> GetHistoryWrapQuote(Symbol symbol, DateTime start, DateTime end, Resolution resolution, bool? fillForward=false
+        private IEnumerable<QuoteBar> GetHistoryWrapQuote(Symbol symbol, DateTime start, DateTime end, Resolution resolution, bool? fillForward = false
             //, bool? fillForward = null, bool? extendedMarketHours = null, DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null, int? contractDepthOffset = null
             )
         {
