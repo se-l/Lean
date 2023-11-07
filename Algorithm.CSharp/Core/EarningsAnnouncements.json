@@ -18,6 +18,12 @@
     "EmbargoPost": "2023-09-01"
   },
   {
+    "Symbol": "DELL",
+    "Date": "2023-12-01",
+    "EmbargoPrior": "2023-11-29",
+    "EmbargoPost": "2023-12-02"
+  },
+  {
     "Symbol": "HPE",
     "Date": "2023-05-30",
     "EmbargoPrior": "2023-05-28",

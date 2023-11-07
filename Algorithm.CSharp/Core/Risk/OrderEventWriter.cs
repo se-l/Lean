@@ -9,7 +9,6 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using System.Globalization;
 using System.Linq;
 using System;
-using Accord.Math;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {

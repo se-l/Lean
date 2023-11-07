@@ -56,6 +56,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, IntradayIVDirectionIndicator> IntradayIVDirectionIndicators = new();
         public Dictionary<Symbol, AtmIVIndicator> AtmIVIndicators = new();
         // End
+        
         public RiskRecorder RiskRecorder;
         public TickCounter TickCounterFilter;  // Not in use        
         public PortfolioRisk PfRisk;
@@ -77,7 +78,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, RiskProfile> RiskProfiles = new();
         public Dictionary<Symbol, UtilityWriter> UtilityWriters = new();
         public Dictionary<Symbol, OrderEventWriter> OrderEventWriters = new();
-        //public Utility Utility = new();
+        public RealizedPLExplainWriter RealizedPLExplainWriter;
         public Dictionary<int, Quote<Option>> Quotes = new();
         public Dictionary<int, double> OrderIdIV = new();
 
@@ -96,6 +97,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         protected bool IsSignalsRunning;
         public readonly ConcurrentQueue<Signal> _signalQueue = new();
         public int ocaGroupId;
+
+        public delegate void HandleRealizedPLExplainEvent(object sender, PLExplain plExplain);
+        public event HandleRealizedPLExplainEvent RealizedPLExplainEvent;
 
         public void AddSignals(IEnumerable<Signal> signals)
         {
@@ -302,7 +306,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return newTrades;
         }
         /// <summary>
-        /// Refactor into position. This here has the risk of double-counting trades. Need to not apply when order id equial to trade0.ID.
+        /// Refactor into position. This here has the risk of double-counting trades. Need to not apply when order id equal to trade0.ID.
         /// </summary>
         /// <param name="trade"></param>
         public void ApplyToPosition(List<Trade> trades)
@@ -323,6 +327,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 else
                 {
                     Positions[trade.Symbol] = new(Positions[trade.Symbol], trade, this);
+                    RealizedPLExplainEvent?.Invoke(this, Positions[trade.Symbol].RealizedPLExplain(trade));
                 }
             }
         }
@@ -543,17 +548,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public void CancelOpenOptionTickets()
         {
-            if (IsWarmingUp)
+            if (IsWarmingUp) return;
+
+            List<OrderTicket> tickets;
+            lock (orderTickets)
             {
-                return;
+                tickets = orderTickets.SelectMany(t => t.Value).ToList();
             }
-            foreach (var tickets in orderTickets.Values)
+
+            foreach (OrderTicket t in tickets.Where(t => t.Status != OrderStatus.Invalid && t.Symbol.SecurityType == SecurityType.Option))
             {
-                foreach (var t in tickets.Where(t => t.Status != OrderStatus.Invalid && t.Symbol.SecurityType == SecurityType.Option).ToList())
-                {
-                    QuickLog(new Dictionary<string, string>() { { "topic", "CANCEL" }, { "action", $"CancelOpenTickets. Canceling {t.Symbol} OCAGroup/Type: {t.OcaGroup}/{t.OcaType}. EndOfDay" } });
-                    Cancel(t);
-                }
+                QuickLog(new Dictionary<string, string>() { { "topic", "CANCEL" }, { "action", $"CancelOpenTickets. Canceling {t.Symbol} OCAGroup/Type: {t.OcaGroup}/{t.OcaType}. EndOfDay" } });
+                Cancel(t);
             }
         }
 
@@ -1141,27 +1147,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         private static readonly HashSet<OrderStatus> skipOrderStatus = new() { OrderStatus.Canceled, OrderStatus.Filled, OrderStatus.Invalid, OrderStatus.CancelPending };
 
-        /// <summary>
-        /// Not in use. Cancels any long options (pos gamma) that mature within a time span. Not configured. Function pending deletion.
-        /// </summary>
-        public void CancelGammaHedgeBeyondScope()
-        {
-            var tickets = orderTickets.Values.SelectMany(x => x).Where(t => !skipOrderStatus.Contains(t.Status)).ToList();  // ToList() -> Avoids concurrent modification error
-            var ticketToCancel = new List<OrderTicket>();
-            foreach (var ticketsByUnderlying in tickets.GroupBy(t => Underlying(t.Symbol)))
-            {
-                OrderTicket tg = ticketsByUnderlying.First();
-                foreach (var t in ticketsByUnderlying)
-                {
-                    if (t.Quantity > 0 && Portfolio[t.Symbol].Quantity == 0 && t.Symbol.SecurityType == SecurityType.Option && t.Symbol.ID.Date <= Time + TimeSpan.FromDays(30) )  // Currently a gamma hedge. Needs more specific way of identifying these orders.
-                    {
-                        ticketToCancel.Add(t);
-                    }
-                }
-            }
-            ticketToCancel.ForEach(t => Cancel(t));
-
-        }
         public void InitializePositionsFromPortfolio()
         {
             // Setting internal positions from algo state.

@@ -13,7 +13,6 @@ using QuantConnect.Data;
 using System.Collections.Generic;
 using QuantConnect.Algorithm.CSharp.Core.Synchronizer;
 using QuantConnect.Indicators;
-using QuantConnect.Securities.Cfd;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {

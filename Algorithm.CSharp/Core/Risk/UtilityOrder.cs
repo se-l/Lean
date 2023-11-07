@@ -134,6 +134,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// <summary>
         /// Reducing OptionsOnlyDelta is good. Util up! Delta exposure costs hedings transaction cost and bound capital. Needs Expontential profile.
         /// Shorting gives me capital, much better than having to buy the underlying stock for heding purposes.
+        /// 
+        /// Capital cost: 1/365 * 4% * C + -1 * delta * 100 * S * (4% buying stocks and 9-4% borrowing stocks). Check I get the 4% interest when borrowing cash.
+        /// 
         /// </summary>
         private double GetUtilityCapitalCostPerDay()
         {

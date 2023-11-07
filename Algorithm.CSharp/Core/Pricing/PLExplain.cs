@@ -21,6 +21,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// <summary>
         /// Consider removing PL_ prefix from all properties
         /// </summary>
+        public Symbol Symbol { get => _position.Symbol;}
         public decimal PL_DeltaFillMid { get; internal set; }  // Bid/Ask difference to midpoint. Positive if we earned the spread.
         public decimal PL_Fee { get; internal set; }
         public double PL_DeltaIVdS { get; internal set; }

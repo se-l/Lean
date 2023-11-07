@@ -4,10 +4,18 @@ using QuantConnect.Orders;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
+
 namespace QuantConnect.Algorithm.CSharp.Core
 {
+    //public delegate void HandleNewBidAskEvent(object sender, EventNewBidAsk newBidAsk);
+    //public delegate void HandleOrderEvent(object sender, OrderEvent orderEvent);
+    //public delegate void HandleEventRiskLimitExceededEvent(object sender, EventRiskLimitExceeded eventRiskLimitExceededEvent);
     public partial class Foundations : QCAlgorithm
     {
+        //public event EventHandler<EventNewBidAsk> NewBidAskEvent;
+        //public event HandleNewBidAskEvent NewBidAskEvent;
+        //public event HandleOrderEvent OrderEvent;
+
         /// <summary>
         /// To be refactored into C# native event handler notation
         /// </summary>
@@ -70,5 +78,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
             }
         }
+
+        //public void StoreRealizedPLExplain(PLExplain pLExplain)
+        //{
+        //    if (!PLExplainsRealized.ContainsKey(pLExplain.Symbol))
+        //    {
+        //        PLExplainsRealized[pLExplain.Symbol] = new();
+        //    };
+        //    PLExplainsRealized[pLExplain.Symbol].Add(pLExplain);
+        //}
     }
 }
