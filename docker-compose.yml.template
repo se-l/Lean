@@ -1,0 +1,172 @@
+version: '3.4'
+
+services:
+  trader.prod.1:
+    image: sebastianluen/amm:prod
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=
+      - algorithm-type-name=
+      - Ticker=
+      - PASSWD_MNT_C=
+      - ib-tws-dir=
+      - ib-account=
+      - ib-user-name=
+      - ib-password=
+      - ib-trading-mode=
+      - ib-port=
+      - iqfeed-host=
+    privileged: true
+    depends_on: [iqfeed]
+    networks: [net1]
+
+  trader.paper.1:
+    image: sebastianluen/amm:paper
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=
+      - algorithm-type-name=
+      - Ticker=
+      - PASSWD_MNT_C=
+      - ib-tws-dir=
+      - ib-account=
+      - ib-user-name=
+      - ib-password=
+      - ib-trading-mode=
+      - ib-port=
+      - iqfeed-host=
+    privileged: true
+    depends_on: [iqfeed]
+    networks: [net1]
+
+  recorder.prod.1:
+    image: sebastianluen/amm:paper
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=
+      - algorithm-type-name=
+      - Ticker=
+      - PASSWD_MNT_C=
+      - iqfeed-host=
+    privileged: true
+    networks: [net1]
+    depends_on: [iqfeed]
+
+  iqfeed:
+    image: jaikumarm/iqfeed:v62025-w8
+    container_name: iqfeed
+    ports:
+     - "5009:5009"
+     - "9100:9100"
+     - "9200:9200"
+     - "9300:9300"
+     - "9400:9400"
+     - "8088:8080"
+     - "5901:5900"
+    environment:
+      IQFEED_PRODUCT_ID:
+      IQFEED_LOGIN:
+      IQFEED_PASSWORD:
+    volumes:
+      - /var/log/iqfeed:/root/DTN/IQFeed
+      - /var/log/distdnnd:/var/log/distdnnd
+    networks: [net1]
+    healthcheck:
+      test: ["CMD", "python3", "/root/is_iqfeed_running.py"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 5m
+
+  bt.dev.1:
+    image: sebastianluen/amm:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=
+      - algorithm-type-name=
+      - StartDate=
+      - EndDate=
+      - Ticker=
+      - PASSWD_MNT_C=
+    privileged: true
+
+  bt.dev:
+    image: sebastianluen/amm:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=
+      - algorithm-type-name=
+      - StartDate=
+      - EndDate=
+      - Ticker=
+      - PASSWD_MNT_C=
+    privileged: true
+
+  bt.paper:
+    image: sebastianluen/amm:paper
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=
+      - algorithm-type-name=
+      - StartDate=
+      - EndDate=
+      - Ticker=
+      - PASSWD_MNT_C=
+    privileged: true
+
+  bt.prod:
+    image: sebastianluen/amm:prod
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=
+      - algorithm-type-name=
+      - StartDate=
+      - EndDate=
+      - Ticker=
+      - PASSWD_MNT_C=
+    privileged: true
+
+  ivexporter:
+    image: sebastianluen/amm:prod
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+    - environment=
+    - algorithm-type-name=
+    - StartDate=
+    - EndDate=
+    - Ticker=
+    - PASSWD_MNT_C=
+    privileged: true
+
+networks:
+  net1:
+    driver: bridge
+
+# docker buildx build -f DockerfileLeanFoundationMine -t sebastianluen/lean:latest .
+# docker buildx build -t sebastianluen/amm:paper .
+# docker-compose up bt.1
+
+# DAILY FIX
+# docker-compose up -d bt.prod
+# need to swich git to live...
+# fix or merge code
+# docker buildx build -t sebastianluen/amm:paper .
+# docker-compose up -d bt.paper
+# If ok
+# docker tag sebastianluen/amm:paper sebastianluen/amm:prod
