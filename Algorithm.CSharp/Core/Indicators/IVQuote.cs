@@ -2,7 +2,7 @@ using System;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
-    public class IVQuote
+    public class IVQuote: EventArgs
     {
         public Symbol Symbol { get; }
         public DateTime Time { get; }

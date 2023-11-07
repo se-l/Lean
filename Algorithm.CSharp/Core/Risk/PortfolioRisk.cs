@@ -285,7 +285,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (riskDeltaTotal > _algo.Cfg.RiskLimitHedgeDeltaTotalLong || riskDeltaTotal < _algo.Cfg.RiskLimitHedgeDeltaTotalShort)
             {
                 _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, riskPutCallRatio={riskPutCallRatio}");
-                _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
+                _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
                 return true;
 
             }
@@ -321,7 +321,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
             {
                 _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, zmOffset={zmOffset}, riskPutCallRatio={riskPutCallRatio}");
-                _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
+                _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
                 return true;
 
             }
@@ -351,7 +351,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if ((riskDeltaEquityTotal > upperBand || riskDeltaEquityTotal < lowerBand) && Math.Abs(RiskByUnderlying(symbol, Metric.DeltaTotal)) >= 20)
             {
                 _algo.Log($"{_algo.Time} IsRiskLimitExceededZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, DeltaEquityTotal={riskDeltaEquityTotal}.");
-                _algo.PublishEvent(new EventRiskLimitExceeded(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
+                _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
                 return true;
 
             }

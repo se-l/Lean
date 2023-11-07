@@ -143,6 +143,9 @@ namespace QuantConnect.Algorithm.CSharp
             // Wiring up events
             //RealizedPLExplainEvent += (object sender, PLExplain e) => StoreRealizedPLExplain(e);
             RealizedPLExplainEvent += (object sender, PLExplain e) => RealizedPLExplainWriter.Write(e);
+            NewBidAskEventHandler += OnNewBidAskEventUpdateLimitPrices;
+            NewBidAskEventHandler += OnNewBidAskEventCheckRiskLimits;
+            RiskLimitExceededEventHandler += OnRiskLimitExceededEventHedge;
         }
 
         /// <summary>
@@ -171,7 +174,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if (IsEventNewQuote(symbol)) // also called in Consolidator. Should cache result at timestamp, update PriceCache and read here from cache.
                 {
-                    PublishEvent(new EventNewBidAsk(symbol));
+                    Publish(new NewBidAskEventArgs(symbol));
                 }
                 PriceCache[symbol] = Securities[symbol].Cache.Clone();
             }
@@ -219,7 +222,25 @@ namespace QuantConnect.Algorithm.CSharp
                     tickets.RemoveAll(t => orderFilledCanceledInvalid.Contains(t.Status));
                 }
             }
-            PublishEvent(orderEvent);
+            if (orderEvent.Status is OrderStatus.Filled or OrderStatus.PartiallyFilled)
+            {
+                UpdateOrderFillData(orderEvent);
+                UpdatePositionLifeCycle(orderEvent);
+
+                LogOnEventOrderFill(orderEvent);
+
+                RunSignals();
+
+                PfRisk.IsRiskLimitExceedingBand(orderEvent.Symbol);
+                RiskProfiles[Underlying(orderEvent.Symbol)].Update();
+
+                if (orderEvent.Status is OrderStatus.Filled)
+                {
+                    LimitIfTouchedOrderInternals.Remove(orderEvent.Symbol);
+                }
+
+                InternalAudit();
+            }
         }
 
         public override void OnAssignmentOrderEvent(OrderEvent assignmentEvent)
@@ -306,12 +327,7 @@ namespace QuantConnect.Algorithm.CSharp
             embargoedSymbols = Securities.Keys.Where(s => EarningsAnnouncements.Where(ea => ea.Symbol == s.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()).ToHashSet();
 
             // Trigger events
-            foreach (Security security in Securities.Values.Where(s => s.Type == SecurityType.Equity))  // because risk is hedged by underlying
-            {
-                // Refactor to invoke event
-                PublishEvent(new EventNewBidAsk(security.Symbol));
-                PfRisk.IsRiskLimitExceedingBand(security.Symbol);
-            }
+            Securities.Values.Where(s => s.Type == SecurityType.Equity).DoForEach(s => Publish(new NewBidAskEventArgs(s.Symbol)));
 
             LogRisk();
             LogPnL();

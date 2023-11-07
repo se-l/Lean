@@ -78,17 +78,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return tag;
         }
 
-        public string LogOnEventNewBidAsk(EventNewBidAsk @event)
+        public string LogOnEventNewBidAsk(NewBidAskEventArgs e)
         {
-            var security = Securities[@event.Symbol];
+            var security = Securities[e.Symbol];
             var d1 = new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },
                 { "topic", "EventNewBidAsk" },
-                { "symbol", @event.Symbol.ToString() },
+                { "symbol", e.Symbol.ToString() },
                 { "Bid", security.BidPrice.ToString() },
                 { "Ask", security.AskPrice.ToString() },
-                { "Mid", MidPrice(@event.Symbol).ToString() },
+                { "Mid", MidPrice(e.Symbol).ToString() },
                 { "Last", security.Price.ToString() },
             };
             string tag = Humanize(d1);
@@ -96,54 +96,54 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return tag;
         }
 
-        public void LogOnEventOrderFill(OrderEvent @event)
+        public void LogOnEventOrderFill(OrderEvent e)
         {
-            LogRisk(@event.Symbol);
-            LogPnL(@event.Symbol);
+            LogRisk(e.Symbol);
+            LogPnL(e.Symbol);
         }
 
-        public string LogOrderEvent(OrderEvent orderEvent)
+        public string LogOrderEvent(OrderEvent e)
         {
-            if (orderEvent.Status == OrderStatus.UpdateSubmitted)
+            if (e.Status == OrderStatus.UpdateSubmitted)
             {
                 return null;
             }
-            Security security = Securities[orderEvent.Symbol];
-            string order_status_nm = orderEvent.Status.ToString();
-            string order_direction_nm = orderEvent.Direction.ToString();
+            Security security = Securities[e.Symbol];
+            string order_status_nm = e.Status.ToString();
+            string order_direction_nm = e.Direction.ToString();
             string security_type_nm = security.Type.ToString();
-            Symbol underlying = orderEvent.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[orderEvent.Symbol]).Underlying.Symbol : orderEvent.Symbol;
-            string symbol = orderEvent.Symbol.ToString();
-            Order order = Transactions.GetOrderById(orderEvent.OrderId);
+            Symbol underlying = e.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[e.Symbol]).Underlying.Symbol : e.Symbol;
+            string symbol = e.Symbol.ToString();
+            Order order = Transactions.GetOrderById(e.OrderId);
 
             string tag = Humanize(new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },
                 { "topic", "ORDER EVENT" },
-                { "OrderId", orderEvent.OrderId.ToString() },
+                { "OrderId", e.OrderId.ToString() },
                 { "OrderDirection", order_direction_nm },
                 { "OrderStatus", order_status_nm },
                 { "SecurityType", security_type_nm },
                 { "Symbol", symbol },
-                { "Quantity", orderEvent.Quantity.ToString() },
+                { "Quantity", e.Quantity.ToString() },
                 { "OCAGroup/Type", $"{order.OcaGroup}/{order.OcaType}" },
-                { "FillQuantity", orderEvent.FillQuantity.ToString() },
-                { "LimitPrice", orderEvent.LimitPrice.ToString() },
-                { "FillPrice", orderEvent.FillPrice.ToString() },
-                { "Fee", orderEvent.OrderFee.ToString() },
-                { "PriceUnderlying", orderEvent.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[orderEvent.Symbol]).Underlying.Price.ToString() : "" },
+                { "FillQuantity", e.FillQuantity.ToString() },
+                { "LimitPrice", e.LimitPrice.ToString() },
+                { "FillPrice", e.FillPrice.ToString() },
+                { "Fee", e.OrderFee.ToString() },
+                { "PriceUnderlying", e.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[e.Symbol]).Underlying.Price.ToString() : "" },
                 { "BestBid", security.BidPrice.ToString() },
                 { "BestAsk", security.AskPrice.ToString() },
-                { "Delta2Mid", (orderEvent.Quantity > 0 ? MidPrice(symbol) - orderEvent.LimitPrice : orderEvent.LimitPrice - MidPrice(symbol)).ToString() },
-                { "IVPrice", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], Time.Date).IV(orderEvent.Status == OrderStatus.Filled ? orderEvent.FillPrice : orderEvent.LimitPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
-                { "IVBid", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], Time.Date).IV(Securities[orderEvent.Symbol].BidPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
-                { "IVAsk", orderEvent.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[orderEvent.Symbol], Time.Date).IV(Securities[orderEvent.Symbol].AskPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
-                { "IVBidEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeBid[underlying].IV(symbol).ToString() : "" },
-                { "IVAskEWMA", orderEvent.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeAsk[underlying].IV(symbol).ToString() : "" },
+                { "Delta2Mid", (e.Quantity > 0 ? MidPrice(symbol) - e.LimitPrice : e.LimitPrice - MidPrice(symbol)).ToString() },
+                { "IVPrice", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(e.Status == OrderStatus.Filled ? e.FillPrice : e.LimitPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
+                { "IVBid", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(Securities[e.Symbol].BidPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
+                { "IVAsk", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(Securities[e.Symbol].AskPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
+                { "IVBidEWMA", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeBid[underlying].IV(symbol).ToString() : "" },
+                { "IVAskEWMA", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeAsk[underlying].IV(symbol).ToString() : "" },
             });
             Log(tag);
 
-            if (orderStatusFilled.Contains(orderEvent.Status))
+            if (orderStatusFilled.Contains(e.Status))
             {
                 DiscordClient.Send(tag, DiscordChannel.Trades, LiveMode);
             }

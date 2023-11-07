@@ -48,15 +48,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         }
 
         // EventHandlers
-        public delegate void EODATMEventHandler(object sender, IVQuote e);
-        public event EODATMEventHandler EODATMEvent;
+        public event EventHandler<IVQuote> EODATMEventHandler;
 
         private bool _updateFlag;
-        //private EODATMEventHandler _EODATMEventHandler;
-        //{
-        //    add { _EODATMEventHandler += value; }
-        //    remove { _EODATMEventHandler -= value; }
-        //}
 
         private decimal MidPriceUnderlying { get { return _algo.MidPrice(Underlying); } }
         public Func<Symbol, double?> IV;
@@ -688,7 +682,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public void OnEODATM()
         {
-            EODATMEvent?.Invoke(this, new IVQuote(
+            EODATMEventHandler?.Invoke(this, new IVQuote(
                 Underlying,
                 Time,
                 MidPriceUnderlying,

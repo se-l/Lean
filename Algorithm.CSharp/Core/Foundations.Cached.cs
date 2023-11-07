@@ -19,9 +19,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Func<Symbol, Symbol, int, Resolution, double> Correlation;
         public Func<Symbol, int, Resolution, bool> IsLiquid;
         public VoidFunction HedgeWithIndex;
-        //public VoidArg1Function<Symbol> HedgeGammaRisk;
         public VoidArg1Function<Symbol> HedgeOptionWithUnderlying;
-        public VoidArg1Function<Symbol> HedgeOptionWithUnderlyingZM;
         public VoidArg1Function<Symbol> HedgeOptionWithUnderlyingZMBands;
         public Func<Symbol, int, Resolution, IEnumerable<TradeBar>> HistoryWrap;
         public Func<Symbol, int, Resolution, IEnumerable<QuoteBar>> HistoryWrapQuote;
@@ -35,9 +33,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Correlation = Cache(GetCorrelation, (Symbol symbol1, Symbol symbol2, int periods, Resolution resolution) => (symbol1, symbol2, periods, resolution, Time.Date));  // not correct for resolution < daily
             IsLiquid = Cache(GetIsLiquid, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
             //HedgeWithIndex = Cache(GetHedgeWithIndex, () => Time, maxKeys: 1);
-            //HedgeGammaRisk = Cache(GetHedgeGammaRisk, (Symbol symbol) => (Time, symbol));
             HedgeOptionWithUnderlying = Cache(GetHedgeOptionWithUnderlying, (Symbol symbol) => (Time, Underlying(symbol)));
-            HedgeOptionWithUnderlyingZM = Cache(GetHedgeOptionWithUnderlyingZM, (Symbol symbol) => (Time, Underlying(symbol)));
             HedgeOptionWithUnderlyingZMBands = Cache(GetHedgeOptionWithUnderlyingZMBands, (Symbol symbol) => (Time, Underlying(symbol)));
             HistoryWrap = Cache(GetHistoryWrap, (Symbol symbol, int window, Resolution resolution) => (Time.Date, symbol, window, resolution));  // not correct for resolution < daily
             HistoryWrapQuote = Cache(GetHistoryWrapQuote, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
@@ -167,29 +163,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             else
             {
                 Log($"{Time} GetHedgeOptionWithUnderlying: Fill Event for {symbol}, but cannot no non-zero quantity in Portfolio. Expect this function to be called only when risk is exceeded.");
-            }
-        }
-        private void GetHedgeOptionWithUnderlyingZM(Symbol symbol)
-        {
-            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed) || Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) return;
-            
-            Symbol underlying = Underlying(symbol);
-
-            decimal equityHedge = PfRisk.RiskByUnderlying(symbol, Metric.EquityDeltaTotal);  // Normalized risk of an assets 1% change in price for band breach check.
-            decimal lowerBand = PfRisk.RiskBandByUnderlying(symbol, Metric.BandZMLower);
-            decimal upperBand = PfRisk.RiskBandByUnderlying(symbol, Metric.BandZMUpper);
-
-            if (equityHedge > upperBand || equityHedge < lowerBand)
-            {
-                if (!LimitIfTouchedOrderInternals.ContainsKey(symbol))
-                {
-                    Log($"{Time} GetHedgeOptionWithUnderlyingZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, DeltaEquityTotal={equityHedge}, ZMQuantity={(upperBand + lowerBand) / 2 - equityHedge}.");
-                }
-                ExecuteHedge(underlying, (upperBand + lowerBand) / 2 - equityHedge);
-            }
-            else
-            {
-                Log($"{Time} GetHedgeOptionWithUnderlying. Fill Event for {symbol}, but cannot no non-zero quantity in Portfolio. Expect this function to be called only when risk is exceeded.");
             }
         }
 
