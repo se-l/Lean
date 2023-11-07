@@ -105,6 +105,7 @@ namespace QuantConnect.Algorithm.CSharp
                 OrderEventWriters[equity.Symbol] = new OrderEventWriter(this, equity);
                 UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => RunSignals();
             }
+            RealizedPLExplainWriter = new(this);
 
             Debug($"Subscribing to {subscriptions} securities");
             SetUniverseSelection(new ManualUniverseSelectionModel(equities));
@@ -131,11 +132,17 @@ namespace QuantConnect.Algorithm.CSharp
             SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
             // first digit ensure looking beyond past holidays. Second digit is days of trading days to warm up.
             var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(Cfg.WarmUpDays + 1).First();
+            // Add a day if live
+            timeSpan += LiveMode ? TimeSpan.FromDays(1) : TimeSpan.Zero;
             Log($"WarmUp TimeSpan: {timeSpan} starting on {StartDate - timeSpan}");
             SetWarmUp(timeSpan);
 
             // Logging
             RiskRecorder = new(this);
+
+            // Wiring up events
+            //RealizedPLExplainEvent += (object sender, PLExplain e) => StoreRealizedPLExplain(e);
+            RealizedPLExplainEvent += (object sender, PLExplain e) => RealizedPLExplainWriter.Write(e);
         }
 
         /// <summary>
@@ -288,6 +295,7 @@ namespace QuantConnect.Algorithm.CSharp
             UtilityWriters.Values.DoForEach(s => s.Dispose());
             OrderEventWriters.Values.DoForEach(s => s.Dispose());
             PutCallRatios.Values.DoForEach(s => s.Dispose());
+            RealizedPLExplainWriter.Dispose();
         }
 
         public void OnMarketOpen()
@@ -297,11 +305,10 @@ namespace QuantConnect.Algorithm.CSharp
             // New day => Securities may have fallen into scope for trading embargo.
             embargoedSymbols = Securities.Keys.Where(s => EarningsAnnouncements.Where(ea => ea.Symbol == s.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()).ToHashSet();
 
-            //CancelGammaHedgeBeyondScope();  // pending removal
-
             // Trigger events
             foreach (Security security in Securities.Values.Where(s => s.Type == SecurityType.Equity))  // because risk is hedged by underlying
             {
+                // Refactor to invoke event
                 PublishEvent(new EventNewBidAsk(security.Symbol));
                 PfRisk.IsRiskLimitExceedingBand(security.Symbol);
             }

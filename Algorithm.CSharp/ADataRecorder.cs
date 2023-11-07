@@ -25,26 +25,33 @@ using QuantConnect.Algorithm.CSharp.Core;
 using Newtonsoft.Json;
 using QuantConnect.Configuration;
 using System.Linq;
+using QuantConnect.Data.Consolidators;
 
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
     /// 
     /// </summary>
-    public partial class ADataRecorder : Foundations
+    public partial class ADataRecorder : QCAlgorithm
     {
-        new ADataRecorderConfig Cfg; // code smell
+        Resolution resolution;
+        ADataRecorderConfig Cfg;
         DiskDataCacheProvider _diskDataCacheProvider = new();
-        Dictionary<(Resolution, Symbol, TickType), LeanDataWriter> writers = new();
+        readonly Dictionary<(Resolution, Symbol, TickType), LeanDataWriter> writers = new();
+        public HashSet<Symbol> equities = new();
+        public HashSet<string> optionTicker = new();
+        public Dictionary<Symbol, QuoteBarConsolidator> QuoteBarConsolidators = new();
+        public Dictionary<Symbol, TradeBarConsolidator> TradeBarConsolidators = new();
+        string dataFolderOut = "";
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
         /// </summary>
         public override void Initialize()
         {
-            ADataRecorderConfig Cfg = JsonConvert.DeserializeObject<ADataRecorderConfig>(File.ReadAllText("ADataRecorderConfig.json"));
+            Cfg = JsonConvert.DeserializeObject<ADataRecorderConfig>(File.ReadAllText("ADataRecorderConfig.json"));
             Cfg.OverrideWithEnvironmentVariables<ADataRecorderConfig>();
             File.Copy("./ADataRecorderConfig.json", Path.Combine(Globals.PathAnalytics, "ADataRecorderConfig.json"));
-            string dataFolderOut = string.IsNullOrEmpty(Cfg.DataFolderOut) ? Config.Get("data-folder") : Cfg.DataFolderOut;
+            dataFolderOut = string.IsNullOrEmpty(Cfg.DataFolderOut) ? Config.Get("data-folder") : Cfg.DataFolderOut;
             Log("DATA FOLDER OUT: " + dataFolderOut);
 
             UniverseSettings.Resolution = resolution = Resolution.Second;
@@ -54,15 +61,14 @@ namespace QuantConnect.Algorithm.CSharp
             SetBrokerageModel(BrokerageName.Default, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
 
-            SetSecurityInitializer(new SecurityInitializerDataRecorder(BrokerageModel, new FuncSecuritySeeder(NoSeeding)));
+            SetSecurityInitializer(new SecurityInitializerDataRecorder(BrokerageModel, this, new FuncSecuritySeeder(NoSeeding)));
 
             // Subscriptions
-            optionTicker = Cfg.Ticker;
-            ticker = optionTicker;
-            symbolSubscribed = null;
+            HashSet<string> tickers = optionTicker = Cfg.Ticker;
+            Symbol symbolSubscribed = null;
 
             int subscriptions = 0;
-            foreach (string ticker in ticker)
+            foreach (string ticker in tickers)
             {
                 var equity = AddEquity(ticker, resolution: resolution, fillForward: false);
                 symbolSubscribed ??= equity.Symbol;
@@ -73,7 +79,6 @@ namespace QuantConnect.Algorithm.CSharp
                 if (optionTicker.Contains(ticker))
                 {
                     var option = QuantConnect.Symbol.CreateCanonicalOption(equity.Symbol, Market.USA, $"?{equity.Symbol}");
-                    options.Add(option);
                     var subscribedSymbols = AddOptionIfScoped(option);
                     subscriptions += subscribedSymbols.Count;
                 }
@@ -84,6 +89,9 @@ namespace QuantConnect.Algorithm.CSharp
 
             // WARMUP
             SetWarmUp(0);
+
+            QuoteBarConsolidators.DoForEach((kvp) => SubscriptionManager.AddConsolidator(kvp.Key, kvp.Value));
+            TradeBarConsolidators.DoForEach((kvp) => SubscriptionManager.AddConsolidator(kvp.Key, kvp.Value));
         }
 
         /// <summary>
@@ -96,30 +104,28 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Move into consolidator events. Not driving any biz logic.
             // Record data for restarts and next day comparison with history. Avoid conflict with Paper on same instance by running this for live mode only.
-            if (LiveMode && Config.Get("ib-trading-mode") == "live")
+            if (LiveMode)
             {
-                foreach (KeyValuePair<Symbol, QuoteBar> kvp in slice.QuoteBars)
-                {
-                    Symbol symbol = kvp.Key;
-                    var dataW = new List<BaseData>() { kvp.Value };
-
-                    var writer = writers.TryGetValue((resolution, symbol, TickType.Quote), out LeanDataWriter dataWriter)
-                        ? dataWriter
-                        : writers[(resolution, symbol, TickType.Quote)] = new LeanDataWriter(resolution, symbol, Cfg.DataFolderOut, TickType.Quote, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
-                    writer.Write(dataW);
-                }
-
-                foreach (KeyValuePair<Symbol, TradeBar> kvp in slice.Bars)
-                {
-                    Symbol symbol = kvp.Key;
-                    var dataW = new List<BaseData>() { kvp.Value };
-
-                    var writer = writers.TryGetValue((resolution, symbol, TickType.Trade), out LeanDataWriter dataWriter)
-                        ? dataWriter
-                        : writers[(resolution, symbol, TickType.Quote)] = new LeanDataWriter(resolution, symbol, Cfg.DataFolderOut, TickType.Trade, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
-                    writer.Write(dataW);
-                }
+                slice.QuoteBars.Values.ToList().ForEach((b) => RecordQuoteBar(b));
+                slice.Bars.Values.ToList().ForEach((b) => RecordTradeBar(b));
             }
+        }
+        public void RecordQuoteBar(QuoteBar quoteBar, Resolution? res = null)
+        {
+            Resolution thisResolution = res ?? resolution;
+            var writer = writers.TryGetValue((thisResolution, quoteBar.Symbol, TickType.Quote), out LeanDataWriter dataWriter)
+                ? dataWriter
+                : writers[(thisResolution, quoteBar.Symbol, TickType.Quote)] = new LeanDataWriter(thisResolution, quoteBar.Symbol, dataFolderOut, TickType.Quote, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
+            writer.Write(new List<BaseData>() { quoteBar });
+        }
+
+        public void RecordTradeBar(TradeBar tradeBar, Resolution? res = null)
+        {
+            Resolution thisResolution = res ?? resolution;
+            var writer = writers.TryGetValue((thisResolution, tradeBar.Symbol, TickType.Trade), out LeanDataWriter dataWriter)
+                ? dataWriter
+                : writers[(thisResolution, tradeBar.Symbol, TickType.Trade)] = new LeanDataWriter(thisResolution, tradeBar.Symbol, dataFolderOut, TickType.Trade, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
+            writer.Write(new List<BaseData>() { tradeBar });
         }
 
         public IEnumerable<BaseData> NoSeeding(Security security) => Enumerable.Empty<BaseData>();
@@ -132,11 +138,10 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 if ( Securities.ContainsKey(symbol) && Securities[symbol].IsTradable ) continue;  // already subscribed
 
-                Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
                 if (symbol.ID.OptionStyle == OptionStyle.American)
                 {
                     AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false);
-                    QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
+                    Log($"{Time} topic=UNIVERSE, msg=Adding {symbol}. Scoped.");
                     subscribedSymbol.Add(symbol);
                 }
             }
