@@ -27,8 +27,6 @@ namespace QuantConnect.ToolBox.Polygon
 {
     public class PolygonDownloaderProgram
     {
-        private const int NumberOfClients = 16;
-
         class Request
         {
             public Symbol Symbol { get; set; }
@@ -47,7 +45,7 @@ namespace QuantConnect.ToolBox.Polygon
         /// <summary>
         /// Primary entry point to the program. This program only supports SecurityType.Equity
         /// </summary>
-        public static void PolygonDownloader(IList<string> tickers, string securityTypeString, string market, string resolutionString, DateTime fromDate, DateTime toDate, string apiKey="", IList<string> tickTypeStrings = null, string skipExisting = "Y")
+        public static void PolygonDownloader(IList<string> tickers, string securityTypeString, string market, string resolutionString, DateTime fromDate, DateTime toDate, string apiKey="", IList<string> tickTypeStrings = null, string skipExisting = "Y", int nClients=16)
         {
             if (tickers.IsNullOrEmpty() || securityTypeString.IsNullOrEmpty() || market.IsNullOrEmpty() || resolutionString.IsNullOrEmpty())
             {
@@ -57,10 +55,11 @@ namespace QuantConnect.ToolBox.Polygon
                 Console.WriteLine("--market=usa");
                 Console.WriteLine("--resolution=Minute/Hour/Daily");
                 Console.WriteLine("--tick-types=Trade/Quote");
+                Console.WriteLine("--n-clients=16");
                 Environment.Exit(1);
             }
             DiskDataCacheProvider _diskDataCacheProvider = new();
-
+            Log.Trace($"PolygonDownloader: n-clients: {nClients}");
             try
             {
                 // Set API Key. Presumably already in Config.
@@ -150,7 +149,7 @@ namespace QuantConnect.ToolBox.Polygon
                     })).ToList();
                 }
 
-                Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = NumberOfClients }, request =>
+                Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = nClients }, request =>
                 {
                     var writer = new LeanDataWriter(resolution, request.Symbol, dataDirectory, request.TickType, _diskDataCacheProvider);
                     var tradeDates = TradeDates(market, marketHoursDatabase, request.Symbol, request.Start, request.End);

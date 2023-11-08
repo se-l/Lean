@@ -74,6 +74,7 @@ namespace QuantConnect.Configuration
                 new CommandLineOption("symbol-count", CommandOptionType.SingleValue, "[REQUIRED for RandomDataGenerator. Number of symbols to generate data for: Example: --symbol-count=10]"),
                 new CommandLineOption("security-type", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Security type of generated symbols, defaults to Equity: Example: --security-type=Equity/Option/Forex/Future/Cfd/Crypto]"),
                 new CommandLineOption("tick-type", CommandOptionType.SingleValue, "[OPTIONAL. Tick type of IQ Feed downloader, defaults to Trade: Example: --tick-type=Trade/Quote"),
+                new CommandLineOption("n-clients", CommandOptionType.SingleValue, "[OPTIONAL. Parallelizes requests: Example: --n-clients=16"),
                 new CommandLineOption("data-density", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Defaults to Dense. Valid values: --data-density=Dense/Sparse/VerySparse ]"),
                 new CommandLineOption("include-coarse", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Only used for Equity, defaults to true: Example: --include-coarse=true]"),
                 new CommandLineOption("quote-trade-ratio", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Sets the ratio of generated quotes to generated trades. Values larger than 1 mean more quotes than trades. Only used for Option, Future and Crypto, defaults to 1: Example: --quote-trade-ratio=1.75 ]"),
