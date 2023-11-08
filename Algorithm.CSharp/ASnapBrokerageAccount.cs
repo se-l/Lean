@@ -87,7 +87,7 @@ namespace QuantConnect.Algorithm.CSharp
                 }
                 orderTickets[ticket.Symbol].Add(ticket);
             }
-            InitializePositionsFromPortfolio();
+            InitializePositionsFromPortfolioHoldings();
 
             LogRisk();
             LogPnL();

@@ -1180,14 +1180,27 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         private static readonly HashSet<OrderStatus> skipOrderStatus = new() { OrderStatus.Canceled, OrderStatus.Filled, OrderStatus.Invalid, OrderStatus.CancelPending };
 
-        public void InitializePositionsFromPortfolio()
+        public void InitializePositionsFromPortfolioHoldings()
         {
             // Setting internal positions from algo state.
             Positions = new Dictionary<Symbol, Position>();
             foreach (var holding in Portfolio.Values.Where(x => securityTypeOptionEquity.Contains(x.Type)))
             {
                 Log($"Initialized Position {holding.Symbol} with Holding: {holding}");
+                // refactor: make this event driven. Publish a trade -> Trades and Positions are updated.
                 Positions[holding.Symbol] = new(this, holding);
+            }
+        }
+        public void InitializeTradesFromPortfolioHoldings()
+        {
+            foreach (var holding in Portfolio.Values.Where(x => securityTypeOptionEquity.Contains(x.Type) && x.Quantity != 0))
+            {
+                Log($"Added Trade from Holding {holding.Symbol} with Holding: {holding}");
+                // refactor: make this event driven. Publish a trade -> Trades and Positions are updated.
+                Trades[holding.Symbol] = new()
+                {
+                    new(this, holding)
+                };
             }
         }
         public IEnumerable<BaseData> GetLastKnownPricesTradeOrQuote(Security security)
@@ -1269,7 +1282,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Error($"{Time} Portfolio and Positions mismatch!\n" +
                     $"QC POSITIONS: {Humanize(qcPositions)}\n" +
                     $"ALGO POSTIONS: {Humanize(algoPositions)}");
-                InitializePositionsFromPortfolio();
+                InitializePositionsFromPortfolioHoldings();
             }
         }
 
