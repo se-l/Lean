@@ -94,7 +94,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                             throw new ArgumentException($"PutCallRatio.ComputeNextValue: Unsupported OptionRight: {input.Symbol.ID.OptionRight}.");
                     }
                     SubtractOutOfWindowInputs(_calls);
-                    SubtractOutOfWindowInputs(_puts);                    
+                    SubtractOutOfWindowInputs(_puts);
                     break;
             }
             return Ratio();

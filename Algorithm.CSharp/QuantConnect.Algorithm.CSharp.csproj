@@ -67,4 +67,7 @@
       <PackagePath></PackagePath>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <EditorConfigFiles Remove="C:\repos\quantconnect\Lean\Algorithm.CSharp\.editorconfig" />
+  </ItemGroup>
 </Project>

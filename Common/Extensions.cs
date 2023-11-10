@@ -57,6 +57,7 @@ using QuantConnect.Exceptions;
 using QuantConnect.Securities.Future;
 using QuantConnect.Securities.FutureOption;
 using QuantConnect.Securities.Option;
+using System.Security.Policy;
 
 namespace QuantConnect
 {
@@ -224,18 +225,20 @@ namespace QuantConnect
             }
             try
             {
-                using (var response = client.GetAsync(url).Result)
-                {
-                    using (var content = response.Content)
-                    {
-                        return content.ReadAsStringAsync().Result;
-                    }
-                }
+                using var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                using var response = client.GetAsync(url, tokenSource.Token).Result;
+                using var content = response.Content;
+                return content.ReadAsStringAsync().Result;
             }
             catch (WebException ex)
             {
                 Log.Error(ex, $"DownloadData(): {Messages.Extensions.DownloadDataFailed(url)}");
                 return null;
+            }
+            catch (AggregateException ex)
+            {
+                Log.Error(ex, $"DownloadData(): {Messages.Extensions.DownloadDataFailed(url)}. Retrying the same request, may lead to recursion / stack overflow error.");
+                return DownloadData(url, headers, httpClient);
             }
             finally
             {

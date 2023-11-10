@@ -19,7 +19,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private readonly Equity _equity;
         private readonly PortfolioRisk _pfRisk;
         private readonly IEnumerable<SecurityHolding> _optionHoldings;
-        private readonly IEnumerable<PLExplain> _plExplains;
+        private readonly List<PLExplain> _plExplains;
         public DateTime Time => _algo.Time;
         public Symbol Symbol => _equity.Symbol;
 
@@ -66,7 +66,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal PosWeightedIV => _pfRisk.RiskByUnderlying(Symbol, Metric.PosWeightedIV);
         public decimal DeltaIVdSTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdSTotal);
         public decimal DeltaIVdS100BpUSDTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdS100BpUSDTotal);
-        public decimal PnL => _algo.Positions.Values.Where(p => p.UnderlyingSymbol == Symbol).Sum(p => p.PL);
+        public decimal PnL => _algo.Portfolio.TotalPortfolioValue - _algo.TotalPortfolioValueSinceStart;
+        //public decimal PnL => _algo.Positions.Values.Where(p => p.UnderlyingSymbol == Symbol).Sum(p => p.PL);
         public decimal TotalMarginUsed => _algo.Portfolio.TotalMarginUsed;
         public decimal MarginRemaining => _algo.Portfolio.MarginRemaining;
         public RiskRecord(Foundations algo, PortfolioRisk pfRisk, Equity equity)
@@ -75,7 +76,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _pfRisk = pfRisk;
             _equity = equity;
             _optionHoldings = _algo.Securities.Where(kvp => kvp.Key.SecurityType == SecurityType.Option && kvp.Key.Underlying == Symbol).Select(kvp => kvp.Value.Holdings);
-            _plExplains = _algo.Positions.Values.Where(p => p.Quantity != 0 && p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain.Update(new PositionSnap(_algo, p.Symbol)));
+            // Include unrealized Positions (Quantity != 0) and closed positions (Trade1 != null)
+            _plExplains = _algo.Positions.Values.Where(p => p.Quantity != 0 && p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain.Update(new PositionSnap(_algo, p.Symbol))).ToList();
+            if (_algo.PositionsRealized.Any())
+            {
+                var b = 1;
+            }
+            _plExplains.AddRange(_algo.PositionsRealized.Values.SelectMany(l => l).Select(p => p.PLExplain).ToList());
 
             if (DeltaTotal * Delta100BpUSDTotal < 0)
             {

@@ -53,6 +53,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVTrade = new();
         public Dictionary<Symbol, PutCallRatioIndicator> PutCallRatios = new();
         public Dictionary<Symbol, UnderlyingMovedX> UnderlyingMovedX = new();
+        public Dictionary<Symbol, ConsecutiveTicksTrend> ConsecutiveTicksTrend = new();
         public Dictionary<Symbol, IntradayIVDirectionIndicator> IntradayIVDirectionIndicators = new();
         public Dictionary<Symbol, AtmIVIndicator> AtmIVIndicators = new();
         // End
@@ -76,13 +77,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, RiskDiscount> AbsoluteDiscounts = new();
 
         public Dictionary<Symbol, RiskProfile> RiskProfiles = new();
+        public Dictionary<Symbol, GammaScalper> GammaScalpers = new();
         public Dictionary<Symbol, UtilityWriter> UtilityWriters = new();
         public Dictionary<Symbol, OrderEventWriter> OrderEventWriters = new();
-        public RealizedPLExplainWriter RealizedPLExplainWriter;
+        public RealizedPositionWriter RealizedPositionWriter;
         public Dictionary<int, Quote<Option>> Quotes = new();
         public Dictionary<int, double> OrderIdIV = new();
-
-        public Dictionary<Symbol, LimitIfTouchedOrderInternal> LimitIfTouchedOrderInternals = new();
+        public ConcurrentDictionary<Symbol, List<Position>> PositionsRealized = new();
 
         public HashSet<Symbol> embargoedSymbols = new();
 
@@ -98,9 +99,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public readonly ConcurrentQueue<Signal> _signalQueue = new();
         public int ocaGroupId;
 
-        public delegate void HandleRealizedPLExplainEvent(object sender, PLExplain plExplain);
-        public event HandleRealizedPLExplainEvent RealizedPLExplainEvent;
-
+        public delegate void HandleRealizedPositionEvent(object sender, Position position);
+        public event HandleRealizedPositionEvent RealizedPositionEvent;
+        public void PublishRealizedPosition(Position position)
+        {
+            if (position.Quantity == 0) return;
+            RealizedPositionEvent?.Invoke(this, position);
+        }
         public void AddSignals(IEnumerable<Signal> signals)
         {
             lock (_signalQueue)
@@ -242,15 +247,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return (security.AskPrice + security.BidPrice) / 2;
         }
         static decimal Strike(Order o) => o.Symbol.ID.StrikePrice;
-        Order NewEquityExerciseOrder(OptionExerciseOrder o) => new EquityExerciseOrder(o, new OrderFillData(o.Time, MidPrice(o.Symbol.Underlying), MidPrice(o.Symbol.Underlying), MidPrice(o.Symbol.Underlying), MidPrice(o.Symbol.Underlying), MidPrice(o.Symbol.Underlying), MidPrice(o.Symbol.Underlying)))
-        {
-            Status = OrderStatus.Filled
-        };
 
-        public void UpdatePositionLifeCycle(OrderEvent orderEvent)
+        Order NewEquityExerciseOrder(OptionExerciseOrder o)
         {
-            var trades = WrapToTrade(orderEvent);
-            ApplyToPosition(trades);
+            // Get last trade for this symbol. Hacky. To avoid getting a PnL from this, but rather just modifying the quantity of an existing equity position, setting all prices to trade0.Mid0Underlying => PL_Delta 0.
+            Positions.TryGetValue(Underlying(o.Symbol), out Position currentPosition);
+
+            decimal fillPrice = currentPosition == null ? MidPrice(o.Symbol.Underlying) : currentPosition.Trade0.Mid0Underlying;
+            var order = new EquityExerciseOrder(o, new OrderFillData(o.Time, fillPrice, fillPrice, fillPrice, fillPrice, fillPrice, fillPrice))
+            {
+                Status = OrderStatus.Filled
+            };
+            return order;
         }
         public List<Trade> WrapToTrade(OrderEvent orderEvent)
         {
@@ -323,12 +331,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 if (!Positions.ContainsKey(trade.Symbol))
                 {
-                    Positions[trade.Symbol] = new(null, trade, this);
+                    // Brand new position                    
+                    Positions[trade.Symbol] = new(null, trade, this);                    
                 }
                 else
                 {
+                    if (Positions[trade.Symbol].Quantity != 0)
+                    {
+                        // Publishing the realized bit for post-analytics.
+                        Position realizedPosition = Positions[trade.Symbol].RealizedPosition(trade);
+                        PublishRealizedPosition(realizedPosition);
+                    }                    
+
+                    // Trade modifies / operates on existing position.
                     Positions[trade.Symbol] = new(Positions[trade.Symbol], trade, this);
-                    RealizedPLExplainEvent?.Invoke(this, Positions[trade.Symbol].RealizedPLExplain(trade));
                 }
             }
         }
@@ -611,6 +627,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public bool IsOrderValid(Symbol symbol, decimal quantity)
         {
             var security = Securities[symbol];
+            if (Math.Round(quantity, 0) == 0)
+            {
+                QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"Submitted Quantity zero. {symbol}. Stack Trace: {Environment.StackTrace}" } });
+                return false;
+            };
             // Tradable
             if (!security.IsTradable)
             {
@@ -620,7 +641,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // Timing
             if (IsWarmingUp ||
-                (Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End && symbol.SecurityType == SecurityType.Option)  // Delta hedging with Equity anytime.
+                ((Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) && symbol.SecurityType == SecurityType.Option)  // Delta hedging with Equity anytime.
                 )
             {
                 QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"Not time to trade yet." } });
@@ -731,6 +752,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             Option contract = Securities[signal.Symbol] as Option;
             decimal quantity = SignalQuantity(signal.Symbol, signal.OrderDirection);
+            if (Math.Round(quantity ,0) == 0) return null;
 
             if (!IsOrderValid(contract.Symbol, quantity)) { return null; }
 
@@ -1029,7 +1051,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 decimal ts = TickSize(ticket.Symbol);
                 decimal ticketPrice = ticket.Get(OrderField.LimitPrice);
-                orderType = GetEquityHedgeOrderType(equity);
+                orderType = GetEquityHedgeOrderType(equity, ticket);
                 if (ticket.OrderType == OrderType.Limit && orderType == OrderType.Market)
                 {
                     Cancel(ticket);
@@ -1037,14 +1059,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     OrderEquity(equity.Symbol, (decimal)quantity, ticketPrice, "UpdateLimitOrderEquity", orderType);
                     return;
                 }
-
-                // Currently, existing tickets cannot turn into LimitIfTouched. They'd rather be canceled.
-                //if (orderType == OrderType.LimitIfTouched)
-                //{
-                //    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", $"Cancel Order Ticket. Turned into LimitIfTouched" }, { "f", $"UpdateLimitOrderEquity" } });
-                //    Cancel(ticket);
-                //    continue;
-                //}
 
                 decimal idealLimitPrice = GetEquityHedgePrice(equity, orderType, ticket);
                 idealLimitPrice = RoundTick(idealLimitPrice, ts);
@@ -1075,6 +1089,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //    1 / 0.005m, // Get as many shares as possible for 1 USD
             //    // Q * Securities[Underlying(symbol)].Price * 0.01m // Max at 1% of trade value. 
             //    );  
+        }
+
+        /// <summary>
+        /// To be refactored. Should utitlized Quantconnect's existing system. But it's significantly off for options...
+        /// </summary>
+        /// <param name="symbol"></param>
+        /// <param name="quantity"></param>
+        /// <returns></returns>
+        public decimal TransactionCosts(Symbol symbol, decimal quantity)
+        {
+            return symbol.SecurityType switch
+            {
+                SecurityType.Equity => Math.Abs(Math.Min(quantity * 0.005m, 1.05m)),
+                SecurityType.Option => Math.Abs(quantity * 0.65m),
+            };
         }
 
         public decimal SignalQuantity(Symbol symbol, OrderDirection orderDirection)
@@ -1272,8 +1301,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <summary>
         /// Reconcile QC Position with AMM Algo Position object
         /// </summary>
-        public void InternalAudit()
+        public void InternalAudit(OrderEvent? orderEvent=null)
         {
+            if (orderEvent?.IsAssignment == true)
+            {
+                Log($"{Time} InternalAudit: OrderEvent.IsAssignment. Not running InternalAudit as 2 sequential orderEvents adjust option as well as equity position.");
+                return;
+            }
             var qcPositions = Portfolio.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString(CultureInfo.InvariantCulture));
             var algoPositions = Positions.Where(x => x.Value.Quantity != 0).ToDictionary(x => x.Key.ToString(), x => x.Value.Quantity.ToString(CultureInfo.InvariantCulture));
 

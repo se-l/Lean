@@ -19,7 +19,7 @@
   },
   {
     "Symbol": "DELL",
-    "Date": "2023-12-01",
+    "Date": "2023-11-30",  // after market close
     "EmbargoPrior": "2023-11-29",
     "EmbargoPost": "2023-12-02"
   },

@@ -21,6 +21,7 @@ using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using Newtonsoft.Json;
 using System.IO;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -47,7 +48,7 @@ namespace QuantConnect.Algorithm.CSharp
             //SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
             //var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
             //Log($"WarmUp TimeSpan: {timeSpan}");
-            SetWarmUp(0);
+            SetWarmUp(1);
         }
 
         public override void OnBrokerageMessage(BrokerageMessageEvent messageEvent)
@@ -88,12 +89,17 @@ namespace QuantConnect.Algorithm.CSharp
                 orderTickets[ticket.Symbol].Add(ticket);
             }
             InitializePositionsFromPortfolioHoldings();
+            InitializeTradesFromPortfolioHoldings();
 
             LogRisk();
             LogPnL();
             LogPositions();
             LogOrderTickets();
             LogToDisk();
+
+            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
+            
+            SetRunTimeError(new System.Exception("Account Snapped. Metrics logged and exported"));
         }
     }
 }

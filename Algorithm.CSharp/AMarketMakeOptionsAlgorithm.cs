@@ -73,7 +73,7 @@ namespace QuantConnect.Algorithm.CSharp
             // Subscriptions
             optionTicker = Cfg.Ticker;
             ticker = optionTicker;
-            symbolSubscribed = null;// AddEquity(optionTicker.First(), resolution).Symbol;
+            symbolSubscribed = null;
             liquidateTicker = Cfg.LiquidateTicker;
 
             int subscriptions = 0;
@@ -105,7 +105,7 @@ namespace QuantConnect.Algorithm.CSharp
                 OrderEventWriters[equity.Symbol] = new OrderEventWriter(this, equity);
                 UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => RunSignals(e);
             }
-            RealizedPLExplainWriter = new(this);
+            RealizedPositionWriter = new(this);
 
             Debug($"Subscribing to {subscriptions} securities");
             SetUniverseSelection(new ManualUniverseSelectionModel(equities));
@@ -141,8 +141,8 @@ namespace QuantConnect.Algorithm.CSharp
             RiskRecorder = new(this);
 
             // Wiring up events
-            //RealizedPLExplainEvent += (object sender, PLExplain e) => StoreRealizedPLExplain(e);
-            RealizedPLExplainEvent += (object sender, PLExplain e) => RealizedPLExplainWriter.Write(e);
+            RealizedPositionEvent += (object sender, Position e) => StoreRealizedPosition(e);
+            RealizedPositionEvent += (object sender, Position e) => RealizedPositionWriter.Write(e);
             NewBidAskEventHandler += OnNewBidAskEventUpdateLimitPrices;
             NewBidAskEventHandler += OnNewBidAskEventCheckRiskLimits;
             RiskLimitExceededEventHandler += OnRiskLimitExceededEventHedge;
@@ -178,7 +178,6 @@ namespace QuantConnect.Algorithm.CSharp
                 }
                 PriceCache[symbol] = Securities[symbol].Cache.Clone();
             }
-            SubmitLimitIfTouchedOrder();
             PfRisk.ResetCache();
 
             foreach (Symbol underlying in equities)
@@ -186,29 +185,6 @@ namespace QuantConnect.Algorithm.CSharp
                 if (SignalsLastRun[underlying] < Time - TimeSpan.FromMinutes(30)) RunSignals(underlying);
             }
         }
-
-        /// <summary>
-        /// Currently only used for gamma scalping.
-        /// </summary>
-        public void SubmitLimitIfTouchedOrder()
-        {
-            LimitIfTouchedOrderInternals.DoForEach(kvp =>
-            {
-                Symbol symbol = kvp.Key;
-                OrderDirection direction = kvp.Value.Quantity < 0 ? OrderDirection.Sell : OrderDirection.Buy;
-                if (
-                    (direction == OrderDirection.Buy && Securities[symbol].Price >= kvp.Value.LimitPrice) ||
-                    (direction == OrderDirection.Sell && Securities[symbol].Price <= kvp.Value.LimitPrice)
-                )
-                {
-                    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "LimitIfTouchedOrder triggered" }, { "f", $"GetHedgeOptionWithUnderlying" },
-                                    { "Symbol", symbol}, { "OrderQuantity",  kvp.Value.Quantity.ToString() }, {"Price", kvp.Value.LimitPrice.ToString() } });
-                    OrderEquity(symbol, kvp.Value.Quantity, kvp.Value.LimitPrice, "LimitIfTouchedOrder triggered");
-                    LimitIfTouchedOrderInternals.Remove(symbol);
-                }
-            });
-        }
-
         public override void OnOrderEvent(OrderEvent orderEvent)
         {
             ConsumeSignal();
@@ -217,7 +193,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 LogOrderEvent(orderEvent);
             }
-            OrderEventWriters[Underlying(orderEvent.Symbol)].Write(orderEvent);
+            (OrderEventWriters.TryGetValue(Underlying(orderEvent.Symbol), out OrderEventWriter writer) ? writer : OrderEventWriters[orderEvent.Symbol] = new(this, (Equity)Securities[Underlying(orderEvent.Symbol)])).Write(orderEvent);
 
             lock (orderTickets)
             {
@@ -229,21 +205,19 @@ namespace QuantConnect.Algorithm.CSharp
             if (orderEvent.Status is OrderStatus.Filled or OrderStatus.PartiallyFilled)
             {
                 UpdateOrderFillData(orderEvent);
-                UpdatePositionLifeCycle(orderEvent);
+
+                var trades = WrapToTrade(orderEvent);
+                ApplyToPosition(trades);
+                Publish(new TradeEventArgs(trades));  // Continues asynchronously. Sure that's wanted?
 
                 LogOnEventOrderFill(orderEvent);
 
                 RunSignals(orderEvent.Symbol);
 
-                PfRisk.IsRiskLimitExceedingBand(orderEvent.Symbol);
+                PfRisk.CheckHandleDeltaRiskExceedingBand(orderEvent.Symbol);
                 RiskProfiles[Underlying(orderEvent.Symbol)].Update();
 
-                if (orderEvent.Status is OrderStatus.Filled)
-                {
-                    LimitIfTouchedOrderInternals.Remove(orderEvent.Symbol);
-                }
-
-                InternalAudit();
+                InternalAudit(orderEvent);
             }
         }
 
@@ -320,7 +294,7 @@ namespace QuantConnect.Algorithm.CSharp
             UtilityWriters.Values.DoForEach(s => s.Dispose());
             OrderEventWriters.Values.DoForEach(s => s.Dispose());
             PutCallRatios.Values.DoForEach(s => s.Dispose());
-            RealizedPLExplainWriter.Dispose();
+            RealizedPositionWriter.Dispose();
         }
 
         public void OnMarketOpen()
@@ -396,7 +370,6 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (!IsMarketOpen(symbolSubscribed)) return;
 
-            LimitIfTouchedOrderInternals.Clear();
             foreach (string ticker in ticker)
             {
                 Equity equity = (Equity)Securities[ticker];
@@ -411,6 +384,27 @@ namespace QuantConnect.Algorithm.CSharp
             optionTicker.DoForEach(ticker => IVSurfaceRelativeStrikeAsk[ticker].OnEODATM());
 
             Log($"{Time} OptionContractWrap.ClearCache: Removed {OptionContractWrap.ClearCache(Time - TimeSpan.FromDays(3))} instances."); ;
+        }
+        /// <summary>
+        /// Set Holdings in Backtesting to compare a live trading day with a backtesting day
+        /// Read Live Holdings from file or pass in arguments.
+        /// For best comparison with IB, use market midnight closing prices. Best approximation: T-1 closing prices.
+        /// </summary>
+        public void SetHoldings()
+        {
+            if (LiveMode) return;
+            foreach ((string ticker, decimal quantity, decimal averagePrice) in FetchHoldings())
+            {
+                if (Securities.ContainsKey(ticker))
+                {
+                    Securities[ticker].Holdings.SetHoldings(quantity, averagePrice);
+                }
+            }
+        }
+        public List<(string, decimal, decimal)> FetchHoldings()
+        {
+            // Read from file: Symbol, Quantity, AveragePrice
+            return new List<(string, decimal, decimal)>();
         }
     }
 }

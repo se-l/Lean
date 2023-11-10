@@ -105,7 +105,7 @@ namespace QuantConnect.ToolBox.Polygon
                 IEnumerable<Request> requests;
                 if (securityType == SecurityType.Option)
                 {
-                    Log.Trace($"Resolving Requity Ticker to OptionContracts...");
+                    Log.Trace($"Resolving Equity Ticker to Option Contracts...");
                     foreach (DateTime dt in tradeDates)
                     {
                         // Log.Trace($"Requesting {symbols.Count()} symbols for {dt}...");

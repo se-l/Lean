@@ -83,13 +83,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         _algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
                     }
                 };
+                _algo.GammaScalpers[symbol] = new(_algo, (Equity)security);
                 _algo.PutCallRatios[symbol] = new PutCallRatioIndicator((Equity)security, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
                 _algo.IntradayIVDirectionIndicators[symbol] = new IntradayIVDirectionIndicator(_algo, security.Symbol);
                 _algo.AtmIVIndicators[symbol] = new AtmIVIndicator(_algo, (Equity)security);
                 _algo.IVSurfaceRelativeStrikeBid[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Bid);
                 _algo.IVSurfaceRelativeStrikeAsk[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Ask);
-                _algo.UnderlyingMovedX[symbol] = new UnderlyingMovedX((Equity)security);
+
+                _algo.UnderlyingMovedX[symbol] = new((Equity)security);
                 _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[symbol], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
+
+                _algo.ConsecutiveTicksTrend[symbol] = new((Equity)security);
+                _algo.RegisterIndicator(symbol, _algo.ConsecutiveTicksTrend[symbol], _algo.QuoteBarConsolidators[symbol], (IBaseData b) => (((QuoteBar)b).Bid.Close + ((QuoteBar)b).Ask.Close) / 2);
 
                 _algo.SignalsLastRun[security.Symbol] = DateTime.MinValue;
                 _algo.IsSignalsRunning[security.Symbol] = false;

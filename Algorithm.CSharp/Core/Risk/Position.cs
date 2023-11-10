@@ -54,13 +54,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// <summary>
         /// Instead of calculating the PnL of the new position given the net Quantity after T1, returning PnL for the previous Position given the final snapshot after T1 executed.
         /// </summary>
-        public PLExplain RealizedPLExplain(Trade trade1)
+        public Position RealizedPosition(Trade trade1)
         {
             Position pos = new(this, Trade0, _algo, trade1)
             {
                 Quantity = Quantity
             };
-            return pos.PLExplain;
+            pos.Snap();
+            return pos;
         }
 
         public decimal Quantity { get; internal set; }

@@ -1,6 +1,6 @@
 {
-  "StartDate": "2023-09-01",
-  "EndDate": "2023-09-04",
+  "StartDate": "2023-10-16",
+  "EndDate": "2023-10-23",
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" ];  // Too much for 2 cores on a t3 instance.
@@ -209,11 +209,9 @@
     "_": -15
   },
   "IVSurfaceRelativeStrikeAlpha": {
+    "_": 0.05,
     "HPE": 0.05,
-    "DELL": 0.05,
-    "ORCL": 0.05,
-    "CSCO": 0.05,
-    "PFE": 0.10
+    "DELL": 0.09
   },
   "SurfaceVerticalResetThreshold": 0.01,
   "WarmUpDays": 3, // Reduce for debugging. Usually 2.
@@ -257,6 +255,9 @@
   },
   "EarningsAnnouncementUtilityMinDTE": {
     "_": 7
+  },
+  "GammaScalpingEnabled": {
+    "_": true
   },
   "TrailingHedgePct": {
     "_": 0.003

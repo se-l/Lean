@@ -2,19 +2,17 @@ using System.IO;
 using System.Linq;
 using System.Collections.Generic;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using QuantConnect.Algorithm.CSharp.Core.Pricing;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
-    // The CSV part is quite messy. Improve
-    public class RealizedPLExplainWriter : Disposable
+    public class RealizedPositionWriter : Disposable
     {
         private readonly string _path;
         private bool _headerWritten;
-        public RealizedPLExplainWriter(Foundations algo)
+        public RealizedPositionWriter(Foundations algo)
         {
             _algo = algo;
-            _path = Path.Combine(Globals.PathAnalytics, "RealizedPLExplain.csv");
+            _path = Path.Combine(Globals.PathAnalytics, "RealizedPositions.csv");
             if (File.Exists(_path))
             {
                 File.Delete(_path);
@@ -26,16 +24,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _writer = new StreamWriter(_path, true);
         }
         private List<string>? _header;
-        public List<string> CsvHeader(PLExplain plExplain) => _header ??= ObjectsToHeaderNames(plExplain).OrderBy(x => x).ToList();
-        public string CsvRow(PLExplain plExplain) => ToCsv(new[] { plExplain }, _header, skipHeader: true);
-        public void Write(PLExplain plExplain)
+        public List<string> CsvHeader(Position position) => _header ??= ObjectsToHeaderNames(position).OrderBy(x => x).ToList();
+        public string CsvRow(Position position) => ToCsv(new[] { position }, _header, skipHeader: true);
+        public void Write(Position position)
         {
             if (!_headerWritten)
             {
-                _writer.WriteLine(string.Join(",", CsvHeader(plExplain)));
+                _writer.WriteLine(string.Join(",", CsvHeader(position)));
                 _headerWritten = true;
             }
-            _writer.Write(CsvRow(plExplain));
+            _writer.Write(CsvRow(position));
         }
     }
 }

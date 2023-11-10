@@ -164,6 +164,7 @@ namespace QuantConnect.ToolBox.Polygon
 
             ////httpClient = new(httpClientHandler);
             //httpClient = new();
+            httpClient.Timeout = TimeSpan.FromMinutes(1);
         }
 
         #region IDataQueueHandler implementation

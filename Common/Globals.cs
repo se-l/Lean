@@ -93,9 +93,14 @@ namespace QuantConnect
         {
             // print whether this executes in Debug or Release mode
             string mode = Config.Get("environment") == "backtesting" ? "" : "-" + Config.Get("ib-account");
-            string folderName = $"{DateTime.UtcNow.ToString("yyMMddHHmmss")}-{Config.Get("algorithm-type-name")}-{Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)}";
+            string containerName = Environment.GetEnvironmentVariable("CONTAINER_NAME");
+            string folderSuffix = string.IsNullOrEmpty(containerName) ? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) : containerName;
+            string folderName = $"{DateTime.UtcNow.ToString("yyMMddHHmmss")}-{Config.Get("algorithm-type-name")}-{folderSuffix}";
             string path = Path.Combine($"../Analytics/{Config.Get("environment")}{mode}/", folderName);
-            Directory.CreateDirectory(path);
+            if (!Directory.Exists(path))
+            {
+                Directory.CreateDirectory(path);
+            }
             return path;
         }
     }

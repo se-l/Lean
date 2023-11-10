@@ -200,6 +200,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public string LogPnL(Symbol symbol = null)
         {
+            var posPnlRealized = PositionsRealized.Values.SelectMany(l => l).Sum(p => p.PL);
+            var posPnLUnrealized = Positions.Values.Sum(p => p.PL);
             var d1 = new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },
@@ -207,6 +209,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "Symbol", $"{symbol ?? "Portfolio"}" },
                 { "TotalPortfolioValueQC", Portfolio.TotalPortfolioValue.ToString() },
                 { "PnLClose", (Portfolio.TotalPortfolioValue - TotalPortfolioValueSinceStart).ToString() },
+                { "PnLRealizedPositions", posPnlRealized.ToString() },
+                { "PnLUnrealizedPositions", posPnLUnrealized.ToString() },
+                { "PnLRealized+UnrealizedPositions", (posPnlRealized + posPnLUnrealized).ToString() },
                 { "Cash",  Portfolio.Cash.ToString() },
                 { "TotalFeesQC", Portfolio.TotalFees.ToString() },
                 { "TotalUnrealizedProfitQC", Portfolio.TotalUnrealizedProfit.ToString() },

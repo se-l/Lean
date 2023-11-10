@@ -268,41 +268,38 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
         }
 
-        public bool IsRiskLimitExceedingBand(Symbol symbol)
+        public bool IsUnderlyingDeltaExceedingBand(Symbol symbol, decimal riskDeltaTotal)
         {
-            if (_algo.IsWarmingUp) { return false; }
+            if (_algo.IsWarmingUp) return false;
 
-            decimal riskDeltaTotal = 0;
-            Security security = _algo.Securities[symbol];
             Symbol underlying = Underlying(symbol);
-
-            var deltaMVTotal = _algo.DeltaMV(symbol);
-            decimal riskPutCallRatio = 0;// _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
-
-            riskDeltaTotal += deltaMVTotal;
-            riskDeltaTotal += riskPutCallRatio;
-
-            CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
 
             decimal riskLimitHedgeDeltaTotalLong = _algo.Cfg.RiskLimitHedgeDeltaTotalLong.TryGetValue(underlying.Value, out riskLimitHedgeDeltaTotalLong) ? riskLimitHedgeDeltaTotalLong : _algo.Cfg.RiskLimitHedgeDeltaTotalLong[CfgDefault];
             decimal riskLimitHedgeDeltaTotalShort = _algo.Cfg.RiskLimitHedgeDeltaTotalShort.TryGetValue(underlying.Value, out riskLimitHedgeDeltaTotalShort) ? riskLimitHedgeDeltaTotalShort : _algo.Cfg.RiskLimitHedgeDeltaTotalShort[CfgDefault];
 
             if (riskDeltaTotal > riskLimitHedgeDeltaTotalLong || riskDeltaTotal < riskLimitHedgeDeltaTotalShort)
             {
-                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, riskPutCallRatio={riskPutCallRatio}");
+                _algo.Log($"{_algo.Time} IsPortfolioDeltExceedingBand: riskDSTotal={riskDeltaTotal}");
+                return true;
+            }
+            return false;
+        }
+
+        public bool CheckHandleDeltaRiskExceedingBand(Symbol symbol)
+        {
+            Symbol underlying = Underlying(symbol);
+
+            var riskDeltaTotal = _algo.DeltaMV(symbol);
+
+            decimal riskPutCallRatio = 0;  // _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
+            riskDeltaTotal += riskPutCallRatio;
+
+            CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
+            if (IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal))
+            {
                 _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
                 return true;
-
-            }
-            else if (Math.Abs(riskDeltaTotal) > 50)
-            {
-                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: ?NOT EXCEEDED WHY? HIGH OFFSET? riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, riskPutCallRatio={riskPutCallRatio}");
-            }
-            else
-            {
-                _algo.LimitIfTouchedOrderInternals.Remove(symbol);
-            }
-
+            }            
             return false;
         }
 
@@ -333,10 +330,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             else if (Math.Abs(riskDeltaTotal) > 50)
             {
                 _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: ?NOT EXCEEDED WHY? HIGH OFFSET? riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, zmOffset={zmOffset}, riskPutCallRatio ={riskPutCallRatio}");
-            }
-            else
-            {
-                _algo.LimitIfTouchedOrderInternals.Remove(symbol);
             }
 
             return false;

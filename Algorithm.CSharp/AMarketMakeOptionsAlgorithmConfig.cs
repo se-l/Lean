@@ -44,6 +44,7 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, int> AtmIVIndicatorWindow { get; set; }
         public Dictionary<string, double> EarningsAnnouncementUtilityMinAtmIVElevation { get; set; }
         public Dictionary<string, int> EarningsAnnouncementUtilityMinDTE { get; set; }
+        public Dictionary<string, bool> GammaScalpingEnabled { get; set; }
         public Dictionary<string, decimal> TrailingHedgePct { get; set; }
         public Dictionary<string, decimal> MaxOptionOrderQuantity { get; set; }
         public Dictionary<string, decimal> TargetMaxEquityPositionUSD { get; set; }

@@ -21,7 +21,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// <summary>
         /// Consider removing PL_ prefix from all properties
         /// </summary>
-        public Symbol Symbol { get => _position.Symbol;}
         public decimal PL_DeltaFillMid { get; internal set; }  // Bid/Ask difference to midpoint. Positive if we earned the spread.
         public decimal PL_Fee { get; internal set; }
         public double PL_DeltaIVdS { get; internal set; }
@@ -59,7 +58,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             var deltaMid = position.Trade0.Delta2MidFill;
 
             // Non-Greek PL
-            PL_DeltaFillMid = Math.Abs(tradeQuantity) * deltaMid; // Realized on fill. Only use Trade0, otherwise double counting....
+            PL_DeltaFillMid = Math.Abs(tradeQuantity) * deltaMid; // Gained on fill. Counted as unrealized until next trade changes the position. Only use Trade0, otherwise double counting....
             PL_Fee = position.Trade0.Fee;
 
             // Rho - no change simulated as of now.
