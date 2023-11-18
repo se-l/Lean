@@ -16,9 +16,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public Option Option { get; }
         public DateTime Time { get; set; }
         public DateTime EvaluationDate { get; internal set; }
-        public decimal MidPriceUnderlying { get; set; }
-        public decimal Price { get; set; }
-        public double IV { get; set; }
+        private decimal MidPriceUnderlying { get; set; }
+        private decimal Price { get; set; }
+        private double IV { get; set; }
         public IVQuote IVBidAsk { get; internal set; }
         private int _samples;
         public int Samples { get => _samples; }
@@ -54,17 +54,27 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public void Update(DateTime time, decimal quote, decimal midPriceUnderlying)
         {
-            if (time <= Time || quote == 0) { return; }
-
-            _samples += 1;
-            Time = time;
-            if (HaveInputsChanged(quote, midPriceUnderlying, Time.Date))
+            if (time <= Time || quote == 0) return;
+            double iv = IV;
+            if (HaveInputsChanged(quote, midPriceUnderlying, time.Date))
             {
-                MidPriceUnderlying = midPriceUnderlying;
-                Price = quote;
-                IV = OptionContractWrap.E(_algo, Option, Time.Date).IV(Price, MidPriceUnderlying, 0.001);
+                iv = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
             }
-            IVBidAsk = new IVQuote(Symbol, Time, MidPriceUnderlying, Price, IV);
+            if (iv == 0)
+            {
+                //_algo.Log($"{_algo.Time} IVQuoteIndicator.Update: IV=0 encountered for {Symbol} {time} P={quote}, arg S={midPriceUnderlying}, MidPrice S={_algo.MidPrice(Underlying)}. Ignoring, not updating indicator. Presumably stale / delayed / unsynced quotes.");
+                return;
+            }
+            else
+            {
+                IV = iv;                
+                Time = time;
+                Price = quote;
+                MidPriceUnderlying = midPriceUnderlying;
+                _samples += 1;
+            }
+            
+            IVBidAsk = new IVQuote(Symbol, Time, this.MidPriceUnderlying, Price, IV);
             Current = new IndicatorDataPoint(Time, (decimal)IVBidAsk.IV);
         }
         public void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null)

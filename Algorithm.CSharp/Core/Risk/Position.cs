@@ -165,7 +165,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return greeks;
         }
         // dS
-        public double Delta()
+        public double Delta(double? volatility = null)
         {
             switch (SecurityType)
             {
@@ -174,11 +174,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 case SecurityType.Option:
                     try
                     {
-                        return GetGreeks1().Delta;
+                        return GetGreeks1(volatility).Delta;
                     }
                     catch
                     {
-                        _algo.Error($"Delta: Failed to derive Delta. Returning 0. Symbol: {Symbol} PriceUnderlying: {Mid1Underlying} HV: {GetGreeks1().OCW.HistoricalVolatility()}");
+                        _algo.Error($"Delta: Failed to derive Delta. Returning 0. Symbol: {Symbol} PriceUnderlying: {Mid1Underlying} HV: {GetGreeks1(volatility).OCW.HistoricalVolatility()}");
                         return 0;
                     }
                 default:
@@ -216,27 +216,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return GetGreeks1(volatility: volatility ?? (double)SecurityUnderlying.VolatilityModel.Volatility).DeltaZMOffset((int)Quantity);
         }
 
-        public double DeltaImplied(double volatility)
-        {
-            switch (SecurityType)
-            {
-                case SecurityType.Equity:
-                    return 1;
-                case SecurityType.Option:
-                    try
-                    {
-                        return GetGreeks1(volatility: volatility).Delta;  // Contract IV wouldnt make much sense. ATM most likely. kill this call
-                    }
-                    catch
-                    {
-                        _algo.Error($"Delta: Failed to derive ImpliedDelta. Using HV. Symbol: {Symbol} PriceUnderlying: {Mid1Underlying} HV: {IVMid1}");
-                        return Delta();
-                    }
-                default:
-                    throw new NotSupportedException();
-            }
-        }
-
         public decimal TaylorTerm()
         {
             // delta/gamma gamma is unitless sensitivity. No scaling here.
@@ -268,7 +247,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return SecurityType switch
             {
                 SecurityType.Equity => Quantity,
-                SecurityType.Option => (decimal)DeltaImplied(volatility) * Multiplier * Quantity
+                SecurityType.Option => (decimal)Delta(volatility) * Multiplier * Quantity
             };
         }
         public decimal DeltaImpliedXBpUSDTotal(double volatility, double x = 100)
@@ -276,7 +255,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return SecurityType switch
             {
                 SecurityType.Equity => Mid1Underlying * (decimal)x * BP * Quantity,
-                SecurityType.Option => (decimal)(DeltaImplied(volatility) * x) * Mid1Underlying * BP * Multiplier * Quantity
+                SecurityType.Option => (decimal)(Delta(volatility) * x) * Mid1Underlying * BP * Multiplier * Quantity
             };
         }
 
@@ -489,5 +468,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _pLExplain = GetPLExplain();
             _pLExplain.Update(LastSnap);
         }
+
+        public DateTime TsQueried { get => _algo.Time; }
     }
 }

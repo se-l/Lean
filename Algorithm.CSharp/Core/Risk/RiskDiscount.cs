@@ -21,7 +21,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private readonly Foundations _algo;
         public Symbol Symbol { get; }
         public Metric Metric { get; }
-        private DiscountParams DiscountParams { get; }
+        public DiscountParams DiscountParams { get; set; }
         public double TargetRisk { get { 
                 if (DTE() < DTEThreshold)
                 {

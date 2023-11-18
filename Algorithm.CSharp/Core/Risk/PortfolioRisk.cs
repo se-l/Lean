@@ -1,7 +1,5 @@
-using Fasterflect;
 using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Securities;
-using QuantConnect.Securities.Cfd;
 using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
@@ -51,7 +49,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return metric switch
             {
                 Metric.DeltaTotal => positions.Sum(p => p.DeltaTotal()),
-                Metric.DeltaImpliedTotal => positions.Sum(p => p.DeltaImpliedTotal(AtmIVEWMA(symbol))),
+                Metric.DeltaImpliedTotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIV(p.Symbol))),
+                Metric.DeltaImpliedAtmTotal => positions.Sum(p => p.DeltaImpliedTotal(AtmIVEWMA(symbol))),
 
                 Metric.DeltaXBpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(dX ?? 0)),
                 Metric.Delta100BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(100)),
@@ -119,11 +118,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             (decimal, decimal) tupZMBands = (0, 0);
             Symbol underlying = Underlying(symbol);
             var positions = _algo.Positions.Values.Where(p => p.UnderlyingSymbol == underlying && p.SecurityType == SecurityType.Option && p.Quantity != 0);
-
             if (!positions.Any()) return 0;
+
             if (new HashSet<Metric>() { Metric.BandZMLower, Metric.BandZMUpper }.Contains(metric))
             {
-                tupZMBands = ZMBands(underlying, positions, volatility);
+                tupZMBands = ZMBands2(positions);
+                //tupZMBands = ZMBands(underlying, positions, volatility);
             };
 
             return metric switch
@@ -142,8 +142,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public double DeltaZMOffset(Position p, double? volatility = null)
         {
-            double scaledQuantity = Math.Sign(p.Quantity) * Math.Pow((double)Math.Abs(p.Quantity), 0.5);
-            return -p.Multiplier * scaledQuantity * p.DeltaZMOffset(volatility);
+            return p.Multiplier * (double)p.Quantity * p.DeltaZMOffset(volatility);
+            //double scaledQuantity = Math.Sign(p.Quantity) * Math.Pow((double)Math.Abs(p.Quantity), 0.5);
+            //return -p.Multiplier * scaledQuantity * p.DeltaZMOffset(volatility);
         }
 
         public decimal ZMOffset(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
@@ -151,6 +152,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             decimal minOffset = (decimal)(_algo.Cfg.MinZMOffset.TryGetValue(underlying, out double _minOffset) ? _minOffset : _algo.Cfg.MinZMOffset[CfgDefault]);
             decimal maxOffset = _algo.Cfg.MaxZMOffset.TryGetValue(underlying, out maxOffset) ? maxOffset : _algo.Cfg.MaxZMOffset[CfgDefault];
             return Math.Min(Math.Max(CastGracefully(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), minOffset), maxOffset);
+        }
+
+        public (decimal, decimal) ZMBands2(IEnumerable<Position> positions)
+        {
+            double deltaZM = positions.Select(p => DeltaZM(p)).Sum();
+            double offsetZM = Math.Abs(positions.Select(p => DeltaZMOffset(p)).Sum());
+
+            // Debug why bands can be zero despite options postions open
+            if (deltaZM == 0 && offsetZM == 0)
+            {
+                if (positions.Count() > 0)
+                {
+                    _algo.Log($"ZM Bands are zero for {positions.Count()} positions with quantity {positions.Sum(p => p.Quantity)}. DeltaZMs: {positions.Select(p => DeltaZM(p)).ToList()}");
+                }
+            }
+            return (CastGracefully(deltaZM - offsetZM), CastGracefully(deltaZM + offsetZM));
         }
 
         public (decimal, decimal) ZMBands(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
@@ -267,7 +284,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 }
             }
         }
+        public bool CheckHandleDeltaRiskExceedingBand(Symbol symbol)
+        {
+            Symbol underlying = Underlying(symbol);
 
+            var riskDeltaTotal = _algo.DeltaMV(symbol);
+
+            decimal riskPutCallRatio = 0;  // _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
+            riskDeltaTotal += riskPutCallRatio;
+
+            CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
+            bool exceeded = _algo.GetHedgingMode(symbol) == HedgingMode.Zakamulin ? IsUnderlyingDeltaExceedingBandZM(symbol) : IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal);
+            if (exceeded)
+            {
+                _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
+                return true;
+            }            
+            return false;
+        }
         public bool IsUnderlyingDeltaExceedingBand(Symbol symbol, decimal riskDeltaTotal)
         {
             if (_algo.IsWarmingUp) return false;
@@ -285,73 +319,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return false;
         }
 
-        public bool CheckHandleDeltaRiskExceedingBand(Symbol symbol)
-        {
-            Symbol underlying = Underlying(symbol);
-
-            var riskDeltaTotal = _algo.DeltaMV(symbol);
-
-            decimal riskPutCallRatio = 0;  // _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
-            riskDeltaTotal += riskPutCallRatio;
-
-            CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
-            if (IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal))
-            {
-                _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
-                return true;
-            }            
-            return false;
-        }
-
-        public bool IsRiskLimitExceededZMBands(Symbol symbol)
+        public bool IsUnderlyingDeltaExceedingBandZM(Symbol symbol)
         {
             if (_algo.IsWarmingUp) { return false; }
 
-            decimal riskDeltaTotal = 0;
-            Security security = _algo.Securities[symbol];
             Symbol underlying = Underlying(symbol);
 
-            decimal zmOffset = RiskBandByUnderlying(symbol, Metric.ZMOffset);
-            var deltaMVTotal = _algo.DeltaMV(symbol);
-            decimal riskPutCallRatio = 0;// _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
-
-            riskDeltaTotal += deltaMVTotal;
-            riskDeltaTotal += riskPutCallRatio;
-
-            CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
-
-            if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
-            {
-                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, zmOffset={zmOffset}, riskPutCallRatio={riskPutCallRatio}");
-                _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
-                return true;
-
-            }
-            else if (Math.Abs(riskDeltaTotal) > 50)
-            {
-                _algo.Log($"{_algo.Time} IsRiskLimitExceededZMBands: ?NOT EXCEEDED WHY? HIGH OFFSET? riskDSTotal={riskDeltaTotal}, deltaMVTotal={deltaMVTotal}, zmOffset={zmOffset}, riskPutCallRatio ={riskPutCallRatio}");
-            }
-
-            return false;
-        }
-
-        public bool IsRiskLimitExceededZM(Symbol symbol)
-        {
-            if (_algo.IsWarmingUp) { return false; }
-
-            Security security = _algo.Securities[symbol];
-            Symbol underlying = Underlying(symbol);
-
-            decimal riskDeltaEquityTotal = RiskByUnderlying(symbol, Metric.EquityDeltaTotal);  // Normalized risk of an assets 1% change in price for band breach check.
+            decimal riskDeltaEquityTotal = RiskByUnderlying(symbol, Metric.EquityDeltaTotal);
             decimal lowerBand = RiskBandByUnderlying(symbol, Metric.BandZMLower);
             decimal upperBand = RiskBandByUnderlying(symbol, Metric.BandZMUpper);
+            decimal bandSize = Math.Abs(upperBand - lowerBand);
 
-            if ((riskDeltaEquityTotal > upperBand || riskDeltaEquityTotal < lowerBand) && Math.Abs(RiskByUnderlying(symbol, Metric.DeltaTotal)) >= 20)
+            if ((-riskDeltaEquityTotal > upperBand || -riskDeltaEquityTotal < lowerBand) && bandSize >= 15)
             {
-                _algo.Log($"{_algo.Time} IsRiskLimitExceededZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, DeltaEquityTotal={riskDeltaEquityTotal}.");
-                _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
+                _algo.Log($"{_algo.Time} IsUnderlyingDeltaExceedingBandZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, -DeltaEquityTotal={-riskDeltaEquityTotal}.");
                 return true;
-
             }
             return false;
         }

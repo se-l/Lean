@@ -43,7 +43,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
             switch (e.LimitType)
             {
                 case RiskLimitType.Delta:
-                    HedgeOptionWithUnderlying(e.Symbol);
+                    if (GetHedgingMode(e.Symbol) == HedgingMode.Zakamulin)
+                    {
+                        HedgeOptionWithUnderlyingZMBands(e.Symbol);
+                    } 
+                    else
+                    {
+                        HedgeOptionWithUnderlying(e.Symbol);
+                    }
                     break;
             }
         }

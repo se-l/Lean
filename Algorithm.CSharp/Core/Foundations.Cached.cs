@@ -9,7 +9,6 @@ using QuantConnect.Securities;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
-using Fasterflect;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -145,21 +144,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             Symbol underlying = Underlying(symbol);
 
-            decimal zmOffset = PfRisk.RiskBandByUnderlying(symbol, Metric.ZMOffset);
-            decimal riskDeltaTotal = DeltaMV(symbol);
+            decimal riskDeltaEquityTotal = PfRisk.RiskByUnderlying(symbol, Metric.EquityDeltaTotal);
+            decimal lowerBand = PfRisk.RiskBandByUnderlying(symbol, Metric.BandZMLower);
+            decimal upperBand = PfRisk.RiskBandByUnderlying(symbol, Metric.BandZMUpper);
 
-            // Developed for Pfizer. Skip for now.
-            //var shortCall = Risk100BpRisk2USDDelta(underlying, TargetRiskPutCallRatio(underlying));
-            //if (shortCall != 0)
-            //{
-            //    Log($"PutCallRatio: shortCall={shortCall}, TargetRiskPutCallRatio(underlying)={TargetRiskPutCallRatio(underlying)}");
-            //}
-            //riskDeltaTotal += shortCall;
-
-            if (riskDeltaTotal > zmOffset || riskDeltaTotal < -zmOffset)
+            if (PfRisk.IsUnderlyingDeltaExceedingBandZM(symbol))
             {
-                Log($"{Time} GetHedgeOptionWithUnderlyingZMBands: zmOffset={zmOffset}, riskDeltaTotal={riskDeltaTotal}");
-                ExecuteHedge(underlying, Math.Round(-riskDeltaTotal, 0));  // Like standard delta hedging, but with ZM bands.
+                decimal midBand = (lowerBand + upperBand) / 2;
+                decimal hedgeQuantity = -midBand - riskDeltaEquityTotal;
+                Log($"{Time} GetHedgeOptionWithUnderlyingZMBands: ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, MidBand={midBand}, riskDeltaEquityTotal={riskDeltaEquityTotal}, hedgeQuantity={hedgeQuantity}.");
+                ExecuteHedge(underlying, Math.Round(hedgeQuantity, 0));
             }
             else
             {
@@ -219,7 +213,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public decimal DeltaMV(Symbol symbol)
         {
             decimal deltaMVTotal = 0;
-            decimal deltaTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+            decimal deltaTotal = PfRisk.RiskByUnderlying(symbol, HedgeMetric(Underlying(symbol)));
             //decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);  // MV
 
             deltaMVTotal += deltaTotal;
@@ -288,6 +282,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <returns></returns>
         public OrderType GetEquityHedgeOrderType(Equity equity, OrderTicket? ticket = null)
         {
+            return OrderType.Market;
             if (ticket != null && ticket.UpdateRequests.Count > 0)
             {
                 return OrderType.Market;

@@ -1,7 +1,6 @@
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -20,7 +19,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private readonly PortfolioRisk _pfRisk;
         private readonly IEnumerable<SecurityHolding> _optionHoldings;
         private readonly List<PLExplain> _plExplains;
-        public DateTime Time => _algo.Time;
+        public string Time => _algo.Time.ToStringInvariant("yyyy-MM-dd HH:mm:ss");
         public Symbol Symbol => _equity.Symbol;
 
         public decimal DeltaTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaTotal);
@@ -77,12 +76,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _equity = equity;
             _optionHoldings = _algo.Securities.Where(kvp => kvp.Key.SecurityType == SecurityType.Option && kvp.Key.Underlying == Symbol).Select(kvp => kvp.Value.Holdings);
             // Include unrealized Positions (Quantity != 0) and closed positions (Trade1 != null)
-            _plExplains = _algo.Positions.Values.Where(p => p.Quantity != 0 && p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain.Update(new PositionSnap(_algo, p.Symbol))).ToList();
-            if (_algo.PositionsRealized.Any())
-            {
-                var b = 1;
-            }
-            _plExplains.AddRange(_algo.PositionsRealized.Values.SelectMany(l => l).Select(p => p.PLExplain).ToList());
+            _plExplains = Position.AllLifeCycles(_algo).Where(p => p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain).ToList();
+            //_plExplains = _algo.Positions.Values.Where(p => p.Quantity != 0 && p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain.Update(new PositionSnap(_algo, p.Symbol))).ToList();
+            //_plExplains.AddRange(_algo.PositionsRealized.Values.SelectMany(l => l).Select(p => p.PLExplain).ToList());
 
             if (DeltaTotal * Delta100BpUSDTotal < 0)
             {

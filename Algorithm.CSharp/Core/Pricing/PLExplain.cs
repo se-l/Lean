@@ -38,6 +38,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double PL_GammaDecay { get; internal set; }  // dS2dT
         public double PL_dGammaDIV { get; internal set; }  // dS2dIV
         public double PL_Total { get; internal set; }  // total PnL
+        public double Price1Theoretical { get; internal set; }
+        public double Price1Deviation { get; internal set; }
 
         public PLExplain(Foundations algo, Position position)
         {
@@ -83,6 +85,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double dT = DT(_position.Trade1?.Ts0 ?? snap.Ts0);
             double dIV = DIV(_position.Trade1?.IVMid0 ?? snap.IVMid0);
             double dIVdS = (double)DIVdS(_position.Trade1?.SurfaceIVdS ?? snap.SurfaceIVdS);
+            double dR = 0;
             //s0 = snap.Mid0Underlying;
             //ts0 = snap.Ts0;
             //iv0 = snap.IVMid0;
@@ -101,7 +104,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             PL_Delta = positionQuantity * g0.Delta * dS;  // dS
             PL_Gamma = positionQuantity * 0.5 * g0.Gamma * Math.Pow(dS, 2);  // dS2
             PL_DeltaDecay = positionQuantity * g0.DeltaDecay * dS * dT;  // dSdT, Charm.
-            PL_Vanna = positionQuantity * g0.DSdIV * dIV * dS;  // dSdIV, Vanna, ( dSdIV == dIVdS ) - https://optionstradingiq.com/vanna-greek/
+            PL_Vanna = positionQuantity * g0.DDeltadIV * dIV * dS;  // dSdIV, Vanna, ( dSdIV == dIVdS ) - https://optionstradingiq.com/vanna-greek/
 
             // Theta
             PL_Theta = positionQuantity * g0.Theta * dT + (double)(premiumOnExpiry ?? 0);  // dT, that's theta per day. very small at high dte. Does thetaDecay keep up?
@@ -129,6 +132,26 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 PL_Theta + PL_ThetaDecay + // dT
                 PL_Vega + PL_VegaDecay + PL_Volga + // dIV
                 PL_Rho;  // dR
+
+            Price1Theoretical = (double)s0 + 
+                g0.Delta * dS + 
+                0.5 * g0.Gamma * Math.Pow(dS, 2) + 
+                g0.DeltaDecay * dS * dT + 
+                1/6 * g0.DS3 * Math.Pow(dS, 3) + 
+                0.5 * g0.GammaDecay * Math.Pow(dS, 2) * dT +
+
+                g0.DDeltadIV * dIV * dS + 
+                0.5 * g0.DS2dIV * dIV * Math.Pow(dS, 2) + 
+
+                g0.Theta * dT + 
+                0.5 * g0.ThetaDecay * Math.Pow(dT, 2) + 
+
+                g0.Vega * dIV + 
+                g0.VegaDecay * dIV * dT + 
+                0.5 * g0.DIV2 * Math.Pow(dIV, 2) + 
+
+                g0.Rho * dR;
+            Price1Deviation = Price1Theoretical / (double)_position.Mid1;
 
             return this;
         }

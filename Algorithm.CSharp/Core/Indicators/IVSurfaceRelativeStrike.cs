@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using Accord.Math;
 using QuantConnect.Securities.Option;
 using MathNet.Numerics.Statistics;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
@@ -59,7 +60,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public IVSurfaceRelativeStrike(Foundations algo, Symbol underlying, QuoteSide side, bool createFile = false)
         {
             _algo = algo;
-            Alpha = _algo.Cfg.IVSurfaceRelativeStrikeAlpha[underlying];
+            Alpha = _algo.Cfg.IVSurfaceRelativeStrikeAlpha.TryGetValue(underlying, out Alpha) ? Alpha : _algo.Cfg.IVSurfaceRelativeStrikeAlpha[CfgDefault];
             SamplingPeriod = TimeSpan.FromMinutes(1);
             Underlying = underlying.SecurityType == SecurityType.Option ? underlying.Underlying : underlying;
             _side = side;
@@ -160,7 +161,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                         strikePctRight = StrikePct(symbolRight.ID.StrikePrice, MidPriceUnderlying);
                         otmRight = IsOTM(optionRight, strikePctRight);
 
-                        if (ivQuoteIndicatorRight.IV == 0)
+                        if (ivQuoteIndicatorRight.IVBidAsk.IV == 0)
                         {
                             // Use the current IV rather. Otherwise this Bin's values would be overwritten by the interpolation of its neighbors.
                             // Get it from Bin
@@ -170,7 +171,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                         }
                         else
                         {
-                            ivRight = ivQuoteIndicatorRight.IV;
+                            ivRight = ivQuoteIndicatorRight.IVBidAsk.IV;
                             timeRight = ivQuoteIndicatorRight.Time;
                         }
 

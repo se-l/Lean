@@ -52,8 +52,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double Delta { get => _delta ?? OCW.Delta(); }  // dP ; sensitivity to underlying price}
         public double Gamma { get => _gamma ?? OCW.Gamma(); }  // dP2
         public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(); }  // dPdT
-        public double DSdIV { get => _dSdIV ?? OCW.DSdIV(IV); }  // dVegadP ; Vanna
-        public double Vanna { get => DSdIV; }
+        public double DDeltadIV { get => _dSdIV ?? OCW.DDeltadIV(IV); }  // dVegadP ; Vanna
+        public double Vanna { get => DDeltadIV; }
         // dT
         public double Theta { get => _theta ?? OCW.Theta(); }  // dT ; sensitivity to time
         public double ThetaTillExpiry { get => _thetaTotal ?? OCW.ThetaTillExpiry(); }
@@ -146,7 +146,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _delta = Delta;
             _gamma = Gamma;
             _deltaDecay = DeltaDecay;
-            _dSdIV = DSdIV;
+            _dSdIV = DDeltadIV;
 
             _theta = Theta;
             _thetaTotal = ThetaTillExpiry;

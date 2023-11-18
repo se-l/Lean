@@ -10,6 +10,7 @@ namespace QuantConnect.Algorithm.CSharp
         public DateTime EndDate { get; set; }
         public HashSet<string> Ticker { get; set; }
         public HashSet<string> LiquidateTicker { get; set; }
+        public Dictionary<string, bool> SkipRunSignals {  get; set; }
         public int VolatilityPeriodDays { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMax { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMaxSignal { get; set; }
@@ -55,5 +56,6 @@ namespace QuantConnect.Algorithm.CSharp
         public int MinCancelRequestsUnprocessedBlockingSubmit { get; set; }
         public decimal PeggedToStockDeltaRangeOffsetFactor { get; set; }
         public decimal MinimumIVOffsetBeforeUpdatingPeggedOptionOrder { get; set; }
+        public Dictionary<string, int> HedgingMode { get; set; }
     }
 }

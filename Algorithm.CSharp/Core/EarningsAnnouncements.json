@@ -6,6 +6,12 @@
     "EmbargoPost": "2023-08-17"
   },
   {
+    "Symbol": "CSCO",
+    "Date": "2023-11-15",
+    "EmbargoPrior": "2023-11-14",
+    "EmbargoPost": "2023-11-16"
+  },
+  {
     "Symbol": "ORCL",
     "Date": "2023-09-11",
     "EmbargoPrior": "2023-09-09",
@@ -46,6 +52,12 @@
     "Date": "2023-08-01",
     "EmbargoPrior": "2023-07-30",
     "EmbargoPost": "2023-08-02"
+  },
+  {
+    "Symbol": "PFE",
+    "Date": "2023-10-31",
+    "EmbargoPrior": "2023-10-31",
+    "EmbargoPost": "2023-11-01"
   },
   {
     "Symbol": "AKAM",

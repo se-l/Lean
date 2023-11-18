@@ -41,8 +41,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 security.SetFillModel(new FillModelMine());
             }
             // Margin Model
-            //security.MarginModel = SecurityMarginModel.Null;
-            //security.SetBuyingPowerModel(new NullBuyingPowerModel());
+            security.MarginModel = SecurityMarginModel.Null;
+            //security.MarginModel = new BuyingPowerModelMine(_algo);
+            //security.SetBuyingPowerModel(new BuyingPowerModelMine(_algo));
 
             if (!_algo.QuoteBarConsolidators.ContainsKey(symbol))
             {
@@ -200,6 +201,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         {
                             continue;
                         }
+                        // The UnderlyingPrice.Close here does not match MidPrice(Underlying)
                         bid = new IVQuote(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceBid.Close, (double)volBar.Bid.Close);
                         ask = new IVQuote(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceAsk.Close, (double)volBar.Ask.Close);
 

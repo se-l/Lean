@@ -128,6 +128,8 @@ namespace QuantConnect.Algorithm.CSharp
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportIVSurface);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), ExportPutCallRatios);
 
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), SetTradingRegime);
+
             // WARMUP
             SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
             // first digit ensure looking beyond past holidays. Second digit is days of trading days to warm up.
@@ -243,7 +245,7 @@ namespace QuantConnect.Algorithm.CSharp
                 if (historyUnderlying.Any())
                 {
                     decimal lastClose = historyUnderlying.Last().Close;
-                    if (ContractInScope(symbol, lastClose))
+                    if (ContractScopedForSubscription(symbol, lastClose, Cfg.scopeContractStrikeOverUnderlyingMargin))
                     {
                         var item = AddData<VolatilityBar>(symbol, resolution: Resolution.Second, fillForward: false);
                         item.IsTradable = false;
@@ -405,6 +407,30 @@ namespace QuantConnect.Algorithm.CSharp
         {
             // Read from file: Symbol, Quantity, AveragePrice
             return new List<(string, decimal, decimal)>();
+        }
+
+        public void SetTradingRegime()
+        {
+            // Events - earnings. Future, auto-detect events.
+            foreach (Symbol underlying in equities)
+            {
+                ActiveRegimes[underlying] = new();
+                foreach (var announcement in EarningBySymbol[underlying].OrderBy(a => a.Date))
+                {
+                    if (Time.Date > announcement.Date) continue;
+                    if (Time.Date >= announcement.Date - TimeSpan.FromDays(20) && Time.Date < announcement.Date - TimeSpan.FromDays(3))
+                    {
+                        Log($"{Time} SetTradingRegime {underlying}: {Regime.BuyEvent}. announcement.Date: {announcement.Date}");
+                        ActiveRegimes[underlying].Add(Regime.BuyEvent);
+                    }
+                    if (Time.Date >= announcement.Date - TimeSpan.FromDays(3) && Time.Date <= announcement.Date)
+                    {
+                        Log($"{Time} SetTradingRegime {underlying}: {Regime.SellEventCalendarHedge}. announcement.Date: {announcement.Date}");
+                        ActiveRegimes[underlying].Add(Regime.SellEventCalendarHedge);
+                    }
+                    break;
+                }
+            }
         }
     }
 }

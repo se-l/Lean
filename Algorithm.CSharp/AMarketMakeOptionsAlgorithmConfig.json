@@ -1,13 +1,16 @@
 {
-  "StartDate": "2023-10-16",
-  "EndDate": "2023-10-23",
+  "StartDate": "2023-10-01",
+  "EndDate": "2023-10-04",
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" ];  // Too much for 2 cores on a t3 instance.
   "Ticker": [ "DELL", "HPE" ],
   "LiquidateTicker": [],
-  "VolatilityPeriodDays": 5,
+  "SkipRunSignals": {
+    "_": false
 
+  },
+  "VolatilityPeriodDays": 5,
   "scopeContractStrikeOverUnderlyingMax": 1.15,
   "scopeContractStrikeOverUnderlyingMaxSignal": 1.05,
   "scopeContractStrikeOverUnderlyingMin": 0.85,
@@ -18,8 +21,8 @@
   "scopeContractMaxDTE": 180,
   "scopeContractIsLiquidDays": 5,
 
-  "ZMRiskAversion": 1,
-  "ZMProportionalTransactionCost": 0.001,
+  "ZMRiskAversion": 0.01,
+  "ZMProportionalTransactionCost": 0.0001, // tc = n * S * lambda; lambda = tc / (n * S)
 
   "DiscountParams": {
     "HPE-Delta100BpUSDTotal-discount-params": {
@@ -43,7 +46,7 @@
     },
     "HPE-Events-discount-params": {
       "TargetRisk": 0,
-      "X0": 0.3,
+      "X0": 0.0, //0.3,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -51,7 +54,7 @@
     },
     "HPE-Absolute-discount-params": {
       "TargetRisk": 0,
-      "X0": -0.0,
+      "X0": -0.01,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -78,7 +81,7 @@
     },
     "PFE-Events-discount-params": {
       "TargetRisk": 0,
-      "X0": 0.3,
+      "X0": 0.0, //3,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -113,7 +116,7 @@
     },
     "DELL-Events-discount-params": {
       "TargetRisk": 0,
-      "X0": 0.3,
+      "X0": 0.0, // 0.3,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -121,7 +124,7 @@
     },
     "DELL-Absolute-discount-params": {
       "TargetRisk": 0,
-      "X0": -0.0,
+      "X0": -0.03,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -148,7 +151,7 @@
     },
     "CSCO-Events-discount-params": {
       "TargetRisk": 0,
-      "X0": 0.3,
+      "X0": 0.0, // 0.3,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -183,7 +186,7 @@
     },
     "ORCL-Events-discount-params": {
       "TargetRisk": 0,
-      "X0": 0.3,
+      "X0": 0.0, // 0.3,
       "X1": 0,
       "X2": 0,
       "CapMin": -0.5,
@@ -203,10 +206,14 @@
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
   "RiskLimitHedgeDeltaTotalLong": {
-    "_": 15
+    "_": 25,
+    "PFE": 25,
+    "HPE": 25
   },
   "RiskLimitHedgeDeltaTotalShort": {
-    "_": -15
+    "_": -25,
+    "PFE": -25,
+    "HPE": -25
   },
   "IVSurfaceRelativeStrikeAlpha": {
     "_": 0.05,
@@ -280,5 +287,8 @@
   "MinSubmitRequestsUnprocessedBlockingSubmit": 5,
   "MinCancelRequestsUnprocessedBlockingSubmit": 3,
   "PeggedToStockDeltaRangeOffsetFactor": 0.05,
-  "MinimumIVOffsetBeforeUpdatingPeggedOptionOrder": 0.003
+  "MinimumIVOffsetBeforeUpdatingPeggedOptionOrder": 0.003,
+  "HedgingMode": {
+    "_": 1 // 3 - ZM; 1-HistoryVol ; 2-IV
+  }
 }

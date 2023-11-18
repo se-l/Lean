@@ -73,7 +73,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Big negative delta while pf is pos, great, but only if whole portfolio is not worse off afterwards. Essentially need the area where nothing changes.
 
             discountDelta = DiscountMetric(qr, DeltaDiscounts[qr.Option.Underlying.Symbol]);
-            discountGamma = DiscountMetric(qr, GammaDiscounts[qr.Option.Underlying.Symbol]);
+
+            HashSet<Regime> regimes = ActiveRegimes.TryGetValue(qr.Underlying, out regimes) ? regimes : new HashSet<Regime>();
+            bool wantToAdjustGammaFast = regimes.Contains(Regime.SellEventCalendarHedge);
+
+            var gammaRiskDiscount = GammaDiscounts[qr.Option.Underlying.Symbol];
+            if (wantToAdjustGammaFast)
+            {
+                gammaRiskDiscount.DiscountParams.X0 = 0.4;
+            }            
+            discountGamma = DiscountMetric(qr, gammaRiskDiscount);
+                       
             QuoteDiscount discountEvents = DiscountEvents(qr.Option, qr.Quantity);
 
             return new List<QuoteDiscount>() { discountDelta, discountGamma, discountEvents };

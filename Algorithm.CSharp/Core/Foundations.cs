@@ -56,6 +56,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, ConsecutiveTicksTrend> ConsecutiveTicksTrend = new();
         public Dictionary<Symbol, IntradayIVDirectionIndicator> IntradayIVDirectionIndicators = new();
         public Dictionary<Symbol, AtmIVIndicator> AtmIVIndicators = new();
+        public Dictionary<Symbol, HashSet<Regime>> ActiveRegimes = new();
         // End
 
         public RiskRecorder RiskRecorder;
@@ -324,7 +325,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 if (trade.SecurityType == SecurityType.Option && trade.Expiry <= Time.Date)
                 {
-                    Positions.Remove(trade.Symbol);
+                    //Positions.Remove(trade.Symbol);
                     RemoveSecurity(trade.Symbol);
                     return;
                 }
@@ -384,14 +385,55 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return PriceCache[symbol].BidPrice != Securities[symbol].BidPrice ||
                 Securities[symbol].AskPrice != Securities[symbol].AskPrice;
         }
+        public bool ContractScopedForNewPosition(Security security)
+        {
+            var sec = security;
+            return sec.IsTradable && 
+                (
+                    (
+                    // to be review with Gamma hedging. Selling option at ultra-high, near-expiry IVs with great gamma hedge could be extra profitable.
+                    (sec.Symbol.ID.Date - Time.Date).Days > 1  //  Currently unable to handle the unpredictable underlying dynamics in between option epiration and ITM assignment.
+                    && !sec.Symbol.IsCanonical()
+                    && sec.BidPrice != 0
+                    && sec.AskPrice != 0
+
+                    // price is not stale. Bit ineffiient here. May rather have an indicator somewhere.
+                    //&& PriceCache.ContainsKey(sec.Symbol)
+                    //&& PriceCache[sec.Symbol].GetData().EndTime > Time - TimeSpan.FromMinutes(5)
+
+                    && IsLiquid(sec.Symbol, 5, Resolution.Daily)
+                    && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMinSignal)
+                    && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
+                    && (
+                        ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < Cfg.scopeContractMoneynessITM * MidPrice(sec.Symbol.Underlying) || (
+                            orderTickets.ContainsKey(sec.Symbol) &&
+                            orderTickets[sec.Symbol].Count > 0 &&
+                            ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < (Cfg.scopeContractMoneynessITM + 0.05m) * MidPrice(sec.Symbol.Underlying)
+                        )
+                    )
+                    && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
+                    && IVSurfaceRelativeStrikeBid[Underlying(sec.Symbol)].IsReady(sec.Symbol)
+                    && IVSurfaceRelativeStrikeAsk[Underlying(sec.Symbol)].IsReady(sec.Symbol)
+                //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
+                )
+                ||
+                (
+                    !(sec.Symbol.ID.Date <= Time.Date)
+                    && Portfolio[sec.Symbol].Quantity != 0  // Need to exit eventually
+                )
+            );
+        }
 
         /// <summary>
         /// Signals. Securities where we assume risk. Not necessarily same as positions or subscriptions.
-        /// Should Handle Sizing??????
         /// </summary>
         public List<Signal> GetDesiredOrders(Symbol underlying)
         {
-            var scopedSecurities = Securities.Values.Where(s => s.Type == SecurityType.Option && Underlying(s.Symbol) == underlying);
+            var scopedOptions = Securities.Values.Where(s => 
+                s.Type == SecurityType.Option && 
+                Underlying(s.Symbol) == underlying && 
+                ContractScopedForNewPosition(s)
+            );
             Dictionary<(Symbol, int), string> ocaGroupByUnderlyingDelta = new()
             {
                 [(underlying, -1)] = NewOcaGroupId(),
@@ -400,73 +442,32 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
 
             List<Signal> signals = new();
-            foreach (Security sec in scopedSecurities)
+            foreach (Security sec in scopedOptions)
             {
-                if (
-                    sec.IsTradable
-                    && (
-                            (
-                            // to be review with Gamma hedging. Selling option at ultra-high, near-expiry IVs with great gamma hedge could be extra profitable.
-                            // DEBUG(sec.Symbol.Value == "DELL  230915C00067500" || sec.Symbol.Value == "DELL  230908C00073000") &&
-                            (sec.Symbol.ID.Date - Time.Date).Days > 1  //  Currently unable to handle the unpredictable underlying dynamics in between option epiration and ITM assignment.
-                            && !sec.Symbol.IsCanonical()
-                            && sec.BidPrice != 0
-                            && sec.AskPrice != 0
+                // BuySell Distinction is insufficient. Scenario: We are delta short, gamma long. Would only want to buy/sell options reducing both, unless the utility is calculated better to compare weight 
+                // beneficial risk and detrimental risk against each other. That's what the RiskDiscounts are for.
 
-                            // price is not stale. Bit ineffiient here. May rather have an indicator somewhere.
-                            //&& PriceCache.ContainsKey(sec.Symbol)
-                            //&& PriceCache[sec.Symbol].GetData().EndTime > Time - TimeSpan.FromMinutes(5)
+                Option option = (Option)sec;
+                Symbol symbol = sec.Symbol;
+                UtilityOrder utilBuy = new(this, option, SignalQuantity(symbol, OrderDirection.Buy));
+                UtilityOrder utilSell = new(this, option, SignalQuantity(symbol, OrderDirection.Sell));
 
-                            && IsLiquid(sec.Symbol, 5, Resolution.Daily)
-                            && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMinSignal)
-                            && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
-                            && (
-                                ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < Cfg.scopeContractMoneynessITM * MidPrice(sec.Symbol.Underlying)
-                                || (orderTickets.ContainsKey(sec.Symbol) && orderTickets[sec.Symbol].Count > 0 && ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < (Cfg.scopeContractMoneynessITM + 0.05m) * MidPrice(sec.Symbol.Underlying))
-                            )
-                            && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
-                            && IVSurfaceRelativeStrikeBid[Underlying(sec.Symbol)].IsReady(sec.Symbol)
-                            && IVSurfaceRelativeStrikeAsk[Underlying(sec.Symbol)].IsReady(sec.Symbol)
-                            //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
-                            // Embargo
-                            && !(
-                                embargoedSymbols.Contains(sec.Symbol)
-                            //|| (((Option)sec).Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
-                            )
-                        )
-                        ||
-                        (
-                            !(sec.Symbol.ID.Date <= Time.Date)
-                            && Portfolio[sec.Symbol].Quantity != 0  // Need to exit eventually
-                        )
-                    )
-                )
+                double delta = OptionContractWrap.E(this, option, Time.Date).Delta();
+                string ocaGroupId = ocaGroupByUnderlyingDelta[(option.Underlying.Symbol, Math.Sign(delta))];
+
+                // Utility from Risk and Profit are not normed and cannot be compared directly. Risk is not in USD. UtilProfitVega can change very frequently whenever market IV whipsaws around the EWMA.
+                if (utilSell.Utility >= 0 && utilSell.Utility >= utilBuy.Utility)
                 {
-                    // BuySell Distinction is insufficient. Scenario: We are delta short, gamma long. Would only want to buy/sell options reducing both, unless the utility is calculated better to compare weight 
-                    // beneficial risk and detrimental risk against each other. That's what the RiskDiscounts are for.
-
-                    Option option = (Option)sec;
-                    Symbol symbol = sec.Symbol;
-                    UtilityOrder utilBuy = new(this, option, SignalQuantity(symbol, OrderDirection.Buy));
-                    UtilityOrder utilSell = new(this, option, SignalQuantity(symbol, OrderDirection.Sell));
-
-                    double delta = OptionContractWrap.E(this, option, Time.Date).Delta();
-                    string ocaGroupId = ocaGroupByUnderlyingDelta[(option.Underlying.Symbol, Math.Sign(delta))];
-
-                    // Utility from Risk and Profit are not normed and cannot be compared directly. Risk is not in USD. UtilProfitVega can change very frequently whenever market IV whipsaws around the EWMA.
-                    if (utilSell.Utility >= 0 && utilSell.Utility >= utilBuy.Utility)
-                    {
-                        signals.Add(new Signal(symbol, OrderDirection.Sell, utilSell, ocaGroupId));
-                    }
-                    else if (utilBuy.Utility >= 0 && utilBuy.Utility > utilSell.Utility)
-                    {
-                        signals.Add(new Signal(symbol, OrderDirection.Buy, utilBuy, ocaGroupId));
-                    }
-                    else
-                    {
-                        // Save to disk somehow
-                        //Log($"None of the utils are positive\n{utilBuy}\n{utilSell}\n.");
-                    }
+                    signals.Add(new Signal(symbol, OrderDirection.Sell, utilSell, ocaGroupId));
+                }
+                else if (utilBuy.Utility >= 0 && utilBuy.Utility > utilSell.Utility)
+                {
+                    signals.Add(new Signal(symbol, OrderDirection.Buy, utilBuy, ocaGroupId));
+                }
+                else
+                {
+                    // Save to disk somehow
+                    //Log($"None of the utils are positive\n{utilBuy}\n{utilSell}\n.");
                 }
             }
 
@@ -554,7 +555,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     OnWarmupFinished();
                 }
                 IsSignalsRunning[underlying] = true;  // if refactored as task, more elegant? Just run 1 task at a time...
-                HandleDesiredOrders(GetDesiredOrders(underlying));
+                bool skipRunSignals = Cfg.SkipRunSignals.TryGetValue(underlying.Value, out skipRunSignals) ? skipRunSignals : Cfg.SkipRunSignals[CfgDefault];
+                if (!skipRunSignals)
+                {
+                    HandleDesiredOrders(GetDesiredOrders(underlying));
+                }                
                 IsSignalsRunning[underlying] = false;
                 SignalsLastRun[underlying] = Time;
             }
@@ -590,17 +595,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
             LogOrderTickets();
             Log($"{Time} LogRiskSchedule. IsMarketOpen(symbolSubscribed)={IsMarketOpen(symbolSubscribed)}, symbolSubscribed={symbolSubscribed}");
         }
-
-        public bool ContractInScope(Symbol symbol, decimal? priceUnderlying = null, decimal margin = 0m)
+        public bool ContractScopedForSubscription(Symbol symbol, decimal? priceUnderlying = null, decimal margin = 0m)
         {
             decimal midPriceUnderlying = priceUnderlying ?? MidPrice(symbol.ID.Underlying.Symbol);
-            return midPriceUnderlying > 0
+            return (midPriceUnderlying > 0
                 && symbol.ID.Date > Time + TimeSpan.FromDays(Cfg.scopeContractMinDTE)
                 && symbol.ID.Date < Time + TimeSpan.FromDays(Cfg.scopeContractMaxDTE)
                 && symbol.ID.OptionStyle == OptionStyle.American
                 && symbol.ID.StrikePrice >= midPriceUnderlying * (Cfg.scopeContractStrikeOverUnderlyingMin - margin)
                 && symbol.ID.StrikePrice <= midPriceUnderlying * (Cfg.scopeContractStrikeOverUnderlyingMax + margin)
                 && IsLiquid(symbol, Cfg.scopeContractIsLiquidDays, Resolution.Daily)
+                ) 
+                || 
+                (Portfolio.ContainsKey(symbol) && Portfolio[symbol].Quantity != 0);
                 ;
         }
 
@@ -610,7 +617,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (
                     (
                     Securities[symbol].IsTradable
-                    && !ContractInScope(symbol, margin: Cfg.scopeContractStrikeOverUnderlyingMargin)
+                    && !ContractScopedForSubscription(symbol, null, Cfg.scopeContractStrikeOverUnderlyingMargin)
                     && Portfolio[symbol].Quantity == 0
                     )
                 //|| security.IsDelisted
@@ -627,9 +634,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public bool IsOrderValid(Symbol symbol, decimal quantity)
         {
             var security = Securities[symbol];
-            if (Math.Round(quantity, 0) == 0)
+            if (quantity < 1 && quantity > -1)
             {
-                QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"Submitted Quantity zero. {symbol}. Stack Trace: {Environment.StackTrace}" } });
+                QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"Submitted Quantity zero. {symbol}. quantity={quantity} Stack Trace: {Environment.StackTrace}" } });
                 return false;
             };
             // Tradable
@@ -674,7 +681,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //    return false;
             //}
 
-            if (symbol.SecurityType == SecurityType.Option && !ContractInScope(symbol) && Portfolio[symbol].Quantity == 0)
+            if (symbol.SecurityType == SecurityType.Option && !ContractScopedForSubscription(symbol) && Portfolio[symbol].Quantity == 0)
             {
                 QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION" }, { "msg", $"contract {symbol} is not in scope. Not trading..." } });
                 RemoveUniverseSecurity(Securities[symbol]);
@@ -742,7 +749,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             OrderTicket orderTicket = orderType switch
             {
                 OrderType.Limit => LimitOrder(symbol, quantity, RoundTick(limitPrice, TickSize(symbol)), tag),
-                OrderType.Market => MarketOrder(symbol, (int)quantity, tag: tag, asynchronous: LiveMode),
+                OrderType.Market => MarketOrder(symbol, quantity, tag: tag, asynchronous: LiveMode),
                 _ => throw new NotImplementedException($"OrderType {orderType} not implemented")
             };
             LogOrderTicket(orderTicket);
@@ -1010,11 +1017,41 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return response;
         }
 
+        public double HedgeVolatility(Symbol symbol)
+        {
+            switch (GetHedgingMode(symbol))
+            {
+                case HedgingMode.FwdRealizedVolatility:
+                    return (double)Securities[Underlying(symbol)].VolatilityModel.Volatility;
+                case HedgingMode.HistoricalVolatility:
+                    return (double)Securities[Underlying(symbol)].VolatilityModel.Volatility;
+                case HedgingMode.ImpliedVolatility:
+                    return 0;
+                default:
+                    throw new NotImplementedException($"HedgingMode {GetHedgingMode(symbol)} not implemented");
+            }
+        }
+
+        public Metric HedgeMetric(Symbol symbol)
+        {
+            switch (GetHedgingMode(symbol))
+            {
+                case HedgingMode.Zakamulin:
+                case HedgingMode.FwdRealizedVolatility:
+                case HedgingMode.HistoricalVolatility:
+                    return Metric.DeltaTotal;
+                case HedgingMode.ImpliedVolatility:
+                    return Metric.DeltaImpliedTotal;
+                default:
+                    return Metric.DeltaTotal;
+            }
+        }
+
         public decimal EquityHedgeQuantity(Symbol underlying)
         {
             decimal quantity;
-            decimal deltaTotal = PfRisk.RiskByUnderlying(underlying, Metric.DeltaTotal);
-            decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(underlying, Metric.DeltaIVdSTotal);  // MV
+            decimal deltaTotal = PfRisk.RiskByUnderlying(underlying, HedgeMetric(underlying));
+            decimal deltaIVdSTotal = 0;// PfRisk.RiskByUnderlying(underlying, Metric.DeltaIVdSTotal, HedgeVolatility(underlying));  // MV
             Log($"{Time} EquityHedgeQuantity: DeltaTotal={deltaTotal}, deltaIVdSTotal={deltaIVdSTotal} (not used)");
             quantity = -deltaTotal;
 
@@ -1022,6 +1059,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             List<OrderTicket> tickets = orderTickets.TryGetValue(underlying, out tickets) ? tickets : new List<OrderTicket>();
             if (tickets.Any())
             {
+                return 0;
                 var marketOrders = tickets.Where(t => t.OrderType == OrderType.Market).ToList();
                 decimal orderedQuantityMarket = marketOrders.Sum(t => t.Quantity);
                 quantity -= orderedQuantityMarket;
@@ -1106,106 +1144,107 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
         }
 
-        public decimal SignalQuantity(Symbol symbol, OrderDirection orderDirection)
+        public decimal MaxGammaRespectingQuantity(Symbol symbol, OrderDirection orderDirection)
         {
-            decimal absQuantity;
+            decimal absQuantity = 9999;
+            HashSet<Regime> regimes = ActiveRegimes.TryGetValue(Underlying(symbol), out regimes) ? regimes : new HashSet<Regime>();
+            if (regimes.Contains(Regime.SellEventCalendarHedge))
+            {
+                var totalGamma = PfRisk.RiskByUnderlying(symbol.Underlying, Metric.GammaTotal);
+                var gammaOrder = (double)PfRisk.RiskIfFilled(symbol, DIRECTION2NUM[orderDirection], Metric.GammaTotal);
+                if (gammaOrder < 0)
+                {
+                    absQuantity = Math.Floor((decimal)Math.Abs((double)totalGamma / (double)gammaOrder));
+                };
+            }
+            return absQuantity;
+        }
+
+        public decimal MaxLongRespectingDeltaQuantity(Symbol symbol, OrderDirection orderDirection)
+        {
+            decimal absMaxLongPosRespectingQuantity;
             /// Want to avoid minimum fee payment of 1 USD/stock trade, hence looking to hit a delta that causes at least an equity fee of 1 USD during hedding and minimizes an absolute delta increase.
             /// So the target delta is +/-200.
             /// For more expensive stocks, wouldn't want to increase equity position too quickly, hence not exceed 5k long position. configurable
-            //decimal midPrice = MidPrice(Underlying(symbol));
-
-            var absFeeMinimizingDelta = QuantityExceedingMinimumBrokerageFee(symbol); // Make the hedge worthwile
-
-            decimal maxOptionOrderQuantity = Cfg.MaxOptionOrderQuantity.TryGetValue(Underlying(symbol).Value, out maxOptionOrderQuantity) ? maxOptionOrderQuantity : Cfg.MaxOptionOrderQuantity[CfgDefault];
 
             // Find the delta that would cause an equity position of long max 5k if filled. No restriction for shorting
             decimal targetMaxEquityPositionUSD = Cfg.TargetMaxEquityPositionUSD.TryGetValue(Underlying(symbol).Value, out targetMaxEquityPositionUSD) ? targetMaxEquityPositionUSD : Cfg.TargetMaxEquityPositionUSD[CfgDefault];
-            decimal signalQuantityFraction = Cfg.SignalQuantityFraction.TryGetValue(Underlying(symbol).Value, out signalQuantityFraction) ? signalQuantityFraction : Cfg.SignalQuantityFraction[CfgDefault];
 
-
-            var currentDelta = PfRisk.RiskByUnderlying(symbol.Underlying, Metric.DeltaTotal);
-            var deltaPerUnit = PfRisk.RiskIfFilled(symbol, DIRECTION2NUM[orderDirection], Metric.DeltaTotal);
+            var currentDelta = PfRisk.RiskByUnderlying(symbol.Underlying, HedgeMetric(Underlying(symbol)));
+            var deltaPerUnit = PfRisk.RiskIfFilled(symbol, DIRECTION2NUM[orderDirection], HedgeMetric(Underlying(symbol)));
 
             if (deltaPerUnit == 0) // ZeroDivisionError
             {
-                absQuantity = maxOptionOrderQuantity;
+                absMaxLongPosRespectingQuantity = 9999;
             }
             else if (deltaPerUnit * currentDelta > 0) // same direction. Increase risk up to ~200 more. Don't exceed ~5k long position.
             {
-                var absFeeMinimizingQuantity = Math.Abs((absFeeMinimizingDelta - Math.Abs(currentDelta)) / deltaPerUnit);
-
                 var absMaxLongPosRespectingDelta = targetMaxEquityPositionUSD / Securities[symbol.Underlying].Price;
-                var absMaxLongPosRespectingQuantity = Math.Abs((absMaxLongPosRespectingDelta - Math.Abs(currentDelta)) / deltaPerUnit);
-
-                absQuantity = Math.Min(absFeeMinimizingQuantity, absMaxLongPosRespectingQuantity);
+                absMaxLongPosRespectingQuantity = Math.Abs((absMaxLongPosRespectingDelta - Math.Abs(currentDelta)) / deltaPerUnit);
             }
             else // opposite direction. Risk reducing / reversing. Aim for delta reversal, but not not to max 5k.
             {
-                var absFeeMinimizingQuantity = Math.Abs((
+                var absMaxLongPosRespectingDelta = Math.Abs(currentDelta) + targetMaxEquityPositionUSD / Securities[symbol.Underlying].Price;
+                absMaxLongPosRespectingQuantity = Math.Abs(absMaxLongPosRespectingDelta / deltaPerUnit);
+            }
+            return absMaxLongPosRespectingQuantity;
+        }
+
+        public decimal AbsMaxFeeMinimizingQuantity(Symbol symbol, OrderDirection orderDirection)
+        {
+            decimal absFeeMinimizingQuantity = 9999;
+            var currentDelta = PfRisk.RiskByUnderlying(symbol.Underlying, Metric.DeltaTotal);
+            var deltaPerUnit = PfRisk.RiskIfFilled(symbol, DIRECTION2NUM[orderDirection], HedgeMetric(Underlying(symbol)));
+            var absFeeMinimizingDelta = QuantityExceedingMinimumBrokerageFee(symbol); // Make the hedge worthwile
+
+            if (deltaPerUnit == 0) // ZeroDivisionError
+            {
+                
+            }
+            else if (deltaPerUnit * currentDelta > 0) // same direction. Increase risk up to ~200 more. Don't exceed ~5k long position.
+            {
+                absFeeMinimizingQuantity = Math.Abs((absFeeMinimizingDelta - Math.Abs(currentDelta)) / deltaPerUnit);
+            }
+            else // opposite direction. Risk reducing / reversing. Aim for delta reversal, but not not to max 5k.
+            {
+                absFeeMinimizingQuantity = Math.Abs((
                     Math.Abs(currentDelta) +  // To zero Risk
                     absFeeMinimizingDelta)  // Reversing Delta Risk to worthwhile ~200
                     / deltaPerUnit);
-
-                var absMaxLongPosRespectingDelta = Math.Abs(currentDelta) + targetMaxEquityPositionUSD / Securities[symbol.Underlying].Price;
-                var absMaxLongPosRespectingQuantity = Math.Abs(absMaxLongPosRespectingDelta / deltaPerUnit);
-
-                absQuantity = Math.Min(absFeeMinimizingQuantity, absMaxLongPosRespectingQuantity);
             }
-
-            absQuantity /= signalQuantityFraction;
-
-            decimal maxQuantityByMarginConstraints = 9999;// SignalQuantityMaxByMargin(symbol, orderDirection);
-            absQuantity = Math.Min(absQuantity, maxQuantityByMarginConstraints);
-            absQuantity = Math.Min(absQuantity, maxOptionOrderQuantity);
-            absQuantity = Math.Round(Math.Max(absQuantity, 1), 0);
-
-            return DIRECTION2NUM[orderDirection] * absQuantity;
+            return absFeeMinimizingQuantity;
         }
 
         /// <summary>
-        /// If max margin per underlying has been exceeded, return quantity that would reduce margin, not overshoot, e.g, from position: -2 end up with +8.
-        /// To be refactored once portfolio risk based margining has been improved.
+        /// TBD
         /// </summary>
         /// <param name="symbol"></param>
         /// <param name="orderDirection"></param>
         /// <returns></returns>
-        //public decimal SignalQuantityMaxByMargin(Symbol symbol, OrderDirection orderDirection)
-        //{
-        //    Symbol underlying = Underlying(symbol);
-        //    decimal targetMaxMarginUsed = Cfg.TargetMaxMarginUsed.TryGetValue(underlying.Value, out targetMaxMarginUsed) ? targetMaxMarginUsed : Cfg.TargetMaxMarginUsed[CfgDefault];
-        //    decimal maxOptionOrderQuantity = Cfg.MaxOptionOrderQuantity.TryGetValue(Underlying(symbol).Value, out maxOptionOrderQuantity) ? maxOptionOrderQuantity : Cfg.MaxOptionOrderQuantity[CfgDefault];
+        public decimal MaxQuantityByMarginConstraints(Symbol symbol, OrderDirection orderDirection) => 9999;
 
-        //    decimal marginUsed = PfRisk.RiskByUnderlying(underlying, Metric.MarginUsed);
-        //    decimal addedMarginIfFilled = PfRisk.RiskIfFilled(symbol, DIRECTION2NUM[orderDirection], Metric.MarginUsed);
+        public decimal SignalQuantity(Symbol symbol, OrderDirection orderDirection)
+        {
+            //decimal signalQuantityFraction = Cfg.SignalQuantityFraction.TryGetValue(Underlying(symbol).Value, out signalQuantityFraction) ? signalQuantityFraction : Cfg.SignalQuantityFraction[CfgDefault];
+            //absQuantity /= signalQuantityFraction;
+            /// Want to avoid minimum fee payment of 1 USD/stock trade, hence looking to hit a delta that causes at least an equity fee of 1 USD during hedding and minimizes an absolute delta increase.
+            /// So the target delta is +/-200.
+            /// For more expensive stocks, wouldn't want to increase equity position too quickly, hence not exceed 5k long position. configurable
 
-        //    if (addedMarginIfFilled == 0) // ZeroDivisionError
-        //    {
-        //        return maxOptionOrderQuantity;
-        //    }
-        //    else if (marginUsed < targetMaxMarginUsed)
-        //    {
-        //        return targetMaxMarginUsed / addedMarginIfFilled;
-        //    }
-        //    else
-        //    {
-        //        if (Positions.TryGetValue(symbol, out Position position))
-        //        {
-        //            // Not Yet able to do what if - hence checking here if position is reduces or increased. No groups logic, no portfolio margin logic. Presumably Reg T like.
-        //            addedMarginIfFilled = position.Quantity * DIRECTION2NUM[orderDirection] > 0 ? addedMarginIfFilled : -addedMarginIfFilled;
-        //        }
-        //        double negIfIsMarginIncreasing = -Math.Sign(addedMarginIfFilled);
+            decimal maxOptionOrderQuantity = Cfg.MaxOptionOrderQuantity.TryGetValue(Underlying(symbol).Value, out maxOptionOrderQuantity) ? maxOptionOrderQuantity : Cfg.MaxOptionOrderQuantity[CfgDefault];
 
-        //        if (addedMarginIfFilled > 0)  // Increase already exceeded margin
-        //        {
-        //            // If margin is increasing, we want to reduce it. Hence, we want to sell.
-        //            return 1;
-        //        }
-        //        else
-        //        {
-        //            return Math.Abs(position.Quantity);
-        //        }
-        //    }
-        //}
+            decimal absQuantity = new HashSet<decimal>() {
+                maxOptionOrderQuantity,
+                AbsMaxFeeMinimizingQuantity(symbol, orderDirection),
+                MaxQuantityByMarginConstraints(symbol, orderDirection),
+                MaxGammaRespectingQuantity(symbol, orderDirection),
+                MaxLongRespectingDeltaQuantity(symbol, orderDirection)
+            }.Min();            
+            
+            absQuantity = Math.Round(Math.Max(absQuantity, 1), 0);
+
+            return DIRECTION2NUM[orderDirection] * absQuantity;
+        }
 
         private static readonly HashSet<OrderStatus> skipOrderStatus = new() { OrderStatus.Canceled, OrderStatus.Filled, OrderStatus.Invalid, OrderStatus.CancelPending };
 
@@ -1326,6 +1365,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public override void OnBrokerageMessage(BrokerageMessageEvent messageEvent)
         {
             Log($"Brokerage meesage received - {messageEvent.ToString()}");
+        }
+
+        public HedgingMode GetHedgingMode(Symbol symbol)
+        {
+            return HedgingModeMap[Cfg.HedgingMode.TryGetValue(Underlying(symbol).Value, out int hedgeMode) ? hedgeMode : Cfg.HedgingMode[CfgDefault]];
         }
     }
 }

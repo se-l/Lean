@@ -368,22 +368,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 Math.Pow(_algo.Cfg.ZMRiskAversion * Math.Pow((double)_algo.MidPrice(UnderlyingSymbol), 2) * Math.Abs(Gamma()), 0.15);
         }
 
+        /// <summary>
+        /// Zakamulin (ZM) Delta
+        /// </summary>
+        /// <param name="direction"></param>
+        /// <returns></returns>
         public double DeltaZM(int direction)
         {
             SetEvaluationDateToCalcDate();
-            var hv0 = hvQuote.value();
-            // ZM -Zakamulin
-            hvQuote.setValue(VolatilityZM(direction));
-            double delta = Delta();
-            hvQuote.setValue(hv0);
-            return delta; // + MVVega();
+            return Delta(VolatilityZM(direction));
         }
 
         public double VolatilityZM(int direction)
         {
-            double hv0;
             SetEvaluationDateToCalcDate();
-            hv0 = (double)HistoricalVolatility();
+            double hv0 = (double)HistoricalVolatility();
             return Math.Pow(Math.Pow(hv0, 2) * (1.0 + KappaZM(hv0) * Math.Sign(direction)), 0.5);
         }
 
@@ -548,14 +547,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return FiniteDifferenceApprox(riskFreeRateQuote, amOption, 0.01, "NPV");
         }
 
-        public double DSdIV(double impliedVolatility)  // Vanna, same as dSdIV
+        public double DDeltadIV(double impliedVolatility)  // Vanna, same as dSdIV
         {
             SetSanityCheckVol(impliedVolatility);
-            var dSdIV = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "delta");
+            var dDeltadIV = FiniteDifferenceApprox(hvQuote, amOption, 0.01, "delta");
             SetHistoricalVolatility();
-            return dSdIV;
+            return dDeltadIV;
         }
-        public double Vanna(double impliedVolatility) => DSdIV(impliedVolatility);
+        public double Vanna(double impliedVolatility) => DDeltadIV(impliedVolatility);
         public double DIV2(double impliedVolatility)  // Vomma / Volga
         {
             SetSanityCheckVol(impliedVolatility);

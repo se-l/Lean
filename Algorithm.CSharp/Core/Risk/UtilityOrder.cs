@@ -36,21 +36,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 UtilityVega2IVEwma +
                 UtilityTheta +
                 IntradayVolatilityRisk +
-                UtilityEarningsAnnouncment +
-                UtilityInventory +
+                //UtilityEarningsAnnouncement +
+                //UtilityInventory +
                 UtilityRiskExpiry +  // Coz Theta impact somehow too small. Should make dependent on how much OTM. Just use delta. An optimization given there are many other terms to choose from.
                 UtilityCapitalCostPerDay +
                 UtilityEquityPosition +
                 UtilityGammaRisk +
-                UtilityLowDelta +
+                UtilityEventUpcoming +
+                UtilityDontLongLowDelta +
                 UtilityMargin;
                 //UtilityVanna;  // Call vs Put & Buy vs Sell.                
         }
         //public double UtilityProfit { get => 0; }
         //public double UtilityRisk { get => 0; }
         private readonly HashSet<string> _utilitiesToLog = new() {
-            "UtilityVega2IVEwma", "UtilityTheta", "IntradayVolatilityRisk", "UtilityEarningsAnnouncment", "UtilityInventory", "UtilityRiskExpiry",
-            "UtilityCapitalCostPerDay", "UtilityEquityPosition", "UtilityGammaRisk", "UtilityLowDelta", "UtilityMargin",
+            "UtilityVega2IVEwma", "UtilityTheta", "IntradayVolatilityRisk", "UtilityInventory", "UtilityRiskExpiry",
+            "UtilityCapitalCostPerDay", "UtilityEquityPosition", "UtilityGammaRisk", "UtilityEventUpcoming", "UtilityDontLongLowDelta", "UtilityMargin",
             "UtilityVannaRisk", "UtilityTransactionCosts" // Currently not in Utility
             };
 
@@ -68,7 +69,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double UtilityRiskExpiry { get => _utilityRiskExpiry ??= GetUtilityRiskExpiry(); }
 
         private double? _utitlityEarningsAnnouncment;
-        public double UtilityEarningsAnnouncment { get => _utitlityEarningsAnnouncment ??= GetUtilityEarningsAnnouncment(); }
+        public double UtilityEarningsAnnouncement { get => _utitlityEarningsAnnouncment ??= GetUtilityEarningsAnnouncment(); }
         private double? _utitlityTheta;
         public double UtilityTheta { get => _utitlityTheta ??= GetUtilityTheta(ThetaDte()); }
 
@@ -80,14 +81,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double UtilityTransactionCosts { get => _utitlityTransactionCosts ??= GetUtilityTransactionCosts(); }
         private double? _utitlityGammaRisk;
         public double UtilityGammaRisk { get => _utitlityGammaRisk ??= GetUtilityGammaRisk(); }
+        private double? _utitlityEventUpcoming;
+        public double UtilityEventUpcoming { get => _utitlityEventUpcoming ??= GetUtilityEventUpcoming(); }
 
         private double? _utitlityGammaScalping;
         public double UtilityGammaScalping { get => _utitlityGammaScalping ??= GetUtilityGammaScalping(); }
 
         private double? _utitlityVannaRisk;
         public double UtilityVannaRisk { get => _utitlityVannaRisk ??= GetUtilityVannaRisk(); }
-        private double? _utitlityLowDelta;
-        public double UtilityLowDelta { get => _utitlityLowDelta ??= GetUtilityLowDelta(); }
+        private double? _utitlityDontLongLowDelta;
+        public double UtilityDontLongLowDelta { get => _utitlityDontLongLowDelta ??= GetUtilityDontLongLowDelta(); }
 
         private double? _utitlityMargin;
         public double UtilityMargin { get => _utitlityMargin ??= GetUtilityMargin(); }
@@ -145,7 +148,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return (double)CapitalCostPerDay(deltaOrder);
         }
         /// <summary>
-        /// Somewhat double encodede together with MarginUtuil. Unify!
+        /// Related to MarginUtil (kicks in at higher equity positions). Better unify both!
         /// </summary>
         /// <returns></returns>
         private double GetUtilityEquityPosition()
@@ -190,16 +193,60 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return -(double)transactionCost(Quantity) - transactionHedgeCost((double)deltaOrder);
         }
 
+        private DateTime EventDate => _algo.EarningBySymbol[Underlying.Value].Where(earningsAnnouncement => earningsAnnouncement.Date >= _algo.Time.Date).OrderBy(x => x.Date).FirstOrDefault(defaultValue: null).Date;
+        private DateTime ExpiryEventImpacted => _algo.IVSurfaceRelativeStrikeAsk[Underlying].Expiries().Where(expiry => expiry > EventDate).OrderBy(expiry => expiry).FirstOrDefault();
+
         /// <summary>
         /// Reducing Exposure increases Util. Pos Gamma exposure yields gamma scalping profits. Neg loses it. Is offset by theta. Would need a way to quantity gamma scalping profits.
         /// </summary>
         /// <returns></returns>
         private double GetUtilityGammaRisk()
         {
+            HashSet<Regime> regimes = _algo.ActiveRegimes.TryGetValue(Underlying, out regimes) ? regimes : new HashSet<Regime>();
+            bool wantPosGamma = regimes.Contains(Regime.SellEventCalendarHedge);
+
             var totalGamma = (double)_algo.PfRisk.DerivativesRiskByUnderlying(Underlying, Metric.GammaTotal);
             var gammaOrder = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, Metric.GammaTotal);
             bool isAbsGammaIncreasing = gammaOrder * totalGamma > 0;
-            return isAbsGammaIncreasing ? -Math.Abs(gammaOrder) : Math.Abs(gammaOrder);
+            if (wantPosGamma)
+            {
+                return isAbsGammaIncreasing ? Math.Abs(gammaOrder) : -Math.Abs(gammaOrder);
+            }
+            else
+            {
+                return isAbsGammaIncreasing ? -Math.Abs(gammaOrder) : Math.Abs(gammaOrder);
+            }            
+        }
+
+        private double GetUtilityEventUpcoming()
+        {
+            HashSet<Regime> regimes = _algo.ActiveRegimes.TryGetValue(Underlying, out regimes) ? regimes : new HashSet<Regime>();
+            // Very high utility for becoming gamma neutral/positive. But horizontally. Front month, gamma/IV short. Back month, gamma/IV long.
+            if (regimes.Contains(Regime.SellEventCalendarHedge))
+            {
+                var totalGamma = (double)_algo.PfRisk.DerivativesRiskByUnderlying(Underlying, Metric.GammaTotal);
+                var gammaOrder = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, Metric.GammaTotal);
+                var totalWhatIfGamma = totalGamma + gammaOrder;
+
+                if (Option.Expiry < ExpiryEventImpacted) return 0;
+
+                // Sell the high IV. refactor to actually selling extraordinarily high IV contracts, dont select by date...
+                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Sell && totalWhatIfGamma > 50) return 1500;
+                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Buy) return -1500;
+
+                // Buy back month hedging above sell
+                if (Option.Expiry >= ExpiryEventImpacted.AddDays(14) && gammaOrder > 0 && totalGamma < 200) return 1500;
+                if (Option.Expiry >= ExpiryEventImpacted.AddDays(14) && gammaOrder < 0) return -1500;
+
+                return -2000;
+            }
+            if (regimes.Contains(Regime.BuyEvent))
+            {
+                if (Option.Expiry < ExpiryEventImpacted) return 0;
+                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Sell) return -500;
+                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Buy) return 500;
+            }
+            return 0;
         }
         private double GetUtilityGammaScalping()
         {
@@ -230,7 +277,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// 0.05 USD kinda options. Dont long'em
         /// </summary>
         /// <returns></returns>
-        private double GetUtilityLowDelta()
+        private double GetUtilityDontLongLowDelta()
         {
             double delta = OptionContractWrap.E(_algo, Option, _algo.Time.Date).Delta();
             return delta < 0.1 && Quantity > 0 ? -100 * (double)Quantity : 0;

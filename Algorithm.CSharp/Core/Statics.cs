@@ -18,6 +18,28 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public const string CfgDefault = "_";
         public const string VolatilityBar = "VolatilityBar";
 
+        public enum Regime
+        {
+            BuyEvent,
+            SellEventCalendarHedge,
+        }
+
+        public enum HedgingMode
+        {
+            FwdRealizedVolatility,
+            HistoricalVolatility,
+            ImpliedVolatility,
+            Zakamulin,
+        }
+
+        public static Dictionary<int, HedgingMode> HedgingModeMap { get; } = new()
+        {
+            { 0, HedgingMode.FwdRealizedVolatility },
+            { 1, HedgingMode.HistoricalVolatility },
+            { 2, HedgingMode.ImpliedVolatility },
+            { 3, HedgingMode.Zakamulin },
+        };
+
         public static HashSet<Type> PrimitiveTypes = new()
         {
             typeof(decimal),
@@ -131,6 +153,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Delta, // Unit free sensitivity
             DeltaTotal,
             DeltaImpliedTotal,
+            DeltaImpliedAtmTotal,
 
             Delta100BpUSDTotal,
             DeltaImplied100BpUSDTotal,
