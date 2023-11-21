@@ -193,7 +193,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 Error($"GetQuote: Missing IV indicator for {qr.Symbol}. Expected to have been filled in securityInitializer. Quoting 0.");
                 Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts);
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts, qr.UtilityOrder);
             }
 
             double? bidIV = IVSurfaceRelativeStrikeBid[qr.Symbol.Underlying].IV(qr.Symbol);
@@ -202,7 +202,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 Error($"GetQuote: IVSurface: BidIV > AskIV for {qr.Symbol.Underlying} {qr.Symbol.ID.Date} {qr.Symbol.ID.OptionRight} {qr.Symbol.ID.StrikePrice} {bidIV} {askIV}");
                 //Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts);
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts, qr.UtilityOrder);
             }
 
             smoothedIVPrice = (decimal?)IVStrikePrice(ocw, qr.OrderDirection);
@@ -219,7 +219,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 Error($"GetQuote: IVStrikePrice returned invalid price. smoothedIVPrice={smoothedIVPrice}. Quoting 0.");
                 //Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts);
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts, qr.UtilityOrder);
             }
 
             smoothedIVPrice = qr.OrderDirection switch
@@ -252,7 +252,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //    Log($"price : {price}");
             //    Log($"priceRounded : {priceRounded}");
             //}
-            return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, ivPrice, quoteDiscounts);
+            return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, ivPrice, quoteDiscounts, qr.UtilityOrder);
         }
     }
 }

@@ -1,3 +1,4 @@
+using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Option;
 using System.Collections.Generic;
@@ -17,8 +18,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public IEnumerable<QuoteDiscount> QuoteDiscounts;
         public string QuoteDiscountsString { get => string.Join(",", QuoteDiscounts.Select(qd => qd.ToString())); }
         public double SpreadFactor { get; internal set; }
+        public UtilityOrder UtilityOrder;
 
-        public Quote(Option option, decimal quantity, decimal price, double ivPrice, IEnumerable<QuoteDiscount> quoteDiscounts)
+        public Quote(Option option, decimal quantity, decimal price, double ivPrice, IEnumerable<QuoteDiscount> quoteDiscounts, UtilityOrder utilityOrder)
         {
             Option = option;
             Quantity = quantity;
@@ -26,6 +28,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             IVPrice = ivPrice;
             QuoteDiscounts = quoteDiscounts;
             SpreadFactor = quoteDiscounts.Sum(qd => qd.SpreadFactor);
+            UtilityOrder = utilityOrder;
         }
 
         public override string ToString()

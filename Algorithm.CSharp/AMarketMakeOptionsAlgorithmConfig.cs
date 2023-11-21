@@ -57,5 +57,8 @@ namespace QuantConnect.Algorithm.CSharp
         public decimal PeggedToStockDeltaRangeOffsetFactor { get; set; }
         public decimal MinimumIVOffsetBeforeUpdatingPeggedOptionOrder { get; set; }
         public Dictionary<string, int> HedgingMode { get; set; }
+        public Dictionary<string, bool> UpcomingEventLongIV { get; set; }
+        public Dictionary<string, int> UpcomingEventCalendarSpreadStartDaysPrior { get; set; }
+        public bool SetBacktestingHoldings { get; set; }
     }
 }

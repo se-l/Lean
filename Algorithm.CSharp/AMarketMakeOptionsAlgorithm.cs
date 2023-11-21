@@ -104,6 +104,7 @@ namespace QuantConnect.Algorithm.CSharp
                 UtilityWriters[equity.Symbol] = new UtilityWriter(this, equity);
                 OrderEventWriters[equity.Symbol] = new OrderEventWriter(this, equity);
                 UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => RunSignals(e);
+                UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += RiskProfiles[equity.Symbol].OnDS;
             }
             RealizedPositionWriter = new(this);
 
@@ -148,6 +149,9 @@ namespace QuantConnect.Algorithm.CSharp
             NewBidAskEventHandler += OnNewBidAskEventUpdateLimitPrices;
             NewBidAskEventHandler += OnNewBidAskEventCheckRiskLimits;
             RiskLimitExceededEventHandler += OnRiskLimitExceededEventHedge;
+
+            // For backtesting purposes: Test risk profile moves or compare BT to Live
+            SetBacktestingHoldings();
         }
 
         /// <summary>
@@ -392,20 +396,28 @@ namespace QuantConnect.Algorithm.CSharp
         /// Read Live Holdings from file or pass in arguments.
         /// For best comparison with IB, use market midnight closing prices. Best approximation: T-1 closing prices.
         /// </summary>
-        public void SetHoldings()
+        public void SetBacktestingHoldings()
         {
             if (LiveMode) return;
             foreach ((string ticker, decimal quantity, decimal averagePrice) in FetchHoldings())
             {
                 if (Securities.ContainsKey(ticker))
                 {
-                    Securities[ticker].Holdings.SetHoldings(quantity, averagePrice);
+                    Log($"{Time} SetBacktestingHoldings: Symbol={ticker}, Quantity={quantity}, AvgPrice={averagePrice}");
+                    Securities[ticker].Holdings.SetHoldings(quantity, averagePrice == 0 ? Securities[ticker].Price : averagePrice);
                 }
             }
+            InitializePositionsFromPortfolioHoldings();
         }
         public List<(string, decimal, decimal)> FetchHoldings()
         {
             // Read from file: Symbol, Quantity, AveragePrice
+            string pathBacktestingHoldings = Path.Combine("..", "BacktestingHoldings.csv");
+            // read CSV from above path. The CSV contains 2 columns: Symbol, Quantity
+            if (File.Exists(pathBacktestingHoldings))
+            {
+                return File.ReadAllLines(pathBacktestingHoldings).Skip(1).Select(l => l.Split(',')).Select(a => (a[0], decimal.Parse(a[1]), decimal.Parse(a[2]))).ToList();
+            }
             return new List<(string, decimal, decimal)>();
         }
 
@@ -415,15 +427,17 @@ namespace QuantConnect.Algorithm.CSharp
             foreach (Symbol underlying in equities)
             {
                 ActiveRegimes[underlying] = new();
+                bool upcomingEventLongIV = Cfg.UpcomingEventLongIV.TryGetValue(underlying, out upcomingEventLongIV) ? upcomingEventLongIV : Cfg.UpcomingEventLongIV[CfgDefault];
+                int upcomingEventCalendarSpreadStartDaysPrior = Cfg.UpcomingEventCalendarSpreadStartDaysPrior.TryGetValue(underlying, out upcomingEventCalendarSpreadStartDaysPrior) ? upcomingEventCalendarSpreadStartDaysPrior : Cfg.UpcomingEventCalendarSpreadStartDaysPrior[CfgDefault];
                 foreach (var announcement in EarningBySymbol[underlying].OrderBy(a => a.Date))
                 {
                     if (Time.Date > announcement.Date) continue;
-                    if (Time.Date >= announcement.Date - TimeSpan.FromDays(20) && Time.Date < announcement.Date - TimeSpan.FromDays(3))
+                    if (upcomingEventLongIV && Time.Date >= announcement.Date - TimeSpan.FromDays(20) && Time.Date < announcement.Date - TimeSpan.FromDays(3))
                     {
                         Log($"{Time} SetTradingRegime {underlying}: {Regime.BuyEvent}. announcement.Date: {announcement.Date}");
                         ActiveRegimes[underlying].Add(Regime.BuyEvent);
                     }
-                    if (Time.Date >= announcement.Date - TimeSpan.FromDays(3) && Time.Date <= announcement.Date)
+                    if (Time.Date >= announcement.Date - TimeSpan.FromDays(upcomingEventCalendarSpreadStartDaysPrior) && Time.Date <= announcement.Date)
                     {
                         Log($"{Time} SetTradingRegime {underlying}: {Regime.SellEventCalendarHedge}. announcement.Date: {announcement.Date}");
                         ActiveRegimes[underlying].Add(Regime.SellEventCalendarHedge);

@@ -42,16 +42,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 UtilityCapitalCostPerDay +
                 UtilityEquityPosition +
                 UtilityGammaRisk +
-                UtilityEventUpcoming +
+                //UtilityEventUpcoming +
                 UtilityDontLongLowDelta +
                 UtilityMargin;
-                //UtilityVanna;  // Call vs Put & Buy vs Sell.                
+            //UtilityVanna;  // Call vs Put & Buy vs Sell.                
         }
         //public double UtilityProfit { get => 0; }
         //public double UtilityRisk { get => 0; }
         private readonly HashSet<string> _utilitiesToLog = new() {
             "UtilityVega2IVEwma", "UtilityTheta", "IntradayVolatilityRisk", "UtilityInventory", "UtilityRiskExpiry",
-            "UtilityCapitalCostPerDay", "UtilityEquityPosition", "UtilityGammaRisk", "UtilityEventUpcoming", "UtilityDontLongLowDelta", "UtilityMargin",
+            "UtilityCapitalCostPerDay", "UtilityEquityPosition", "UtilityGammaRisk", "UtilityDontLongLowDelta", "UtilityMargin", // "UtilityEventUpcoming"
             "UtilityVannaRisk", "UtilityTransactionCosts" // Currently not in Utility
             };
 
@@ -215,31 +215,71 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             else
             {
                 return isAbsGammaIncreasing ? -Math.Abs(gammaOrder) : Math.Abs(gammaOrder);
-            }            
+            }
         }
 
+        /// <summary>
+        /// Instead of specificly coding up an event util... this could automatically follow from vega util and risk reduction utils. But they usually dont have StressedPnl calcs. 
+        /// Therefore, rather need a need risk aversion parameter. Aversion increases towards events. If simple as such, wouldn't sell the contract and enter calendar spread. Hence this here codes up a 2-legged strategy.
+        /// </summary>
+        /// <returns></returns>
         private double GetUtilityEventUpcoming()
         {
+            decimal stressedPnlPf;
+            decimal meanStressPnlPf = 0;
+            decimal stressedPnlPos;
+            decimal netStressReduction = 0;
+            double _util = 0;
+
+            int dDays = (EventDate - _algo.Time.Date).Days <= 0 ? 1 : (EventDate - _algo.Time.Date).Days;
+
+            double urgencyFactorA = 0;
+            double urgencyFactorB = 0.1;
+            double urgencyFactorMin = 1;
+            double urgencyFactorMax = 10;
+            double urgencyFactor = Math.Min(urgencyFactorMax, Math.Max(urgencyFactorA + urgencyFactorB * dDays, urgencyFactorMin));
+
             HashSet<Regime> regimes = _algo.ActiveRegimes.TryGetValue(Underlying, out regimes) ? regimes : new HashSet<Regime>();
             // Very high utility for becoming gamma neutral/positive. But horizontally. Front month, gamma/IV short. Back month, gamma/IV long.
+            // Both, downward and upward event needs hedging.
+            List<decimal> riskProfilePctChanges = new() { -20, -10, -5, 5, 10, 20 };
+            HashSet<Metric> metricsDs = new() { Metric.Delta, Metric.Gamma, Metric.Speed };
+            var trade = new Trade(_algo, Symbol, Quantity, _algo.MidPrice(Symbol));
+            Position position = new(_algo, trade);
+
+
             if (regimes.Contains(Regime.SellEventCalendarHedge))
             {
-                var totalGamma = (double)_algo.PfRisk.DerivativesRiskByUnderlying(Underlying, Metric.GammaTotal);
-                var gammaOrder = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, Metric.GammaTotal);
-                var totalWhatIfGamma = totalGamma + gammaOrder;
+                // 2 rewards: front month: selling IV, back month: hedging to zero or positive dS risk.
+                foreach (decimal pctChange in riskProfilePctChanges)
+                {
+                    stressedPnlPf = _algo.RiskProfiles[Underlying].StressedPnlPositions(dSPct: (double)pctChange, metricsDs: metricsDs);
+                    meanStressPnlPf += stressedPnlPf;
+                    stressedPnlPos = _algo.RiskProfiles[Underlying].StressedPnlPositions(position, dSPct: (double)pctChange, metricsDs: metricsDs);
+                    netStressReduction += stressedPnlPf < 0 && stressedPnlPos > 0 ? stressedPnlPos : 0;
+                }
+                meanStressPnlPf /= riskProfilePctChanges.Count;
 
                 if (Option.Expiry < ExpiryEventImpacted) return 0;
 
                 // Sell the high IV. refactor to actually selling extraordinarily high IV contracts, dont select by date...
-                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Sell && totalWhatIfGamma > 50) return 1500;
-                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Buy) return -1500;
+                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Sell && meanStressPnlPf > 0)  // At this point, only sell IV if risk is reduced.
+                {
+                    _util = UtilityVega2IVEwma;
+                }
+
+                // This should be fairly negative in losing vega util...
+                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Buy) return 0;
 
                 // Buy back month hedging above sell
-                if (Option.Expiry >= ExpiryEventImpacted.AddDays(14) && gammaOrder > 0 && totalGamma < 200) return 1500;
-                if (Option.Expiry >= ExpiryEventImpacted.AddDays(14) && gammaOrder < 0) return -1500;
+                if (Option.Expiry >= ExpiryEventImpacted.AddDays(14))
+                {
+                    _util = (double)netStressReduction;
+                }
 
-                return -2000;
+                return _util * urgencyFactor;
             }
+
             if (regimes.Contains(Regime.BuyEvent))
             {
                 if (Option.Expiry < ExpiryEventImpacted) return 0;

@@ -53,7 +53,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
                     * quantity
                     * _initialMarginRequirement
                     * _qcMarginAdjustmentFactor;
-            }            
+            }
         }
     }
 }

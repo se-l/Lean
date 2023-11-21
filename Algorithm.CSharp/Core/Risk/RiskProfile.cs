@@ -20,8 +20,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private readonly string _path;
 
         //public Dictionary<double, decimal> PnLProfile = Enumerable.Range(-10, 21).Select(i => (double)i).ToDictionary(i => i, i => 0m);
-        private readonly HashSet<Metric> metricsDIV = new() { Metric.Vega, Metric.Vanna, Metric.Volga };
-        private readonly HashSet<Metric> metricsDs = new() {Metric.Delta, Metric.Gamma, Metric.DeltaIVdS };//, Metric.Speed
+        private readonly HashSet<Metric> dfltMetricsDIV = new() { Metric.Vega, Metric.Vanna, Metric.Volga };
+        private readonly HashSet<Metric> dfltMetricsDs = new() {Metric.Delta, Metric.Gamma, Metric.DeltaIVdS };//, Metric.Speed
         //private HashSet<Metric> metrics = metricsDs.Union(metricsDIV).ToList();
         private Dictionary<Metric, Func<IEnumerable<Position>, double, decimal>> Metric2Function = new()
         {
@@ -38,6 +38,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private List<Position> position0Cache;
         private decimal stressDsPlus0Cache;
         private decimal stressDsMinus0Cache;
+        private Dictionary<Tuple<Metric, decimal, decimal>, decimal> CachedMetric2F = new();
 
         public RiskProfile(Foundations algo, Equity equity)
         {
@@ -78,6 +79,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             {
                 _writer.Write(ToCsv(positions, _header, skipHeader: true));
             }
+            CachedMetric2F.Clear();
         }
 
         /// <summary>
@@ -86,7 +88,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// <param name="symbol"></param>
         /// <param name="quantity"></param>
         /// <returns></returns>
-        public decimal WhatIfMarginAdd(Symbol symbol, decimal quantity)
+        public decimal WhatIfMarginAdd(Symbol symbol, decimal quantity, double dSPct = 5, double dIVPct = 0)
         {
             Trade trade = new(_algo, symbol, quantity, _algo.MidPrice(symbol));
             Position position = new(_algo, trade);
@@ -95,16 +97,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (_algo.Time != timeLastStressed)
             {
                 position0Cache = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol && x.Quantity != 0).ToList();
-                stressDsPlus0Cache = Math.Min(StressTest(position0Cache, 5), 0);
-                stressDsMinus0Cache = Math.Min(StressTest(position0Cache, -5), 0);
+                stressDsPlus0Cache = Math.Min(StressedPnlPositions(position0Cache, 5), 0);
+                stressDsMinus0Cache = Math.Min(StressedPnlPositions(position0Cache, -5), 0);
                 timeLastStressed = _algo.Time;
             }
 
             //var positions1 = position0Cache.Append(position).ToList();
             //_algo.Log($"Checking {symbol} {quantity} {positions1.Count} positions.");
             List<Position> positions1 = new() { position };
-            decimal stressDsPlus1 = Math.Min(stressDsPlus0Cache + StressTest(positions1, 5), 0);
-            decimal stressDsMinus1 = Math.Min(stressDsMinus0Cache + StressTest(positions1, -5), 0);
+            decimal stressDsPlus1 = Math.Min(stressDsPlus0Cache + StressedPnlPositions(positions1, dSPct, dIVPct), 0);
+            decimal stressDsMinus1 = Math.Min(stressDsMinus0Cache + StressedPnlPositions(positions1, -dSPct, dIVPct), 0);
             //decimal stressDIVPlus1 = StressTest(positions1, 0, 0.15);
             //decimal stressDIVMinus1 = StressTest(positions1, 0, -0.15);
             // _algo.Log($"{_algo.Time} WhatIfMarginAdd: {symbol} {quantity} stressDsPlus1={stressDsPlus1}, stressDsMinus1={stressDsMinus1}");
@@ -114,21 +116,39 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return stressDsPlus1 + stressDsMinus1 - (stressDsPlus0Cache + stressDsMinus0Cache);
         }
 
-        public decimal StressTest(List<Position> positions, double dS = 0, double dIV=0)
+        public decimal StressedPnlPositions(List<Position>? positions = null, double dSPct = 0, double dIVPct = 0, IEnumerable<Metric>? metricsDs = null, IEnumerable<Metric>? metricsDIV = null, DateTime? evalDate = null)
         {
             decimal pnlStressed = 0;
-            var midPrice = _algo.MidPrice(Symbol);
-
-            foreach (Metric metric in metricsDs)
-            { 
-                pnlStressed += dS == 0 ? 0 : Metric2Function[metric](positions, dS);
-            }
-            foreach (Metric metric in metricsDIV)
+            List<Position> _positions = positions ?? _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol && x.Quantity != 0).ToList();
+            
+            foreach (Metric metric in metricsDs ?? dfltMetricsDs)
             {
-                pnlStressed += dIV == 0 ? 0 : Metric2Function[metric](positions, dIV);
+                pnlStressed += dSPct == 0 ? 0 : CachedMetric2Function(metric, _positions, dSPct);
+            }
+            foreach (Metric metric in metricsDIV ?? dfltMetricsDIV)
+            {
+                pnlStressed += dIVPct == 0 ? 0 : CachedMetric2Function(metric, _positions, dIVPct);
             }
 
             return pnlStressed;
+        }
+        public decimal StressedPnlPositions(Position positions, double dSPct = 0, double dIVPct = 0, IEnumerable<Metric>? metricsDs = null, IEnumerable<Metric>? metricsDIV = null, DateTime? evalDate = null)
+        {
+            return StressedPnlPositions(new List<Position>() { positions }, dSPct, dIVPct, metricsDs, metricsDIV, evalDate);
+        }
+
+        public void OnDS(object? sender, Symbol symbol) => Update();
+
+        public decimal PositionsQuantity(IEnumerable<Position> positions) => positions.Sum(p => p.Quantity);
+
+        public decimal CachedMetric2Function(Metric metric, IEnumerable<Position> positions, double dX)
+        {
+            var key = Tuple.Create(metric, PositionsQuantity(positions), (decimal)dX);
+            if (!CachedMetric2F.ContainsKey(key))
+            {
+                CachedMetric2F[key] = Metric2Function[metric](positions, dX);
+            }
+            return CachedMetric2F[key];
         }
     }
 }

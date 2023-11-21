@@ -763,7 +763,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (!IsOrderValid(contract.Symbol, quantity)) { return null; }
 
-            Quote<Option> quote = GetQuote(new QuoteRequest<Option>(contract, quantity));
+            Quote<Option> quote = GetQuote(new QuoteRequest<Option>(contract, quantity, signal.UtilityOrder));
             decimal limitPrice = quote.Price;
             if (limitPrice == 0)
             {
@@ -834,7 +834,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     decimal tickSize = TickSize(symbol);
                     double ticketIV = OrderIdIV.TryGetValue(ticket.OrderId, out ticketIV) ? ticketIV : 0;
 
-                    Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, SignalQuantity(symbol, Num2Direction(ticket.Quantity))));
+                    decimal orderQuantity = SignalQuantity(symbol, Num2Direction(ticket.Quantity));
+                    UtilityOrder utilityOrder = new(this, option, orderQuantity);
+                    Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, orderQuantity, utilityOrder));
 
                     if (Math.Abs((decimal)quote.IVPrice - (decimal)ticketIV) < Cfg.MinimumIVOffsetBeforeUpdatingPeggedOptionOrder) { return; }
 
@@ -912,7 +914,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     decimal tickSize = TickSize(symbol);
                     decimal limitPrice = ticket.Get(OrderField.LimitPrice);
 
-                    Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, SignalQuantity(symbol, Num2Direction(ticket.Quantity))));
+                    decimal orderQuantity = SignalQuantity(symbol, Num2Direction(ticket.Quantity));
+                    UtilityOrder utilityOrder = new(this, option, orderQuantity);
+                    Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, orderQuantity, utilityOrder));
 
                     decimal idealLimitPrice = quote.Price;
 
@@ -1059,7 +1063,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             List<OrderTicket> tickets = orderTickets.TryGetValue(underlying, out tickets) ? tickets : new List<OrderTicket>();
             if (tickets.Any())
             {
-                return 0;
                 var marketOrders = tickets.Where(t => t.OrderType == OrderType.Market).ToList();
                 decimal orderedQuantityMarket = marketOrders.Sum(t => t.Quantity);
                 quantity -= orderedQuantityMarket;
