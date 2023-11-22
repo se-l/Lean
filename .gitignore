@@ -293,3 +293,5 @@ Results/
 #Data moved to ext drive
 Data/
 /launchSettings.json
+/Launcher/config.json
+/docker-compose.yml
