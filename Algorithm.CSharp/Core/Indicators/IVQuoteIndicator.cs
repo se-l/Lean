@@ -49,7 +49,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             _algo = algo;
             Option = option;
             IVBidAsk = new IVQuote(Symbol, _algo.Time, 0, 0, 0);  // Default, in case referenced downstream before any successful update.
-            _algo.RegisterIndicator(Symbol, this, _algo.QuoteBarConsolidators[Symbol], Selector);
         }
 
         public void Update(DateTime time, decimal quote, decimal midPriceUnderlying)

@@ -49,15 +49,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         // Greeks. 1st order followed by dS, dT, dIV. Then 3rd at end.
         // dS
-        public double Delta { get => _delta ?? OCW.Delta(); }  // dP ; sensitivity to underlying price}
-        public double Gamma { get => _gamma ?? OCW.Gamma(); }  // dP2
-        public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(); }  // dPdT
+        public double Delta { get => _delta ?? OCW.Delta(IV); }  // dP ; sensitivity to underlying price}
+        public double Gamma { get => _gamma ?? OCW.Gamma(IV); }  // dP2
+        public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(IV); }  // dPdT
         public double DDeltadIV { get => _dSdIV ?? OCW.DDeltadIV(IV); }  // dVegadP ; Vanna
         public double Vanna { get => DDeltadIV; }
         // dT
-        public double Theta { get => _theta ?? OCW.Theta(); }  // dT ; sensitivity to time
-        public double ThetaTillExpiry { get => _thetaTotal ?? OCW.ThetaTillExpiry(); }
-        public double ThetaDecay { get => _thetaDecay ?? OCW.ThetaDecay(); }  // dT2
+        public double Theta { get => _theta ?? OCW.Theta(IV); }  // dT ; sensitivity to time
+        public double ThetaTillExpiry { get => _thetaTotal ?? OCW.ThetaTillExpiry(IV); }
+        public double ThetaDecay { get => _thetaDecay ?? OCW.ThetaDecay(IV); }  // dT2
         // dIV
         public double Vega { get => _vega ?? OCW.Vega(IV); }  // dIV ; sensitivity to volatility
         // Vanna - above in delta
@@ -67,8 +67,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double Rho { get => _rho ?? OCW.Rho(); }  // dR ; sensitivity to interest rate
 
         // 3rd order
-        public double DS3 { get => _dS3 ?? OCW.DS3(); }  // dP3
-        public double GammaDecay { get => _gammaDecay ?? OCW.GammaDecay(); }  // dP2dT
+        public double DS3 { get => _dS3 ?? OCW.DS3(IV); }  // dP3
+        public double GammaDecay { get => _gammaDecay ?? OCW.GammaDecay(IV); }  // dP2dT
         public double DS2dIV { get => _dGammaDIV ?? OCW.DS2dIV(IV); }  // dP2dIV
 
         public double DeltaZM(int direction)
@@ -137,7 +137,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 return this;
             }
 
-            _hV = IV;
+            _iV = IV;
             _hV = HV;
             _nPV = NPV;
             _iVdS = IVdS;

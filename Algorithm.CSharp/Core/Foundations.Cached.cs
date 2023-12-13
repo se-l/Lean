@@ -9,6 +9,7 @@ using QuantConnect.Securities;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
+using QuantConnect.Algorithm.CSharp.Core.Indicators;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -26,6 +27,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Func<Symbol, decimal> TickSize;
         public Func<decimal> PositionsTotal;
         public Func<int> PositionsN;
+        public Func<Symbol, double, double> AtmIVCached;
 
         public void AssignCachedFunctions()
         {
@@ -40,8 +42,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
             TickSize = Cache(GetTickSize, (Symbol symbol) => symbol, maxKeys: 1);
             PositionsTotal = Cache(GetPositionsTotal, () => Time.Ticks, maxKeys: 1);
             PositionsN = Cache(GetPositionsN, () => Time.Ticks, maxKeys: 1);
+            AtmIVCached = Cache(GetAtmIV, (Symbol symbol, double defaultSpread) => (Time.Ticks, symbol, defaultSpread));
 
             IntrinsicValue = (Option option) => option.GetIntrinsicValue(MidPrice(option.Underlying.Symbol));
+        }
+        public double AtmIV(Symbol symbol, double defaultSpread = 0.005) => AtmIVCached(symbol, defaultSpread);
+        /// <summary>
+        /// Ask IV strongly slopes up close to expiration (1-3 days), therefore rendering midIV not a good indicator. Would wanna use contracts expiring later. This will lead to a
+        /// jump in AtmIV when referenced contracts are switched. How to make it smooth?
+        /// </summary>
+        public double GetAtmIV(Symbol symbol, double defaultSpread = 0.005)
+        {
+            double bidIV = IVSurfaceRelativeStrikeBid.TryGetValue(Underlying(symbol), out IVSurfaceRelativeStrike bidSurface) ? bidSurface.AtmIv() : 0;
+            double askIV = IVSurfaceRelativeStrikeAsk.TryGetValue(Underlying(symbol), out IVSurfaceRelativeStrike askSurface) ? askSurface.AtmIv() : 0;
+            return InterpolateMidIVIfAnyZero(bidIV, askIV, defaultSpread);
         }
 
         private double GetBeta(Symbol index, Symbol asset, int periods, Resolution resolution = Resolution.Daily)
@@ -236,10 +250,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             List<OrderTicket> tickets = orderTickets.TryGetValue(symbol, out tickets) ? tickets : new List<OrderTicket>();
 
-            // Hedge is taken through EventHandler -> UpdateLimitOrderEquity.
-            bool anyLimitOrders = tickets.Where(t => t.OrderType == OrderType.Limit).Any();
+            // Cancel any opposite one's.
+            tickets.Where(t => t.Quantity * quantity < 0).ToList().ForEach(t => t.Cancel());
+            // If market order, cancel any limit orders
+            if (orderType == OrderType.Market)
+            {
+                tickets.Where(t => t.OrderType == OrderType.Limit).ToList().ForEach(t => t.Cancel());
+            }            
 
-            if (quantity != 0 && !anyLimitOrders)
+            // Hedge is taken through EventHandler -> UpdateLimitOrderEquity.
+            var existingOrders = tickets.Where(t => t.OrderType == OrderType.Limit || t.OrderType == OrderType.Market);
+
+            if (quantity != 0 && !existingOrders.Any())
             {
                 OrderType _orderType = orderType ?? GetEquityHedgeOrderType(equity);
                 price = GetEquityHedgePrice(equity, _orderType);
@@ -270,7 +292,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             else
             {
-                Log($"{Time} ExecuteHedge: Not hedging because quantity={quantity}, anyLimitOrders={anyLimitOrders}, orders={string.Join(",", tickets.Where(t => t.OrderType == OrderType.Limit))}.");
+                string msg = $"{Time} ExecuteHedge: Not hedging because quantity={quantity}, anyExistingOrders={existingOrders.Any()}, OrderId={string.Join(",", existingOrders.Select(t => t.OrderId))}.";
+                Log(msg);
+                DiscordClient.Send(msg, DiscordChannel.Emergencies);
             }
         }
 
@@ -282,21 +306,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <returns></returns>
         public OrderType GetEquityHedgeOrderType(Equity equity, OrderTicket? ticket = null)
         {
-            return OrderType.Market;
+            //return OrderType.Market;
             if (ticket != null && ticket.UpdateRequests.Count > 0)
             {
                 return OrderType.Market;
             }
 
             double gammaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.GammaTotal);
+            bool gammaScalpingEnabled = Cfg.GammaScalpingEnabled.TryGetValue(equity.Symbol, out gammaScalpingEnabled) ? gammaScalpingEnabled : Cfg.GammaScalpingEnabled[CfgDefault];
 
-            if (gammaTotal > 0 && GammaScalpers[equity.Symbol].IsScalping)
+            if (gammaScalpingEnabled && gammaTotal > 0 && GammaScalpers[equity.Symbol].IsScalping)
             {
                 return OrderType.LimitIfTouched;
             }
             else
             {
-                return OrderType.Limit;
+                return OrderType.Market;
+                //return OrderType.Limit;
             }
         }
         /// <summary>

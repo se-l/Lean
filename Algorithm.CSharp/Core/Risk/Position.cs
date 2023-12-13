@@ -51,19 +51,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Quantity = trade.Quantity;
         }
 
-        /// <summary>
-        /// Instead of calculating the PnL of the new position given the net Quantity after T1, returning PnL for the previous Position given the final snapshot after T1 executed.
-        /// </summary>
-        public Position RealizedPosition(Trade trade1)
-        {
-            Position pos = new(this, Trade0, _algo, trade1)
-            {
-                Quantity = Quantity
-            };
-            pos.Snap();
-            return pos;
-        }
-
         public decimal Quantity { get; internal set; }
         public Symbol Symbol { get; internal set; }
         private Security _securityUnderlying;
@@ -158,6 +145,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public GreeksPlus GetGreeks1(double? volatility = null)
         {
             GreeksPlus greeks = Trade1?.Greeks ?? GetGreeks();
+            if (volatility != null)
+            {
+                greeks.SetIV((double)volatility);
+            }
             if (SecurityType == SecurityType.Option && Trade1 == null)
             {
                 greeks.OCW.SetIndependents(Mid1Underlying, Mid1, volatility ?? (double)SecurityUnderlying.VolatilityModel.Volatility);
@@ -376,7 +367,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _ => 0,
             };
         }
-        public decimal ThetaTotal(decimal dT = 1) => (decimal)GetGreeks1().Theta * Multiplier * Quantity * dT;
+        public decimal ThetaTotal(decimal dT = 1) => ToDecimal(GetGreeks1().Theta) * Multiplier * Quantity * dT;
 
         public decimal IntrinsicValue1 => SecurityType switch
         {
@@ -431,9 +422,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// </summary>
         private PLExplain GetPLExplain()
         {
-            LastSnap = new PositionSnap(_algo, Symbol);
-            _pLExplain ??= new PLExplain(_algo, this);
-            return _pLExplain.Update(LastSnap);
+            _pLExplain ??= new PLExplain(this);
+            _algo.LastSnap(Symbol);
+            return _pLExplain.Update(_algo.PositionSnaps[Symbol].Concat(new List<PositionSnap>() { new PositionSnap(_algo, Symbol) } ).ToList());
         }
 
         /// <summary>
@@ -457,18 +448,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             return positions;
         }
-
-        //private readonly List<PositionSnap> Snaps = new();
-        public PositionSnap LastSnap { get; internal set; }
-
-        public void Snap()
-        {
-            PositionSnap LastSnap = new(_algo, Symbol);
-            //Snaps.Add(snap);
-            _pLExplain = GetPLExplain();
-            _pLExplain.Update(LastSnap);
-        }
-
         public DateTime TsQueried { get => _algo.Time; }
     }
 }

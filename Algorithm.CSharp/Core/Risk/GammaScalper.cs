@@ -3,6 +3,7 @@ using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Equity;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using static QuantConnect.Messages;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -11,10 +12,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private readonly Foundations _algo;
         public readonly Equity Equity;
         public readonly Symbol Symbol;
+        public decimal TriggerPrice => _triggerPrice;
 
         private decimal _startingPrice;
-        private decimal _triggerPriceHigh;
-        private decimal _triggerPriceLow;
+        private decimal _triggerPrice;
         private readonly decimal _trailingPct;
         private readonly bool _gammaScalpingEnabled;
 
@@ -37,6 +38,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
         }
         public bool IsScalping { get; internal set; }
+        public OrderDirection ScalpingDirection { get; internal set; }
         public bool ExecuteHedge { get; internal set; }
         private decimal MidPrice { get => _algo.MidPrice(Symbol); }
 
@@ -62,50 +64,60 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 {
                     continue;
                 }
+                ReviewScalper(t.Symbol);                
+            }
+        }
 
-                if (t.SecurityType == SecurityType.Option)
-                {
-                    // Restart scalping after hedging given the new option fill altered delta significantly,
-                    // UNLESS band threshold is not exceeeded.
-                    if (_algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, _algo.DeltaMV(Symbol))) // The way of checking needs to be centralized...
-                    {
-                        Reset();
-                        _algo.Log($"{_algo.Time} GammaScalper.OnTradeEventUpdateHedgeState: Noticed option fill for {t.Symbol} and delta exceeding band. Resetting any scalping.");
-                        _algo.PfRisk.CheckHandleDeltaRiskExceedingBand(Symbol);  // Event elsewhere raised. Probably doesnt hurt raising again...
-                        break;
-                    }
-                    // Continue as usual...
-                }
-
-                double gammaTotal = (double)_algo.PfRisk.RiskByUnderlying(Symbol, Metric.GammaTotal);
-                if (gammaTotal <= 0)
+        private void ReviewScalper(Symbol symbol)
+        {
+            decimal deltaTotal = _algo.DeltaMV(Symbol);
+            if (symbol.SecurityType == SecurityType.Option)
+            {
+                // Restart scalping after hedging given the new option fill altered delta significantly,
+                // UNLESS band threshold is not exceeeded.
+                if (
+                    !IsScalping && _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, _algo.DeltaMV(Symbol)) ||  // hedge to delta zero before starting to scalp.// The way of checking needs to be centralized...
+                    ScalpingDirection != Num2Direction(deltaTotal)  // around delta zero or after a trade, scalping direction may have changed
+                )
                 {
                     Reset();
-                    break;
+                    _algo.Log($"{_algo.Time} GammaScalper.OnTradeEventUpdateHedgeState: Noticed option fill for {symbol} and delta exceeding band. Resetting any scalping.");
+                    _algo.PfRisk.CheckHandleDeltaRiskExceedingBand(Symbol);  // Event elsewhere raised. Probably doesnt hurt raising again...
+                    return;
                 }
+                // Continue as usual...
+            }
 
-                decimal deltaTotal = _algo.DeltaMV(Symbol);
-                if (_algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, deltaTotal) && !IsScalping)
-                {
-                    Reset();
-                    break;
-                }
+            double gammaTotal = (double)_algo.PfRisk.RiskByUnderlying(Symbol, Metric.GammaTotal);
+            if (gammaTotal <= 0)
+            {
+                Reset();
+                return;
+            }
 
-                // Start Scalping - Start tracking the position
-                // Improvement: Use the Consecutive Ticks Indicator.
-                if (gammaTotal > 0 && !IsScalping)
-                {
-                    SetNewTriggerPrices();
-                }
-                else if (gammaTotal > 0 && IsScalping)
-                {
-                    UpdateTriggerPrices();
-                }
+            if (_algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, deltaTotal) && !IsScalping)
+            {
+                Reset();
+                return;
+            }
 
-                if (IsTriggered())
-                {
-                    Hedge();
-                }
+            // Start Scalping - Start tracking the position
+            // Improvement: Use the Consecutive Ticks Indicator.
+            if (
+                gammaTotal > 0 && !IsScalping ||
+                ScalpingDirection != Num2Direction(deltaTotal)
+                )
+            {
+                SetNewTriggerPrices();
+            }
+            else if (gammaTotal > 0 && IsScalping)
+            {
+                UpdateTriggerPrices();
+            }
+
+            if (IsTriggered())
+            {
+                Hedge();
             }
         }
 
@@ -125,49 +137,79 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private void Reset()
         {
             IsScalping = false;
-            _triggerPriceHigh = 0;
-            _triggerPriceLow = 0;
+            _triggerPrice = 0;
             _startingPrice = 0;
         }
 
         private void SetNewTriggerPrices()
         {
+            decimal deltaTotal = _algo.DeltaMV(Symbol);
+            ScalpingDirection = Num2Direction(deltaTotal);
             _startingPrice = MidPrice;
-            _triggerPriceHigh = MidPrice * (1 + _trailingPct);
-            _triggerPriceLow = MidPrice * (1 - _trailingPct);
-            _algo.Log($"{_algo.Time} GammaScalper.SetNewTriggerPrices: Symbol={Symbol}, StartingPrice=MidPrice={MidPrice}, TriggerHigh={_triggerPriceHigh}, TriggerLow={_triggerPriceLow}");
+            _triggerPrice = GetTriggerPrice();
+            _algo.Log($"{_algo.Time} GammaScalper.SetNewTriggerPrices: Symbol={Symbol}, StartingPrice=MidPrice={MidPrice}, TriggerPrice={_triggerPrice}, delta={deltaTotal}, ScalpingDirection={ScalpingDirection}");
+            if (ScalpingDirection == OrderDirection.Buy || ScalpingDirection == OrderDirection.Sell)
+            {
+                IsScalping = true;
+            }            
+        }
+
+        private decimal GetTriggerPrice() {
+            return ScalpingDirection switch
+            {
+                OrderDirection.Buy => MidPrice * (1 - _trailingPct),
+                OrderDirection.Sell => MidPrice * (1 + _trailingPct),
+                _ => 0
+            }; ;
+        }
+        private decimal GetUpdatedTriggerPrice()
+        {
+            return ScalpingDirection switch
+            {
+                OrderDirection.Buy => Math.Max(_triggerPrice, MidPrice * (1 - _trailingPct)),
+                OrderDirection.Sell => Math.Min(_triggerPrice, MidPrice * (1 + _trailingPct)),
+                _ => 0
+            };
         }
         private void UpdateTriggerPrices()
         {
-            var newTriggerPriceHigh = Math.Max(_triggerPriceHigh, MidPrice * (1 + _trailingPct));
-            var newTriggerPriceLow = Math.Min(_triggerPriceLow, MidPrice * (1 - _trailingPct));
-            if (newTriggerPriceHigh != _triggerPriceHigh || newTriggerPriceLow != _triggerPriceLow)
+            decimal deltaTotal = _algo.DeltaMV(Symbol);
+            if (Num2Direction(deltaTotal) != ScalpingDirection)
             {
-                _algo.Log($"{_algo.Time} GammaScalper.UpdateTriggerPrices: Symbol={Symbol}, MidPrice={MidPrice}, TriggerHighNew={newTriggerPriceHigh}, " +
-                    $"TriggerHighOld={_triggerPriceHigh}, TriggerLowOld={_triggerPriceLow}, TriggerLowNew={newTriggerPriceLow}, StartingPrice={_startingPrice}, ScalpingGains={ScalpingGains()}");
-                _triggerPriceHigh = newTriggerPriceHigh;
-                _triggerPriceLow = newTriggerPriceLow;
+                _algo.Log($"{_algo.Time} GammaScalper.UpdateTriggerPrices: Delta sign has changed. Resetting scalper.");
+                ReviewScalper(Symbol);
+                return;
+            }
+
+            var newTriggerPrice = GetUpdatedTriggerPrice();
+            if (newTriggerPrice != _triggerPrice)
+            {
+                _algo.Log($"{_algo.Time} GammaScalper.UpdateTriggerPrices: Symbol={Symbol}, MidPrice={MidPrice}, TriggerOld={_triggerPrice}, TriggerNew={newTriggerPrice}, StartingPrice={_startingPrice}, ScalpingGains={ScalpingGains()}");
+                _triggerPrice = newTriggerPrice;
             }
         }
 
-        private bool IsTriggered() => (MidPrice >= _triggerPriceHigh || MidPrice <= _triggerPriceLow);
+        private bool IsTriggered() => ScalpingDirection switch
+        {
+            OrderDirection.Buy => MidPrice <= _triggerPrice,
+            OrderDirection.Sell => MidPrice >= _triggerPrice,
+        };
 
         /// <summary>
         /// If range bound, frequent hedging of tiny delta moves can incur more transaction costs than the gamma scalping profits.
         /// Hence check, if delta deviation from zero is greater than expected fee, hedge, otherwise only hedge if band is exceeded.
+        /// Todo: This is a hack. Should be done in a more principled way.
         /// </summary>
         private void Hedge()
         {
             bool deltaRiskExceedingBand = _algo.PfRisk.CheckHandleDeltaRiskExceedingBand(Symbol);
-            bool scalpingGainsExceedTransactionCosts = ScalpingGainsExceedTransactionCosts();
-            if (deltaRiskExceedingBand || scalpingGainsExceedTransactionCosts)
+            if (deltaRiskExceedingBand)// || scalpingGainsExceedTransactionCosts)
             {
-                _algo.Log($"{_algo.Time} GammaScalper.Hedge: Symbol={Symbol}, MidPrice={MidPrice}, TriggerHigh={_triggerPriceHigh}, TriggerLow={_triggerPriceLow}, " +
+                bool scalpingGainsExceedTransactionCosts = DoScalpingGainsExceedTransactionCosts();
+                _algo.Log($"{_algo.Time} GammaScalper.Hedge: Symbol={Symbol}, Delta={_algo.DeltaMV(Symbol)}, MidPrice={MidPrice}, TriggerPrice={_triggerPrice}, ScalpingDirection={ScalpingDirection}, " +
                     $"scalpingGainsExceedTransactionCosts={scalpingGainsExceedTransactionCosts}, deltaRiskExceedingBand={deltaRiskExceedingBand}");
-                _algo.ExecuteHedge(Symbol, _algo.EquityHedgeQuantity(Symbol), OrderType.Limit);
+                _algo.ExecuteHedge(Symbol, _algo.EquityHedgeQuantity(Symbol), OrderType.Market);  // Having this here is error prone and should be centralized. Switch from market to limit/updating in future easily forgotten.
             }
-
-
         }
 
         private decimal ScalpingGains()
@@ -177,7 +219,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return scalpedDelta * (MidPrice - _startingPrice);
         }
 
-        private bool ScalpingGainsExceedTransactionCosts()
+        private bool DoScalpingGainsExceedTransactionCosts()
         {
             decimal deltaTotal = _algo.DeltaMV(Symbol);
 
@@ -187,6 +229,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             decimal transactionCosts = _algo.TransactionCosts(Symbol, scalpedDelta);
             _algo.Log($"{_algo.Time} GammaScalper.ScalpingGainsExceedTransactionCosts: Symbol={Symbol}, deltaTotal(notInCalc)={deltaTotal}, scalpedDelta={scalpedDelta}, gammaTotal={deltaTotal}, gammaScalpingProfit={gammaScalpingProfit}, transactionCosts={transactionCosts}");
             return gammaScalpingProfit > transactionCosts;
+        }
+        public string StatusShort()
+        {
+            return IsScalping ? $"GammaScalpingTriggerPrice={TriggerPrice}" : "IsGammaScalping=false";
+        }
+        public string Status()
+        {
+            return $"Symbol={Symbol}, IsScalping={IsScalping}, ScalpingDirection={ScalpingDirection}, TriggerPrice={_triggerPrice}, MidPrice={MidPrice}, StartingPrice={_startingPrice}, ScalpingGains={ScalpingGains()}";
         }
     }
 }

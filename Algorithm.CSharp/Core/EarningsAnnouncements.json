@@ -18,6 +18,12 @@
     "EmbargoPost": "2023-09-12"
   },
   {
+    "Symbol": "ORCL",
+    "Date": "2023-12-11",
+    "EmbargoPrior": "2023-09-09",
+    "EmbargoPost": "2023-09-12"
+  },
+  {
     "Symbol": "DELL",
     "Date": "2023-08-31",
     "EmbargoPrior": "2023-08-29",
@@ -25,7 +31,7 @@
   },
   {
     "Symbol": "DELL",
-    "Date": "2023-11-30",  // after market close
+    "Date": "2023-11-30", // after market close
     "EmbargoPrior": "2023-11-29",
     "EmbargoPost": "2023-12-02"
   },
@@ -38,6 +44,12 @@
   {
     "Symbol": "HPE",
     "Date": "2023-08-29",
+    "EmbargoPrior": "2023-08-28",
+    "EmbargoPost": "2023-08-30"
+  },
+  {
+    "Symbol": "HPE",
+    "Date": "2023-11-28",
     "EmbargoPrior": "2023-08-28",
     "EmbargoPost": "2023-08-30"
   },

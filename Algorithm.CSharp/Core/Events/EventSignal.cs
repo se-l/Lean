@@ -19,5 +19,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Events
             OcaGroup = ocaGroup;
             OcaType = ocaType;
         }
+
+        public override string ToString()
+        {
+            return $"Signal: {Symbol} {OrderDirection}, OcaGroup/Type={OcaGroup}/{OcaType}, Utility={UtilityOrder.Utility}";
+        }
     }
 }

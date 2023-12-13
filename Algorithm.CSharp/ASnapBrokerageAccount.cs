@@ -22,6 +22,9 @@ using QuantConnect.Algorithm.CSharp.Core.Risk;
 using Newtonsoft.Json;
 using System.IO;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Data.UniverseSelection;
+using QuantConnect.Util;
+using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -39,8 +42,12 @@ namespace QuantConnect.Algorithm.CSharp
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
+            EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText("EarningsAnnouncements.json"));
+            DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
+            EarningsBySymbol = EarningsAnnouncements.GroupBy(ea => ea.Symbol).ToDictionary(g => g.Key, g => g.ToArray());
 
-            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays));
+            securityInitializer = new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays);
+            SetSecurityInitializer(securityInitializer);
 
             AssignCachedFunctions();
             PfRisk = PortfolioRisk.E(this);
@@ -100,6 +107,13 @@ namespace QuantConnect.Algorithm.CSharp
             ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
             
             SetRunTimeError(new System.Exception("Account Snapped. Metrics logged and exported"));
+        }
+        public override void OnSecuritiesChanged(SecurityChanges changes)
+        {
+            changes.AddedSecurities.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
+            {
+                securityInitializer.RegisterIndicators((Option)sec);
+            });
         }
     }
 }

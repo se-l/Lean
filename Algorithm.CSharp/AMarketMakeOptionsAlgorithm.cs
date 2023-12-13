@@ -32,6 +32,8 @@ using QuantConnect.Securities.Equity;
 using Newtonsoft.Json;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
+using QuantConnect.Securities.Option;
+using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -61,12 +63,15 @@ namespace QuantConnect.Algorithm.CSharp
 
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText("EarningsAnnouncements.json"));
             DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
-            EarningBySymbol = EarningsAnnouncements.GroupBy(ea => ea.Symbol).ToDictionary(g => g.Key, g => g.ToArray());
+
+            // To be handled with API.Essentially get in realtime positions out of algo and ingest orders in realtime
+            ManualOrderInstructionBySymbol = JsonConvert.DeserializeObject<ManualOrderInstruction[]>(File.ReadAllText("ManualOrderInstructions.json")).GroupBy(x => x.Symbol).ToDictionary(g => g.Key, g => g.First());
+            EarningsBySymbol = EarningsAnnouncements.GroupBy(ea => ea.Symbol).ToDictionary(g => g.Key, g => g.ToArray());
 
             mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - ScheduledEvent.SecurityEndOfDayDelta - TimeSpan.FromMinutes(5));  // 10mins before EOD market close events fire
-            orderType = OrderType.Limit;
 
-            SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays));
+            securityInitializer = new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays);
+            SetSecurityInitializer(securityInitializer);;
 
             AssignCachedFunctions();
 
@@ -79,7 +84,7 @@ namespace QuantConnect.Algorithm.CSharp
             int subscriptions = 0;
             foreach (string ticker in ticker)
             {
-                var equity = AddEquity(ticker, resolution: resolution, Market.USA, fillForward: false);
+                var equity = AddEquity(ticker, resolution: resolution, Market.USA, fillForward: false, extendedMarketHours: true);
                 symbolSubscribed ??= equity.Symbol;
 
                 subscriptions++;
@@ -104,6 +109,7 @@ namespace QuantConnect.Algorithm.CSharp
                 UtilityWriters[equity.Symbol] = new UtilityWriter(this, equity);
                 OrderEventWriters[equity.Symbol] = new OrderEventWriter(this, equity);
                 UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => RunSignals(e);
+                UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => SnapPositions();
                 UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += RiskProfiles[equity.Symbol].OnDS;
             }
             RealizedPositionWriter = new(this);
@@ -115,7 +121,6 @@ namespace QuantConnect.Algorithm.CSharp
 
             // SCHEDULED EVENTS
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
-            //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.Start), () => RunSignals());
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
 
             // Before EOD - stop trading & overnight hedge
@@ -144,8 +149,6 @@ namespace QuantConnect.Algorithm.CSharp
             RiskRecorder = new(this);
 
             // Wiring up events
-            RealizedPositionEvent += (object sender, Position e) => StoreRealizedPosition(e);
-            RealizedPositionEvent += (object sender, Position e) => RealizedPositionWriter.Write(e);
             NewBidAskEventHandler += OnNewBidAskEventUpdateLimitPrices;
             NewBidAskEventHandler += OnNewBidAskEventCheckRiskLimits;
             RiskLimitExceededEventHandler += OnRiskLimitExceededEventHedge;
@@ -212,6 +215,8 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 UpdateOrderFillData(orderEvent);
 
+                CancelOcaGroup(orderEvent);
+
                 var trades = WrapToTrade(orderEvent);
                 ApplyToPosition(trades);
                 Publish(new TradeEventArgs(trades));  // Continues asynchronously. Sure that's wanted?
@@ -224,7 +229,24 @@ namespace QuantConnect.Algorithm.CSharp
                 RiskProfiles[Underlying(orderEvent.Symbol)].Update();
 
                 InternalAudit(orderEvent);
+                SnapPositions();
             }
+        }
+
+        public void CancelOcaGroup(OrderEvent orderEvent)
+        {
+            Order order = Transactions.GetOrderById(orderEvent.OrderId);
+            if (order.OcaGroup != null)
+            {
+                CancelOcaGroup(order.OcaGroup);
+            }
+        }
+
+        public void CancelOcaGroup(string ocaGroup)
+        {
+            var tickets = orderTickets.Values.SelectMany(t => t).Where(t => t.OcaGroup == ocaGroup).ToList();
+            Log($"{Time} Canceling OcaGroup: {ocaGroup}.");
+            tickets.DoForEach(t => Cancel(t));
         }
 
         public override void OnAssignmentOrderEvent(OrderEvent assignmentEvent)
@@ -232,12 +254,20 @@ namespace QuantConnect.Algorithm.CSharp
             Log($"OnAssignmentOrderEvent: {assignmentEvent}");
         }
 
-        public List<Symbol> AddOptionIfScoped(Symbol option)
+        public override void OnSecuritiesChanged(SecurityChanges changes)
+        {
+            changes.AddedSecurities.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
+            {
+                securityInitializer.RegisterIndicators((Option)sec);
+            });
+        }
+
+        public List<Symbol> AddOptionIfScoped(Symbol optionSymbol)
         {
             //if (!IsMarketOpen(hedgeTicker[0])) return new List<Symbol>();
 
             int susbcriptions = 0;
-            var contractSymbols = OptionChainProvider.GetOptionContractList(option, Time);
+            var contractSymbols = OptionChainProvider.GetOptionContractList(optionSymbol, Time);
             List<Symbol> subscribedSymbol = new();
             foreach (var symbol in contractSymbols)
             {
@@ -254,7 +284,9 @@ namespace QuantConnect.Algorithm.CSharp
                         var item = AddData<VolatilityBar>(symbol, resolution: Resolution.Second, fillForward: false);
                         item.IsTradable = false;
 
-                        AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false);
+                        AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false, extendedMarketHours: true);
+                        //securityInitializer.RegisterIndicators(option);
+
                         QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
                         subscribedSymbol.Add(symbol);
                     }
@@ -284,6 +316,7 @@ namespace QuantConnect.Algorithm.CSharp
         public override void OnEndOfDay(Symbol symbol)
         {
             if (IsWarmingUp || Time.Date == endOfDay) { return; }
+            SnapPositions();
             LogPortfolioHighLevel();
             ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
             endOfDay = Time.Date;
@@ -358,7 +391,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         public void SnapPositions()
         {
-            Positions.Values.Where(p => p.Quantity != 0).DoForEach(p => p.Snap());
+            Positions.Values.Where(p => p.Quantity != 0).DoForEach(p => Snap(p.Symbol));
         }
 
         public void ExportIVSurface()
@@ -398,21 +431,35 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public void SetBacktestingHoldings()
         {
-            if (LiveMode) return;
+            if (LiveMode || !Cfg.SetBacktestingHoldings) return;
             foreach ((string ticker, decimal quantity, decimal averagePrice) in FetchHoldings())
             {
-                if (Securities.ContainsKey(ticker))
+                try
                 {
+                    if (!Securities.Keys.Select(s => s.Value).Contains(ticker))
+                    {
+                        string underlyingTicker = ticker.Split(' ')[0];
+                        var optionSymbol = QuantConnect.Symbol.CreateCanonicalOption(underlyingTicker, Market.USA, $"?{underlyingTicker}");
+                        var contractSymbols = OptionChainProvider.GetOptionContractList(optionSymbol, Time);
+                        contractSymbols.Where(s => s.Value == ticker).DoForEach(contractSymbol => AddOptionContract(contractSymbol, Resolution.Second, fillForward: false, extendedMarketHours: true));
+                    }
+                    
                     Log($"{Time} SetBacktestingHoldings: Symbol={ticker}, Quantity={quantity}, AvgPrice={averagePrice}");
-                    Securities[ticker].Holdings.SetHoldings(quantity, averagePrice == 0 ? Securities[ticker].Price : averagePrice);
+                    Securities[ticker].Holdings.SetHoldings(averagePrice == 0 ? Securities[ticker].Price : averagePrice, quantity);
+                    TotalPortfolioValueSinceStart += Securities[ticker].Holdings.HoldingsValue;                   
                 }
+                catch (Exception e)
+                {
+                    Log($"{Time} SetBacktestingHoldings: {ticker} {e.Message}");
+                }
+                
             }
-            InitializePositionsFromPortfolioHoldings();
+            //InitializePositionsFromPortfolioHoldings();
         }
         public List<(string, decimal, decimal)> FetchHoldings()
         {
             // Read from file: Symbol, Quantity, AveragePrice
-            string pathBacktestingHoldings = Path.Combine("..", "BacktestingHoldings.csv");
+            string pathBacktestingHoldings = Path.Combine(".", Cfg.BacktestingHoldingsFn);
             // read CSV from above path. The CSV contains 2 columns: Symbol, Quantity
             if (File.Exists(pathBacktestingHoldings))
             {
@@ -429,7 +476,7 @@ namespace QuantConnect.Algorithm.CSharp
                 ActiveRegimes[underlying] = new();
                 bool upcomingEventLongIV = Cfg.UpcomingEventLongIV.TryGetValue(underlying, out upcomingEventLongIV) ? upcomingEventLongIV : Cfg.UpcomingEventLongIV[CfgDefault];
                 int upcomingEventCalendarSpreadStartDaysPrior = Cfg.UpcomingEventCalendarSpreadStartDaysPrior.TryGetValue(underlying, out upcomingEventCalendarSpreadStartDaysPrior) ? upcomingEventCalendarSpreadStartDaysPrior : Cfg.UpcomingEventCalendarSpreadStartDaysPrior[CfgDefault];
-                foreach (var announcement in EarningBySymbol[underlying].OrderBy(a => a.Date))
+                foreach (var announcement in EarningsBySymbol[underlying].OrderBy(a => a.Date))
                 {
                     if (Time.Date > announcement.Date) continue;
                     if (upcomingEventLongIV && Time.Date >= announcement.Date - TimeSpan.FromDays(20) && Time.Date < announcement.Date - TimeSpan.FromDays(3))

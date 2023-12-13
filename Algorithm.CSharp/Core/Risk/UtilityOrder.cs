@@ -5,9 +5,9 @@ using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using System.Collections.Generic;
 using Accord.Math;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using Fasterflect;
 using QuantConnect.Securities;
+using Fasterflect;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -26,39 +26,62 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public Symbol Symbol { get => Option.Symbol; }
         private Security _securityUnderlying;
         private Security SecurityUnderlying => _securityUnderlying ??= _algo.Securities[Underlying];
+        private decimal HV => SecurityUnderlying.VolatilityModel.Volatility;
         public Symbol Underlying { get => Underlying(Symbol); }
         public DateTime Time { get; internal set; }
         public OrderDirection OrderDirection { get; internal set; }
         private decimal Multiplier { get => Option.ContractMultiplier; }
         //public double Utility { get => UtilityProfit + UtilityRisk; }
+        private HashSet<Regime> Regimes;
+        /// <summary>
+        /// Vega / IV0 -> IV1: Skew, Term Structure, Level. EWMA each bin and connecting lead to an EWMA Surface. Assumption: IV returns to that, hence below util. How soon it returns, unclear.
+        /// IV != HV: profit: (RV - IV) * 0.5*dS^2 or (RV - IV) * Vega.
+        /// Theta: Daily theta. Could be offset by vega during rising IVs, eg, before earnings.
+        /// 
+        /// </summary>
         public double Utility { get =>
-                UtilityProfitSpread +  // That's always positive. Not good if option universe is to be split in 4 quadrants. Call/Put Buy/Sell, where only 1 is good for portfolio at a t 
-                UtilityVega2IVEwma +
-                UtilityTheta +
+                // PV based
+                //UtilityProfitSpread +  // That's always positive. Not good if option universe is to be split in 4 quadrants. Call/Put Buy/Sell, where only 1 is good for portfolio at a t 
+                UtilityManualOrderInstructions +
+                UtlityVegaMispricedIVUntilExpiry +  // IV at expiry incorrectly assumed to be RV.
+                UtilityVegaIV2Ewma +
+                UtilityTheta +  // double counting any value that's already included in the vega utils?
                 IntradayVolatilityRisk +
-                //UtilityEarningsAnnouncement +
-                //UtilityInventory +
-                UtilityRiskExpiry +  // Coz Theta impact somehow too small. Should make dependent on how much OTM. Just use delta. An optimization given there are many other terms to choose from.
                 UtilityCapitalCostPerDay +
-                UtilityEquityPosition +
+                UtilityTransactionCosts +  // Very approximate, but small at the moment
+
+                // To be PV refactored
+                UtilityEventUpcoming +
+
+                // ES based to be refactored
+                UtilityRiskExpiry +  // Coz Theta impact somehow too small. Should make dependent on how much OTM. Just use delta. An optimization given there are many other terms to choose from.                
                 UtilityGammaRisk +
-                //UtilityEventUpcoming +
                 UtilityDontLongLowDelta +
-                UtilityMargin;
+                UtilityEquityPosition +  // essentially there is a hedging inefficieny. Whatever net delta I hold after options, can multiply by such a factor.
+
+                // Utils need to naturally flow into hedging scenarios. E.g.: short 10 call => short puts to arrive at 0 delta. Or short IV a very low gamma => calendar spread
+
+                // Not yet refactored
+                UtilityMargin +
+                UtilityInventory;
             //UtilityVanna;  // Call vs Put & Buy vs Sell.                
         }
         //public double UtilityProfit { get => 0; }
         //public double UtilityRisk { get => 0; }
         private readonly HashSet<string> _utilitiesToLog = new() {
-            "UtilityVega2IVEwma", "UtilityTheta", "IntradayVolatilityRisk", "UtilityInventory", "UtilityRiskExpiry",
-            "UtilityCapitalCostPerDay", "UtilityEquityPosition", "UtilityGammaRisk", "UtilityDontLongLowDelta", "UtilityMargin", // "UtilityEventUpcoming"
+            "UtilityManualOrderInstructions", "UtlityVegaMispricedIVUntilExpiry", "UtilityVegaIV2Ewma", "UtilityTheta", "IntradayVolatilityRisk", "UtilityInventory", "UtilityRiskExpiry",
+            "UtilityCapitalCostPerDay", "UtilityEquityPosition", "UtilityGammaRisk", "UtilityDontLongLowDelta", "UtilityMargin", "UtilityEventUpcoming",
             "UtilityVannaRisk", "UtilityTransactionCosts" // Currently not in Utility
             };
 
         private double? _utilityProfitSpread;
         public double UtilityProfitSpread { get => _utilityProfitSpread ??= GetUtilityProfitSpread(); }
-        private double? _utilityVega2IVEwma;
-        public double UtilityVega2IVEwma { get => _utilityVega2IVEwma ??= GetUtilityVega2IVEwma(); }
+        private double? _utilityManualOrderInstructions;
+        public double UtilityManualOrderInstructions { get => _utilityManualOrderInstructions ??= GetUtilityManualOrderInstructions(); }
+        private double? _utilityVegaIV2Ewma;
+        public double UtilityVegaIV2Ewma { get => _utilityVegaIV2Ewma ??= GetUtilityVegaIV2Ewma(); }
+        private double? _utlityVegaMispricedIVUntilExpiry;
+        public double UtlityVegaMispricedIVUntilExpiry { get => _utlityVegaMispricedIVUntilExpiry ??= GetUtlityVegaMispricedIVUntilExpiry(); }
 
         private double? _intradayVolatilityRisk;
         public double IntradayVolatilityRisk { get => _intradayVolatilityRisk ??= GetIntradayVolatilityRisk(); }
@@ -67,9 +90,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double UtilityInventory { get => _utilityInventory ??= GetUtilityInventory(); }
         private double? _utilityRiskExpiry;
         public double UtilityRiskExpiry { get => _utilityRiskExpiry ??= GetUtilityRiskExpiry(); }
-
-        private double? _utitlityEarningsAnnouncment;
-        public double UtilityEarningsAnnouncement { get => _utitlityEarningsAnnouncment ??= GetUtilityEarningsAnnouncment(); }
         private double? _utitlityTheta;
         public double UtilityTheta { get => _utitlityTheta ??= GetUtilityTheta(ThetaDte()); }
 
@@ -102,6 +122,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Quantity = quantity;
             Time = _algo.Time;
             OrderDirection = Num2Direction(Quantity);
+            Regimes = _algo.ActiveRegimes.TryGetValue(Underlying, out Regimes) ? Regimes : new HashSet<Regime>();
 
             // Calling Utility to snap the risk => cached for future use.
             _ = Utility;
@@ -123,15 +144,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// </summary>
         private double GetUtilityTheta(int dDTE = -1)
         {
-            return OptionContractWrap.E(_algo, Option, _algo.Time.Date).Theta() * (double)(Quantity * Multiplier) * dDTE;
+            return OCW.Theta(_algo.MidIV(Symbol)) * (double)(Quantity * Multiplier) * dDTE;
         }
 
         /// <summary>
-        /// Punish buying stocks, reward shorting. Assuming CAGR of 30% and cost of shorting of 10%.
+        /// Long stock: opportunity cost / interest. Shorting stock: pay shorting fee, get capital to work with... Not applicable to options
         /// </summary>
         private decimal CapitalCostPerDay(decimal quantity)
         {
-            return quantity > 0 ? -quantity * SecurityUnderlying.Price * 0.3m / 365 : quantity * SecurityUnderlying.Price * 0.20m / 365;
+            // Should I reward shorting here?
+            return quantity > 0 ? 
+                    -quantity * SecurityUnderlying.Price * _algo.Cfg.DiscountRateMarket / 365 : 
+                     quantity * SecurityUnderlying.Price * _algo.Cfg.EquityShortingRate / 365;
         }
 
         /// <summary>
@@ -149,40 +173,86 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         /// <summary>
         /// Related to MarginUtil (kicks in at higher equity positions). Better unify both!
+        /// Objectives: 1) Incentivize trades that minimize margin requirements.
+        /// 
+        /// Scenario where a higher absolute total delta reduces margin requirements: 
         /// </summary>
         /// <returns></returns>
         private double GetUtilityEquityPosition()
         {
-            double totalEquityPosUtil;
+            double totalAbsEquityPosUtil;
 
             decimal targetMaxEquityPositionUSD = _algo.Cfg.TargetMaxEquityPositionUSD.TryGetValue(Underlying.Value, out targetMaxEquityPositionUSD) ? targetMaxEquityPositionUSD : _algo.Cfg.TargetMaxEquityPositionUSD[CfgDefault];
-            double targetMaxEquityDelta = (double)(targetMaxEquityPositionUSD / SecurityUnderlying.Price);
+            double targetMaxEquityQuantity = (double)(targetMaxEquityPositionUSD / SecurityUnderlying.Price);
 
-            double totalDerivativesDelta = (double)_algo.PfRisk.DerivativesRiskByUnderlying(Underlying, Metric.DeltaTotal);
-            double orderDelta = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, Metric.DeltaTotal);
+            double totalDerivativesDelta = (double)_algo.PfRisk.DerivativesRiskByUnderlying(Underlying, _algo.HedgeMetric(Underlying));
+            double orderDelta = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, _algo.HedgeMetric(Underlying));
             double cumDelta = totalDerivativesDelta + orderDelta;
             double cumEquityDelta = -cumDelta;
 
-            int negIfRiskAbsDeltaIncreasing = -Math.Sign(orderDelta * totalDerivativesDelta);
+            int ifFilledDeltaTotalIncreases = Math.Sign(orderDelta * totalDerivativesDelta);
+
+            // What's the PV of this Delta increase ???
+            // Instantaneous hedging cost.
+            // Increase/Decrease in subsequent hedging costs, a function of fwdVola, pfGamma, pfDelta
+
             double scaleOrder = totalDerivativesDelta != 0 ? Math.Abs(orderDelta / totalDerivativesDelta) : 1;
             double scaleRelativeToOthertilities = 1.0 / 10;
 
-            totalEquityPosUtil = Math.Abs(Math.Abs(orderDelta) + Math.Pow(Math.Max(0, Math.Abs(cumEquityDelta) - targetMaxEquityDelta), 2));
-            //if (cumEquityDelta > 0)
-            //{
-            //    // Long position. Exponential punishment / reward. Starts becoming exponential after targetMaxEquityDelta.
-            //    totalEquityPosUtil = Math.Abs(cumEquityDelta + Math.Pow(Math.Max(0, cumEquityDelta - targetMaxEquityDelta), 2));
-            //}
-            //else
-            //{
-            //    // Short equity position. Linear is enough.
-            //    totalEquityPosUtil = Math.Abs(Math.Abs(cumEquityDelta) + Math.Pow(Math.Max(0, Math.Abs(cumEquityDelta) - targetMaxEquityDelta), 2));
-            //    //totalEquityPosUtil = Math.Abs(cumEquityDelta);
-            //}
+            totalAbsEquityPosUtil = Math.Abs(orderDelta) + Math.Pow(Math.Max(0, Math.Abs(cumEquityDelta) - targetMaxEquityQuantity), 2);
             //_algo.Log($"{_algo.Time} UTIL={totalEquityPosUtil * scaleOrder * scaleRelativeToOthertilities * negIfRiskAbsDeltaIncreasing}, totalEquityPosUtil={totalEquityPosUtil}, orderDelta={orderDelta}, totalDerivativesDelta={totalDerivativesDelta}, scaleOrder={scaleOrder}");
-            return totalEquityPosUtil * scaleOrder * scaleRelativeToOthertilities * negIfRiskAbsDeltaIncreasing;
+            double util = totalAbsEquityPosUtil * scaleOrder * scaleRelativeToOthertilities * -ifFilledDeltaTotalIncreases;
+
+            // CalendarSpread. Not hedging risk with front, but back months. To be refactored getting target expiries, rather than hard coding day range.
+            if ((Regimes.Contains(Regime.SellEventCalendarHedge) && Option.Expiry < EventDate.AddDays(_algo.Cfg.CalendarSpreadPeriodDays) && util > 0) ||
+                (Regimes.Contains(Regime.SellEventCalendarHedge) && Option.Expiry >= EventDate.AddDays(_algo.Cfg.CalendarSpreadPeriodDays) && Quantity < 0 && util > 0)
+                )
+            {
+                util = 0;
+            }
+            return util;
+        }
+        /// <summary>
+        /// Essentially an overall stress risk provile util. Stressing dS by +/- 15%. Becoming hugely influencial once algo excceeds a used margin threshold.
+        /// </summary>
+        /// <returns></returns>
+        private double GetUtilityMargin()
+        {
+            decimal initialMargin;
+            decimal targetMarginAsFractionOfNLV = _algo.Cfg.TargetMarginAsFractionOfNLV.TryGetValue(Underlying.Value, out targetMarginAsFractionOfNLV) ? targetMarginAsFractionOfNLV : _algo.Cfg.TargetMarginAsFractionOfNLV[CfgDefault];
+            double marginUtilScaleFactor = _algo.Cfg.MarginUtilScaleFactor.TryGetValue(Underlying.Value, out marginUtilScaleFactor) ? marginUtilScaleFactor : _algo.Cfg.MarginUtilScaleFactor[CfgDefault];
+
+            initialMargin = _algo.InitialMargin();
+            if (initialMargin == 0) return 0;  // No Position whatsover. Algo start.
+
+            //decimal excessLiquidity = _algo.Portfolio.MarginMetrics.ExcessLiquidity;
+            decimal marginExcessTarget = Math.Abs(Math.Min(0, _algo.Portfolio.TotalPortfolioValue * targetMarginAsFractionOfNLV - initialMargin));
+
+            // Order Level - IB also offers WhatIf calcs for margin added, but would not want to rely on slow forth n back...
+            // Ignores the fact that simply a lot positions cause higher margin, need to stop increasing them eventually.
+            double stressedPnl = (double)_algo.RiskProfiles[Underlying].WhatIfMarginAdd(Symbol, Quantity);
+            // positive is good, positive pnl, good utility
+
+            double utilMargin = stressedPnl * marginUtilScaleFactor +
+                                Math.Sign(stressedPnl) * Math.Min(Math.Pow((double)marginExcessTarget, 2), 1_000_000);  // Quadratic reward/punishment, once margin target has been exceeded
+
+            if (marginExcessTarget > 0)
+            {
+                string noNewPositionTag = "";
+                if (_algo.Portfolio[Symbol].Quantity == 0)
+                {
+                    noNewPositionTag = $"No new positions when margin target exceeeded. ";
+                    utilMargin += -10000;
+                }
+                _algo.Log($"GetUtilityMargin: {Symbol} {Quantity}. {noNewPositionTag}initialMargin={initialMargin} Exceeded by marginExcessTarget={marginExcessTarget}. utilMargin={utilMargin} based on stressedPnl={stressedPnl}");
+            }
+            return utilMargin;
         }
 
+        /// <summary>
+        /// The instantaneous cost + any following hedging costs.
+        /// </summary>
+        /// <returns></returns>
         private double GetUtilityTransactionCosts()
         {
             static decimal transactionCost(decimal x) => 1 * Math.Abs(x);  // refactor to transaction fee estimator.
@@ -193,8 +263,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return -(double)transactionCost(Quantity) - transactionHedgeCost((double)deltaOrder);
         }
 
-        private DateTime EventDate => _algo.EarningBySymbol[Underlying.Value].Where(earningsAnnouncement => earningsAnnouncement.Date >= _algo.Time.Date).OrderBy(x => x.Date).FirstOrDefault(defaultValue: null).Date;
-        private DateTime ExpiryEventImpacted => _algo.IVSurfaceRelativeStrikeAsk[Underlying].Expiries().Where(expiry => expiry > EventDate).OrderBy(expiry => expiry).FirstOrDefault();
+        private DateTime EventDate => _algo.EventDate(Underlying);
+        private DateTime? _expiryEventImpacted;
+        private DateTime ExpiryEventImpacted => _expiryEventImpacted ??= _algo.ExpiryEventImpacted(Symbol);
 
         /// <summary>
         /// Reducing Exposure increases Util. Pos Gamma exposure yields gamma scalping profits. Neg loses it. Is offset by theta. Would need a way to quantity gamma scalping profits.
@@ -219,11 +290,71 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
 
         /// <summary>
+        /// Ramp up the factor from 1 to 10 with ten being 1 day before Event Date until EventEnd.
+        /// </summary>
+        /// <returns></returns>
+        public double GetUtilityEventUpcomingUrgency()
+        {
+            int daysTillEvent = Math.Max(1, (EventDate - _algo.Time.Date).Days);
+            int upcomingEventCalendarSpreadStartDaysPrior = _algo.Cfg.UpcomingEventCalendarSpreadStartDaysPrior.TryGetValue(Underlying, out upcomingEventCalendarSpreadStartDaysPrior) ? upcomingEventCalendarSpreadStartDaysPrior : 1;
+            return Math.Min(10, Math.Max(1, 10 * (upcomingEventCalendarSpreadStartDaysPrior / daysTillEvent)));
+        }
+
+        /// <summary>
+        /// Replicate short front month position in cheap IV back month
+        /// have the same number of contracts in the back month as in the front month. Grouped by put vs calls.
+        /// </summary>
+        /// <returns></returns>
+        private double GetUtilityEventUpcoming()
+        {            
+            double _util = 0;
+
+            if (Regimes.Contains(Regime.SellEventCalendarHedge))
+            {
+                if (Option.Expiry < EventDate.AddDays(_algo.Cfg.CalendarSpreadPeriodDays) || OrderDirection == OrderDirection.Sell) 
+                {   
+                    if (OrderDirection == OrderDirection.Sell)
+                    {
+                        decimal absDeltaFrontMonthCallsTotal = Math.Abs(_algo.PfRisk.RiskByUnderlying(Symbol.Underlying, _algo.HedgeMetric(Symbol.Underlying), filter: (IEnumerable<Position> positions) => positions.Where(p => _algo.IsFrontMonthPosition(p) && p.OptionRight == OptionRight.Call)));
+                        decimal absDeltaFrontMonthPutsTotal = Math.Abs(_algo.PfRisk.RiskByUnderlying(Symbol.Underlying, _algo.HedgeMetric(Symbol.Underlying), filter: (IEnumerable<Position> positions) => positions.Where(p => _algo.IsFrontMonthPosition(p) && p.OptionRight == OptionRight.Put)));
+
+                        // For the calendar spread, would want an approximately equal delta between short puts and short calls. Therefore, selling wichever right has a significantly lower abs delta.
+                        bool needToSellMore = (Option.Right) switch
+                        {
+                            OptionRight.Call => absDeltaFrontMonthCallsTotal < 0.9m * absDeltaFrontMonthPutsTotal,
+                            OptionRight.Put => absDeltaFrontMonthPutsTotal < 0.9m * absDeltaFrontMonthCallsTotal,
+                        };
+                        double delta = OCW.Delta(_algo.MidIV(Symbol));
+
+                        if (needToSellMore && Math.Abs(delta) < 0.3)
+                        {
+                            _algo.Log($"{_algo.Time} GetUtilityEventUpcoming: Need to Sell more {Option.Right}. absDeltaFrontMonthCallsTotal={absDeltaFrontMonthCallsTotal}, absDeltaFrontMonthPutsTotal={absDeltaFrontMonthPutsTotal}");
+                            return 500;
+                        }
+                    }                    
+                
+                    return -500;
+                };
+
+                decimal quantityToBuy = _algo.CalendarSpreadQuantityToBuyBackMonth(Symbol, OrderDirection.Buy);
+
+                // Buy back month hedging above sell
+                double urgencyFactor = GetUtilityEventUpcomingUrgency();
+                if (quantityToBuy > 0)
+                {
+                    _util = 100;
+                }
+                return _util * urgencyFactor;
+            }
+            return 0;
+        }
+
+        /// <summary>
         /// Instead of specificly coding up an event util... this could automatically follow from vega util and risk reduction utils. But they usually dont have StressedPnl calcs. 
         /// Therefore, rather need a need risk aversion parameter. Aversion increases towards events. If simple as such, wouldn't sell the contract and enter calendar spread. Hence this here codes up a 2-legged strategy.
         /// </summary>
         /// <returns></returns>
-        private double GetUtilityEventUpcoming()
+        private double GetUtilityEventUpcomingRiskBased()
         {
             decimal stressedPnlPf;
             decimal meanStressPnlPf = 0;
@@ -246,35 +377,48 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             HashSet<Metric> metricsDs = new() { Metric.Delta, Metric.Gamma, Metric.Speed };
             var trade = new Trade(_algo, Symbol, Quantity, _algo.MidPrice(Symbol));
             Position position = new(_algo, trade);
-
+            List<Position>? pfPositions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol.Underlying && x.Quantity != 0 && x.SecurityType == SecurityType.Option).ToList();
 
             if (regimes.Contains(Regime.SellEventCalendarHedge))
             {
                 // 2 rewards: front month: selling IV, back month: hedging to zero or positive dS risk.
                 foreach (decimal pctChange in riskProfilePctChanges)
                 {
-                    stressedPnlPf = _algo.RiskProfiles[Underlying].StressedPnlPositions(dSPct: (double)pctChange, metricsDs: metricsDs);
+                    stressedPnlPf = _algo.RiskProfiles[Underlying].StressedPnlPositions(pfPositions, dSPct: (double)pctChange, metricsDs: metricsDs);
                     meanStressPnlPf += stressedPnlPf;
                     stressedPnlPos = _algo.RiskProfiles[Underlying].StressedPnlPositions(position, dSPct: (double)pctChange, metricsDs: metricsDs);
-                    netStressReduction += stressedPnlPf < 0 && stressedPnlPos > 0 ? stressedPnlPos : 0;
+                    if (stressedPnlPf < 0 && stressedPnlPos > 0)
+                    {
+                        netStressReduction += stressedPnlPos;
+                    }                    
                 }
                 meanStressPnlPf /= riskProfilePctChanges.Count;
 
                 if (Option.Expiry < ExpiryEventImpacted) return 0;
 
                 // Sell the high IV. refactor to actually selling extraordinarily high IV contracts, dont select by date...
-                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Sell && meanStressPnlPf > 0)  // At this point, only sell IV if risk is reduced.
+                if (Option.Expiry < ExpiryEventImpacted.AddDays(60) && OrderDirection == OrderDirection.Sell && meanStressPnlPf > 0)  // At this point, only sell IV if risk is reduced.
                 {
-                    _util = UtilityVega2IVEwma;
+                    _util = UtilityVegaIV2Ewma;
                 }
 
                 // This should be fairly negative in losing vega util...
-                if (Option.Expiry < ExpiryEventImpacted.AddDays(14) && OrderDirection == OrderDirection.Buy) return 0;
+                if (Option.Expiry < ExpiryEventImpacted.AddDays(60) && OrderDirection == OrderDirection.Buy) return 0;
 
                 // Buy back month hedging above sell
-                if (Option.Expiry >= ExpiryEventImpacted.AddDays(14))
+                if (Option.Expiry >= ExpiryEventImpacted.AddDays(60))
                 {
                     _util = (double)netStressReduction;
+                    foreach (decimal pctChange in riskProfilePctChanges)
+                    {
+                        stressedPnlPf = _algo.RiskProfiles[Underlying].StressedPnlPositions(pfPositions, dSPct: (double)pctChange, metricsDs: metricsDs);
+                        meanStressPnlPf += stressedPnlPf;
+                        stressedPnlPos = _algo.RiskProfiles[Underlying].StressedPnlPositions(position, dSPct: (double)pctChange, metricsDs: metricsDs);
+                        if (stressedPnlPf < 0 && stressedPnlPos > 0)
+                        {
+                            netStressReduction += stressedPnlPos;
+                        }
+                    }
                 }
 
                 return _util * urgencyFactor;
@@ -319,7 +463,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// <returns></returns>
         private double GetUtilityDontLongLowDelta()
         {
-            double delta = OptionContractWrap.E(_algo, Option, _algo.Time.Date).Delta();
+            double delta = OCW.Delta((double)HV);
             return delta < 0.1 && Quantity > 0 ? -100 * (double)Quantity : 0;
         }
 
@@ -344,7 +488,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             double iv = (_algo.IVAsks[Symbol].IVBidAsk.IV + _algo.IVBids[Symbol].IVBidAsk.IV) / 2;
             double intraDayIVSlope = _algo.IntradayIVDirectionIndicators[Option.Underlying.Symbol].IntraDayIVSlope;
             double fractionOfDayRemaining = 1 - _algo.IntradayIVDirectionIndicators[Option.Underlying.Symbol].FractionOfDay(_algo.Time);
-            return OptionContractWrap.E(_algo, Option, _algo.Time.Date).Vega(iv) * intraDayIVSlope * fractionOfDayRemaining * (double)(Quantity * Option.ContractMultiplier);
+            return OCW.Vega(iv) * intraDayIVSlope * fractionOfDayRemaining * (double)(Quantity * Option.ContractMultiplier);
         }
 
         private double GetUtilityProfitSpread()
@@ -352,42 +496,29 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             decimal spread = (Option.AskPrice - Option.BidPrice) / 2;
             return Math.Abs((double)(Quantity * Multiplier * spread));
         }
-        
-        /// <summary>
-        /// Essentially an overall stress risk provile util. Stressing dS by +/- 15%. Becoming hugely influencial once algo excceeds a used margin threshold.
-        /// </summary>
-        /// <returns></returns>
-        private double GetUtilityMargin()
+        private double GetUtilityManualOrderInstructions()
         {
-            decimal initialMargin;
-            decimal targetMarginAsFractionOfNLV = _algo.Cfg.TargetMarginAsFractionOfNLV.TryGetValue(Underlying.Value, out targetMarginAsFractionOfNLV) ? targetMarginAsFractionOfNLV : _algo.Cfg.TargetMarginAsFractionOfNLV[CfgDefault];
-            double marginUtilScaleFactor = _algo.Cfg.MarginUtilScaleFactor.TryGetValue(Underlying.Value, out marginUtilScaleFactor) ? marginUtilScaleFactor : _algo.Cfg.MarginUtilScaleFactor[CfgDefault];
+            if (!_algo.ManualOrderInstructionBySymbol.ContainsKey(Symbol.Value) || !_algo.Cfg.ExecuteManualOrderInstructions) return 0;
 
-            initialMargin = _algo.InitialMargin();
-            if (initialMargin == 0) return 0;  // No Position whatsover. Algo start.
+            ManualOrderInstruction manualOrderInstruction = _algo.ManualOrderInstructionBySymbol[Symbol.Value];
+            decimal orderQuantity = manualOrderInstruction.TargetQuantity - _algo.Portfolio[Symbol].Quantity;
+            if (orderQuantity > 0 && OrderDirection == OrderDirection.Buy) return 1000;
+            else if (orderQuantity < 0 && OrderDirection == OrderDirection.Sell) return -1000;
+            else if (orderQuantity == 0 || _algo.Portfolio[Symbol].Quantity == 0) return -1000;
+            else return 0;
+        }
 
-            //decimal excessLiquidity = _algo.Portfolio.MarginMetrics.ExcessLiquidity;
-            decimal marginExcessTarget = Math.Abs(Math.Min(0, _algo.Portfolio.TotalPortfolioValue * targetMarginAsFractionOfNLV - initialMargin));
-
-            // Order Level - IB also offers WhatIf calcs for margin added, but would not want to rely on slow forth n back...
-            // Ignores the fact that simply a lot positions cause higher margin, need to stop increasing them eventually.
-            double stressedPnl = (double)_algo.RiskProfiles[Underlying].WhatIfMarginAdd(Symbol, Quantity);
-            // positive is good, positive pnl, good utility
-
-            double utilMargin = stressedPnl * marginUtilScaleFactor + 
-                                Math.Sign(stressedPnl) * Math.Min(Math.Pow((double)marginExcessTarget, 2), 1_000_000);  // Quadratic reward/punishment, once margin target has been exceeded
-            
-            if (marginExcessTarget > 0)
-            {
-                string noNewPositionTag = "";
-                if (_algo.Portfolio[Symbol].Quantity == 0)
+        private OptionContractWrap? _ocw = null;
+        private OptionContractWrap OCW
+        {
+            get {
+                if (_ocw == null)
                 {
-                    noNewPositionTag = $"No new positions when margin target exceeeded. ";
-                    utilMargin += -10000;
+                    _ocw = OptionContractWrap.E(_algo, Option, _algo.Time.Date);
+                    _ocw.SetIndependents(_algo.MidPrice(Underlying), _algo.MidPrice(Symbol));
                 }
-                _algo.Log($"GetUtilityMargin: {Symbol} {Quantity}. {noNewPositionTag}initialMargin={initialMargin} Exceeded by marginExcessTarget={marginExcessTarget}. utilMargin={utilMargin} based on stressedPnl={stressedPnl}");
-            }
-            return utilMargin;
+                return _ocw;
+            }            
         }
 
 
@@ -400,33 +531,49 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// 
         /// Combines Skew, surface and term structure.
         /// /// </summary>
-        private double GetUtilityVega2IVEwma()
+        private double GetUtilityVegaIV2Ewma()
+        {
+            double midIV = _algo.MidIV(Symbol);            
+            if (midIV == 0) { return 0; }
+            double midIVEwma = _algo.MidIVEWMA(Symbol);
+            // Favors selling skewed wings.
+            double fv = (midIVEwma - midIV) * OCW.Vega(midIV) * (double)(Quantity * Option.ContractMultiplier);
+            return (double)_algo.DiscountedValue((decimal)fv, 1.0/365.0);  // Expecting intraday reversion to expected IV levels
+        }
+
+        private double GetUtilityVegaSuspiciouslyLowIV()
         {
             Symbol underlying = Symbol.Underlying;
             double midIV = _algo.MidIV(Symbol);
-            if (midIV == 0) { return 0; }
-
-            var ocw = OptionContractWrap.E(_algo, Option, _algo.Time.Date);
-            ocw.SetIndependents(_algo.MidPrice(underlying), _algo.MidPrice(Symbol), midIV);
-            double vega = ocw.Vega(midIV);
-
-            double expectedIV = _algo.ForwardIV(Symbol);
-
-            // Favors selling skewed wings.
-            double util = (expectedIV - midIV) * vega * (double)(Quantity * Option.ContractMultiplier);
-
-            // int dte = Symbol.ID.Date.Subtract(_algo.Time.Date).Days;  // To divide by DTE is not quite useful. There'll be short term IV ups & downs to be exploited. My offers must be at the kinks of the IV surface.
-            int dte = 1;  // Expecting intraday return to expected IV levels. To be remodeled. Math.Min(dte, 5);
-
             // Punish selling weirdly low IVs. To be investigated. saw once 16% where usually ~30%.
             double fwdVol = (double)ExpectedRealizedVolatility(underlying);
-            if (midIV < fwdVol && Quantity < 0) 
+            if (midIV < fwdVol && Quantity < 0)
             {
                 //_algo.Log($"GetUtilityVega2HV: Preventing selling low IV: {Symbol} {Quantity}. iv={iv} < fwdIV={fwdIV}. util={util} reduced by 1000");
-                util -= 1000;
+                return -1000;
             };
+            return 0;
+        }
 
-            return util / dte;
+        /// <summary>
+        /// Difference between (RV - IV) * Vega
+        /// </summary>
+        /// <returns></returns>
+        private double GetUtlityVegaMispricedIVUntilExpiry()
+        {
+            Symbol underlying = Symbol.Underlying;
+            double midIVFwdShortTerm = _algo.MidIVEWMA(Symbol);
+            double fwdVola = (double)ExpectedRealizedVolatility(underlying);
+
+            // Hacky presumption: IV is never lower than future realized volatility, therefore volatility is min(stdReturns, IV)
+            double atmIV = _algo.AtmIV(Symbol);
+            if (atmIV > 0 && atmIV < fwdVola)
+            {
+                fwdVola = atmIV;
+            }
+
+            double fv = (fwdVola - midIVFwdShortTerm) * OCW.Vega(midIVFwdShortTerm) * (double)(Quantity * Option.ContractMultiplier);
+            return (double)_algo.DiscountedValue((decimal)fv, Option);
         }
 
         /// <summary>
@@ -445,7 +592,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             double utility = 0;
 
-            bool any = _algo.EarningBySymbol.TryGetValue(Option.Underlying.Symbol.Value, out EarningsAnnouncement[] earningsAnnouncements);
+            bool any = _algo.EarningsBySymbol.TryGetValue(Option.Underlying.Symbol.Value, out EarningsAnnouncement[] earningsAnnouncements);
             if (!any || earningsAnnouncements.Length == 0) return 0;
 
             if (!_algo.Cfg.EarningsAnnouncementUtilityMinDTE.TryGetValue(Underlying.Value, out int minDTE))
@@ -457,10 +604,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (nextAnnouncement == null) return 0;
 
             // Impact after announcement. Implied move goes into gamma delta risk. -ImpliedMove * Vega into IV risk.
-            int dte = (_algo.IVSurfaceRelativeStrikeAsk[Underlying].MinExpiry() - _algo.Time.Date).Days;
-            double currentAtm = _algo.PfRisk.AtmIV(Underlying);
+            var expiry = _algo.IVSurfaceRelativeStrikeAsk[Underlying].MinExpiry();
+            if (expiry == null) return 0;
+            int dte = ((DateTime)expiry - _algo.Time.Date).Days;
             double longTermAtm = _algo.AtmIVIndicators[Underlying].Current;
-            double impliedMove = currentAtm * Math.Sqrt(dte) / Math.Sqrt(365);  
+            double impliedMove = _algo.ImpliedMove(Underlying);
             
             // Only consider earnings strategy if market is also elevated, hence prices in increased vola.
             if (!_algo.Cfg.EarningsAnnouncementUtilityMinAtmIVElevation.TryGetValue(Underlying.Value, out double minAtmIVElevation))
@@ -491,6 +639,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return utility;
         }
 
+
+        /// <summary>
+        /// Theta over the weekend likely less than 3 days. It's already priced in on Friday.
+        /// </summary>
+        /// <returns></returns>
         private int ThetaDte()
         {
             return _algo.Time.Date.DayOfWeek == DayOfWeek.Friday ? 3 : 1;

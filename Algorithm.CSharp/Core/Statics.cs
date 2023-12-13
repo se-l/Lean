@@ -30,6 +30,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             HistoricalVolatility,
             ImpliedVolatility,
             Zakamulin,
+            ImpliedVolatilityAtm,
+            ImpliedVolatilityEWMA,
         }
 
         public static Dictionary<int, HedgingMode> HedgingModeMap { get; } = new()
@@ -38,6 +40,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             { 1, HedgingMode.HistoricalVolatility },
             { 2, HedgingMode.ImpliedVolatility },
             { 3, HedgingMode.Zakamulin },
+            { 4, HedgingMode.ImpliedVolatilityAtm },
+            { 5, HedgingMode.ImpliedVolatilityEWMA },
         };
 
         public static HashSet<Type> PrimitiveTypes = new()
@@ -154,6 +158,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             DeltaTotal,
             DeltaImpliedTotal,
             DeltaImpliedAtmTotal,
+            DeltaImpliedEWMATotal,
 
             Delta100BpUSDTotal,
             DeltaImplied100BpUSDTotal,
@@ -407,8 +412,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }                    
                 }
             }
-            string value = val?.ToString() ?? "";
-            value = value.Contains(",") ? "\"" + value + "\"" : value;
+            string value = "";
+            if (val is DateTime)
+            {
+                value = ((DateTime?)val)?.ToStringInvariant("yyyy-MM-dd HH:mm:ss") ?? "";
+            }
+            else
+            {
+                value = val?.ToString() ?? "";
+                value = value.Contains(",") ? "\"" + value + "\"" : value;
+            }
             return value;
         }
 
@@ -444,12 +457,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             File.WriteAllText(filePath, ToCsv(objects));
         }
-        public static decimal CastGracefully(double originalValue)
+        public static decimal ToDecimal(double originalValue)
         {
             if (originalValue >= (double)decimal.MinValue && originalValue <= (double)decimal.MaxValue)
             {
                 // The original value is within the valid range for a decimal
                 return (decimal)originalValue;
+            }
+            else if (originalValue > (double)decimal.MaxValue)
+            {
+                // The original value is too big
+                return decimal.MaxValue;
+            }
+            else if (originalValue < (double)decimal.MinValue)
+            {
+                // The original value is too small
+                return decimal.MinValue;
             }
             else
             {

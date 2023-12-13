@@ -11,6 +11,9 @@ namespace QuantConnect.Algorithm.CSharp
         public HashSet<string> Ticker { get; set; }
         public HashSet<string> LiquidateTicker { get; set; }
         public Dictionary<string, bool> SkipRunSignals {  get; set; }
+        public bool ExecuteManualOrderInstructions { get; set; }
+        public bool SetBacktestingHoldings { get; set; }
+        public string BacktestingHoldingsFn { get; set; }
         public int VolatilityPeriodDays { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMax { get; set; }
         public decimal scopeContractStrikeOverUnderlyingMaxSignal { get; set; }
@@ -59,6 +62,10 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, int> HedgingMode { get; set; }
         public Dictionary<string, bool> UpcomingEventLongIV { get; set; }
         public Dictionary<string, int> UpcomingEventCalendarSpreadStartDaysPrior { get; set; }
-        public bool SetBacktestingHoldings { get; set; }
+        public int CalendarSpreadPeriodDays { get; set; }
+        public decimal EquityShortingRate { get; set; }
+        public decimal DiscountRatePortfolioCAGR { get; set; }
+        public decimal DiscountRateMarket { get; set; }
+        public Dictionary<string, double> MinUtility { get; set; }
     }
 }

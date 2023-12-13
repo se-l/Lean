@@ -1,3 +1,4 @@
+using MathNet.Numerics.LinearAlgebra.Factorization;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
@@ -7,6 +8,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using static QuantConnect.Messages;
 
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -38,33 +40,41 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 );
         }
 
-        public QuoteDiscount DiscountEvents(Option option, decimal quantity)
+        public QuoteDiscount DiscountEvents(QuoteRequest<Option> qr)
         {
-            double discount = 0;
+            double spreadFactor = 0;
             // Get out / Liquidate Discount (e.g. earnings release, rollover/assignments/expiry, etc.) to be refined.
             // Trade Embargo pricing. and avoid assignments
 
-            RiskDiscount riskDiscount = EventDiscounts[option.Underlying.Symbol];
-            
-            if (
-                embargoedSymbols.Contains(option.Symbol)
-                || (option.Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
-                )
+            RiskDiscount riskDiscount = EventDiscounts[qr.Option.Underlying.Symbol];
+
+            // Below code is to avoid any kind of event, not well tested. Below the updated version handling this via a calender spread.
+            //if (
+            //    embargoedSymbols.Contains(option.Symbol)
+            //    || (option.Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
+            //    )
+            //{
+            //    //double discount = riskDiscount.X0 + riskDiscount.X1 * deltaTargetRisk + riskDiscount.X2 * Math.Pow(deltaTargetRisk, 2);
+            //    discount = riskDiscount.X0;
+            //}
+
+            // Increase spread factor with urgency, ie, days remaining until event.
+            double utilityEventUpcoming = qr.UtilityOrder.UtilityEventUpcoming;
+            if (utilityEventUpcoming > 0)
             {
-                //double discount = riskDiscount.X0 + riskDiscount.X1 * deltaTargetRisk + riskDiscount.X2 * Math.Pow(deltaTargetRisk, 2);
-                discount = riskDiscount.X0;
+                spreadFactor = riskDiscount.Discount(utilityEventUpcoming);
+                //Log($"{Time} DiscountEvents: {qr.Symbol} utilityEventUpcoming={utilityEventUpcoming}, spreadFactor={spreadFactor}");
             }
+
             return new QuoteDiscount(
                 riskDiscount.Metric,
-                Math.Min(Math.Max(riskDiscount.CapMin, discount), riskDiscount.CapMax),
+                spreadFactor,
                 0, 0, 0
                 ); 
         }
 
         public IEnumerable<QuoteDiscount> GetQuoteDiscounts(QuoteRequest<Option> qr)  // 30% of CPU time here.
         {
-            QuoteDiscount discountDelta;
-            QuoteDiscount discountGamma;
             // Refactor to send this through as object, so it can be logged if actually filled.
             // For every metric that should influence the price, 3 params are configurable for a quadratic / progressive discount. 0,1,2.
             // The discounts are summed up and min/max capped (configurable).
@@ -72,19 +82,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Need to punish/incentivize how much a trade changes risk profile, but also how urgent it is....
             // Big negative delta while pf is pos, great, but only if whole portfolio is not worse off afterwards. Essentially need the area where nothing changes.
 
-            discountDelta = DiscountMetric(qr, DeltaDiscounts[qr.Option.Underlying.Symbol]);
-
-            HashSet<Regime> regimes = ActiveRegimes.TryGetValue(qr.Underlying, out regimes) ? regimes : new HashSet<Regime>();
-            bool wantToAdjustGammaFast = regimes.Contains(Regime.SellEventCalendarHedge);
-
-            var gammaRiskDiscount = GammaDiscounts[qr.Option.Underlying.Symbol];
-            if (wantToAdjustGammaFast)
-            {
-                gammaRiskDiscount.DiscountParams.X0 = 0.4;
-            }            
-            discountGamma = DiscountMetric(qr, gammaRiskDiscount);
-                       
-            QuoteDiscount discountEvents = DiscountEvents(qr.Option, qr.Quantity);
+            QuoteDiscount discountDelta = DiscountMetric(qr, DeltaDiscounts[qr.Option.Underlying.Symbol]);
+            QuoteDiscount discountGamma = DiscountMetric(qr, GammaDiscounts[qr.Option.Underlying.Symbol]);
+            QuoteDiscount discountEvents = DiscountEvents(qr);
 
             return new List<QuoteDiscount>() { discountDelta, discountGamma, discountEvents };
         }
@@ -229,13 +229,39 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
             };
 
-            // THe 0.2 / 0.8 - to be refactored ...
-            price = qr.OrderDirection switch
+            // Quick hacky fix to incorporate a faster fill for calendar spread hedges
+            if (qr.UtilityOrder.UtilityEventUpcoming > 0 && ActiveRegimes[qr.Underlying].Contains(Regime.SellEventCalendarHedge))
             {
-                OrderDirection.Buy => Math.Min((decimal)smoothedIVPrice, qr.Option.BidPrice + 0.2m * marketPriceSpread),
-                OrderDirection.Sell => Math.Max((decimal)smoothedIVPrice, qr.Option.BidPrice + 0.8m * marketPriceSpread),
-                _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
-            };
+
+                // THe 0.2 / 0.8 - to be refactored. They put lower and upper limit on discounting. At least to be moved to config ...
+                price = qr.OrderDirection switch
+                {
+                    OrderDirection.Buy => Math.Min((decimal)smoothedIVPrice, qr.Option.BidPrice + 1.0m * marketPriceSpread),
+                    OrderDirection.Sell => Math.Max((decimal)smoothedIVPrice, qr.Option.BidPrice + 0.0m * marketPriceSpread),
+                    _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
+                };
+            }
+            else if (ManualOrderInstructionBySymbol.ContainsKey(qr.Symbol.Value) && Cfg.ExecuteManualOrderInstructions)
+            {
+                ManualOrderInstruction manualOrderInstruction = ManualOrderInstructionBySymbol[qr.Symbol.Value];
+                price = qr.OrderDirection switch
+                {
+                    OrderDirection.Buy => (decimal)qr.Option.BidPrice + manualOrderInstruction.SpreadFactor * marketPriceSpread,
+                    OrderDirection.Sell => (decimal)qr.Option.AskPrice - manualOrderInstruction.SpreadFactor * marketPriceSpread,
+                    _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
+                };
+                Log($"{Time} GetQuote.ManualOrderInstructionBySymbol: {qr.OrderDirection} {qr.Symbol} Quantity={qr.Quantity} Bid={qr.Option.BidPrice}, Quote={price}, Ask={qr.Option.AskPrice}");
+            }
+            else
+            {
+                // THe 0.2 / 0.8 - to be refactored. They put lower and upper limit on discounting. At least to be moved to config ...
+                price = qr.OrderDirection switch
+                {
+                    OrderDirection.Buy => Math.Min((decimal)smoothedIVPrice, qr.Option.BidPrice + 0.2m * marketPriceSpread),
+                    OrderDirection.Sell => Math.Max((decimal)smoothedIVPrice, qr.Option.BidPrice + 0.8m * marketPriceSpread),
+                    _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
+                };
+            }
 
             // For tight spreads, a tickSize difference of, e.g., 0.01 can make a signiicant difference in terms of IV spread. Therefore, the price is rounded defensively away from midPrice.
             decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection == OrderDirection.Buy ? false : true);

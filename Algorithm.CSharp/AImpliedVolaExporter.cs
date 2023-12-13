@@ -30,11 +30,13 @@ using QuantConnect.Securities.Option;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using Newtonsoft.Json;
 using QuantConnect.Configuration;
+using QuantConnect.Data.UniverseSelection;
 
 namespace QuantConnect.Algorithm.CSharp
 {
     public partial class AImpliedVolaExporter : Foundations
     {
+        private SecurityInitializerIVExporter securityInitializerExporter;
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
         /// </summary>
@@ -54,7 +56,8 @@ namespace QuantConnect.Algorithm.CSharp
 
             int volatilityPeriodDays = 5;
 
-            SetSecurityInitializer(new SecurityInitializerIVExporter(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilityPeriodDays));
+            securityInitializerExporter = new(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPrices), volatilityPeriodDays);
+            SetSecurityInitializer(securityInitializerExporter);
 
             AssignCachedFunctions();
 
@@ -247,6 +250,7 @@ namespace QuantConnect.Algorithm.CSharp
                     streamWriter.WriteLine(csv);
                 }
                 RollingIVTrade[symbol].Reset();
+                Log($"Saved IV files for {security} on {Time}");
             }
         }
 
@@ -256,7 +260,15 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 return;
             }
-            Log($"Time: {Time}");
+            Log($"{Time} OnEndOfDay:");
+        }
+
+        public override void OnSecuritiesChanged(SecurityChanges changes)
+        {
+            changes.AddedSecurities.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
+            {
+                securityInitializerExporter.RegisterIndicators((Option)sec);
+            });
         }
     }
 }

@@ -9,6 +9,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
     {
         private readonly Foundations _algo;
         public Symbol Symbol { get; internal set; }
+        public string SnapID { get => $"{Symbol.Value} {Ts0:yyyyMMddHHmmss}"; }
         public Security Security { get; internal set; }
         public Symbol UnderlyingSymbol
         {

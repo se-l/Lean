@@ -11,7 +11,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
     public class RiskProfile : Disposable
     {
-        // CSV export append each time on call. Implement Dispose here. Initialized in Initialize() method.
+        // CSV export append each time on call.Initialized in Initialize() method.
         // Given not using the CSVExport method, no need to implement each metric as attribute. Underlying Pct change just a parameter.        
         public readonly Equity Equity;
         public Symbol Symbol { get => Equity.Symbol; }
