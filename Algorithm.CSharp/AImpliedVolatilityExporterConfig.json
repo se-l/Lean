@@ -1,5 +1,5 @@
 {
-  "Ticker": [ "HPE" ],
-  "StartDate": "2023-12-04",
-  "EndDate": "2023-12-06"
+  "Ticker": [ "HPE", "DELL" ],
+  "StartDate": "2023-12-19",
+  "EndDate": "2023-12-19"
 }

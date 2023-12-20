@@ -1,5 +1,5 @@
 #!/bin/bash
-ip=$(dig +short @192.168.1.1 sebstrix)
+ip=$(dig +short @192.168.1.1 ${HOST_NAME})
 mkdir -p /mnt/c
 mount -t cifs -o password=${PASSWD_MNT_C},vers=3.0 //${ip}/c /mnt/c
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
+using QuantConnect.Logging;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 {
@@ -84,6 +85,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             var ts1 = _position.Trade1?.Ts0 ?? snaps.Last().Ts0;
 
+
+            // cannot integrate area under curve like here. The quadratic elements overshoot.
             foreach (var snap in snaps.Where(s => s.Ts0 >= ts0 && s.Ts0 <= ts1))
             {
                 if (snap0 == null)
@@ -134,7 +137,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                                                              // Vanna - dIVdS, already above as dSdIV  // dIVdS
                 PL_VegaDecay += positionQuantity * g0.VegaDecay * dIV * dT;  // dIVdT, Veta
                 PL_Volga += positionQuantity * 0.5 * g0.DIV2 * Math.Pow(dIV, 2);  // dIV2 - Vomma
-
+                //if (_position.Symbol.Value == "DELL  230908C00068000")
+                //{
+                //    Log.Trace($"{ts1} PL_Volga={PL_Volga}, g0.DIV2={g0.DIV2}, dIV={dIV}, PL_Vega={PL_Vega}, g0.Vega={g0.Vega}");
+                //}
 
                 // Greeks - 3rd order
                 PL_dS3 += positionQuantity * (1.0 / 6.0) * g0.DS3 * Math.Pow(dS, 3);  // dS3, Speed. Change of Gamma with Underlying Price.
@@ -174,10 +180,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 PL_Vega + PL_VegaDecay + PL_Volga + // dIV
                 PL_Rho;  // dR
             //if (_position.Security.Symbol.Value == "HPE   230915P00017000" && PL_VegaDecay > 50)
-            if (_position.Security.Symbol.Value == "DELL" && (PL_Total - (double)_position.PL) > 1)
-            {
-                var a = 1;
-            }
+            //if (_position.Security.Symbol.Value == "DELL" && (PL_Total - (double)_position.PL) > 1)
+            //{
+            //    var a = 1;
+            //}
             return this;
         }
     }

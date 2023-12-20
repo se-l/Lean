@@ -79,6 +79,9 @@
     <None Include="..\Algorithm.CSharp\Core\DividendSchedule.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\Algorithm.CSharp\Core\ManualOrderInstructions.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="..\Algorithm.CSharp\AImpliedVolatilityExporterConfig.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

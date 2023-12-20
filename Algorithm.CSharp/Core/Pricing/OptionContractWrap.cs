@@ -580,6 +580,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double Vanna(double volatility) => DDeltadIV(volatility);
         public double DIV2(double volatility)  // Vomma / Volga
         {
+            // The nested FD calc returns strange values. Large values for dIV > 0, very small values for dIV < 0.Across a single trade Volga vary by a magnitude of 10_000!
+            return 0;
             double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
             var volga = FiniteDifferenceApprox(hvQuote, amOption, 0.05, Derive.vega, d1perturbance: hvQuote);
