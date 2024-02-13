@@ -72,6 +72,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 return (SurfaceIVdSBid + SurfaceIVdSAsk) / 2;
             }
         }
+        public decimal SurfaceIVAHdS
+        {
+            get
+            {
+                if (SecurityType != SecurityType.Option) return 0;                
+                return (decimal)_algo.IVSurfaceAndreasenHuge[(UnderlyingSymbol, Symbol.ID.OptionRight)].IVdS(Symbol);
+            }
+        }
 
         /// <summary>
         /// For option expiration

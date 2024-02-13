@@ -1,5 +1,14 @@
 {
-  "Ticker": [ "HPE", "DELL" ],
-  "StartDate": "2023-12-19",
-  "EndDate": "2023-12-19"
+  "Ticker": [ "ORCL" ], //, "PFE", "CSCO", "HPE" ],
+  "StartDate": "2023-08-24",
+  "EndDate": "2023-12-31",
+  "DiscountRateMarket": 0.0435, // https://www.bloomberg.com/markets/rates-bonds/government-bonds/us.  Needs to become a TS.
+  "DividendYield": { // https://www.google.com/search?q=dell+dividend+yield.  Needs to become a TS.
+    "_": 0.0,
+    "DELL": 0.0175,
+    "CSCO": 0.0299,
+    "HPE": 0.0327,
+    "ORCL": 0.014,
+    "PFE": 0.0622
+  }
 }

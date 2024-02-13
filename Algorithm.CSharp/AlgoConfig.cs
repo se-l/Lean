@@ -1,3 +1,4 @@
+using Fasterflect;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -40,6 +41,18 @@ namespace QuantConnect.Algorithm.CSharp
                     Console.WriteLine($"OverrideWithEnvironmentVariables: {typeof(T)}, {attr.Name}: {envValue}");
                 }
             }
+        }
+
+        public void OverrideWith<T>(T other) where T : AlgoConfig
+        {
+            // Loop over all getter attributes
+            foreach (var otherAttr in typeof(T).GetProperties())
+            {
+                // check if the attribute exists in this object, this
+                this.SetPropertyValue(otherAttr.Name, otherAttr.GetValue(other));
+                Console.WriteLine($"OverrideWith: {otherAttr.Name}: {otherAttr}");
+            }
+            
         }
     }
 }

@@ -42,12 +42,18 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override void Initialize()
         {
-            AImpliedVolatilityExporterConfig Cfg = JsonConvert.DeserializeObject<AImpliedVolatilityExporterConfig>(File.ReadAllText("AImpliedVolatilityExporterConfig.json"));
-            Cfg.OverrideWithEnvironmentVariables<AImpliedVolatilityExporterConfig>();
+            Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
+            Cfg.OverrideWithEnvironmentVariables<AMarketMakeOptionsAlgorithmConfig>();
+
+            AImpliedVolatilityExporterConfig CfgVolaExporter = JsonConvert.DeserializeObject<AImpliedVolatilityExporterConfig>(File.ReadAllText("AImpliedVolatilityExporterConfig.json"));
+            CfgVolaExporter.OverrideWithEnvironmentVariables<AImpliedVolatilityExporterConfig>();
+            // override any attribute in Cfg that is also in CfgVolaExporter with the value from CfgVolaExporter
+            Cfg.OverrideWith(CfgVolaExporter);
+
             // Configurable Settings            
             UniverseSettings.Resolution = resolution = Resolution.Second;
-            SetStartDate(Cfg.StartDate);
-            SetEndDate(Cfg.EndDate);
+            SetStartDate(CfgVolaExporter.StartDate);
+            SetEndDate(CfgVolaExporter.EndDate);
             Log($"Start Date: {StartDate}");
             Log($"End Date: {EndDate}");
             SetCash(100_000);
@@ -62,10 +68,10 @@ namespace QuantConnect.Algorithm.CSharp
             AssignCachedFunctions();
 
             // Subscriptions
-            symbolSubscribed = AddEquity(Cfg.Ticker.First(), resolution).Symbol;
+            symbolSubscribed = AddEquity(CfgVolaExporter.Ticker.First(), resolution).Symbol;
 
             int subscriptions = 0;
-            foreach (string ticker in Cfg.Ticker)
+            foreach (string ticker in CfgVolaExporter.Ticker)
             {
                 var equity = AddEquity(ticker, resolution: resolution, fillForward: false);
 
@@ -181,9 +187,10 @@ namespace QuantConnect.Algorithm.CSharp
             foreach (var security in Securities.Values)
             {
                 if (security.Type != SecurityType.Option || security.IsDelisted) continue;
+
                 Option option = security as Option;
                 Symbol symbol = option.Symbol;
-                
+
                 var dataDirectory = Config.Get("data-folder");
                 var filePath = LeanData.GenerateZipFilePath(dataDirectory, symbol, Time, option.Resolution, TickType.Quote).ToString();
                 string filePathQuote = filePath.Replace("quote", "iv_quote");
@@ -212,17 +219,18 @@ namespace QuantConnect.Algorithm.CSharp
 
                 string csv = ToCsv(outerJoin, new List<string>() { "Time", "UnderlyingMidPrice", "BidPrice", "BidIV", "AskPrice", "AskIV", "BidDelta", "AskDelta" });
                 // remove first header line of csv
-                if (!string.IsNullOrEmpty(csv)) 
+                if (!string.IsNullOrEmpty(csv))
                 {
                     csv = csv.Substring(csv.IndexOf(Environment.NewLine) + Environment.NewLine.Length);
-                }                
+                }
 
                 string underlying = symbol.ID.Underlying.Symbol.ToString();
                 string entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_quote_american_{symbol.ID.OptionRight}_{Math.Round(symbol.ID.StrikePrice * 10000m)}_{symbol.ID.Date:yyyyMMdd}.csv".ToLowerInvariant();
-                using (streamWriter = new ZipStreamWriter(filePathQuote, entryName, overwrite:true))
+                using (streamWriter = new ZipStreamWriter(filePathQuote, entryName, overwrite: true))
                 {
                     streamWriter.WriteLine(csv);
                 }
+                
                 RollingIVBid[symbol].Reset();
                 RollingIVAsk[symbol].Reset();
 
@@ -245,10 +253,24 @@ namespace QuantConnect.Algorithm.CSharp
                 }
 
                 entryName = $"{Time:yyyyMMdd}_{underlying}_{resolution}_iv_trade_american_{symbol.ID.OptionRight}_{Math.Round(symbol.ID.StrikePrice * 10000m)}_{symbol.ID.Date:yyyyMMdd}.csv".ToLowerInvariant();
-                using (streamWriter = new ZipStreamWriter(filePathTrade, entryName, overwrite: true))
+                try
                 {
-                    streamWriter.WriteLine(csv);
+                    using (streamWriter = new ZipStreamWriter(filePathTrade, entryName, overwrite: true))
+                    {
+                        streamWriter.WriteLine(csv);
+                    }
                 }
+                catch (Exception e)
+                {
+                    Log($"Error writing {filePathTrade} {entryName} {e.Message}");
+                    // Wait 3 sec
+                    System.Threading.Thread.Sleep(3000);
+                    using (streamWriter = new ZipStreamWriter(filePathTrade, entryName, overwrite: true))
+                    {
+                        streamWriter.WriteLine(csv);
+                    }
+                }
+                
                 RollingIVTrade[symbol].Reset();
                 Log($"Saved IV files for {security} on {Time}");
             }

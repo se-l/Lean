@@ -228,10 +228,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             decimal deltaMVTotal = 0;
             decimal deltaTotal = PfRisk.RiskByUnderlying(symbol, HedgeMetric(Underlying(symbol)));
-            //decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);  // MV
+            
+            // decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);  // MV
 
             deltaMVTotal += deltaTotal;
-            //deltaMVTotal += deltaIVdSTotal;
+            // deltaMVTotal += deltaIVdSTotal;
             // Log($"{Time} DeltaMV {symbol}: deltaMVTotal={deltaMVTotal}, deltaTotal={deltaTotal}, deltaIVdSTotal={deltaIVdSTotal}");
             return deltaMVTotal;
         }
@@ -256,10 +257,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (orderType == OrderType.Market)
             {
                 tickets.Where(t => t.OrderType == OrderType.Limit).ToList().ForEach(t => t.Cancel());
-            }            
+            }
 
             // Hedge is taken through EventHandler -> UpdateLimitOrderEquity.
-            var existingOrders = tickets.Where(t => t.OrderType == OrderType.Limit || t.OrderType == OrderType.Market);
+            var existingOrders = tickets.Where(t => orderTypeMarketLimit.Contains(t.OrderType) && !orderFilledCanceledInvalid.Contains(t.Status));
 
             if (quantity != 0 && !existingOrders.Any())
             {

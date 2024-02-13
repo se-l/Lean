@@ -1,200 +1,142 @@
 [
   {
     "Symbol": "CSCO",
-    "Date": "2023-08-16",
-    "EmbargoPrior": "2023-08-14",
-    "EmbargoPost": "2023-08-17"
+    "Date": "2023-08-16"
   },
   {
     "Symbol": "CSCO",
-    "Date": "2023-11-15",
-    "EmbargoPrior": "2023-11-14",
-    "EmbargoPost": "2023-11-16"
+    "Date": "2023-11-15"
+  },
+  {
+    "Symbol": "CSCO",
+    "Date": "2024-02-15"
   },
   {
     "Symbol": "ORCL",
-    "Date": "2023-09-11",
-    "EmbargoPrior": "2023-09-09",
-    "EmbargoPost": "2023-09-12"
+    "Date": "2023-09-11"
   },
   {
     "Symbol": "ORCL",
-    "Date": "2023-12-11",
-    "EmbargoPrior": "2023-09-09",
-    "EmbargoPost": "2023-09-12"
+    "Date": "2023-12-11"
   },
   {
     "Symbol": "DELL",
-    "Date": "2023-08-31",
-    "EmbargoPrior": "2023-08-29",
-    "EmbargoPost": "2023-09-01"
+    "Date": "2023-08-31"
   },
   {
     "Symbol": "DELL",
-    "Date": "2023-11-30", // after market close
-    "EmbargoPrior": "2023-11-29",
-    "EmbargoPost": "2023-12-02"
+    "Date": "2023-11-30" // after market close
+  },
+  {
+    "Symbol": "DELL",
+    "Date": "2024-02-28" // after market close
   },
   {
     "Symbol": "HPE",
-    "Date": "2023-05-30",
-    "EmbargoPrior": "2023-05-28",
-    "EmbargoPost": "2023-05-31"
+    "Date": "2023-05-30"
   },
   {
     "Symbol": "HPE",
-    "Date": "2023-08-29",
-    "EmbargoPrior": "2023-08-28",
-    "EmbargoPost": "2023-08-30"
+    "Date": "2023-08-29"
   },
   {
     "Symbol": "HPE",
-    "Date": "2023-11-28",
-    "EmbargoPrior": "2023-08-28",
-    "EmbargoPost": "2023-08-30"
+    "Date": "2023-11-28"
   },
   {
     "Symbol": "PFE",
-    "Date": "2023-05-02",
-    "EmbargoPrior": "2023-04-28",
-    "EmbargoPost": "2023-05-03"
+    "Date": "2023-05-02"
   },
   {
     "Symbol": "PFE",
-    "Date": "2023-08-01",
-    "EmbargoPrior": "2023-07-30",
-    "EmbargoPost": "2023-08-02"
+    "Date": "2023-08-01"
   },
   {
     "Symbol": "PFE",
-    "Date": "2023-10-31",
-    "EmbargoPrior": "2023-10-31",
-    "EmbargoPost": "2023-11-01"
+    "Date": "2023-10-31"
   },
   {
     "Symbol": "AKAM",
-    "Date": "2023-05-09",
-    "EmbargoPrior": "2023-05-02",
-    "EmbargoPost": "2023-05-16"
+    "Date": "2023-05-09"
   },
   {
     "Symbol": "A",
-    "Date": "2023-05-23",
-    "EmbargoPrior": "2023-05-16",
-    "EmbargoPost": "2023-05-30"
+    "Date": "2023-05-23"
   },
   {
     "Symbol": "IPG",
-    "Date": "2023-07-21",
-    "EmbargoPrior": "2023-07-15",
-    "EmbargoPost": "2023-07-28"
+    "Date": "2023-07-21"
   },
   {
     "Symbol": "FL",
-    "Date": "2023-05-19",
-    "EmbargoPrior": "2023-05-13",
-    "EmbargoPost": "2023-05-26"
+    "Date": "2023-05-19"
   },
   {
     "Symbol": "AOS",
-    "Date": "2023-07-27",
-    "EmbargoPrior": "2023-07-20",
-    "EmbargoPost": "2023-08-03"
+    "Date": "2023-07-27"
   },
   {
     "Symbol": "AOS",
-    "Date": "2023-04-27",
-    "EmbargoPrior": "2023-04-21",
-    "EmbargoPost": "2023-05-02"
+    "Date": "2023-04-27"
   },
   {
     "Symbol": "AES",
-    "Date": "2023-05-04",
-    "EmbargoPrior": "2023-04-28",
-    "EmbargoPost": "2023-05-10"
+    "Date": "2023-05-04"
   },
   {
     "Symbol": "LNT",
-    "Date": "2023-04-05",
-    "EmbargoPrior": "2023-03-29",
-    "EmbargoPost": "2023-04-11"
+    "Date": "2023-04-05"
   },
   {
     "Symbol": "ALL",
-    "Date": "2023-05-03",
-    "EmbargoPrior": "2023-04-28",
-    "EmbargoPost": "2023-05-10"
+    "Date": "2023-05-03"
   },
   {
     "Symbol": "ALL",
-    "Date": "2023-08-01",
-    "EmbargoPrior": "2023-07-25",
-    "EmbargoPost": "2023-08-07"
+    "Date": "2023-08-01"
   },
   {
     "Symbol": "APD",
-    "Date": "2023-05-09",
-    "EmbargoPrior": "2023-05-03",
-    "EmbargoPost": "2023-05-15"
+    "Date": "2023-05-09"
   },
   {
     "Symbol": "ARE",
-    "Date": "2023-07-24",
-    "EmbargoPrior": "2023-07-18",
-    "EmbargoPost": "2023-07-30"
+    "Date": "2023-07-24"
   },
   {
     "Symbol": "ZBRA",
-    "Date": "2023-05-02",
-    "EmbargoPrior": "2023-04-27",
-    "EmbargoPost": "2023-05-09"
+    "Date": "2023-05-02"
   },
   {
     "Symbol": "ZBRA",
-    "Date": "2023-08-01",
-    "EmbargoPrior": "2023-07-25",
-    "EmbargoPost": "2023-08-07"
+    "Date": "2023-08-01"
   },
   {
     "Symbol": "ALLE",
-    "Date": "2023-04-26",
-    "EmbargoPrior": "2023-04-20",
-    "EmbargoPost": "2023-05-02"
+    "Date": "2023-04-26"
   },
   {
     "Symbol": "ALLE",
-    "Date": "2023-07-26",
-    "EmbargoPrior": "2023-07-20",
-    "EmbargoPost": "2023-08-01"
+    "Date": "2023-07-26"
   },
   {
     "Symbol": "ZTS",
-    "Date": "2023-05-04",
-    "EmbargoPrior": "2023-04-30",
-    "EmbargoPost": "2023-05-10"
+    "Date": "2023-05-04"
   },
   {
     "Symbol": "ZBH",
-    "Date": "2023-05-02",
-    "EmbargoPrior": "2023-04-27",
-    "EmbargoPost": "2023-05-09"
+    "Date": "2023-05-02"
   },
   {
     "Symbol": "ZBH",
-    "Date": "2023-08-01",
-    "EmbargoPrior": "2023-07-25",
-    "EmbargoPost": "2023-08-07"
+    "Date": "2023-08-01"
   },
   {
     "Symbol": "MO",
-    "Date": "2023-04-27",
-    "EmbargoPrior": "2023-04-21",
-    "EmbargoPost": "2023-05-02"
+    "Date": "2023-04-27"
   },
   {
     "Symbol": "MO",
-    "Date": "2023-08-01",
-    "EmbargoPrior": "2023-07-25",
-    "EmbargoPost": "2023-08-07"
+    "Date": "2023-08-01"
   }
 ]

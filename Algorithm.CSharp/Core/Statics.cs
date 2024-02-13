@@ -165,6 +165,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Delta500BpUSDTotal,           
             
             EquityDeltaTotal,
+            EquityDPriceMidTotal,
+            OptionDPriceMidTotal,
 
             Gamma,
             GammaTotal,
@@ -211,6 +213,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
         public static Metric[] DSMetrics = new Metric[] { Metric.DeltaXBpUSDTotal, Metric.GammaXBpUSDTotal, Metric.SpeedXBpUSDTotal };
         public static Metric[] DIVMetrics = new Metric[] { Metric.VegaXBpUSDTotal, Metric.VannaXBpUSDTotal, Metric.VolgaXpUSDTotal };
+
+        public enum VolatilityType
+        {
+            HVHedge,
+            IVMid,
+            IVATM,
+            IVBid,
+            IVAsk,
+        }
         public static IEnumerable<T> ToIEnumerable<T>(this IEnumerator<T> enumerator)
         {
             while (enumerator.MoveNext())
@@ -558,6 +569,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 cache[key] = result;
                 return result;
             };
+        }
+
+        public static QuantLib.Date DateQl(DateTime date)
+        {
+            return new QuantLib.Date(date.Day, (QuantLib.Month)date.Month, date.Year);
         }
     }
 }

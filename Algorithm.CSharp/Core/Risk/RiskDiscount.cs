@@ -52,7 +52,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _algo = algo;
             Symbol = symbol;
             Metric = metric;
-            DiscountParams = cfg.DiscountParams[$"{symbol.Value.ToUpper(CultureInfo.InvariantCulture)}-{metric}-discount-params"];
+            DiscountParams _discountParams = cfg.DiscountParams.TryGetValue($"{symbol.Value.ToUpper(CultureInfo.InvariantCulture)}-{metric}-discount-params", out _discountParams) ? _discountParams : cfg.DiscountParams[$"{CfgDefault}-{metric}-discount-params"];
+            DiscountParams = _discountParams;
         }
         public double Discount(double riskBenefit)
         {

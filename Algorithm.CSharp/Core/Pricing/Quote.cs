@@ -16,24 +16,27 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public decimal Price { get; internal set; }
         public double IVPrice { get; internal set; }
         public IEnumerable<QuoteDiscount> QuoteDiscounts;
-        public string QuoteDiscountsString { get => string.Join(",", QuoteDiscounts.Select(qd => qd.ToString())); }
         public double SpreadFactor { get; internal set; }
-        public UtilityOrder UtilityOrder;
+        public UtilityOrder UtilityOrderHigh;
+        public UtilityOrder UtilityOrderLow;
+        public decimal SpreadDiscount { get; internal set; }
 
-        public Quote(Option option, decimal quantity, decimal price, double ivPrice, IEnumerable<QuoteDiscount> quoteDiscounts, UtilityOrder utilityOrder)
+        public Quote(Option option, decimal quantity, decimal price, double ivPrice, IEnumerable<QuoteDiscount>? quoteDiscounts, UtilityOrder utilityOrderHigh, UtilityOrder utilityOrderLow, decimal? spreadDiscount=null)
         {
             Option = option;
             Quantity = quantity;
             Price = price;
             IVPrice = ivPrice;
             QuoteDiscounts = quoteDiscounts;
-            SpreadFactor = quoteDiscounts.Sum(qd => qd.SpreadFactor);
-            UtilityOrder = utilityOrder;
+            SpreadFactor = quoteDiscounts?.Sum(qd => qd.SpreadFactor) ?? 0;
+            UtilityOrderHigh = utilityOrderHigh;
+            UtilityOrderLow = utilityOrderLow;
+            SpreadDiscount = spreadDiscount ?? 0;
         }
 
         public override string ToString()
         {
-            return $"Quote {Symbol}: Quantity={Quantity}, Price={Price}, QuoteDiscounts={QuoteDiscountsString}";
+            return $"Quote {Symbol}: Quantity={Quantity}, Price={Price}";
         }
     }
 }

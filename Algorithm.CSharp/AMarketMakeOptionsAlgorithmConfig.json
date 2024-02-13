@@ -1,238 +1,49 @@
 {
-  //"StartDate": "2023-09-05",
-  //"EndDate": "2023-09-16",
-  "StartDate": "2023-09-05",
-  "EndDate": "2023-09-11",
+  "StartDate": "2023-11-13",
+  "EndDate": "2023-11-16",
   // costing more than USD 100 - A, ALL, ARE, ZBRA, APD, ALLE, ZTS, ZBH
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "MO", "FL", "AES", "LNT", "PFE", "A", "ALL", "ARE", "ZBRA", "APD", "ALLE", "ZTS", "ZBH" ];
   //option-ticker: ["HPE", "IPG", "AKAM", "AOS", "FL", "MO", "AES", "LNT", "PFE" ];  // Too much for 2 cores on a t3 instance.
-  "Ticker": [ "DELL" ],
+  "Ticker": [ "CSCO" ],
   "LiquidateTicker": [],
   "SkipRunSignals": {
     "_": false
   },
   "ExecuteManualOrderInstructions": false,
   "SetBacktestingHoldings": false,
-  "BacktestingHoldingsFn": "BacktestingHoldings-231207.csv",
-  "VolatilityPeriodDays": 1,
-  "scopeContractStrikeOverUnderlyingMax": 1.15,
-  "scopeContractStrikeOverUnderlyingMaxSignal": 1.05,
-  "scopeContractStrikeOverUnderlyingMin": 0.85,
-  "scopeContractStrikeOverUnderlyingMinSignal": 0.95,
-  "scopeContractStrikeOverUnderlyingMargin": 0.05,
-  "scopeContractMoneynessITM": 0.05,
-  "scopeContractMinDTE": 0,
-  "scopeContractMaxDTE": 180,
-  "scopeContractIsLiquidDays": 5,
-
-  "ZMRiskAversion": 0.01,
-  "ZMProportionalTransactionCost": 0.0001, // tc = n * S * lambda; lambda = tc / (n * S)
-
-  "DiscountParams": {
-    "HPE-Delta100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0.00000,
-      "CapMin": -0.3,
-      "CapMax": 0.3
-    },
-    "HPE-Gamma100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0.0000,
-      "CapMin": -0.3,
-      "CapMax": 0.3,
-      "DTEThreshold": 0,
-      "DTEX0TargetRiskFront": 0,
-      "DTEX0TargetRisk": 0
-    },
-    "HPE-Events-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0.0, //0.3,
-      "X1": 0,
-      "X2": 0,
-      "CapMin": -0.5,
-      "CapMax": 0.5
-    },
-    "HPE-Absolute-discount-params": {
-      "TargetRisk": 0,
-      "X0": -0.01,
-      "X1": 0,
-      "X2": 0,
-      "CapMin": -0.5,
-      "CapMax": 0.5
-    },
-    "PFE-Delta100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": -0.01,
-      "X1": 0,
-      "X2": 0.000001,
-      "CapMin": -0.3,
-      "CapMax": 0.3
-    },
-    "PFE-Gamma100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0.00003,
-      "CapMin": -0.3,
-      "CapMax": 0.3,
-      "DTEThreshold": 0,
-      "DTEX0TargetRiskFront": -0,
-      "DTEX0TargetRisk": 0
-    },
-    "PFE-Events-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0.0, //3,
-      "X1": 0,
-      "X2": 0,
-      "CapMin": -0.5,
-      "CapMax": 0.5
-    },
-    "PFE-Absolute-discount-params": {
-      "TargetRisk": 0,
-      "X0": -0.01,
-      "X1": 0,
-      "X2": 0,
-      "CapMin": -0.5,
-      "CapMax": 0.5
-    },
-    "DELL-Delta100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0.000001,
-      "CapMin": -0.3,
-      "CapMax": 0.3
-    },
-    "DELL-Gamma100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0.00001,
-      "CapMin": -0.3,
-      "CapMax": 0.3,
-      "DTEThreshold": 0,
-      "DTEX0TargetRiskFront": -0,
-      "DTEX0TargetRisk": 0
-    },
-    "DELL-Events-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0.0,
-      "X1": 0.002,
-      "X2": 0,
-      "CapMin": 0,
-      "CapMax": 1
-    },
-    "DELL-Absolute-discount-params": {
-      "TargetRisk": 0,
-      "X0": -0.03,
-      "X1": 0,
-      "X2": 0,
-      "CapMin": -0.5,
-      "CapMax": 0.5
-    },
-    "CSCO-Delta100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0.000001,
-      "CapMin": -0.3,
-      "CapMax": 0.3
-    },
-    "CSCO-Gamma100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0.00001,
-      "CapMin": -0.3,
-      "CapMax": 0.3,
-      "DTEThreshold": 30,
-      "DTEX0TargetRiskFront": -30,
-      "DTEX0TargetRisk": 30
-    },
-    "CSCO-Events-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0.0, // 0.3,
-      "X1": 0,
-      "X2": 0,
-      "CapMin": -0.5,
-      "CapMax": 0.5
-    },
-    "CSCO-Absolute-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0,
-      "CapMin": -0.5,
-      "CapMax": 0.5
-    },
-    "ORCL-Delta100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0.000001,
-      "CapMin": -0.3,
-      "CapMax": 0.3
-    },
-    "ORCL-Gamma100BpUSDTotal-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0.00001,
-      "CapMin": -0.3,
-      "CapMax": 0.3,
-      "DTEThreshold": 30,
-      "DTEX0TargetRiskFront": -30,
-      "DTEX0TargetRisk": 30
-    },
-    "ORCL-Events-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0.0, // 0.3,
-      "X1": 0,
-      "X2": 0,
-      "CapMin": -0.5,
-      "CapMax": 0.5
-    },
-    "ORCL-Absolute-discount-params": {
-      "TargetRisk": 0,
-      "X0": 0,
-      "X1": 0,
-      "X2": 0,
-      "CapMin": -0.5,
-      "CapMax": 0.5
-    }
-  },
-  "RiskLimitGammaScalpDeltaTotalLong": 5,
-  "RiskLimitGammaScalpDeltaTotalShort": -5,
-  "RiskLimitEODDelta100BpUSDTotalLong": 5,
-  "RiskLimitEODDelta100BpUSDTotalShort": -5,
-  "RiskLimitHedgeDeltaTotalLong": {
-    "_": 45,
-    "PFE": 25,
-    "HPE": 25
-  },
-  "RiskLimitHedgeDeltaTotalShort": {
-    "_": -45,
-    "PFE": -25,
-    "HPE": -25
-  },
-  "IVSurfaceRelativeStrikeAlpha": {
-    "_": 0.05,
-    "HPE": 0.05,
-    "DELL": 0.09
-  },
-  "SurfaceVerticalResetThreshold": 0.01,
-  "WarmUpDays": 3, // Reduce for debugging. Usually 2.
+  "BacktestingHoldingsFn": "BacktestingHoldingsCSCO.csv",
   "LogOrderUpdates": false,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
+  "WarmUpDays": 3, // Reduce for debugging. Usually 2.
+  "VolatilityPeriodDays": 3,
+
+  /// Scoping Contracts for data feed subscription
+  "ScopeContractStrikeOverUnderlyingMax": 1.15,
+  "ScopeContractStrikeOverUnderlyingMaxSignal": 1.05,
+  "ScopeContractStrikeOverUnderlyingMin": 0.85,
+  "ScopeContractStrikeOverUnderlyingMinSignal": 0.95,
+  "ScopeContractStrikeOverUnderlyingMargin": 0.05,
+  "ScopeContractMoneynessITM": 0.05, // Replace with delta
+  "ScopeContractMinDTE": 0,
+  "ScopeContractMaxDTE": 180,
+  "ScopeContractIsLiquidDays": 5,
+  ///
+
+  // Whole ZM pending deletion. Not in use.
+  "ZMRiskAversion": 0.01,
+  "ZMProportionalTransactionCost": 0.0001, // tc = n * S * lambda; lambda = tc / (n * S)
   "MinZMOffset": {
     "_": 20
   },
   "MaxZMOffset": {
     "_": 50
+  },
+  //
+
+  "IVSurfaceRelativeStrikeAlpha": {
+    "_": 0.05,
+    "HPE": 0.05,
+    "DELL": 0.09
   },
   "PutCallRatioWarmUpDays": 3,
   "PutCallRatioTargetRisks": {
@@ -255,6 +66,8 @@
   "IntradayIVSlopeTrendingRange": {
     "_": [ 0.02, -0.02 ]
   },
+
+  /// Whole earnigns announcement pending deletion. To be moved into more jump vola utils or more general term structure arb utils.
   "DaysBeforeConsideringEarningsAnnouncement": {
     "_": 7
   },
@@ -267,12 +80,26 @@
   "EarningsAnnouncementUtilityMinDTE": {
     "_": 7
   },
+  "UpcomingEventLongIV": { // To be deleted and inferred from utils.
+    "_": false
+  },
+  "UpcomingEventCalendarSpreadStartDaysPrior": { // To be deleted and inferred from utils.
+    "_": 2
+  },
+  "CalendarSpreadPeriodDays": 10, // To be deleted and inferred from utils.
+  ///
+
+  /// Gamma scalping
   "GammaScalpingEnabled": {
     "_": true
   },
   "TrailingHedgePct": {
-    "_": 0.003
+    "_": 0.003,
+    "CSCO": 0.003,
+    "DELL": 0.004
   },
+  ///
+
   "MaxOptionOrderQuantity": {
     "_": 5
   },
@@ -285,27 +112,92 @@
   "SignalQuantityFraction": {
     "_": 2
   },
-  "MarginUtilScaleFactor": {
-    "_": 0.1
-  },
   "MinSubmitRequestsUnprocessedBlockingSubmit": 5,
   "MinCancelRequestsUnprocessedBlockingSubmit": 3,
-  "PeggedToStockDeltaRangeOffsetFactor": 0.05,
-  "MinimumIVOffsetBeforeUpdatingPeggedOptionOrder": 0.003,
+
+  /// Hedging
   "HedgingMode": {
     "_": 1 // 1-HV ; 2-IV ; 3-ZM(HV); 4-DeltaImpliedAtmTotal
   },
-  "UpcomingEventLongIV": {
-    "_": false
+  "RiskLimitEODDelta100BpUSDTotalLong": 5,
+  "RiskLimitEODDelta100BpUSDTotalShort": -5,
+  "TotalDeltaHedgeThresholdIntercept": {
+    "_": 20,
+    "CSCO": 19
   },
-  "UpcomingEventCalendarSpreadStartDaysPrior": {
-    "_": 5
+  "TotalDeltaHedgeThresholdGammaFactor": {
+    "_": -0.3,
+    "CSCO": -0.3
   },
-  "CalendarSpreadPeriodDays": 10,
+  "DeltaAdjustmentParameters": {
+    "_": {
+      "call": [ 0, 1, 0, 0 ],
+      "put": [ 0, 1, 0, 0 ]
+    }
+    //"DELL": {
+    //  "call": [ 2.33949341, -5.78606832, 7.30740453, -3.05731788 ],
+    //  "put": [ 2.18704477, 5.04406338, 6.10646546, 2.47497305 ]
+    //},
+    //"CSCO": {
+    //  "call": [ 2.09632896, -3.20965519, 2.26161671, -0.29895826 ],
+    //  "put": [ 2.06549974, 3.73808908, 3.62138976, 1.07635336 ]
+    //}
+  },
+  ///
+
   "EquityShortingRate": 0.1,
-  "DiscountRatePortfolioCAGR": 0.3,
-  "DiscountRateMarket": 0.05,
+  "DiscountRatePortfolioCAGR": 0.0435,
+  "DiscountRateMarket": 0.0435, // https://www.bloomberg.com/markets/rates-bonds/government-bonds/us.  Needs to become a TS.
+  "DividendYield": { // https://www.google.com/search?q=dell+dividend+yield.  Needs to become a TS.
+    "_": 0.0,
+    "DELL": 0.0175,
+    "CSCO": 0.0299,
+    "HPE": 0.0327,
+    "ORCL": 0.014,
+    "PFE": 0.0622
+  },
+
+  // To be implied from Heston if it were to fit market data well...
+  "CorrelationSpotVolatility": {
+    "_": 0,
+    "DELL": 0 //-0.5
+  },
+  "VolatilityOfVolatility": {
+    "_": 0,
+    "DELL": 0 //2
+  },
+
+  /// OrderUtils Discounting Spread
+  "MarginUtilScaleFactor": {
+    "_": 0.1
+  },
   "MinUtility": {
-    "_": 10
+    "_": 30
+  },
+  "SlopeNeg": {
+    "_": -0.005
+  },
+  "SlopePos": {
+    "_": -0.002
+  },
+  "ZeroSDUtil": {
+    "_": 30
+  },
+  "UtilBidTaperer": {
+    "_": 0.002
+  },
+  "MaxSpreadDiscount": {
+    "_": 0.6
+  },
+  "DiscountParams": {
+    "_-Absolute-discount-params": {
+      "TargetRisk": 0,
+      "X0": 0,
+      "X1": 0,
+      "X2": 0,
+      "CapMin": -1,
+      "CapMax": 1
+    }
   }
+  ///
 }

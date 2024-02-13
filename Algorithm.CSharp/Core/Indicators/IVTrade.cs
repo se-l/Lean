@@ -15,11 +15,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public double IV { get; set; }
         public IVQuote Current { get; internal set; }
 
-        private Foundations algo { get; }
+        private readonly Foundations _algo;
 
         public IVTrade(Option option, Foundations algo)
         {
-            this.algo = algo;
+            _algo = algo;
             Option = option;
         }
 
@@ -30,9 +30,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 return;
             }
             Time = tick.EndTime;
-            UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
+            UnderlyingMidPrice = underlyingMidPrice ?? _algo.MidPrice(Symbol.Underlying);
             Price = tick.Price;
-            IV = OptionContractWrap.E(algo, Option, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
+            IV = OptionContractWrap.E(_algo, Option, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
             Current = new IVQuote(Symbol, Time, UnderlyingMidPrice, Price, IV);
         }
 
@@ -43,14 +43,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 return;
             }
             Time = tradeBar.EndTime;
-            UnderlyingMidPrice = underlyingMidPrice ?? algo.MidPrice(Symbol.Underlying);
+            UnderlyingMidPrice = underlyingMidPrice ?? _algo.MidPrice(Symbol.Underlying);
             Price = tradeBar.Close;
-            IV = OptionContractWrap.E(algo, Option, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
+            IV = OptionContractWrap.E(_algo, Option, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
             Current = new IVQuote(Symbol, Time, UnderlyingMidPrice, Price, IV);
         }
         public void SetDelta(double? delta = null)
         {
-            Current.Delta = delta == null ? OptionContractWrap.E(algo, Option, Time.Date).Delta() : delta;
+            Current.Delta = delta != null ? delta : OptionContractWrap.E(_algo, Option, Time.Date).Delta(_algo.IV(Option, Price));
         }
     }
 }

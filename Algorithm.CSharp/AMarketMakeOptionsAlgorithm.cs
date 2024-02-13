@@ -60,6 +60,7 @@ namespace QuantConnect.Algorithm.CSharp
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             UniverseSettings.Leverage = 10;
+            Portfolio.MarginCallModel = MarginCallModel.Null;
 
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText("EarningsAnnouncements.json"));
             DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
@@ -71,7 +72,7 @@ namespace QuantConnect.Algorithm.CSharp
             mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - ScheduledEvent.SecurityEndOfDayDelta - TimeSpan.FromMinutes(5));  // 10mins before EOD market close events fire
 
             securityInitializer = new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays);
-            SetSecurityInitializer(securityInitializer);;
+            SetSecurityInitializer(securityInitializer);
 
             AssignCachedFunctions();
 
@@ -99,18 +100,17 @@ namespace QuantConnect.Algorithm.CSharp
 
                     foreach (string t in optionTicker)
                     {
-                        DeltaDiscounts[equity.Symbol] = new RiskDiscount(this, Cfg, equity.Symbol, Metric.Delta100BpUSDTotal);
-                        GammaDiscounts[equity.Symbol] = new RiskDiscount(this, Cfg, equity.Symbol, Metric.Gamma100BpUSDTotal);
-                        EventDiscounts[equity.Symbol] = new RiskDiscount(this, Cfg, equity.Symbol, Metric.Events);
                         AbsoluteDiscounts[equity.Symbol] = new RiskDiscount(this, Cfg, equity.Symbol, Metric.Absolute);
                     }
                 }
                 RiskProfiles[equity.Symbol] = new RiskProfile(this, equity);
                 UtilityWriters[equity.Symbol] = new UtilityWriter(this, equity);
                 OrderEventWriters[equity.Symbol] = new OrderEventWriter(this, equity);
-                UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => RunSignals(e);
-                UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += (object sender, Symbol e) => SnapPositions();
-                UnderlyingMovedX[equity.Symbol].UnderlyingMovedXEvent += RiskProfiles[equity.Symbol].OnDS;
+                UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (object sender, Symbol e) => RunSignals(e);
+                UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (object sender, Symbol e) => SnapPositions();
+                UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += RiskProfiles[equity.Symbol].OnDS;
+                UnderlyingMovedX[(equity.Symbol, 0.001m)].UnderlyingMovedXEvent += (object sender, Symbol e) => IVSurfaceAndreasenHuge[(equity.Symbol, OptionRight.Call)].Recalibrate();
+                UnderlyingMovedX[(equity.Symbol, 0.001m)].UnderlyingMovedXEvent += (object sender, Symbol e) => IVSurfaceAndreasenHuge[(equity.Symbol, OptionRight.Put)].Recalibrate();
             }
             RealizedPositionWriter = new(this);
 
@@ -122,6 +122,7 @@ namespace QuantConnect.Algorithm.CSharp
             // SCHEDULED EVENTS
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, 120), ExerciseOnExpiryDate);
 
             // Before EOD - stop trading & overnight hedge
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Stop MM
@@ -248,10 +249,67 @@ namespace QuantConnect.Algorithm.CSharp
             Log($"{Time} Canceling OcaGroup: {ocaGroup}.");
             tickets.DoForEach(t => Cancel(t));
         }
-
+        /// <summary>
+        /// Exercise options to reduce delta if non-RTH
+        /// </summary>
+        /// <param name="assignmentEvent"></param>
         public override void OnAssignmentOrderEvent(OrderEvent assignmentEvent)
         {
             Log($"OnAssignmentOrderEvent: {assignmentEvent}");
+            if (Time.Date == assignmentEvent.Symbol.ID.Date)
+            {
+                Symbol underlying = Underlying(assignmentEvent.Symbol);
+                // Delta Total. ensure it's after security has been removed
+                decimal deltaPfTotal = PfRisk.RiskByUnderlying(underlying, HedgeMetric(underlying));
+
+                var itmPositions = Positions.Values.Where(p => p.Quantity > 0 && p.IsITM1).OrderBy(p => p.Expiry);
+                foreach (Position pos in itmPositions)
+                {
+                    decimal deltaPos = pos.DeltaTotal() / pos.Quantity;
+                    decimal ifFilledDeltaPfTotal = deltaPfTotal + deltaPos;
+
+                    if (Math.Abs(ifFilledDeltaPfTotal) < Math.Abs(deltaPfTotal) && Math.Sign(ifFilledDeltaPfTotal) == Math.Sign(deltaPfTotal))
+                    {
+                        // Exercising this position would not bring us to zero delta
+                        decimal quantity = Math.Min((int)pos.Quantity, Math.Floor(Math.Abs(deltaPfTotal / deltaPos)));
+                        deltaPfTotal += deltaPos * quantity;
+                        ExerciseOption(pos.Symbol, (int)quantity);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// On Expiration, there may be a risky mismatch of assignable and exersizable option position leading to potentially large
+        /// equity positions to be accumlated overnight, leading to undesirable gap risk. That is why here, positions that are exercisable
+        /// in excess are exercised during market hours, ie, when this function is scheduled to run.
+        /// </summary>
+        public void ExerciseOnExpiryDate()
+        {
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
+
+            List<Position> shortPositions = Positions.Values.Where(p => p.Quantity < 0 && p.SecurityType == SecurityType.Option && p.Expiry == Time.Date).ToList();
+            List<Position> longPositions = Positions.Values.Where(p => p.Quantity > 0 && p.SecurityType == SecurityType.Option && p.Expiry == Time.Date).ToList();
+
+            decimal cumDeltaAssignable = shortPositions.Sum(p => p.DeltaTotal());            
+
+            List<Position> posToExercise = new();
+            foreach (Position pos in longPositions.OrderBy(p => p.Delta()).Reverse())
+            {
+                decimal deltaPos = pos.DeltaTotal() / pos.Quantity;
+                decimal ifFilledCumDeltaAssignable = cumDeltaAssignable + deltaPos;
+                if (Math.Abs(ifFilledCumDeltaAssignable) < Math.Abs(cumDeltaAssignable) && Math.Sign(ifFilledCumDeltaAssignable) == Math.Sign(cumDeltaAssignable))
+                {
+                    // Exercising this position would not bring us to zero delta
+                    decimal quantity = Math.Min((int)pos.Quantity, Math.Floor(Math.Abs(cumDeltaAssignable / deltaPos)));
+                    cumDeltaAssignable += deltaPos * quantity;
+                }
+                else
+                {
+                    posToExercise.Add(pos);
+                }
+            }
+            posToExercise.DoForEach(p => ExerciseOption(p.Symbol, (int)p.Quantity));
         }
 
         public override void OnSecuritiesChanged(SecurityChanges changes)
@@ -259,6 +317,11 @@ namespace QuantConnect.Algorithm.CSharp
             changes.AddedSecurities.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
             {
                 securityInitializer.RegisterIndicators((Option)sec);
+            });
+            changes.RemovedSecurities.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
+            {
+                Option option = (Option)sec;
+                IVSurfaceAndreasenHuge[(option.Symbol.Underlying, option.Right)].UnRegisterSymbol(option);
             });
         }
 
@@ -279,7 +342,7 @@ namespace QuantConnect.Algorithm.CSharp
                 if (historyUnderlying.Any())
                 {
                     decimal lastClose = historyUnderlying.Last().Close;
-                    if (ContractScopedForSubscription(symbol, lastClose, Cfg.scopeContractStrikeOverUnderlyingMargin))
+                    if (ContractScopedForSubscription(symbol, lastClose, Cfg.ScopeContractStrikeOverUnderlyingMargin))
                     {
                         var item = AddData<VolatilityBar>(symbol, resolution: Resolution.Second, fillForward: false);
                         item.IsTradable = false;
@@ -341,7 +404,7 @@ namespace QuantConnect.Algorithm.CSharp
             if (IsWarmingUp) { return; }
 
             // New day => Securities may have fallen into scope for trading embargo.
-            embargoedSymbols = Securities.Keys.Where(s => EarningsAnnouncements.Where(ea => ea.Symbol == s.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()).ToHashSet();
+            // embargoedSymbols = Securities.Keys.Where(s => EarningsAnnouncements.Where(ea => ea.Symbol == s.Underlying && Time.Date >= ea.EmbargoPrior && Time.Date <= ea.EmbargoPost).Any()).ToHashSet();
 
             // Trigger events
             Securities.Values.Where(s => s.Type == SecurityType.Equity).DoForEach(s => Publish(new NewBidAskEventArgs(s.Symbol)));
@@ -398,6 +461,7 @@ namespace QuantConnect.Algorithm.CSharp
         {
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
             IVSurfaceRelativeStrikeBid.Values.Union(IVSurfaceRelativeStrikeAsk.Values).DoForEach(s => s.WriteCsvRows());
+            IVSurfaceAndreasenHuge.Values.DoForEach(s => s.WriteCsvRows());
         }
         public void ExportPutCallRatios()
         {

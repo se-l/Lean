@@ -44,6 +44,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, IVQuoteIndicator> IVAsks = new();
         public Dictionary<Symbol, IVSurfaceRelativeStrike> IVSurfaceRelativeStrikeBid = new();
         public Dictionary<Symbol, IVSurfaceRelativeStrike> IVSurfaceRelativeStrikeAsk = new();
+        public Dictionary<(Symbol, OptionRight), IVSurfaceAndreasenHuge> IVSurfaceAndreasenHuge = new();
         public Dictionary<int, UtilityOrder> OrderTicket2UtilityOrder = new();
 
         // Begin Used by ImpliedVolaExporter - To be moved over there....
@@ -52,7 +53,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, IVTrade> IVTrades = new();
         public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVTrade = new();
         public Dictionary<Symbol, PutCallRatioIndicator> PutCallRatios = new();
-        public Dictionary<Symbol, UnderlyingMovedX> UnderlyingMovedX = new();
+        public Dictionary<(Symbol, decimal), UnderlyingMovedX> UnderlyingMovedX = new();
         public Dictionary<Symbol, ConsecutiveTicksTrend> ConsecutiveTicksTrend = new();
         public Dictionary<Symbol, IntradayIVDirectionIndicator> IntradayIVDirectionIndicators = new();
         public Dictionary<Symbol, AtmIVIndicator> AtmIVIndicators = new();
@@ -74,9 +75,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, EarningsAnnouncement[]> EarningsBySymbol;
         public AMarketMakeOptionsAlgorithmConfig Cfg;
 
-        public Dictionary<Symbol, RiskDiscount> DeltaDiscounts = new();
-        public Dictionary<Symbol, RiskDiscount> GammaDiscounts = new();
-        public Dictionary<Symbol, RiskDiscount> EventDiscounts = new();
         public Dictionary<Symbol, RiskDiscount> AbsoluteDiscounts = new();
 
         public Dictionary<Symbol, RiskProfile> RiskProfiles = new();
@@ -96,6 +94,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public HashSet<OrderStatus> orderPartialFilledCanceledPendingInvalid = new() { OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.CancelPending, OrderStatus.Canceled, OrderStatus.Invalid };
         public HashSet<OrderStatus> orderSubmittedPartialFilledUpdated = new() { OrderStatus.PartiallyFilled, OrderStatus.Submitted, OrderStatus.UpdateSubmitted };
         public HashSet<SecurityType> securityTypeOptionEquity = new() { SecurityType.Equity, SecurityType.Option };
+        public HashSet<OrderType> orderTypeMarketLimit = new() { OrderType.Market, OrderType.Limit };
         public record MMWindow(TimeSpan Start, TimeSpan End);
         Func<Option, decimal> IntrinsicValue;
         public Dictionary<Symbol, DateTime> SignalsLastRun = new();
@@ -120,6 +119,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
             double bidIV = IVBids[symbol].IVBidAsk.IV;
             double askIV = IVAsks[symbol].IVBidAsk.IV;
             return InterpolateMidIVIfAnyZero(bidIV, askIV, defaultSpread);
+        }
+
+        public double IVAH(Symbol symbol)
+        {
+            if (symbol.SecurityType != SecurityType.Option) return 0;
+
+            IVSurfaceAndreasenHuge ivSurfaceAndreasenHuge = IVSurfaceAndreasenHuge[(Underlying(symbol), symbol.ID.OptionRight)];
+            return ivSurfaceAndreasenHuge.IV(symbol) ?? 0;
         }
 
         public double MidIVEWMA(Symbol symbol, double defaultSpread = 0.005)
@@ -205,10 +212,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (_signalQueue.IsEmpty) return;
                 if (Transactions.CancelRequestsUnprocessed.Any() || Transactions.SubmitRequestsUnprocessed.Count() >= Cfg.MinSubmitRequestsUnprocessedBlockingSubmit)
                 {
-                    Log($"{Time} ConsumeSignal. WAITING with signal submission: Queue Length: {_signalQueue.Count()}, " +
+                    if (LiveMode)
+                    {
+                        Log($"{Time} ConsumeSignal. WAITING with signal submission: Queue Length: {_signalQueue.Count()}, " +
                         $"CancelRequestsUnprocessed: Count={Transactions.CancelRequestsUnprocessed.Count()}, OrderId={string.Join(", ", Transactions.CancelRequestsUnprocessed.Select(r => r.OrderId))}, " +
                         $"SubmitRequestsUnprocessed: Count={Transactions.SubmitRequestsUnprocessed.Count()}, OrderId={string.Join(", ", Transactions.SubmitRequestsUnprocessed.Select(r => r.OrderId))}, " +
                         $"UpdateRequestsUnprocessed: Count={Transactions.UpdateRequestsUnprocessed.Count()}");
+                    }                    
                     AlertLateOrderRequests();
                     return;
                 }
@@ -294,9 +304,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Positions.TryGetValue(Underlying(o.Symbol), out Position currentPosition);
 
             decimal fillPrice = currentPosition == null ? MidPrice(o.Symbol.Underlying) : currentPosition.Trade0.Mid0Underlying;
-            var order = new EquityExerciseOrder(o, new OrderFillData(o.Time, fillPrice, fillPrice, fillPrice, fillPrice, fillPrice, fillPrice))
+            var localTime = o.Time.ConvertFromUtc(Securities[o.Symbol].Exchange.TimeZone);
+            var order = new EquityExerciseOrder(o, new OrderFillData(localTime, fillPrice, fillPrice, fillPrice, fillPrice, fillPrice, fillPrice)) // using Time instead of o.Time avoiding UTC conversion.
             {
-                Status = OrderStatus.Filled
+                Status = OrderStatus.Filled,
             };
             return order;
         }
@@ -434,13 +445,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     //&& PriceCache[sec.Symbol].GetData().EndTime > Time - TimeSpan.FromMinutes(5)
 
                     && IsLiquid(sec.Symbol, 5, Resolution.Daily)
-                    && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMinSignal)
-                    && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.scopeContractStrikeOverUnderlyingMaxSignal)
+                    && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMinSignal)
+                    && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMaxSignal)
                     && (
-                        ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < Cfg.scopeContractMoneynessITM * MidPrice(sec.Symbol.Underlying) || (
+                        ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < Cfg.ScopeContractMoneynessITM * MidPrice(sec.Symbol.Underlying) || (
                             orderTickets.ContainsKey(sec.Symbol) &&
                             orderTickets[sec.Symbol].Count > 0 &&
-                            ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < (Cfg.scopeContractMoneynessITM + 0.05m) * MidPrice(sec.Symbol.Underlying)
+                            ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < (Cfg.ScopeContractMoneynessITM + 0.05m) * MidPrice(sec.Symbol.Underlying)
                         )
                     )
                     && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
@@ -481,10 +492,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 Option option = (Option)sec;
                 Symbol symbol = sec.Symbol;
-                UtilityOrder utilBuy = new(this, option, SignalQuantity(symbol, OrderDirection.Buy));
-                UtilityOrder utilSell = new(this, option, SignalQuantity(symbol, OrderDirection.Sell));
+                UtilityOrder utilBuy = new(this, option, SignalQuantity(symbol, OrderDirection.Buy), option.BidPrice);
+                UtilityOrder utilSell = new(this, option, SignalQuantity(symbol, OrderDirection.Sell), option.AskPrice);
 
-                double delta = OptionContractWrap.E(this, option, Time.Date).Delta();
+                double delta = OptionContractWrap.E(this, option, Time.Date).Delta(MidIV(symbol));
                 string ocaGroupId = ocaGroupByUnderlyingDelta[(option.Underlying.Symbol, Math.Sign(delta))];
 
                 double minUtility = Cfg.MinUtility.TryGetValue(underlying.Value, out minUtility) ? minUtility : Cfg.MinUtility[CfgDefault];
@@ -528,6 +539,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return signals;
         }
 
+        public double IV(Option option, decimal? price = null)
+        {
+            return (price ?? 0) == 0 ? MidIV(option.Symbol) : OptionContractWrap.E(this, option, Time.Date).IV(price, MidPrice(option.Underlying.Symbol), 0.001);
+        }
         public decimal InitialMargin()
         {
             if (LiveMode)
@@ -636,12 +651,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             decimal midPriceUnderlying = priceUnderlying ?? MidPrice(symbol.ID.Underlying.Symbol);
             return (midPriceUnderlying > 0
-                && symbol.ID.Date > Time + TimeSpan.FromDays(Cfg.scopeContractMinDTE)
-                && symbol.ID.Date < Time + TimeSpan.FromDays(Cfg.scopeContractMaxDTE)
+                && symbol.ID.Date > Time + TimeSpan.FromDays(Cfg.ScopeContractMinDTE)
+                && symbol.ID.Date < Time + TimeSpan.FromDays(Cfg.ScopeContractMaxDTE)
                 && symbol.ID.OptionStyle == OptionStyle.American
-                && symbol.ID.StrikePrice >= midPriceUnderlying * (Cfg.scopeContractStrikeOverUnderlyingMin - margin)
-                && symbol.ID.StrikePrice <= midPriceUnderlying * (Cfg.scopeContractStrikeOverUnderlyingMax + margin)
-                && IsLiquid(symbol, Cfg.scopeContractIsLiquidDays, Resolution.Daily)
+                && symbol.ID.StrikePrice >= midPriceUnderlying * (Cfg.ScopeContractStrikeOverUnderlyingMin - margin)
+                && symbol.ID.StrikePrice <= midPriceUnderlying * (Cfg.ScopeContractStrikeOverUnderlyingMax + margin)
+                && IsLiquid(symbol, Cfg.ScopeContractIsLiquidDays, Resolution.Daily)
                 ) 
                 || 
                 (Portfolio.ContainsKey(symbol) && Portfolio[symbol].Quantity != 0);
@@ -654,7 +669,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (
                     (
                     Securities[symbol].IsTradable
-                    && !ContractScopedForSubscription(symbol, null, Cfg.scopeContractStrikeOverUnderlyingMargin)
+                    && !ContractScopedForSubscription(symbol, null, Cfg.ScopeContractStrikeOverUnderlyingMargin)
                     && Portfolio[symbol].Quantity == 0
                     )
                 //|| security.IsDelisted
@@ -821,18 +836,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             switch (orderType)
             {
-                case OrderType.PeggedToStock:
-                    if (quote.IVPrice == 0) return null;
-                    var ocw = OptionContractWrap.E(this, contract, Time.Date);
-                    decimal delta = (decimal)Math.Abs(ocw.Delta(quote.IVPrice));
-                    decimal gamma = (decimal)ocw.Gamma(quote.IVPrice);
-                    var midPriceUnderlying = MidPrice(contract.Underlying.Symbol);
-                    var offset = delta * Cfg.PeggedToStockDeltaRangeOffsetFactor / gamma;
-                    var underlyingRangeLow = midPriceUnderlying - offset;
-                    var underlyingRangeHigh = midPriceUnderlying + offset;
-                    orderTicket = PeggedToStockOrder(contract.Symbol, quantity, delta * 100m, limitPrice, midPriceUnderlying, underlyingRangeLow, underlyingRangeHigh, tag);
-                    OrderIdIV[orderTicket.OrderId] = quote.IVPrice;
-                    break;
+                //// Not in use due to IB limiting number of simultaneous pegged orders.
+                //case OrderType.PeggedToStock:
+                    
+                    //if (quote.IVPrice == 0) return null;
+                    //var ocw = OptionContractWrap.E(this, contract, Time.Date);
+                    //decimal delta = (decimal)Math.Abs(ocw.Delta(quote.IVPrice));
+                    //decimal gamma = (decimal)ocw.Gamma(quote.IVPrice);
+                    //var midPriceUnderlying = MidPrice(contract.Underlying.Symbol);
+                    //var offset = delta * Cfg.PeggedToStockDeltaRangeOffsetFactor / gamma;
+                    //var underlyingRangeLow = midPriceUnderlying - offset;
+                    //var underlyingRangeHigh = midPriceUnderlying + offset;
+                    //orderTicket = PeggedToStockOrder(contract.Symbol, quantity, delta * 100m, limitPrice, midPriceUnderlying, underlyingRangeLow, underlyingRangeHigh, tag);
+                    //OrderIdIV[orderTicket.OrderId] = quote.IVPrice;
+                    //break;
                 case OrderType.Limit:
                     orderTicket = LimitOrder(contract.Symbol, quantity, limitPrice, tag, ocaGroup: signal.OcaGroup, ocaType: signal.OcaType);
                     break;
@@ -864,86 +881,90 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 UpdateLimitOrderEquity(Securities[symbol] as Equity);
             }
         }
-        public void UpdatePeggedOrderOption(Option option)
-        {
-            Symbol symbol = option.Symbol;
-            foreach (OrderTicket ticket in orderTickets[symbol].ToList())
-            {
-                if (orderSubmittedPartialFilledUpdated.Contains(ticket.Status) && ticket.OrderType == OrderType.PeggedToStock && ticket.CancelRequest == null)
-                {
-                    decimal tickSize = TickSize(symbol);
-                    double ticketIV = OrderIdIV.TryGetValue(ticket.OrderId, out ticketIV) ? ticketIV : 0;
+        ///// <summary>
+        ///// Not in use due to IB limiting number of simultaneous pegged orders.
+        ///// </summary>
+        ///// <param name="option"></param>
+        //public void UpdatePeggedOrderOption(Option option)
+        //{
+        //    Symbol symbol = option.Symbol;
+        //    foreach (OrderTicket ticket in orderTickets[symbol].ToList())
+        //    {
+        //        if (orderSubmittedPartialFilledUpdated.Contains(ticket.Status) && ticket.OrderType == OrderType.PeggedToStock && ticket.CancelRequest == null)
+        //        {
+        //            decimal tickSize = TickSize(symbol);
+        //            double ticketIV = OrderIdIV.TryGetValue(ticket.OrderId, out ticketIV) ? ticketIV : 0;
 
-                    decimal orderQuantity = SignalQuantity(symbol, Num2Direction(ticket.Quantity));
-                    UtilityOrder utilityOrder = new(this, option, orderQuantity);
-                    Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, orderQuantity, utilityOrder));
+        //            decimal orderQuantity = SignalQuantity(symbol, Num2Direction(ticket.Quantity));
+        //            UtilityOrder utilityOrder = new(this, option, orderQuantity);
+        //            Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, orderQuantity, utilityOrder));
 
-                    if (Math.Abs((decimal)quote.IVPrice - (decimal)ticketIV) < Cfg.MinimumIVOffsetBeforeUpdatingPeggedOptionOrder) { return; }
+        //            if (Math.Abs((decimal)quote.IVPrice - (decimal)ticketIV) < Cfg.MinimumIVOffsetBeforeUpdatingPeggedOptionOrder) { return; }
 
-                    decimal quoteStartingPrice = quote.Price;
+        //            decimal quoteStartingPrice = quote.Price;
 
-                    if (quoteStartingPrice == 0 || quote.Quantity == 0 || quote.IVPrice == 0)
-                    {
-                        Log($"{Time}: UpdateLimitPriceContract. Received 0 price or quantity for submitted order. Canceling {symbol}. Quote: {quote}. IVPrice={quote.IVPrice} Not trading...");
-                        Cancel(ticket);
-                        return;
-                    }
-                    quoteStartingPrice = RoundTick(quoteStartingPrice, tickSize);
-                    decimal ticketStartingPrice = ticket.Get(OrderField.StartingPrice);
+        //            if (quoteStartingPrice == 0 || quote.Quantity == 0 || quote.IVPrice == 0)
+        //            {
+        //                Log($"{Time}: UpdateLimitPriceContract. Received 0 price or quantity for submitted order. Canceling {symbol}. Quote: {quote}. IVPrice={quote.IVPrice} Not trading...");
+        //                Cancel(ticket);
+        //                return;
+        //            }
+        //            quoteStartingPrice = RoundTick(quoteStartingPrice, tickSize);
+        //            decimal ticketStartingPrice = ticket.Get(OrderField.StartingPrice);
 
-                    if (Math.Abs(quoteStartingPrice - ticketStartingPrice) >= tickSize && quoteStartingPrice >= tickSize)
-                    {
-                        if (quoteStartingPrice < tickSize)
-                        {
-                            Log($"{Time}: CANCEL TICKET Symbol{symbol}: QuoteStartingPrice too small: {quoteStartingPrice}");
-                            Cancel(ticket);
-                        }
-                        else
-                        {
-                            var tag = $"{Time}: UPDATE TICKET Symbol {symbol} Price: From: {ticketStartingPrice} To: {quoteStartingPrice}";
-                            var ocw = OptionContractWrap.E(this, option, Time.Date);
-                            decimal delta = (decimal)Math.Abs(ocw.Delta(quote.IVPrice));
-                            decimal gamma = (decimal)ocw.Gamma(quote.IVPrice);
-                            var midPriceUnderlying = MidPrice(option.Underlying.Symbol);
-                            var offset = delta * Cfg.PeggedToStockDeltaRangeOffsetFactor / gamma;
-                            var underlyingRangeLow = midPriceUnderlying - offset;
-                            var underlyingRangeHigh = midPriceUnderlying + offset;
-                            var response = ticket.UpdatePeggedToStockOrder(
-                                delta * 100m,
-                                quoteStartingPrice,
-                                midPriceUnderlying,
-                                underlyingRangeLow,
-                                underlyingRangeHigh,
-                                tag
-                                );
-                            OrderIdIV[ticket.OrderId] = quote.IVPrice;
-                            if (Cfg.LogOrderUpdates || LiveMode)
-                            {
-                                Log($"{tag}, Response: {response}");
-                            }
-                            Quotes[ticket.OrderId] = quote;
-                        }
-                    }
+        //            if (Math.Abs(quoteStartingPrice - ticketStartingPrice) >= tickSize && quoteStartingPrice >= tickSize)
+        //            {
+        //                if (quoteStartingPrice < tickSize)
+        //                {
+        //                    Log($"{Time}: CANCEL TICKET Symbol{symbol}: QuoteStartingPrice too small: {quoteStartingPrice}");
+        //                    Cancel(ticket);
+        //                }
+        //                else
+        //                {
+        //                    var tag = $"{Time}: UPDATE TICKET Symbol {symbol} Price: From: {ticketStartingPrice} To: {quoteStartingPrice}";
+        //                    var ocw = OptionContractWrap.E(this, option, Time.Date);
+        //                    decimal delta = (decimal)Math.Abs(ocw.Delta(quote.IVPrice));
+        //                    decimal gamma = (decimal)ocw.Gamma(quote.IVPrice);
+        //                    var midPriceUnderlying = MidPrice(option.Underlying.Symbol);
+        //                    var offset = delta * Cfg.PeggedToStockDeltaRangeOffsetFactor / gamma;
+        //                    var underlyingRangeLow = midPriceUnderlying - offset;
+        //                    var underlyingRangeHigh = midPriceUnderlying + offset;
+        //                    var response = ticket.UpdatePeggedToStockOrder(
+        //                        delta * 100m,
+        //                        quoteStartingPrice,
+        //                        midPriceUnderlying,
+        //                        underlyingRangeLow,
+        //                        underlyingRangeHigh,
+        //                        tag
+        //                        );
+        //                    OrderIdIV[ticket.OrderId] = quote.IVPrice;
+        //                    if (Cfg.LogOrderUpdates || LiveMode)
+        //                    {
+        //                        Log($"{tag}, Response: {response}");
+        //                    }
+        //                    Quotes[ticket.OrderId] = quote;
+        //                }
+        //            }
 
-                    // Quantity - low overhead. SignalQuantity needs risk metrics that are also fetched for getting a price and cached.
-                    if (ticket.Quantity != quote.Quantity && Math.Abs(ticket.Quantity - quote.Quantity) >= 2)
-                    {
-                        var tag = $"{Time}: UPDATE TICKET Symbol {symbol} Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
-                        var response = ticket.UpdateQuantity(quote.Quantity, tag);
-                        if (Cfg.LogOrderUpdates || LiveMode)
-                        {
-                            Log($"{tag}, Response: {response}");
-                        }
-                        Quotes[ticket.OrderId] = quote;
-                    }
-                }
-                else if (ticket.Status == OrderStatus.CancelPending) { }
-                //else
-                //{
-                //    Log($"{Time} UpdateLimitPriceContract {option} ticket={ticket}, OrderStatus={ticket.Status} - Should not run this function for this ticket. Cleanup orderTickets.");
-                //}
-            }
-        }
+        //            // Quantity - low overhead. SignalQuantity needs risk metrics that are also fetched for getting a price and cached.
+        //            if (ticket.Quantity != quote.Quantity && Math.Abs(ticket.Quantity - quote.Quantity) >= 2)
+        //            {
+        //                var tag = $"{Time}: UPDATE TICKET Symbol {symbol} Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
+        //                var response = ticket.UpdateQuantity(quote.Quantity, tag);
+        //                if (Cfg.LogOrderUpdates || LiveMode)
+        //                {
+        //                    Log($"{tag}, Response: {response}");
+        //                }
+        //                Quotes[ticket.OrderId] = quote;
+        //            }
+        //        }
+        //        else if (ticket.Status == OrderStatus.CancelPending) { }
+        //        //else
+        //        //{
+        //        //    Log($"{Time} UpdateLimitPriceContract {option} ticket={ticket}, OrderStatus={ticket.Status} - Should not run this function for this ticket. Cleanup orderTickets.");
+        //        //}
+        //    }
+        //}
         public void UpdateLimitOrderOption(Option option)
         {
             Symbol symbol = option.Symbol;
@@ -1099,6 +1120,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
+        public Func<Symbol, double> FuncVolatility(VolatilityType volatilityType)
+        {
+            return volatilityType switch
+            {
+                VolatilityType.HVHedge => (symbol) => (double)Securities[Underlying(symbol)].VolatilityModel.Volatility,
+                VolatilityType.IVMid => (symbol) => MidIV(symbol),
+                VolatilityType.IVATM => (symbol) => AtmIV(symbol),
+                VolatilityType.IVBid => (symbol) => IVBids[symbol].IVBidAsk.IV,
+                VolatilityType.IVAsk => (symbol) => IVAsks[symbol].IVBidAsk.IV,
+                _ => throw new NotImplementedException($"VolatilityType {volatilityType} not implemented")
+            };
+        }
+
         public decimal EquityHedgeQuantity(Symbol underlying)
         {
             decimal quantity;
@@ -1207,7 +1241,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             return symbol.SecurityType switch
             {
-                SecurityType.Equity => Math.Abs(Math.Min(quantity * 0.005m, 1.05m)),
+                SecurityType.Equity => Math.Abs(Math.Max(quantity * 0.005m, 1.05m)),
                 SecurityType.Option => Math.Abs(quantity * 0.65m),
             };
         }
@@ -1271,6 +1305,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public decimal MaxRegimeRelatedQuantity(Symbol symbol, OrderDirection orderDirection)
         {
+            //return SignalQuantityDflt;  // CalendarSpreadQuantityToBuyBackMonth is not functional and needs more analysis first.
             HashSet<Regime> regimes = ActiveRegimes.TryGetValue(Underlying(symbol), out regimes) ? regimes : new HashSet<Regime>();
             if (regimes.Contains(Regime.SellEventCalendarHedge))
             {
@@ -1350,13 +1385,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             // Net them to check whether this particular strike needs to be bought.
-            decimal quantityToBuy = -quantityBackMonth - quantityFrontMonth;
+            decimal quantityBackMonthToBuy = -quantityBackMonth - quantityFrontMonth;
 
             // Add to this the loss of extrinsic value of the back month position after the implied move.            
             // Hedging with multiple back month expiries, each with different IVs and sensitivities to the underlying price.
             Option option = (Option)Securities[symbol];
             var ocw = OptionContractWrap.E(this, option, Time.Date);
-            double iv0 = MidIV(symbol); 
+            double iv0 = MidIV(symbol);
             ocw.SetIndependents(MidPrice(symbol.Underlying), MidPrice(symbol), iv0);
             double p0 = ocw.NPV(); // Fix that this is calculated for today, instead of EventDate
             ocw.SetIndependents(MidPrice(symbol.Underlying) + (decimal)impliedMove, MidPrice(symbol), iv0);
@@ -1365,7 +1400,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal intrinsicValueGainPerContract = (decimal)impliedMove;
             decimal additionalQuantity = Math.Max(Math.Abs(quantityFrontMonth * extrinsicValueLossPerContract / intrinsicValueGainPerContract), 1);
             additionalQuantity = Math.Min(additionalQuantity, Math.Abs(quantityFrontMonth * 0.5m));
-            quantityToBuy += additionalQuantity;
+            quantityBackMonthToBuy += additionalQuantity;
 
             // avoid buying low delta options
             var ocwStrike = OptionContractWrap.E(this, option, Time.Date);
@@ -1375,8 +1410,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return 0;
             }
 
-            Log($"{Time} CalendarSpreadQuantityToBuyBackMonth: {symbol}, quantityToBuy={quantityToBuy}, current/target calendarHedgeRatio={Math.Round((100*quantityBackMonth/quantityFrontMonth), 0)}% / {Math.Round((100*(Math.Abs(quantityFrontMonth) + additionalQuantity)/ Math.Abs(quantityFrontMonth)), 0)}%, quantityFrontMonth={quantityFrontMonth}, quantityBackMonth={quantityBackMonth}, impliedMove={impliedMove}, additionalQuantity={additionalQuantity}");
-            return DIRECTION2NUM[orderDirection] * quantityToBuy > 0 ? quantityToBuy : 0;
+            decimal currentCalendarHedgeRatio = quantityFrontMonth == 0 ? 0 : Math.Round(100 * quantityBackMonth / quantityFrontMonth, 0);
+            decimal targetCalendarHedgeRatio = quantityFrontMonth == 0? 0 : Math.Round((100 * (Math.Abs(quantityFrontMonth) + additionalQuantity) / Math.Abs(quantityFrontMonth)), 0);
+            Log($"{Time} CalendarSpreadQuantityToBuyBackMonth: {symbol}, quantityBackMonthToBuy={quantityBackMonthToBuy}, " +
+                $"current/target calendarHedgeRatio={-currentCalendarHedgeRatio}% / {targetCalendarHedgeRatio}%, " +
+                $"quantityFrontMonth={quantityFrontMonth}, quantityBackMonth={quantityBackMonth}, impliedMove={impliedMove}, additionalQuantity={additionalQuantity}");
+            return DIRECTION2NUM[orderDirection] * quantityBackMonthToBuy > 0 ? quantityBackMonthToBuy : 0;
         }
 
         public double CalendarSpreadExpectedVegaProfit(Symbol symbol)
@@ -1460,6 +1499,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public decimal SignalQuantity(Symbol symbol, OrderDirection orderDirection)
         {
+            // Move this into the UtilityOrder class. Let that class determine the best quantity.
+
             //decimal signalQuantityFraction = Cfg.SignalQuantityFraction.TryGetValue(Underlying(symbol).Value, out signalQuantityFraction) ? signalQuantityFraction : Cfg.SignalQuantityFraction[CfgDefault];
             //absQuantity /= signalQuantityFraction;
             /// Want to avoid minimum fee payment of 1 USD/stock trade, hence looking to hit a delta that causes at least an equity fee of 1 USD during hedding and minimizes an absolute delta increase.

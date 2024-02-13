@@ -22,7 +22,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public Func<decimal?, decimal?, double, double> IV;
         public Func<double, double, double> DeltaCached;
         public Func<double, double, double> GammaCached;
-        public Func<SimpleQuote, double, double> VegaCached;
+        public Func<double, double, double> VegaCached;
+        //public Func<SimpleQuote, double, double> VegaCached;
 
         private readonly Foundations _algo;
         private static readonly Dictionary<(Symbol, DateTime), OptionContractWrap> instances = new();
@@ -36,7 +37,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private readonly Option.Type optionType;
         private SimpleQuote spotQuote;
         private SimpleQuote riskFreeRateQuote;
-        private Handle<Quote> riskFeeRateQuoteHandle;
+        private Handle<Quote> riskFreeRateQuoteHandle;
+        private SimpleQuote dividendYieldQuote;
+        private Handle<Quote> dividendYieldQuoteHandle;
         private SimpleQuote hvQuote;
         private Handle<Quote> hvQuoteHandle;
         private PlainVanillaPayoff payoff;
@@ -45,10 +48,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private VanillaOption amOption;
         private VanillaOption euOption;
         private BlackScholesMertonProcess bsmProcess;
-        private BlackScholesProcess bsProcess;
-        private double riskFreeRate = 0.0;  // IV; 0.0433
-        private List<Date> dividendExDates;
-        private List<double> dividendAmounts;
+        
+        //private BlackScholesProcess bsProcess;
+        //private List<Date> dividendExDates;
+        //private List<double> dividendAmounts;
 
         //private static Func<DateTime, Securities.Option.Option, (Symbol, DateTime)> genCacheKey = (date, contract) => (contract.Symbol, date);
 
@@ -75,7 +78,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             IV = Cache<(decimal, decimal, double), decimal?, decimal?, double, double>(GetIVEngine, GenCacheKeyIV);  // Using fast Analytical BSM for IV
             DeltaCached = Cache((double hvQuote, double spotQuote) => amOption.delta(), (double hvQuote, double spotQuote) => (hvQuote, spotQuote));
             GammaCached = Cache((double hvQuote, double spotQuote) => amOption.gamma(), (double hvQuote, double spotQuote) => (hvQuote, spotQuote));
-            VegaCached = Cache((SimpleQuote hvQuote, double spotQuote) => FiniteDifferenceApprox(hvQuote, amOption, 0.01, Derive.NPV), (SimpleQuote hvQuote, double spotQuote) => (hvQuote.value(), spotQuote));
+            VegaCached = Cache((double hvQuote, double spotQuote) => euOption.vega(), (double hvQuote, double spotQuote) => (hvQuote, spotQuote));
+            //VegaCached = Cache((SimpleQuote hvQuote, double spotQuote) => FiniteDifferenceApprox(hvQuote, amOption, 0.01, Derive.NPV), (SimpleQuote hvQuote, double spotQuote) => (hvQuote.value(), spotQuote));
 
             calendar = new UnitedStates(UnitedStates.Market.NYSE);
             //dayCounter = new Business252(calendar); // extremely slow
@@ -91,8 +95,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             SetHistoricalVolatility();
             hvQuoteHandle = new Handle<Quote>(hvQuote);
 
-            riskFreeRateQuote = new SimpleQuote(riskFreeRate);
-            riskFeeRateQuoteHandle = new Handle<Quote>(riskFreeRateQuote);
+            riskFreeRateQuote = new SimpleQuote((double)_algo.Cfg.DiscountRateMarket);
+            riskFreeRateQuoteHandle = new Handle<Quote>(riskFreeRateQuote);
+
+            double dividendYield = _algo.Cfg.DividendYield.TryGetValue(UnderlyingSymbol.Value, out dividendYield) ? dividendYield : _algo.Cfg.DividendYield[CfgDefault];
+            dividendYieldQuote = new SimpleQuote(dividendYield);
+            dividendYieldQuoteHandle = new Handle<Quote>(dividendYieldQuote);
 
             payoff = new PlainVanillaPayoff(optionType, strikePrice);
             amExercise = new AmericanExercise(settlementDate, maturityDate);
@@ -102,26 +110,31 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             //dividendAmounts = new List<double>() { { 0.12 }, { 0.12 }, { 0.12 }, { 0.0 } };
             //dividendExDates = new List<Date>() { { new Date(13, 12, 2022) }, { calculationDate }, maturityDate, { new Date(16, 3, 2024) } };
             //dividendAmounts = new List<double>() { { 0.1 }, { 0.1 }, { 0.1 }, { 0.1 } };
-            dividendExDates = new List<Date>() { };
-            dividendAmounts = new List<double>() { };
+            //dividendExDates = new List<Date>() { };
+            //dividendAmounts = new List<double>() { };
             Settings.setEvaluationDate(algo.Time.Date);
 
-            bsmProcess = GetBSMP(calculationDate, new Handle<Quote>(spotQuote), new Handle<Quote>(hvQuote), riskFeeRateQuoteHandle, new SimpleQuote(0));
-            bsProcess = GetBSP(calculationDate, new Handle<Quote>(spotQuote), hvQuoteHandle, riskFeeRateQuoteHandle);
+            bsmProcess = GetBSMP(calculationDate, new Handle<Quote>(spotQuote), new Handle<Quote>(hvQuote), riskFreeRateQuoteHandle, dividendYieldQuoteHandle);            
             amOption = SetEngine(new VanillaOption(payoff, amExercise), bsmProcess, optionPricingModel: OptionPricingModel.CoxRossRubinstein);
             euOption = SetEngine(new VanillaOption(payoff, euExercise), bsmProcess, optionPricingModel: OptionPricingModel.AnalyticEuropeanEngine);
+            //bsProcess = GetBSP(calculationDate, new Handle<Quote>(spotQuote), hvQuoteHandle, riskFeeRateQuoteHandle);
             //amOption = SetEngine(new DividendVanillaOption(payoff, amExercise, dividendExDates, dividendAmounts), bsProcess, optionPricingModel: OptionPricingModel.FdBlackScholesVanillaEngine);
             //euOption = SetEngine(new DividendVanillaOption(payoff, euExercise, dividendExDates, dividendAmounts), bsProcess, optionPricingModel: OptionPricingModel.FdBlackScholesVanillaEngine);
         }
 
         public static OptionContractWrap E(Foundations algo, Securities.Option.Option contract, DateTime calculationDate)
         {
-            (Symbol, DateTime) singletonKey = (contract.Symbol, calculationDate);
+            DateTime _calculationDate = calculationDate == contract.Expiry ? calculationDate - new TimeSpan(1, 0, 0, 0) : calculationDate;
+            (Symbol, DateTime) singletonKey = (contract.Symbol, _calculationDate);
             if (!instances.ContainsKey(singletonKey))
             {
+                if (_calculationDate != calculationDate)
+                {
+                    algo.Log($"OptionContractWrap.E: Overrode calculationDate {calculationDate} with {_calculationDate} to get non-zero greeks on expiration date.");
+                }
                 lock (instances)
                 {
-                    instances[singletonKey] = new OptionContractWrap(algo, contract, calculationDate);
+                    instances[singletonKey] = new OptionContractWrap(algo, contract, _calculationDate);
                 }
             }
             return instances[singletonKey];
@@ -241,6 +254,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             catch (Exception e)
             {
+                // Happens a lot for very low bid prices
                 //algo.Log($"OptionContractWrap.GetIVEngine {Contract} No IV {e}. _spotPriceContract {_spotPriceContract} spotPriceUnderlying: {spotQuote.value()} Intrinsic {IntrinsicValue(spotPriceUnderlying)} Most likely spotPrice is too low: {spotPriceContract}." +
                 //    $"Consider using lastIV, historical IV, ATM IV, skipping calc, 0 IV, closest non-0 IV, opposite IV - lastSpread");
                 return 0;
@@ -309,7 +323,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             };
         }
             
-        public double Delta(double? volatility = null)
+        public double Delta(double volatility)
         {
             double delta;
             SetEvaluationDateToCalcDate();
@@ -352,14 +366,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return Vega(iv) * IVdS(iv);
         }
 
-        public double KappaZM(double sigma)
+        public double KappaZM(double volatility)
         {
             double ttm = TimeToMaturity();
             
             return 4.76 * Math.Pow(_algo.Cfg.ZMProportionalTransactionCost, 0.78) / 
                 Math.Pow(ttm, 0.02) * 
-                Math.Pow(Math.Exp(-riskFreeRate * ttm) / sigma, 0.25) * 
-                Math.Pow(_algo.Cfg.ZMRiskAversion * Math.Pow((double)_algo.MidPrice(UnderlyingSymbol), 2) * Math.Abs(Gamma()), 0.15);
+                Math.Pow(Math.Exp(-riskFreeRateQuote.value() * ttm) / volatility, 0.25) * 
+                Math.Pow(_algo.Cfg.ZMRiskAversion * Math.Pow((double)_algo.MidPrice(UnderlyingSymbol), 2) * Math.Abs(Gamma(volatility)), 0.15);
         }
 
         /// <summary>
@@ -390,8 +404,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             return 1.12 * Math.Pow(_algo.Cfg.ZMProportionalTransactionCost, 0.31) * 
                 Math.Pow(TimeToMaturity(), 0.05) * 
-                Math.Pow(Math.Exp(-riskFreeRate * TimeToMaturity()) / volatilityZM, 0.25) * 
-                Math.Pow((Math.Abs(Gamma()) / _algo.Cfg.ZMRiskAversion), 0.5);
+                Math.Pow(Math.Exp(-riskFreeRateQuote.value() * TimeToMaturity()) / volatilityZM, 0.25) * 
+                Math.Pow((Math.Abs(Gamma(volatilityZM)) / _algo.Cfg.ZMRiskAversion), 0.5);
         }
 
         public double DeltaZMOffset(int direction)
@@ -399,7 +413,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double volatilityZM = VolatilityZM(direction);
             return H0ZM(volatilityZM) + HwZM(volatilityZM);
         }
-        public double Gamma(double? volatility = null)
+        public double Gamma(double volatility)
         {
             double gamma;
             SetEvaluationDateToCalcDate();
@@ -428,7 +442,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             SetHistoricalVolatility(hv0);
             return gamma;
         }
-        public double DeltaDecay(double? volatility = null)  // Charm
+        public double DeltaDecay(double volatility)  // Charm
         {
             double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
@@ -437,15 +451,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return deltaDecay;
         }
 
-        public double Theta(double? volatility = null)
+        public double Theta(double volatility)
         {
             double theta;
             SetEvaluationDateToCalcDate();
             double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
+
             try
             {
-                theta = euOption.thetaPerDay();  // Different by 0.1 % from FD approach only. Likely much faster though. thetaPerDay() returns neg. values.
+                theta = hvQuote.value() == 0 ? 0 : euOption.thetaPerDay();  // Different by 0.1 % from FD approach only. Likely much faster though. thetaPerDay() returns neg. values.
             }
             catch (Exception e)
             {
@@ -456,7 +471,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return theta;
         }
 
-        public double ThetaTillExpiry(double? volatility = null)
+        public double ThetaTillExpiry(double volatility)
         {
             double thetaTillExpiry;
             SetEvaluationDateToCalcDate();
@@ -465,7 +480,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             try
             {
-                thetaTillExpiry = euOption.theta();
+                thetaTillExpiry = hvQuote.value() == 0 ? 0 : euOption.theta();
             }
             catch (Exception e)
             {
@@ -479,24 +494,32 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public void SetSanityCheckVol(double? volatility = null)
         {
-            if (volatility != null && volatility != 0)
+            if (volatility != null)
             {
                 SetHistoricalVolatility((double)volatility); // For calculating at, eg, ATM IV.
                 return;
             }
-            else if (volatility == 0)
-            {
-                SetHistoricalVolatility();
-                _algo.Error($"OptionContractWrap: Received 0 volatility. Potentially for implied calcs. {Contract}. Resetting to HV: {hvQuote.value()}.\n{Environment.StackTrace}");
-            }
+            //if (volatility != null && volatility != 0)
+            //{
+            //    SetHistoricalVolatility((double)volatility); // For calculating at, eg, ATM IV.
+            //    return;
+            //}
+            //else if (volatility == 0)
+            //{
+            //    SetHistoricalVolatility();
+            //    // FIX ME. Need to find a better way to handle this.
+            //    _algo.Error($"OptionContractWrap: Received 0 volatility. Potentially for implied calcs. {Contract}. Resetting to HV: {hvQuote.value()}.\n{Environment.StackTrace}");
+            //    //_algo.Error($"OptionContractWrap: Received 0 volatility. Potentially for implied calcs. {Contract}. Defaulting to 0.01");  // Resetting to HV: {hvQuote.value()}.\n{Environment.StackTrace}");
+            //}
 
             if (hvQuote.value() == 0)
             {
-                SetHistoricalVolatility();
-                _algo.Error($"OptionContractWrap: HV is zero. Neither argument, not HV is sensible. Wrong calculations ahread. HV: {hvQuote.value()}.\n{Environment.StackTrace}");
+                //SetHistoricalVolatility();
+                _algo.Error($"OptionContractWrap: HV is zero. Neither argument, not HV is sensible. Wrong calculations ahead. HV: {hvQuote.value()}.\n{Environment.StackTrace}");
             }
         }
-        public double DS3(double? volatility = null)  // Speed
+
+        public double DS3(double volatility)  // Speed
         {
             double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
@@ -504,20 +527,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             SetHistoricalVolatility(hv0);
             return dS3;
         }
-        public double Speed() => DS3();
-        public double GammaDecay(double? volatility = null)
+        public double Speed(double volatility) => DS3(volatility);
+        public double GammaDecay(double volatility)
         {
             double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
-            double gammaDecay = FiniteDifferenceApproxTime(Derive.gamma);
+
+            double gammaDecay = hvQuote.value() == 0 ? 0 : FiniteDifferenceApproxTime(Derive.gamma);
             SetHistoricalVolatility(hv0);
             return gammaDecay;
         }
         public double DS2dIV(double volatility)
         {
+            double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
-            var dS2dIV = FiniteDifferenceApprox(hvQuote, amOption, 0.01, Derive.gamma);
-            SetHistoricalVolatility();
+
+            var dS2dIV = hvQuote.value() == 0 ? 0 : FiniteDifferenceApprox(hvQuote, amOption, 0.01, Derive.gamma);
+            SetHistoricalVolatility(hv0);
             return dS2dIV;
         }
 
@@ -527,12 +553,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             SetEvaluationDateToCalcDate();
             double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
-            if (hvQuote.value() == 0) return 0;
 
             try
             {
                 //_algo.Log($"OptionContractWrap.Vega: impliedVolatility={impliedVolatility}, hvQuote={hvQuote.value()}, hv={HistoricalVolatility()}");
-                vega = VegaCached(hvQuote, spotQuote.value());
+                vega = hvQuote.value() == 0 ? 0 : VegaCached(hvQuote.value(), spotQuote.value());
             }
             catch (Exception e)
             {
@@ -544,7 +569,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return vega;
         }    
 
-        public double ThetaDecay(double? volatility = null)
+        public double ThetaDecay(double volatility)
         {
             double thetaTillExpiry;
             SetEvaluationDateToCalcDate();
@@ -556,11 +581,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             SetHistoricalVolatility(hv0);
             return thetaDecay;
         }
-        public double VegaDecay(double iv)  // Veta       
+        public double VegaDecay(double volatility)  // Veta       
         {
-            SetSanityCheckVol(iv);
-            var dVegadT = FiniteDifferenceApproxTime(Derive.vega);
-            SetHistoricalVolatility();
+            double hv0 = hvQuote.value();
+            SetSanityCheckVol(volatility);
+
+            var dVegadT = hvQuote.value() == 0 ? 0: FiniteDifferenceApproxTime(Derive.vega);
+            SetHistoricalVolatility(hv0);
             return dVegadT;
         }
         public double Rho()
@@ -573,7 +600,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
-            var dDeltadIV = FiniteDifferenceApprox(hvQuote, amOption, 0.01, Derive.delta);
+
+            var dDeltadIV = hvQuote.value() == 0 ? 0 : FiniteDifferenceApprox(hvQuote, amOption, 0.01, Derive.delta);
+
             SetHistoricalVolatility(hv0);
             return dDeltadIV;
         }
@@ -581,12 +610,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double DIV2(double volatility)  // Vomma / Volga
         {
             // The nested FD calc returns strange values. Large values for dIV > 0, very small values for dIV < 0.Across a single trade Volga vary by a magnitude of 10_000!
-            return 0;
+            // Change from above issue: using euOption and QlNet's vega() method instead of FD.
             double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
-            var volga = FiniteDifferenceApprox(hvQuote, amOption, 0.05, Derive.vega, d1perturbance: hvQuote);
+
+            var greek = FiniteDifferenceApprox(hvQuote, euOption, 0.01, Derive.vega, d1perturbance: hvQuote);
+
             SetHistoricalVolatility(hv0);
-            return volga;
+            return greek;
         }
         public double Volga(double volatility) => DIV2(volatility);
 
@@ -631,11 +662,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return (maturityDate - calculationDate) / 252.0;
             //return calendar.businessDaysBetween(calculationDate, maturityDate) / 252.0;
         }
-        public double IVdS(double iv)  // How much IV changes with underlying price. That's not a BSM greek, not differentiating with respect to option price.
+        public double IVdS(double volatility)  // How much IV changes with underlying price. That's not a BSM greek, not differentiating with respect to option price.
         {
-            SetSanityCheckVol(iv);
-            var dIVdS = FiniteDifferenceApprox(spotQuote, amOption, 0.01, Derive.IV);
-            SetHistoricalVolatility();
+            double hv0 = hvQuote.value();
+            SetSanityCheckVol(volatility);
+
+            var dIVdS = hvQuote.value() == 0 ? 0 : FiniteDifferenceApprox(spotQuote, amOption, 0.01, Derive.IV);
+
+            SetHistoricalVolatility(hv0);
             return dIVdS;
         }
 
@@ -734,6 +768,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 {
                     Derive.delta => option.delta(),
                     Derive.gamma => option.gamma(),
+                    Derive.vega => option.vega(),
                     Derive.NPV => option.NPV(),
                     _ => throw new NotImplementedException(),
                 };
@@ -778,7 +813,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             pPlus = derive switch
             {
-                Derive.vega => FiniteDifferenceApprox(d1perturbance, option, d_pct),
                 Derive.thetaPerDay => FiniteDifferenceApproxTime(Derive.NPV, 1, Method.forward),
                 Derive.NPV => NPV(option),
                 // doesnt make much sense to perturb the underlying, and not perturb the spotOption but at least same absolute amount / parity.
@@ -790,7 +824,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             pMinus = derive switch
             {
-                Derive.vega => FiniteDifferenceApprox(d1perturbance, option, d_pct),
                 Derive.thetaPerDay => FiniteDifferenceApproxTime(Derive.NPV, 1, Method.forward),
                 Derive.NPV => NPV(option),
                 Derive.IV => GetIVEngine(spotPriceContract: (decimal)(spotQuote.value() - (quote.value() - q0)), spotPriceUnderlying: (decimal)quote.value()),
@@ -867,7 +900,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
                     values.Add(derive switch
                     {
-                        Derive.vega => ocw1.FiniteDifferenceApprox(ocw1.hvQuote, ocw1.amOption, 0.01),
+                        //Derive.vega => ocw1.FiniteDifferenceApprox(ocw1.hvQuote, ocw1.amOption, 0.01),
+                        Derive.vega => ocw1.Vega(hv),
                         Derive.gamma => ocw1.Gamma(hv),
                         Derive.delta => ocw1.Delta(hv),
                         Derive.thetaPerDay => ocw1.Theta(hv),

@@ -15,6 +15,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public Trade? Trade1 { get; internal set; }
         private readonly Position? _prevPosition;
         public SecurityType SecurityType { get => Security.Type; }
+        private List<double> _deltaAdjustmentParameters;
+        private List<double> DeltaAdjustmentParameters { get
+            {
+                if (_deltaAdjustmentParameters == null && SecurityType == SecurityType.Option)
+                {
+                    Dictionary<string, List<double>> putCallParams = _algo.Cfg.DeltaAdjustmentParameters.TryGetValue(SecurityUnderlying.Symbol, out putCallParams) ? putCallParams : _algo.Cfg.DeltaAdjustmentParameters[CfgDefault];
+                    _deltaAdjustmentParameters = putCallParams[Option.Right.ToLower()];
+                }
+                return _deltaAdjustmentParameters;
+            }
+        }
 
         /// <summary>
         /// Constructor for Pos0 off Portfolio Holdings.
@@ -213,32 +224,46 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Option contract = (Option)Security;
             return contract.ContractMultiplier * Mid1Underlying;
         }
-        public decimal DeltaTotal()
+
+        public double DeltaAdjusted(double? volatility = null)
+        {
+            switch (SecurityType)
+            {
+                case SecurityType.Equity:
+                    return 1;
+                case SecurityType.Option:
+                    double delta = Delta(volatility);
+                    return DeltaAdjustmentParameters[0] + delta * (DeltaAdjustmentParameters[1] + DeltaAdjustmentParameters[2] * delta + DeltaAdjustmentParameters[3] * Math.Pow(delta, 2));
+                default:
+                    throw new NotSupportedException();
+            }
+        }
+        public decimal DeltaTotal(double? volatility = null)
         {
             return SecurityType switch
             {
                 SecurityType.Equity => Quantity,
-                SecurityType.Option => ToDecimal(Delta()) * Multiplier * Quantity
+                SecurityType.Option => ToDecimal(DeltaAdjusted(volatility)) * Multiplier * Quantity,
+                _ => throw new NotSupportedException(),
             };
+            ;
         }
         public decimal DeltaXBpUSDTotal(double dS = 100, double? volatility = null)
         {
-            //if (x==100)
-            //{
-            //    _algo.Log($"DeltaXBpUSDTotal: {SecurityType} {Symbol} Mid1Underlying={Mid1Underlying} Quantity={Quantity} Delta={Delta()} DecimalDeltaxX={ToDecimal((Delta() * x)} BP={BP} Multiplier={Multiplier} Result={ToDecimal((Delta() * x) * Mid1Underlying * BP * Multiplier * Quantity}");
-            //}            
             return SecurityType switch
             {
                 SecurityType.Equity => Mid1Underlying * ToDecimal(dS) * BP * Quantity,
-                SecurityType.Option => ToDecimal(Delta(volatility ?? _algo.MidIV(Symbol)) * dS) * Mid1Underlying * BP * Multiplier * Quantity
+                SecurityType.Option => ToDecimal(DeltaAdjusted(volatility) * dS) * Mid1Underlying * BP * Multiplier * Quantity,
+                _ => throw new NotSupportedException(),
             };
+            ;
         }
         public decimal DeltaImpliedTotal(double volatility)
         {
             return SecurityType switch
             {
                 SecurityType.Equity => Quantity,
-                SecurityType.Option => ToDecimal(Delta(volatility)) * Multiplier * Quantity
+                SecurityType.Option => ToDecimal(DeltaAdjusted(volatility)) * Multiplier * Quantity
             };
         }
         public decimal DeltaImpliedXBpUSDTotal(double volatility, double x = 100)
@@ -246,7 +271,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return SecurityType switch
             {
                 SecurityType.Equity => Mid1Underlying * ToDecimal(x) * BP * Quantity,
-                SecurityType.Option => ToDecimal(Delta(volatility) * x) * Mid1Underlying * BP * Multiplier * Quantity
+                SecurityType.Option => ToDecimal(DeltaAdjusted(volatility) * x) * Mid1Underlying * BP * Multiplier * Quantity
             };
         }
 
@@ -273,11 +298,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     return 0;
             }
         }
-        public decimal GammaTotal()
+        public decimal GammaTotal(double? volatility=null)
         {
             return SecurityType switch
             {
-                SecurityType.Option => ToDecimal(Gamma()) * Multiplier * Quantity,
+                SecurityType.Option => ToDecimal(Gamma(volatility)) * Multiplier * Quantity,
                 _ => 0
             }; ;
         }
@@ -319,13 +344,30 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return (SurfaceIVdSBid + SurfaceIVdSAsk) / 2;
         }}
         public decimal SurfacedIVdSTotal => SurfaceIVdSAsk * Multiplier * Quantity;
-        public decimal DeltaIVdSTotal()
+        /// <summary>
+        /// From Derman, The volatility smile. Chapter 22, Heston model minmize PL Variance.
+        /// </summary>
+        /// <param name="spot"></param>
+        /// <returns></returns>
+        public decimal DeltaMVTerm(decimal? spot = null)
         {
-            return ToDecimal(GetGreeks1().Vega) * SurfaceIVdS * Multiplier * Quantity;
+            decimal _spot = spot ?? Mid1Underlying;
+            decimal vega = (decimal)GetGreeks1().Vega;
+            decimal iv = (decimal)_algo.MidIV(Symbol);
+            decimal vv = _algo.Cfg.VolatilityOfVolatility.TryGetValue(UnderlyingSymbol, out vv) ? vv : _algo.Cfg.VolatilityOfVolatility[CfgDefault];
+            decimal rho = _algo.Cfg.CorrelationSpotVolatility.TryGetValue(UnderlyingSymbol, out rho) ? rho : _algo.Cfg.CorrelationSpotVolatility[CfgDefault];
+            if (iv * _spot == 0) { return 0; }
+            return rho * vv * vega / iv * _spot;
+        }
+        public decimal DeltaIVdSTotal()
+        {            
+            return DeltaMVTerm() * Multiplier * Quantity;
+            //return ToDecimal(GetGreeks1().Vega) * SurfaceIVdS * Multiplier * Quantity;
         }
         public decimal DeltaIVdSXBpUSDTotal(decimal dS = 100)
         {
-            return ToDecimal(GetGreeks1().Vega) * SurfaceIVdS * Mid1Underlying * dS * BP * Multiplier * Quantity;
+            return DeltaMVTerm(Mid1Underlying * dS * BP) * Multiplier * Quantity;
+            //return ToDecimal(GetGreeks1().Vega) * SurfaceIVdS * Mid1Underlying * dS * BP * Multiplier * Quantity;
         }
         public decimal SpeedXBpUSDTotal(double dS = 100, double? volatility = null)
         {
@@ -383,6 +425,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double Ts0Sec { get => (Trade0.Ts0 - new DateTime(1970, 1, 1, 0, 0, 0)).TotalSeconds; }
         public decimal DP { get => P1 - Trade0.PriceFillAvg; }
         public decimal DPMid { get => Trade1?.Mid0 ?? Mid1 - Trade0.Mid0; }
+        public decimal DPMidTotal { get => (Trade1?.Mid0 ?? Mid1 - Trade0.Mid0) * Multiplier * Quantity; }
         public decimal DeltaFillMid1 { get => P1 - Mid1; }
         public decimal DS { get => Mid1Underlying - Mid0Underlying; }
         public double DTDays { get => (Ts1 - Trade0.Ts0).TotalSeconds / 86400; }

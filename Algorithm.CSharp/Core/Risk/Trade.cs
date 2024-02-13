@@ -119,6 +119,29 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double IVAsk0 { get; internal set; }
         public double IVPrice0 { get; internal set; }
         public double IVMid0 { get => (IVBid0 + IVAsk0) / 2; }
+        private Option? _option { get => SecurityType == SecurityType.Option ? (Option)Security : null; }
+        public decimal IntrinsicValue0 => SecurityType switch
+        {
+            SecurityType.Option => _option.GetPayOff(Mid0Underlying),
+            _ => 0
+        };
+        public decimal ExtrinsicValue0 => SecurityType switch
+        {
+            SecurityType.Option => Mid0 - IntrinsicValue0,
+            _ => 0
+        };
+        public double Moneyness0 => SecurityType switch
+        {
+            // consider useing forward moneyness 
+            // Math.Exp(rate-dividend yield) * tenor
+           SecurityType.Option => (double)(Mid0Underlying / _option.StrikePrice),
+            _ => 0
+        };
+        public double LogMoneyness0 => SecurityType switch
+        {
+            SecurityType.Option => Math.Exp(Moneyness0),
+            _ => 0
+        };
         public string Tag { get; internal set; } = "";
         public decimal SurfaceIVdSBid { get; internal set; } // not differentiating the options price here, but getting slope of strike skew.
         public decimal SurfaceIVdSAsk { get; internal set; } // not differentiating the options price here, but getting slope of strike skew.

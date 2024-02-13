@@ -6,7 +6,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
     {
         public string Symbol { get; set; }
         public DateTime Date { get; set; }
-        public DateTime EmbargoPrior { get; set; }
-        public DateTime EmbargoPost { get; set; }
+        //public DateTime EmbargoPrior { get; set; }
+        //public DateTime EmbargoPost { get; set; }
     }
 }
