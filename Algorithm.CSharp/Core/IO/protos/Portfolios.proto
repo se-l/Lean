@@ -1,0 +1,25 @@
+syntax = "proto3";
+package QuantConnect.Algorithm.CSharp.Core.IO;
+
+option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
+
+message Holding {
+
+  string symbol = 1;
+
+  float quantity = 2;
+
+}
+
+message Portfolio {
+  string underlying = 1;
+  repeated Holding holdings = 2;
+  double objective = 3;
+}
+
+message Portfolios {
+
+  repeated Portfolio portfolios = 1;
+  bool isLastTransmission = 2;
+
+}

@@ -286,7 +286,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             riskDeltaTotal += riskPutCallRatio;
 
             CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
-            bool exceeded = _algo.GetHedgingMode(symbol) == HedgingMode.Zakamulin ? IsUnderlyingDeltaExceedingBandZM(symbol) : IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal);
+            bool exceeded = IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal);
             if (exceeded)
             {
                 _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
@@ -299,9 +299,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (_algo.IsWarmingUp) return false;
 
             Symbol underlying = Underlying(symbol);
-
             decimal gammaTotal = RiskByUnderlying(underlying, Metric.GammaTotal);
-            if (gammaTotal > 0) return false;
 
             decimal totalDeltaHedgeThresholdIntercept = _algo.Cfg.TotalDeltaHedgeThresholdIntercept.TryGetValue(underlying.Value, out totalDeltaHedgeThresholdIntercept) ? totalDeltaHedgeThresholdIntercept : _algo.Cfg.TotalDeltaHedgeThresholdIntercept[CfgDefault];
             decimal totalDeltaHedgeThresholdGammaFactor = _algo.Cfg.TotalDeltaHedgeThresholdGammaFactor.TryGetValue(underlying.Value, out totalDeltaHedgeThresholdGammaFactor) ? totalDeltaHedgeThresholdGammaFactor : _algo.Cfg.TotalDeltaHedgeThresholdGammaFactor[CfgDefault];

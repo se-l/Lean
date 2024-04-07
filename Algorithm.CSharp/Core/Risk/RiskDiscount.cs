@@ -47,7 +47,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// Helper constructor reading arguments from config.json
         /// </summary>
         /// <param name="metric"></param>
-        public RiskDiscount(Foundations algo, AMarketMakeOptionsAlgorithmConfig cfg, Symbol symbol, Metric metric)
+        public RiskDiscount(Foundations algo, FoundationsConfig cfg, Symbol symbol, Metric metric)
         {
             _algo = algo;
             Symbol = symbol;

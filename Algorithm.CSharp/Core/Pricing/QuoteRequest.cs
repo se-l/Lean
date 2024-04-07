@@ -12,9 +12,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public Symbol Underlying { get => Option.Symbol.Underlying; }
         public decimal Quantity;
         public OrderDirection OrderDirection { get => Num2Direction(Quantity); }
-        public UtilityOrder UtilityOrder;
+        public IUtilityOrder UtilityOrder;
 
-        public QuoteRequest(Option option, decimal quantity, UtilityOrder utilityOrder)
+        public QuoteRequest(Option option, decimal quantity, IUtilityOrder utilityOrder)
         {
             Option = option;
             Quantity = quantity;

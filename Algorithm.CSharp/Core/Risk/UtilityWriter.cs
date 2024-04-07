@@ -26,9 +26,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _writer = new StreamWriter(_path, true);
         }
         private List<string>? _header;
-        public List<string> CsvHeader(UtilityOrder utilityOrder) => _header ??= ObjectsToHeaderNames(utilityOrder).OrderBy(x => x).ToList();
-        public string CsvRow(UtilityOrder utilityOrder) => ToCsv(new[] { utilityOrder }, _header, skipHeader: true);
-        public void Write(UtilityOrder utility)
+        public List<string> CsvHeader(IUtilityOrder utilityOrder) => _header ??= ObjectsToHeaderNames(utilityOrder).OrderBy(x => x).ToList();
+        public string CsvRow(IUtilityOrder utilityOrder) => ToCsv(new[] { utilityOrder }, _header, skipHeader: true);
+        public void Write(IUtilityOrder utility)
         {
             if (!_headerWritten)
             {

@@ -3,7 +3,6 @@ using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Equity;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using static QuantConnect.Messages;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -115,7 +114,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 UpdateTriggerPrices();
             }
 
-            if (IsTriggered())
+            if (IsTriggered() & RiskBandExceeded())
             {
                 Hedge();
             }
@@ -128,11 +127,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (IsScalping)
             {
                 UpdateTriggerPrices();
-                if (IsTriggered())
+                if (IsTriggered() & RiskBandExceeded())
                 {
                     Hedge();
                 }
             }
+        }
+
+        private bool RiskBandExceeded()
+        {
+            return _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, _algo.DeltaMV(Symbol));
         }
         private void Reset()
         {
@@ -184,7 +188,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             var newTriggerPrice = GetUpdatedTriggerPrice();
             if (newTriggerPrice != _triggerPrice)
             {
-                _algo.Log($"{_algo.Time} GammaScalper.UpdateTriggerPrices: Symbol={Symbol}, MidPrice={MidPrice}, TriggerOld={_triggerPrice}, TriggerNew={newTriggerPrice}, StartingPrice={_startingPrice}, ScalpingGains={ScalpingGains()}");
+                //_algo.Log($"{_algo.Time} GammaScalper.UpdateTriggerPrices: Symbol={Symbol}, MidPrice={MidPrice}, TriggerOld={_triggerPrice}, TriggerNew={newTriggerPrice}, StartingPrice={_startingPrice}, ScalpingGains={ScalpingGains()}");
                 _triggerPrice = newTriggerPrice;
             }
         }
@@ -200,14 +204,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// Hence check, if delta deviation from zero is greater than expected fee, hedge, otherwise only hedge if band is exceeded.
         /// </summary>
         private void Hedge()
-        {            
-            bool scalpingGainsExceedTransactionCosts = DoScalpingGainsExceedTransactionCosts();
-            if (scalpingGainsExceedTransactionCosts)
-            {
-                _algo.Log($"{_algo.Time} GammaScalper.Hedge: Symbol={Symbol}, Delta={_algo.DeltaMV(Symbol)}, MidPrice={MidPrice}, TriggerPrice={_triggerPrice}, ScalpingDirection={ScalpingDirection}, " +
-                                       $"scalpingGainsExceedTransactionCosts={scalpingGainsExceedTransactionCosts}");
-                _algo.ExecuteHedge(Symbol, _algo.EquityHedgeQuantity(Symbol), OrderType.Market);  // Having this here is error prone and should be centralized. Switch from market to limit/updating in future easily forgotten.
-            }
+        {
+            _algo.HedgeOptionWithUnderlying(Symbol);
         }
 
         private decimal ScalpingGains()

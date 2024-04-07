@@ -86,7 +86,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             dayCounter = new Actual365Fixed();
             maturityDate = new Date(contract.Expiry.Day, contract.Expiry.Month, contract.Expiry.Year);
             this.calculationDate = calculationDate;
-            this.calculationDate = Date.Min(this.calculationDate, maturityDate);///////////////////////
+            this.calculationDate = Date.Min(this.calculationDate, maturityDate);
             settlementDate = this.calculationDate;
             strikePrice = (double)contract.StrikePrice;
             optionType = contract.Right == OptionRight.Call ? Option.Type.Call : Option.Type.Put;

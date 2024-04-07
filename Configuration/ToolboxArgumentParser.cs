@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using McMaster.Extensions.CommandLineUtils;
+using QuantConnect.Logging;
 
 namespace QuantConnect.Configuration
 {
@@ -94,7 +95,11 @@ namespace QuantConnect.Configuration
         /// </summary>
         public static Dictionary<string, object> ParseArguments(string[] args)
         {
-            return ApplicationParser.Parse(ApplicationName, ApplicationDescription, ApplicationHelpText, args, Options);
+            var envOptions = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>().ToDictionary(k => k.Key.ToString(), v => v.Value);
+            // Build string args from environment variables. Only select those environment variables that match the options
+            string[] envArgs = envOptions.Where(kvp => Options.Any(o => o.Name == kvp.Key)).Select(kvp => $"--{kvp.Key}={kvp.Value}").ToArray();
+            // Concatenate with environment variables to support passing options via Docker run
+            return ApplicationParser.Parse(ApplicationName, ApplicationDescription, ApplicationHelpText, args.Concat(envArgs).ToArray(), Options);
         }
 
         /// <summary>

@@ -145,7 +145,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             _algo.RegisterIndicator(symbol, _algo.IVBids[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVBids[symbol].Selector);
             _algo.RegisterIndicator(symbol, _algo.IVAsks[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVAsks[symbol].Selector);
             _algo.RegisterIndicator(symbol, _algo.PutCallRatios[symbol], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Volume ?? 0);
-            _algo.IVSurfaceAndreasenHuge[(symbol.Underlying, option.Right)].RegisterSymbol(option);
+            //_algo.IVSurfaceAndreasenHuge[(symbol.Underlying, option.Right)].RegisterSymbol(option);
         }
 
         private void InitializeIVSurfaces(Symbol underlying)
@@ -158,21 +158,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 _algo.IVSurfaceRelativeStrikeAsk[underlying] = new IVSurfaceRelativeStrike(_algo, underlying, QuoteSide.Ask, true);
             }
-            if (!_algo.IVSurfaceAndreasenHuge.ContainsKey((underlying, OptionRight.Call)))
-            {
-                _algo.IVSurfaceAndreasenHuge[(underlying, OptionRight.Call)] = new IVSurfaceAndreasenHuge(_algo, underlying, OptionRight.Call, true);
-            }
-            if (!_algo.IVSurfaceAndreasenHuge.ContainsKey((underlying, OptionRight.Put)))
-            {
-                _algo.IVSurfaceAndreasenHuge[(underlying, OptionRight.Put)] = new IVSurfaceAndreasenHuge(_algo, underlying, OptionRight.Put, true);
-            }
+            //if (!_algo.IVSurfaceAndreasenHuge.ContainsKey((underlying, OptionRight.Call)))
+            //{
+            //    _algo.IVSurfaceAndreasenHuge[(underlying, OptionRight.Call)] = new IVSurfaceAndreasenHuge(_algo, underlying, OptionRight.Call, true);
+            //}
+            //if (!_algo.IVSurfaceAndreasenHuge.ContainsKey((underlying, OptionRight.Put)))
+            //{
+            //    _algo.IVSurfaceAndreasenHuge[(underlying, OptionRight.Put)] = new IVSurfaceAndreasenHuge(_algo, underlying, OptionRight.Put, true);
+            //}
         }
         public DateTime HistoryRequestEndDate(Security security)
         {
             if (_algo.LiveMode && _algo.Time.TimeOfDay < new TimeSpan(9, 30, 0))
             {
                 SecurityExchangeHours SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, security.Symbol, security.Type);
-                return Time.EachTradeableDay(SecurityExchangeHours, _algo.Time.Date.AddDays(-7), _algo.Time.Date.AddDays(-1)).Last();
+                return Time.EachTradeableDay(SecurityExchangeHours, _algo.Time.Date.AddDays(-4), _algo.Time.Date.AddDays(-1)).Last();
             }
             else if (_algo.LiveMode && _algo.Time.TimeOfDay >= new TimeSpan(9, 30, 0))
             {

@@ -282,9 +282,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                                     { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
                                 OrderEquity(symbol, quantity, price, orderType: _orderType);
                                 break;
-                            case OrderType.LimitIfTouched:
-                                // Handled by GammaScalper, whichs a LimitOrder as argument
-                                break;
                             default:
                                 throw new NotImplementedException();
                         }
@@ -295,7 +292,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 string msg = $"{Time} ExecuteHedge: Not hedging because quantity={quantity}, anyExistingOrders={existingOrders.Any()}, OrderId={string.Join(",", existingOrders.Select(t => t.OrderId))}.";
                 Log(msg);
-                DiscordClient.Send(msg, DiscordChannel.Emergencies);
+                //DiscordClient.Send(msg, DiscordChannel.Emergencies);
             }
         }
 
@@ -307,24 +304,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <returns></returns>
         public OrderType GetEquityHedgeOrderType(Equity equity, OrderTicket? ticket = null)
         {
-            //return OrderType.Market;
-            if (ticket != null && ticket.UpdateRequests.Count > 0)
+            if (ticket != null && ticket.UpdateRequests.Count > Cfg.LimitOrderUpdateBeforeMarketOrderConversion)
             {
                 return OrderType.Market;
             }
 
-            double gammaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.GammaTotal);
-            bool gammaScalpingEnabled = Cfg.GammaScalpingEnabled.TryGetValue(equity.Symbol, out gammaScalpingEnabled) ? gammaScalpingEnabled : Cfg.GammaScalpingEnabled[CfgDefault];
-
-            if (gammaScalpingEnabled && gammaTotal > 0 && GammaScalpers[equity.Symbol].IsScalping)
-            {
-                return OrderType.LimitIfTouched;
-            }
-            else
+            if (Spread(equity) <= Cfg.MaxSpreadForMarketOrderHedging)
             {
                 return OrderType.Market;
-                //return OrderType.Limit;
             }
+            
+            return OrderType.Limit;
         }
         /// <summary>
         /// Gamma long - trailing limit orders.

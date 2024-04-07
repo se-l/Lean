@@ -96,6 +96,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         /// </summary>
         public void Recalibrate()
         {
+            return;
             if (
                 _algo.Time.TimeOfDay > new TimeSpan(16, 0, 0) || _algo.Time.TimeOfDay < new TimeSpan(9, 30, 0)   // Only RTH
                ) 
@@ -131,6 +132,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         private double? GetIV(Symbol symbol) => GetIV(symbol.ID.Date, (double)symbol.ID.StrikePrice);
         private double? GetIV(DateTime expiry, double strike)
         {
+            return null;
             if (_andreasenHugeVolatilityAdapter == null)
             {
                 return null;
@@ -150,6 +152,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         /// </summary>
         public double? IVdS(Symbol symbol)
         {
+            return null;
             if (symbol.SecurityType != SecurityType.Option) { return 0; }
             double step = 0.001;
             return -(GetIV(symbol.ID.Date, (double)symbol.ID.StrikePrice + step) - GetIV(symbol.ID.Date, (double)symbol.ID.StrikePrice - step)) / 2*step ?? 0;

@@ -17,11 +17,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double IVPrice { get; internal set; }
         public IEnumerable<QuoteDiscount> QuoteDiscounts;
         public double SpreadFactor { get; internal set; }
-        public UtilityOrder UtilityOrderHigh;
-        public UtilityOrder UtilityOrderLow;
+        public IUtilityOrder UtilityOrderHigh;
+        public IUtilityOrder UtilityOrderLow;
         public decimal SpreadDiscount { get; internal set; }
 
-        public Quote(Option option, decimal quantity, decimal price, double ivPrice, IEnumerable<QuoteDiscount>? quoteDiscounts, UtilityOrder utilityOrderHigh, UtilityOrder utilityOrderLow, decimal? spreadDiscount=null)
+        public Quote(Option option, decimal quantity, decimal price, double ivPrice, IEnumerable<QuoteDiscount>? quoteDiscounts, IUtilityOrder utilityOrderHigh, IUtilityOrder utilityOrderLow, decimal? spreadDiscount=null)
         {
             Option = option;
             Quantity = quantity;

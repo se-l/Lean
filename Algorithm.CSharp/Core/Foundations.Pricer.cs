@@ -94,7 +94,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <exception cref="ArgumentException"></exception>
         public Quote<Option> GetQuote(QuoteRequest<Option> qr)
         {
-            UtilityOrder utilityOrderCrossSpread;
+            IUtilityOrder utilityOrderCrossSpread;
             OptionContractWrap ocw = OptionContractWrap.E(this, qr.Option, Time.Date);
             decimal priceSpread = PriceSpread(ocw);
             decimal marketPriceSpread = qr.Option.AskPrice - qr.Option.BidPrice;
@@ -110,12 +110,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
             switch (qr.OrderDirection)
                 {                 
                 case OrderDirection.Buy:
-                    qr.UtilityOrder = new(this, qr.Option, qr.Quantity, qr.Option.BidPrice);
-                    utilityOrderCrossSpread = new UtilityOrder(this, qr.Option, qr.Quantity, qr.Option.AskPrice);
+                    qr.UtilityOrder = UtilityOrderFactory.Create(this, qr.Option, qr.Quantity, qr.Option.BidPrice);
+                    utilityOrderCrossSpread = UtilityOrderFactory.Create(this, qr.Option, qr.Quantity, qr.Option.AskPrice);
                     break;
                 case OrderDirection.Sell:
-                    qr.UtilityOrder = new(this, qr.Option, qr.Quantity, qr.Option.AskPrice);
-                    utilityOrderCrossSpread = new UtilityOrder(this, qr.Option, qr.Quantity, qr.Option.BidPrice);
+                    qr.UtilityOrder = UtilityOrderFactory.Create(this, qr.Option, qr.Quantity, qr.Option.AskPrice);
+                    utilityOrderCrossSpread = UtilityOrderFactory.Create(this, qr.Option, qr.Quantity, qr.Option.BidPrice);
                     break;
                 default:
                     throw new ArgumentException($"GetQuote: Unknown order direction {qr.OrderDirection}");

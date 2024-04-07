@@ -2,18 +2,17 @@ using QuantConnect.Algorithm.CSharp.Core.Risk;
 using System;
 using System.Collections.Generic;
 
-namespace QuantConnect.Algorithm.CSharp
+namespace QuantConnect.Algorithm.CSharp.Core
 {
-    public class AMarketMakeOptionsAlgorithmConfig : AlgoConfig
+    public class FoundationsConfig : AlgoConfig
     {
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public HashSet<string> Ticker { get; set; }
         public HashSet<string> LiquidateTicker { get; set; }
-        public Dictionary<string, bool> SkipRunSignals {  get; set; }
+        public Dictionary<string, bool> SkipRunSignals { get; set; }
         public bool ExecuteManualOrderInstructions { get; set; }
-        public bool SetBacktestingHoldings { get; set; }
-        public string BacktestingHoldingsFn { get; set; }
+        public Dictionary<string, decimal> BacktestingHoldings { get; set; }
         public int VolatilityPeriodDays { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMax { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMaxSignal { get; set; }
@@ -74,5 +73,7 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, double> UtilBidTaperer { get; set; }
         public Dictionary<string, decimal> MaxSpreadDiscount { get; set; }
         public Dictionary<string, Dictionary<string, List<double>>> DeltaAdjustmentParameters { get; set; }
+        public int LimitOrderUpdateBeforeMarketOrderConversion { get; set; }
+        public decimal MaxSpreadForMarketOrderHedging { get; set; }
     }
 }

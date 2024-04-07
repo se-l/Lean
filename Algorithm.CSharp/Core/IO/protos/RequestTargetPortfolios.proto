@@ -1,0 +1,28 @@
+syntax = "proto3";
+package QuantConnect.Algorithm.CSharp.Core.IO;
+
+option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
+
+// request_target_portfolios.proto
+
+message RequestTargetPortfolios {
+
+  string ts = 1;
+
+  string underlying = 2;
+
+  float underlying_price = 3;
+
+  map<string, float> holdings = 4;
+
+  map<string, OptionQuote> option_quotes = 5;
+
+}
+
+message OptionQuote {
+
+  float bid = 1;
+
+  float ask = 2;
+
+}

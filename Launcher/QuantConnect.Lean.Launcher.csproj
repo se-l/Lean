@@ -70,7 +70,13 @@
     <None Include="..\Algorithm.CSharp\Core\EarningsAnnouncements.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\Algorithm.CSharp\AMarketMakeOptionsAlgorithmConfig.json">
+    <None Include="..\Algorithm.CSharp\Core\FoundationsConfig.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\Algorithm.CSharp\MarketMaking\MarketMakeOptionsAlgorithmConfig.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\Algorithm.CSharp\Earnings\EarningsAlgorithmConfig.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="..\Algorithm.CSharp\ADataRecorderConfig.json">
@@ -80,9 +86,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="..\Algorithm.CSharp\Core\ManualOrderInstructions.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="..\Algorithm.CSharp\AImpliedVolatilityExporterConfig.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

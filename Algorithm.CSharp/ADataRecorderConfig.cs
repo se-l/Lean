@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using QuantConnect.Algorithm.CSharp.Core;
 
 namespace QuantConnect.Algorithm.CSharp
 {

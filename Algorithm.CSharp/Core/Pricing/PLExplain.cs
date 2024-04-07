@@ -19,7 +19,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public decimal PL_DeltaFillMid { get; internal set; }  // Bid/Ask difference to midpoint. Positive if we earned the spread.
         public decimal PL_Fee { get; internal set; }
         public double PL_DeltaIVdS { get; internal set; }
-        public double PL_DeltaIVAHdS { get; internal set; }
         public double PL_Delta { get; internal set; }  // dS
         public double PL_Gamma { get; internal set; }  // dS2
         public double PL_DeltaDecay { get; internal set; }  // dSdT
@@ -69,7 +68,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double dT;
             double dIV;
             double dIVdS;
-            double dIVAHdS;
             double dR;
 
             var ts1 = _position.Trade1?.Ts0 ?? snaps.Last().Ts0;
@@ -89,7 +87,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 dT = DT(snap1.Ts0, snap0.Ts0);
                 dIV = DIV(snap1.IVMid0, snap0.IVMid0);
                 dIVdS = (double)DIVdS(snap1.SurfaceIVdS, snap0.SurfaceIVdS);
-                dIVAHdS = (double)DIVdS(snap1.SurfaceIVAHdS, snap0.SurfaceIVAHdS);
                 dR = DR(0, 0);
 
                 // Dont double count Greeks. Snapping more often may only correct for higher order terms, given BSM is a complete model, adjusted by IV.
@@ -98,7 +95,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 // ...
 
                 PL_DeltaIVdS = positionQuantity * g0.Vega * dIVdS * dS;
-                PL_DeltaIVAHdS = positionQuantity * g0.VegaAH * dIVAHdS * dS;
                 PL_Vanna = positionQuantity * g0.DDeltadIV * dIV * dS;  // dSdIV, Vanna, ( dSdIV == dIVdS ) - https://optionstradingiq.com/vanna-greek/
 
                 PL_Vega = positionQuantity * g0.Vega * dIV;  // dIV

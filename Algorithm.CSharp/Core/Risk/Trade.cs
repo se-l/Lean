@@ -154,7 +154,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 return (SurfaceIVdSBid + SurfaceIVdSAsk) / 2;
             }
         }
-        public UtilityOrder? UtilityOrder { get; internal set; }
+        public IUtilityOrder? UtilityOrder { get; internal set; }
         public Quote<Option>? Quote { get; internal set; }
 
         /// <summary>
@@ -280,7 +280,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             FirstFillTime = (DateTime)(order?.LastFillTime?.ConvertFromUtc(_algo.TimeZone) ?? order?.Time);
             Snap();
             Quote = algo.Quotes.TryGetValue(order.Id, out Quote<Option> quote) ? quote : null;
-            UtilityOrder = algo.OrderTicket2UtilityOrder.TryGetValue(order.Id, out UtilityOrder utilityOrder) ? utilityOrder : null;
+            UtilityOrder = algo.OrderTicket2UtilityOrder.TryGetValue(order.Id, out IUtilityOrder utilityOrder) ? utilityOrder : null;
         }
 
         /// <summary>
