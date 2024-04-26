@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+import "Common.proto";
+
+package QuantConnect.Algorithm.CSharp.Core.IO;
+
+option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
+
+message RequestStressTestDs {
+
+  string ts = 1;
+
+  string underlying = 2;
+  
+  repeated Holding holdings = 3;
+  
+  repeated MarketDataSnapByUnderlying market_data_snaps = 4; 
+
+}
+
+message ResultStressTestDs {
+    
+  string ts = 1;
+
+  string underlying = 2;
+  
+  repeated Holding holdings = 3;
+  
+  map<string, double> ds_dnlv = 4;
+
+  double delta_total = 5;
+
+  double delta_total_across_ds = 6;
+
+  double weighted_dnlv = 7;
+
+  map<string, double> marginal_weighted_dnlv_by_holding = 8;
+
+  double total_objective = 9;
+
+  map<string, double> marginal_scaled_objective_by_holding = 10;
+
+}

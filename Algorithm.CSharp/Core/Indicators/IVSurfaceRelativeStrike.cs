@@ -465,7 +465,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public IEnumerable<Bin> ATMBins(int minDTE = 5)
         {
             // Should be warmed up. No null here.
-            // Derive ATM volatility from the bin with value 100. OTM only. And smallest expiry.
+            // Derive ATM volatility from the bin with value 100. OTM only. And smallest expiry. Fix this, use multiple expiries, normed to today.
             var minExpiry = MinExpiry(minDTE);
             if (minExpiry == null)
             {

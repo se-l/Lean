@@ -165,6 +165,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Delta500BpUSDTotal,           
             
             EquityDeltaTotal,
+            EquityDPriceMidTotal,
+            OptionDPriceMidTotal,
 
             Gamma,
             GammaTotal,
@@ -211,6 +213,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
         public static Metric[] DSMetrics = new Metric[] { Metric.DeltaXBpUSDTotal, Metric.GammaXBpUSDTotal, Metric.SpeedXBpUSDTotal };
         public static Metric[] DIVMetrics = new Metric[] { Metric.VegaXBpUSDTotal, Metric.VannaXBpUSDTotal, Metric.VolgaXpUSDTotal };
+
+        public enum VolatilityType
+        {
+            HVHedge,
+            IVMid,
+            IVATM,
+            IVBid,
+            IVAsk,
+        }
         public static IEnumerable<T> ToIEnumerable<T>(this IEnumerator<T> enumerator)
         {
             while (enumerator.MoveNext())
@@ -449,13 +460,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public static void ExportToCsv<T>(IEnumerable<T> objects, string filePath)
         {
-            var fileExists = File.Exists(filePath);
-            // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
-            if (!fileExists)
+            try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                var fileExists = File.Exists(filePath);
+                // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
+                if (!fileExists)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                }
+                File.WriteAllText(filePath, ToCsv(objects));
+            } 
+            catch (Exception e)
+            {
+                Logging.Log.Error($"ExportToCsv. Failed to write to {filePath}. {e}");
             }
-            File.WriteAllText(filePath, ToCsv(objects));
         }
         public static decimal ToDecimal(double originalValue)
         {
@@ -558,6 +576,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 cache[key] = result;
                 return result;
             };
+        }
+
+        public static QuantLib.Date DateQl(DateTime date)
+        {
+            return new QuantLib.Date(date.Day, (QuantLib.Month)date.Month, date.Year);
         }
     }
 }

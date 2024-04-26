@@ -162,6 +162,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var d1 = new Dictionary<string, string>
             {
                 { "Symbol", $"{_sym}" },
+                { "PriceUnderlying", $"{MidPrice(Underlying(_sym))}" },
+                { "ATM IV", $"{AtmIV(Underlying(_sym))}" },
             };
                 var d2 = PfRisk.ToDict(_sym).ToDictionary(x => x.Key, x => Math.Round(x.Value, 3).ToString());
                 tagLines.Add(Humanize(d1.Union(d2)));

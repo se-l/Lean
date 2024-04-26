@@ -35,8 +35,8 @@ namespace QuantConnect.Securities
         private static readonly IReadOnlyList<BaseData> _empty = new List<BaseData>();
 
         // this is used to prefer quote bar data over the tradebar data
-        private DateTime _lastQuoteBarUpdate;
-        private DateTime _lastOHLCUpdate;
+        public DateTime LastQuoteBarUpdate;
+        public DateTime LastOHLCUpdate;
         private BaseData _lastData;
 
         private readonly object _locker = new ();
@@ -182,7 +182,7 @@ namespace QuantConnect.Securities
             // was implemented to grant preference towards using quote data in the fill
             // models and provide a level of determinism on the values exposed via the cache.
             if ((_lastData == null
-              || _lastQuoteBarUpdate != data.EndTime
+              || LastQuoteBarUpdate != data.EndTime
               || data.DataType != MarketDataType.TradeBar)
                 // we will only set the default data type to preserve determinism and backwards compatibility
                 && isDefaultDataType)
@@ -216,9 +216,9 @@ namespace QuantConnect.Securities
             {
                 // we will only set OHLC values using the default data type to preserve determinism and backwards compatibility.
                 // Gives priority to QuoteBar over TradeBar, to be removed when default data type completely addressed GH issue 4196
-                if ((_lastQuoteBarUpdate != data.EndTime || _lastOHLCUpdate != data.EndTime) && isDefaultDataType)
+                if ((LastQuoteBarUpdate != data.EndTime || LastOHLCUpdate != data.EndTime) && isDefaultDataType)
                 {
-                    _lastOHLCUpdate = data.EndTime;
+                    LastOHLCUpdate = data.EndTime;
                     if (bar.Open != 0) Open = bar.Open;
                     if (bar.High != 0) High = bar.High;
                     if (bar.Low != 0) Low = bar.Low;
@@ -238,11 +238,21 @@ namespace QuantConnect.Securities
                 var quoteBar = bar as QuoteBar;
                 if (quoteBar != null)
                 {
-                    _lastQuoteBarUpdate = quoteBar.EndTime;
+                    LastQuoteBarUpdate = quoteBar.EndTime;
                     if (quoteBar.Ask != null && quoteBar.Ask.Close != 0) AskPrice = quoteBar.Ask.Close;
                     if (quoteBar.Bid != null && quoteBar.Bid.Close != 0) BidPrice = quoteBar.Bid.Close;
                     if (quoteBar.LastBidSize != 0) BidSize = quoteBar.LastBidSize;
                     if (quoteBar.LastAskSize != 0) AskSize = quoteBar.LastAskSize;
+                }
+            }
+            else if (data.DataType == MarketDataType.VolatilityBar)
+            {
+                var volatilityBar = data as VolatilityBar;
+                if (volatilityBar != null)
+                {
+                    LastQuoteBarUpdate = data.EndTime;
+                    if (volatilityBar.PriceAsk.Close != 0) AskPrice = volatilityBar.PriceAsk.Close;
+                    if (volatilityBar.PriceBid.Close != 0) BidPrice = volatilityBar.PriceBid.Close;
                 }
             }
             else if (data.DataType != MarketDataType.Auxiliary)
@@ -470,7 +480,9 @@ namespace QuantConnect.Securities
                 AskPrice = AskPrice,
                 AskSize = AskSize,
                 Volume = Volume,
-                OpenInterest = OpenInterest
+                OpenInterest = OpenInterest,
+                LastQuoteBarUpdate = LastQuoteBarUpdate,
+                LastOHLCUpdate = LastOHLCUpdate,
             };
         }
     }
