@@ -58,7 +58,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             _optionRight = optionRight;
             _optionRightQl = optionRight == OptionRight.Call ? QuantLib.Option.Type.Call : QuantLib.Option.Type.Put;
             _riskFreeRate = (double)_algo.Cfg.DiscountRateMarket;
-            _dividendYield = _algo.Cfg.DividendYield.TryGetValue(Underlying.Value, out _dividendYield) ? _dividendYield : _algo.Cfg.DividendYield[CfgDefault];
+            _dividendYield = _algo.DividendYield.TryGetValue(Underlying.Value, out _dividendYield) ? _dividendYield : _algo.DividendYield[CfgDefault];
 
             //IV = algo.Cache(GetIV, (Symbol symbol) => (_algo.Time, symbol), ttl: 10); // Cache until recalibrated
             IV = GetIV;

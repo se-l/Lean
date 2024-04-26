@@ -63,7 +63,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public decimal EquityShortingRate { get; set; }
         public decimal DiscountRatePortfolioCAGR { get; set; }
         public decimal DiscountRateMarket { get; set; }
-        public Dictionary<string, double> DividendYield { get; set; }
         public Dictionary<string, double> MinUtility { get; set; }
         public Dictionary<string, decimal> CorrelationSpotVolatility { get; set; }
         public Dictionary<string, decimal> VolatilityOfVolatility { get; set; }

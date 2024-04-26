@@ -73,6 +73,7 @@ namespace QuantConnect.ToolBox
         public bool extendedHours = true;
         public bool isInternalFeed = true;
         public bool fillForward = false;
+        public Dictionary<string, double> DividendYield;
 
         /// <summary>
         /// Update existing symbol properties database
@@ -83,13 +84,14 @@ namespace QuantConnect.ToolBox
             Cfg = JsonConvert.DeserializeObject<FoundationsConfig>(File.ReadAllText("FoundationsConfig.json"));
             Cfg.OverrideWithEnvironmentVariables<FoundationsConfig>();
             var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
-            string dataDirectory = Config.Get("data-folder");
 
             var dataProvider = Composer.Instance.GetExportedValueByTypeName<IDataProvider>(Config.Get("data-provider", "DefaultDataProvider"));
             var mapFileProvider = new LocalDiskMapFileProvider();
             mapFileProvider.Initialize(dataProvider);
             //var _mapFileProvider = new LocalDiskMapFileProvider();
             IDataCacheProvider _dataCacheProvider = new ZipDataCacheProvider(dataProvider, isDataEphemeral: false);
+
+            DividendYield = JsonConvert.DeserializeObject<Dictionary<string, double>>(File.ReadAllText(System.IO.Path.Combine(Globals.DataFolder, "symbol-properties", "DividendYields.json")));
 
             var OptionChainProvider = new CachingOptionChainProvider(new BacktestingOptionChainProvider(_dataCacheProvider, mapFileProvider));
             Dictionary<Symbol, VanillaOption> euOptions = new();
@@ -104,7 +106,7 @@ namespace QuantConnect.ToolBox
             foreach (string ticker in tickers)
             {
                 Symbol underlying = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
-                double dividendYield = Cfg.DividendYield.TryGetValue(underlying, out dividendYield) ? dividendYield : Cfg.DividendYield["_"];
+                double dividendYield = DividendYield.TryGetValue(underlying, out dividendYield) ? dividendYield : DividendYield["_"];
                 var dividendYieldQuote = new SimpleQuote(dividendYield);
                 var dividendYieldQuoteHandle = new Handle<Quote>(dividendYieldQuote);
 
@@ -120,7 +122,7 @@ namespace QuantConnect.ToolBox
 
                     // Fetching equity data
                     var subscriptionDataConfigQuoteBar = new SubscriptionDataConfig(typeof(QuoteBar), underlying, resolution, dataTimeZone, exchangeTimeZone, fillForward, extendedHours, isInternalFeed, isFilteredSubscription: false);
-                    var leanDataReaderQuotes = new LeanDataReader(subscriptionDataConfigQuoteBar, underlying, resolution, dateTime, dataDirectory).Parse();
+                    var leanDataReaderQuotes = new LeanDataReader(subscriptionDataConfigQuoteBar, underlying, resolution, dateTime, Globals.DataFolder).Parse();
 
                     var canonicalOptionSymbol = Symbol.CreateCanonicalOption(underlying, Market.USA, $"?{underlying}");
                     var optionSymbols = OptionChainProvider.GetOptionContractList(canonicalOptionSymbol, dateTime);
@@ -147,7 +149,7 @@ namespace QuantConnect.ToolBox
                         underlyingQuoteBarsEnumerator.MoveNext();  // Initialize the enumerator
 
                         var subscriptionDataConfigOptionQuotes = new SubscriptionDataConfig(typeof(QuoteBar), optionSymbol, resolution, dataTimeZone, exchangeTimeZone, fillForward, extendedHours, isInternalFeed, isFilteredSubscription: false);
-                        var leanDataReaderOptionQuotes = new LeanDataReader(subscriptionDataConfigOptionQuotes, optionSymbol, resolution, dateTime, dataDirectory);
+                        var leanDataReaderOptionQuotes = new LeanDataReader(subscriptionDataConfigOptionQuotes, optionSymbol, resolution, dateTime, Globals.DataFolder);
 
                         leanDataReaderOptionQuotes.Parse().DoForEach(baseData =>
                         {
@@ -197,7 +199,7 @@ namespace QuantConnect.ToolBox
                         underlyingQuoteBarsEnumerator.MoveNext();  // Initialize the enumerator
 
                         var subscriptionDataConfigOption = new SubscriptionDataConfig(typeof(TradeBar), optionSymbol, resolution, dataTimeZone, exchangeTimeZone, fillForward, extendedHours, isInternalFeed, isFilteredSubscription: false);
-                        var leanDataReaderOption = new LeanDataReader(subscriptionDataConfigOption, optionSymbol, resolution, dateTime, dataDirectory);
+                        var leanDataReaderOption = new LeanDataReader(subscriptionDataConfigOption, optionSymbol, resolution, dateTime, Globals.DataFolder);
 
                         leanDataReaderOption.Parse().DoForEach(baseData =>
                         {
@@ -292,10 +294,9 @@ namespace QuantConnect.ToolBox
         {
             if (IVDct.IsEmpty) return;
 
-            var dataDirectory = Config.Get("data-folder");
             Symbol optionSymbol = IVDct.Keys.First();
             Symbol underlying = optionSymbol.Underlying;
-            var filePath = LeanData.GenerateZipFilePath(dataDirectory, optionSymbol, date, resolution, TickType.Quote).ToString();
+            var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, date, resolution, TickType.Quote).ToString();
             filePath = filePath.Replace(tick_type, $"iv_{tick_type}");
             if (!File.Exists(filePath))
             {

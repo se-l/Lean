@@ -1,11 +1,9 @@
-using MathNet.Numerics.LinearAlgebra.Factorization;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Option;
 using System;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using static QuantConnect.Messages;
 
 
 namespace QuantConnect.Algorithm.CSharp.Core

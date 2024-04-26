@@ -78,6 +78,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, Position> Positions = new();
         public EarningsAnnouncement[] EarningsAnnouncements;
         public Dictionary<string, DividendMine[]> DividendSchedule;
+        public Dictionary<string, double> DividendYield;
         public Dictionary<string, ManualOrderInstruction> ManualOrderInstructionBySymbol;
         public Dictionary<string, EarningsAnnouncement[]> EarningsBySymbol;
         public FoundationsConfig Cfg;
@@ -131,7 +132,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             UniverseSettings.Leverage = 10;
             Portfolio.MarginCallModel = MarginCallModel.Null;
 
-            EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText("EarningsAnnouncements.json"));
+            EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText(Path.Combine(Globals.DataFolder, "symbol-properties", "EarningsAnnouncements.json")));
+            DividendYield = JsonConvert.DeserializeObject<Dictionary<string, double>>(File.ReadAllText(Path.Combine(Globals.DataFolder, "symbol-properties", "DividendYields.json")));
             DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
 
             // To be handled with API.Essentially get in realtime positions out of algo and ingest orders in realtime

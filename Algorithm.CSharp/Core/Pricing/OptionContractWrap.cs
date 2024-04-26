@@ -98,7 +98,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             riskFreeRateQuote = new SimpleQuote((double)_algo.Cfg.DiscountRateMarket);
             riskFreeRateQuoteHandle = new Handle<Quote>(riskFreeRateQuote);
 
-            double dividendYield = _algo.Cfg.DividendYield.TryGetValue(UnderlyingSymbol.Value, out dividendYield) ? dividendYield : _algo.Cfg.DividendYield[CfgDefault];
+            double dividendYield = _algo.DividendYield.TryGetValue(UnderlyingSymbol.Value, out dividendYield) ? dividendYield : _algo.DividendYield[CfgDefault];
             dividendYieldQuote = new SimpleQuote(dividendYield);
             dividendYieldQuoteHandle = new Handle<Quote>(dividendYieldQuote);
 
