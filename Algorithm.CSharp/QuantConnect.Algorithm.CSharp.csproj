@@ -67,7 +67,9 @@
     <EditorConfigFiles Remove="C:\repos\quantconnect\Lean\Algorithm.CSharp\.editorconfig" />
   </ItemGroup>
   <Target Name="GenerateProto" AfterTargets="Compile">
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\Common.proto&quot;" />
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestTargetPortfolios.proto&quot;" />
-    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\Portfolios.proto&quot;" />
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\Websocket.proto&quot;" />
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\StressTestDs.proto&quot;" />
   </Target>
 </Project>

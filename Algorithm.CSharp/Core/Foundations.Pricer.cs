@@ -1,9 +1,11 @@
+using MathNet.Numerics.LinearAlgebra.Factorization;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Option;
 using System;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using static QuantConnect.Messages;
 
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -15,7 +17,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         /// <param name="symbol"></param>
         /// <returns></returns>
-        public decimal PriceSpread(OptionContractWrap ocw)
+        internal decimal PriceSpread(OptionContractWrap ocw)
         {
             decimal iVSurfaceSpread;
             var option = ocw.Contract;
@@ -52,19 +54,27 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
+        /// Override in respective Strategy.
         /// def D(uD1, uD0, b= .001):
         ///    if uD1 > uD0:
         ///        return np.nan
         ///    dUdD = uD1 - uD0
         ///    d0 = sd(uD0)
         ///    return d0 + b* d0 * dUdD
+        /// 
         /// </summary>
-        public decimal SpreadDiscount(Symbol underlying, double utilHigh, double utilLow)
+        public decimal SpreadDiscount(Symbol underlying, IUtilityOrder utilityOrderHigh, IUtilityOrder utilityOrderLow)
         {
+            double utilLow = utilityOrderLow.Utility;
+            double utilHigh = utilityOrderHigh.Utility;
+
             double discountUtilHigh;
             if (utilLow > utilHigh)
             {
-                Error($"SpreadDiscount: utilLow={utilLow} > utilHigh={utilHigh}. Swapping for now. Investigate.");
+                if (utilLow > utilHigh * 1.05)
+                {
+                    Error($"SpreadDiscount: utilLow={utilLow} > utilHigh={utilHigh}. Swapping for now. Investigate.");
+                }
                 (utilLow, utilHigh) = (utilHigh, utilLow);
             }
             double dUdD = utilLow - utilHigh;
@@ -82,6 +92,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 discountUtilHigh = 2 / (1 + Math.Exp(slopeNeg * (utilHigh - zeroSDUtil))) - 1;
             }
+
             decimal maxSpreadDiscount = Cfg.MaxSpreadDiscount.TryGetValue(underlying, out maxSpreadDiscount) ? maxSpreadDiscount : Cfg.MaxSpreadDiscount[CfgDefault];
             return Math.Min(maxSpreadDiscount, ToDecimal(discountUtilHigh + utilBidTaperer * discountUtilHigh * dUdD));
         }
@@ -92,7 +103,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <param name="qr"></param>
         /// <returns></returns>
         /// <exception cref="ArgumentException"></exception>
-        public Quote<Option> GetQuote(QuoteRequest<Option> qr)
+        internal Quote<Option> GetQuote(QuoteRequest<Option> qr)
         {
             IUtilityOrder utilityOrderCrossSpread;
             OptionContractWrap ocw = OptionContractWrap.E(this, qr.Option, Time.Date);
@@ -103,7 +114,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 Error($"GetQuote: Missing IV indicator for {qr.Symbol}. Expected to have been filled in securityInitializer. Quoting 0.");
                 Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, null, qr.UtilityOrder, null);
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, qr.UtilityOrder, null);
             }
 
             // Since the signal, markets might have moved. Update the quote request's utility order.
@@ -125,7 +136,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (qr.UtilityOrder.Utility < minUtility)
             {
                 Log($"GetQuote: UtilityHigh not anymore greater minUtil => Quoting Price 0. utilityOrderHigh={qr.UtilityOrder.Utility}. utilityOrderLowCrossSpread={utilityOrderCrossSpread.Utility}. QuoteRequest Util: {qr.UtilityOrder.Utility}");
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, null, qr.UtilityOrder, null);
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, qr.UtilityOrder, null);
             }
 
             //// Only for debugging purposes. Uncomment if debugging utilLow > utilHigh.
@@ -152,7 +163,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal spreadDiscount;
             decimal price;
 
-            spreadDiscount = SpreadDiscount(qr.Underlying, qr.UtilityOrder.Utility, utilityOrderCrossSpread.Utility);
+            if (SweepState[qr.Symbol][qr.OrderDirection].IsSweepScheduled())
+            {
+                spreadDiscount = SpreadDiscountSweep(qr.UtilityOrder);
+            }
+            else
+            {
+                spreadDiscount = SpreadDiscount(qr.Underlying, qr.UtilityOrder, utilityOrderCrossSpread);
+            }
+
             price = qr.OrderDirection switch
             {
                 OrderDirection.Buy => qr.Option.BidPrice + spreadDiscount * marketPriceSpread + (decimal)discountAbsolute.X0,
@@ -163,7 +182,27 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // For tight spreads, a tickSize difference of, e.g., 0.01 can make a signiicant difference in terms of IV spread. Therefore, the price is rounded defensively away from midPrice.
             decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection != OrderDirection.Buy);
             double ivPrice = (double)ocw.IV(price, MidPrice(qr.Symbol.Underlying), 0.001);
-            return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, ivPrice, null, qr.UtilityOrder, utilityOrderCrossSpread, spreadDiscount);
+            return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, ivPrice, qr.UtilityOrder, utilityOrderCrossSpread, spreadDiscount);
+        }
+
+        public decimal SpreadDiscountSweep(IUtilityOrder utilityOrder)
+        {
+            Symbol symbol = utilityOrder.Symbol;
+
+            decimal bid = Securities[symbol].BidPrice;
+            decimal ask = Securities[symbol].AskPrice;
+            decimal spread = ask - bid;
+
+            decimal sweepRatio = SweepState[symbol][utilityOrder.OrderDirection].SweepRatio;
+
+            double utilPV = utilityOrder.UtilityPV;  // That'll be okayish, directly comparable with spreads to pay.
+            decimal maxAcceptableSpreadRatio = spread <= 0 || utilPV == 0 ? sweepRatio : ToDecimal((utilPV / 2)) / (100 * spread);
+
+            var res = Math.Min(sweepRatio, maxAcceptableSpreadRatio);
+            Log($"SpreadDiscountSweep: {symbol} res={res} sweepRatio={sweepRatio}, maxAcceptableSpreadRatio={maxAcceptableSpreadRatio}, " +
+                $"spread={spread} utilPV={utilPV}, utilEquityPosition={utilityOrder.UtilityEquityPosition}");
+
+            return Math.Min(res, 1);
         }
     }
 }

@@ -91,7 +91,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, double? dX = null, bool skipCache = false)
         {
             Symbol underlying = Underlying(symbol);
-            var positions = _algo.Positions.Values.ToList().Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
+            IEnumerable<Position> positions;
+            lock (_algo.Positions)
+            {
+                positions = _algo.Positions.Values.ToList();
+            }
+            positions = positions.Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
 
             if (metric == Metric.PosWeightedIV)
             {
@@ -299,6 +304,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (_algo.IsWarmingUp) return false;
 
             Symbol underlying = Underlying(symbol);
+            if (!_algo.ticker.Contains(underlying)) return false;
+
             decimal gammaTotal = RiskByUnderlying(underlying, Metric.GammaTotal);
 
             decimal totalDeltaHedgeThresholdIntercept = _algo.Cfg.TotalDeltaHedgeThresholdIntercept.TryGetValue(underlying.Value, out totalDeltaHedgeThresholdIntercept) ? totalDeltaHedgeThresholdIntercept : _algo.Cfg.TotalDeltaHedgeThresholdIntercept[CfgDefault];

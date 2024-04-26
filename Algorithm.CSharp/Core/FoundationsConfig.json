@@ -1,5 +1,5 @@
 {
-  "StartDate": "2023-11-14",
+  "StartDate": "2024-11-14",
   "EndDate": "2023-11-15",
   //"StartDate": "2023-11-16",
   //"EndDate": "2023-11-17",
@@ -187,8 +187,33 @@
     "ULTA": 0.0,
     "DG": 0.0148,
     "JBL": 0.0021,
-    "GBX": 0.022
-
+    "GBX": 0.022,
+    "WDFC": 0.0137,
+    "NEOG": 0.014,
+    "DAL": 0.0087,
+    "JPM": 0.0235,
+    "WFC": 0.0246,
+    "PGR": 0.0019,
+    "BLK": 0.026,
+    "C": 0.0352,
+    "STT": 0.0371,
+    "GS": 0.027,
+    "SCHW": 0.0142,
+    "ABT": 0.0202,
+    "ASML": 0.0067,
+    "PLD": 0.0323,
+    "TSM": 0.0144,
+    "NFLX": 0,
+    "ISRG": 0,
+    "ELV": 0.0131,
+    "ESLOY": 0.0165,
+    "MMC": 0.0143,
+    "PG": 0.0255,
+    "AXP": 0.0125,
+    "CDNS": 0.0,
+    "PEP": 0.0291,
+    "MRK": 0.024,
+    "TMUS": 0.016
   },
 
   // To be implied from Heston if it were to fit market data well...
@@ -233,7 +258,29 @@
       "CapMax": 1
     }
   },
-  "LimitOrderUpdateBeforeMarketOrderConversion": 1,
-  "MaxSpreadForMarketOrderHedging":  0.02
+  "LimitOrderUpdateBeforeMarketOrderConversion": 2,
+  "MaxSpreadForMarketOrderHedging": 0.02,
   ///
+  "SweepLongSchedule": {
+    "_": [
+      // Before Release
+      [ 0, 10, 16, 60 ],
+
+      // After release
+      [ 1, 14, 16, 60 ],
+      [ 2, 9, 16, 60 ]
+    ]
+  },
+  "SweepShortSchedule": {
+    "_": [
+      // Before release
+      [ 0, 14, 16, 30 ],
+
+      // After release
+      [ 1, 9, 10, 15 ],
+      [ 1, 10, 11, 30 ],
+      [ 2, 9, 16, 60 ]
+    ]
+  },
+  "WS_PORT":  8001
 }

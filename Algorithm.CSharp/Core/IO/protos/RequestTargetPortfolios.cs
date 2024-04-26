@@ -25,30 +25,362 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       byte[] descriptorData = global::System.Convert.FromBase64String(
           string.Concat(
             "Ch1SZXF1ZXN0VGFyZ2V0UG9ydGZvbGlvcy5wcm90bxIlUXVhbnRDb25uZWN0",
-            "LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTyK2AwoXUmVxdWVzdFRhcmdldFBv",
-            "cnRmb2xpb3MSCgoCdHMYASABKAkSEgoKdW5kZXJseWluZxgCIAEoCRIYChB1",
-            "bmRlcmx5aW5nX3ByaWNlGAMgASgCEl4KCGhvbGRpbmdzGAQgAygLMkwuUXVh",
-            "bnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5SZXF1ZXN0VGFy",
-            "Z2V0UG9ydGZvbGlvcy5Ib2xkaW5nc0VudHJ5EmcKDW9wdGlvbl9xdW90ZXMY",
-            "BSADKAsyUC5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklP",
-            "LlJlcXVlc3RUYXJnZXRQb3J0Zm9saW9zLk9wdGlvblF1b3Rlc0VudHJ5Gi8K",
-            "DUhvbGRpbmdzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgCOgI4",
-            "ARpnChFPcHRpb25RdW90ZXNFbnRyeRILCgNrZXkYASABKAkSQQoFdmFsdWUY",
-            "AiABKAsyMi5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklP",
-            "Lk9wdGlvblF1b3RlOgI4ASInCgtPcHRpb25RdW90ZRILCgNiaWQYASABKAIS",
-            "CwoDYXNrGAIgASgCQiiqAiVRdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFy",
-            "cC5Db3JlLklPYgZwcm90bzM="));
+            "LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTxoMQ29tbW9uLnByb3RvGhJTdHJl",
+            "c3NUZXN0RHMucHJvdG8izgIKD1RhcmdldFBvcnRmb2xpbxISCgp1bmRlcmx5",
+            "aW5nGAEgASgJEkAKCGhvbGRpbmdzGAIgAygLMi4uUXVhbnRDb25uZWN0LkFs",
+            "Z29yaXRobS5DU2hhcnAuQ29yZS5JTy5Ib2xkaW5nEhEKCW9iamVjdGl2ZRgD",
+            "IAEoARJMCgNpdnMYBCADKAsyPy5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNT",
+            "aGFycC5Db3JlLklPLlRhcmdldFBvcnRmb2xpby5JdnNFbnRyeRJYChVyZXN1",
+            "bHRfc3RyZXNzX3Rlc3RfZHMYBSABKAsyOS5RdWFudENvbm5lY3QuQWxnb3Jp",
+            "dGhtLkNTaGFycC5Db3JlLklPLlJlc3VsdFN0cmVzc1Rlc3REcxoqCghJdnNF",
+            "bnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBItkBChdSZXF1",
+            "ZXN0VGFyZ2V0UG9ydGZvbGlvcxIKCgJ0cxgBIAEoCRISCgp1bmRlcmx5aW5n",
+            "GAIgASgJEkAKCGhvbGRpbmdzGAMgAygLMi4uUXVhbnRDb25uZWN0LkFsZ29y",
+            "aXRobS5DU2hhcnAuQ29yZS5JTy5Ib2xkaW5nElwKEW1hcmtldF9kYXRhX3Nu",
+            "YXBzGAQgAygLMkEuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29y",
+            "ZS5JTy5NYXJrZXREYXRhU25hcEJ5VW5kZXJseWluZyKrAQoYUmVzcG9uc2VU",
+            "YXJnZXRQb3J0Zm9saW9zEgoKAnRzGAEgASgJEhIKCnVuZGVybHlpbmcYAiAB",
+            "KAkSUQoRdGFyZ2V0X3BvcnRmb2xpb3MYAyADKAsyNi5RdWFudENvbm5lY3Qu",
+            "QWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlRhcmdldFBvcnRmb2xpbxIcChRp",
+            "c19sYXN0X3RyYW5zbWlzc2lvbhgEIAEoCEIoqgIlUXVhbnRDb25uZWN0LkFs",
+            "Z29yaXRobS5DU2hhcnAuQ29yZS5JT2IGcHJvdG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
-          new pbr::FileDescriptor[] { },
+          new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.StressTestDsReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfolios), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfolios.Parser, new[]{ "Ts", "Underlying", "UnderlyingPrice", "Holdings", "OptionQuotes" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, }),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote), global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote.Parser, new[]{ "Bid", "Ask" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolio), global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolio.Parser, new[]{ "Underlying", "Holdings", "Objective", "Ivs", "ResultStressTestDs" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfolios), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfolios.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseTargetPortfolios), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseTargetPortfolios.Parser, new[]{ "Ts", "Underlying", "TargetPortfolios", "IsLastTransmission" }, null, null, null, null)
           }));
     }
     #endregion
 
   }
   #region Messages
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class TargetPortfolio : pb::IMessage<TargetPortfolio>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<TargetPortfolio> _parser = new pb::MessageParser<TargetPortfolio>(() => new TargetPortfolio());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<TargetPortfolio> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfoliosReflection.Descriptor.MessageTypes[0]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public TargetPortfolio() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public TargetPortfolio(TargetPortfolio other) : this() {
+      underlying_ = other.underlying_;
+      holdings_ = other.holdings_.Clone();
+      objective_ = other.objective_;
+      ivs_ = other.ivs_.Clone();
+      resultStressTestDs_ = other.resultStressTestDs_ != null ? other.resultStressTestDs_.Clone() : null;
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public TargetPortfolio Clone() {
+      return new TargetPortfolio(this);
+    }
+
+    /// <summary>Field number for the "underlying" field.</summary>
+    public const int UnderlyingFieldNumber = 1;
+    private string underlying_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Underlying {
+      get { return underlying_; }
+      set {
+        underlying_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "holdings" field.</summary>
+    public const int HoldingsFieldNumber = 2;
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> _repeated_holdings_codec
+        = pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> holdings_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> Holdings {
+      get { return holdings_; }
+    }
+
+    /// <summary>Field number for the "objective" field.</summary>
+    public const int ObjectiveFieldNumber = 3;
+    private double objective_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public double Objective {
+      get { return objective_; }
+      set {
+        objective_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "ivs" field.</summary>
+    public const int IvsFieldNumber = 4;
+    private static readonly pbc::MapField<string, double>.Codec _map_ivs_codec
+        = new pbc::MapField<string, double>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForDouble(17, 0D), 34);
+    private readonly pbc::MapField<string, double> ivs_ = new pbc::MapField<string, double>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::MapField<string, double> Ivs {
+      get { return ivs_; }
+    }
+
+    /// <summary>Field number for the "result_stress_test_ds" field.</summary>
+    public const int ResultStressTestDsFieldNumber = 5;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDs resultStressTestDs_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDs ResultStressTestDs {
+      get { return resultStressTestDs_; }
+      set {
+        resultStressTestDs_ = value;
+      }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as TargetPortfolio);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(TargetPortfolio other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (Underlying != other.Underlying) return false;
+      if(!holdings_.Equals(other.holdings_)) return false;
+      if (!pbc::ProtobufEqualityComparers.BitwiseDoubleEqualityComparer.Equals(Objective, other.Objective)) return false;
+      if (!Ivs.Equals(other.Ivs)) return false;
+      if (!object.Equals(ResultStressTestDs, other.ResultStressTestDs)) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
+      hash ^= holdings_.GetHashCode();
+      if (Objective != 0D) hash ^= pbc::ProtobufEqualityComparers.BitwiseDoubleEqualityComparer.GetHashCode(Objective);
+      hash ^= Ivs.GetHashCode();
+      if (resultStressTestDs_ != null) hash ^= ResultStressTestDs.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (Underlying.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Underlying);
+      }
+      holdings_.WriteTo(output, _repeated_holdings_codec);
+      if (Objective != 0D) {
+        output.WriteRawTag(25);
+        output.WriteDouble(Objective);
+      }
+      ivs_.WriteTo(output, _map_ivs_codec);
+      if (resultStressTestDs_ != null) {
+        output.WriteRawTag(42);
+        output.WriteMessage(ResultStressTestDs);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (Underlying.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Underlying);
+      }
+      holdings_.WriteTo(ref output, _repeated_holdings_codec);
+      if (Objective != 0D) {
+        output.WriteRawTag(25);
+        output.WriteDouble(Objective);
+      }
+      ivs_.WriteTo(ref output, _map_ivs_codec);
+      if (resultStressTestDs_ != null) {
+        output.WriteRawTag(42);
+        output.WriteMessage(ResultStressTestDs);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (Underlying.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Underlying);
+      }
+      size += holdings_.CalculateSize(_repeated_holdings_codec);
+      if (Objective != 0D) {
+        size += 1 + 8;
+      }
+      size += ivs_.CalculateSize(_map_ivs_codec);
+      if (resultStressTestDs_ != null) {
+        size += 1 + pb::CodedOutputStream.ComputeMessageSize(ResultStressTestDs);
+      }
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(TargetPortfolio other) {
+      if (other == null) {
+        return;
+      }
+      if (other.Underlying.Length != 0) {
+        Underlying = other.Underlying;
+      }
+      holdings_.Add(other.holdings_);
+      if (other.Objective != 0D) {
+        Objective = other.Objective;
+      }
+      ivs_.MergeFrom(other.ivs_);
+      if (other.resultStressTestDs_ != null) {
+        if (resultStressTestDs_ == null) {
+          ResultStressTestDs = new global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDs();
+        }
+        ResultStressTestDs.MergeFrom(other.ResultStressTestDs);
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            Underlying = input.ReadString();
+            break;
+          }
+          case 18: {
+            holdings_.AddEntriesFrom(input, _repeated_holdings_codec);
+            break;
+          }
+          case 25: {
+            Objective = input.ReadDouble();
+            break;
+          }
+          case 34: {
+            ivs_.AddEntriesFrom(input, _map_ivs_codec);
+            break;
+          }
+          case 42: {
+            if (resultStressTestDs_ == null) {
+              ResultStressTestDs = new global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDs();
+            }
+            input.ReadMessage(ResultStressTestDs);
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            Underlying = input.ReadString();
+            break;
+          }
+          case 18: {
+            holdings_.AddEntriesFrom(ref input, _repeated_holdings_codec);
+            break;
+          }
+          case 25: {
+            Objective = input.ReadDouble();
+            break;
+          }
+          case 34: {
+            ivs_.AddEntriesFrom(ref input, _map_ivs_codec);
+            break;
+          }
+          case 42: {
+            if (resultStressTestDs_ == null) {
+              ResultStressTestDs = new global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDs();
+            }
+            input.ReadMessage(ResultStressTestDs);
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class RequestTargetPortfolios : pb::IMessage<RequestTargetPortfolios>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
@@ -64,7 +396,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfoliosReflection.Descriptor.MessageTypes[0]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfoliosReflection.Descriptor.MessageTypes[1]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -86,9 +418,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     public RequestTargetPortfolios(RequestTargetPortfolios other) : this() {
       ts_ = other.ts_;
       underlying_ = other.underlying_;
-      underlyingPrice_ = other.underlyingPrice_;
       holdings_ = other.holdings_.Clone();
-      optionQuotes_ = other.optionQuotes_.Clone();
+      marketDataSnaps_ = other.marketDataSnaps_.Clone();
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -122,38 +453,26 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
     }
 
-    /// <summary>Field number for the "underlying_price" field.</summary>
-    public const int UnderlyingPriceFieldNumber = 3;
-    private float underlyingPrice_;
-    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
-    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public float UnderlyingPrice {
-      get { return underlyingPrice_; }
-      set {
-        underlyingPrice_ = value;
-      }
-    }
-
     /// <summary>Field number for the "holdings" field.</summary>
-    public const int HoldingsFieldNumber = 4;
-    private static readonly pbc::MapField<string, float>.Codec _map_holdings_codec
-        = new pbc::MapField<string, float>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForFloat(21, 0F), 34);
-    private readonly pbc::MapField<string, float> holdings_ = new pbc::MapField<string, float>();
+    public const int HoldingsFieldNumber = 3;
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> _repeated_holdings_codec
+        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> holdings_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::MapField<string, float> Holdings {
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> Holdings {
       get { return holdings_; }
     }
 
-    /// <summary>Field number for the "option_quotes" field.</summary>
-    public const int OptionQuotesFieldNumber = 5;
-    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote>.Codec _map_optionQuotes_codec
-        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote.Parser), 42);
-    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote> optionQuotes_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote>();
+    /// <summary>Field number for the "market_data_snaps" field.</summary>
+    public const int MarketDataSnapsFieldNumber = 4;
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying> _repeated_marketDataSnaps_codec
+        = pb::FieldCodec.ForMessage(34, global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying> marketDataSnaps_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote> OptionQuotes {
-      get { return optionQuotes_; }
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying> MarketDataSnaps {
+      get { return marketDataSnaps_; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -173,9 +492,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       if (Ts != other.Ts) return false;
       if (Underlying != other.Underlying) return false;
-      if (!pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.Equals(UnderlyingPrice, other.UnderlyingPrice)) return false;
-      if (!Holdings.Equals(other.Holdings)) return false;
-      if (!OptionQuotes.Equals(other.OptionQuotes)) return false;
+      if(!holdings_.Equals(other.holdings_)) return false;
+      if(!marketDataSnaps_.Equals(other.marketDataSnaps_)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -185,9 +503,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       int hash = 1;
       if (Ts.Length != 0) hash ^= Ts.GetHashCode();
       if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
-      if (UnderlyingPrice != 0F) hash ^= pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.GetHashCode(UnderlyingPrice);
-      hash ^= Holdings.GetHashCode();
-      hash ^= OptionQuotes.GetHashCode();
+      hash ^= holdings_.GetHashCode();
+      hash ^= marketDataSnaps_.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -214,12 +531,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(18);
         output.WriteString(Underlying);
       }
-      if (UnderlyingPrice != 0F) {
-        output.WriteRawTag(29);
-        output.WriteFloat(UnderlyingPrice);
-      }
-      holdings_.WriteTo(output, _map_holdings_codec);
-      optionQuotes_.WriteTo(output, _map_optionQuotes_codec);
+      holdings_.WriteTo(output, _repeated_holdings_codec);
+      marketDataSnaps_.WriteTo(output, _repeated_marketDataSnaps_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -238,12 +551,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(18);
         output.WriteString(Underlying);
       }
-      if (UnderlyingPrice != 0F) {
-        output.WriteRawTag(29);
-        output.WriteFloat(UnderlyingPrice);
-      }
-      holdings_.WriteTo(ref output, _map_holdings_codec);
-      optionQuotes_.WriteTo(ref output, _map_optionQuotes_codec);
+      holdings_.WriteTo(ref output, _repeated_holdings_codec);
+      marketDataSnaps_.WriteTo(ref output, _repeated_marketDataSnaps_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -260,11 +569,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Underlying.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(Underlying);
       }
-      if (UnderlyingPrice != 0F) {
-        size += 1 + 4;
-      }
-      size += holdings_.CalculateSize(_map_holdings_codec);
-      size += optionQuotes_.CalculateSize(_map_optionQuotes_codec);
+      size += holdings_.CalculateSize(_repeated_holdings_codec);
+      size += marketDataSnaps_.CalculateSize(_repeated_marketDataSnaps_codec);
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -283,11 +589,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (other.Underlying.Length != 0) {
         Underlying = other.Underlying;
       }
-      if (other.UnderlyingPrice != 0F) {
-        UnderlyingPrice = other.UnderlyingPrice;
-      }
-      holdings_.MergeFrom(other.holdings_);
-      optionQuotes_.MergeFrom(other.optionQuotes_);
+      holdings_.Add(other.holdings_);
+      marketDataSnaps_.Add(other.marketDataSnaps_);
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -311,16 +614,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             Underlying = input.ReadString();
             break;
           }
-          case 29: {
-            UnderlyingPrice = input.ReadFloat();
+          case 26: {
+            holdings_.AddEntriesFrom(input, _repeated_holdings_codec);
             break;
           }
           case 34: {
-            holdings_.AddEntriesFrom(input, _map_holdings_codec);
-            break;
-          }
-          case 42: {
-            optionQuotes_.AddEntriesFrom(input, _map_optionQuotes_codec);
+            marketDataSnaps_.AddEntriesFrom(input, _repeated_marketDataSnaps_codec);
             break;
           }
         }
@@ -346,16 +645,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             Underlying = input.ReadString();
             break;
           }
-          case 29: {
-            UnderlyingPrice = input.ReadFloat();
+          case 26: {
+            holdings_.AddEntriesFrom(ref input, _repeated_holdings_codec);
             break;
           }
           case 34: {
-            holdings_.AddEntriesFrom(ref input, _map_holdings_codec);
-            break;
-          }
-          case 42: {
-            optionQuotes_.AddEntriesFrom(ref input, _map_optionQuotes_codec);
+            marketDataSnaps_.AddEntriesFrom(ref input, _repeated_marketDataSnaps_codec);
             break;
           }
         }
@@ -366,21 +661,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
   }
 
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
-  public sealed partial class OptionQuote : pb::IMessage<OptionQuote>
+  public sealed partial class ResponseTargetPortfolios : pb::IMessage<ResponseTargetPortfolios>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
   #endif
   {
-    private static readonly pb::MessageParser<OptionQuote> _parser = new pb::MessageParser<OptionQuote>(() => new OptionQuote());
+    private static readonly pb::MessageParser<ResponseTargetPortfolios> _parser = new pb::MessageParser<ResponseTargetPortfolios>(() => new ResponseTargetPortfolios());
     private pb::UnknownFieldSet _unknownFields;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public static pb::MessageParser<OptionQuote> Parser { get { return _parser; } }
+    public static pb::MessageParser<ResponseTargetPortfolios> Parser { get { return _parser; } }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfoliosReflection.Descriptor.MessageTypes[1]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfoliosReflection.Descriptor.MessageTypes[2]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -391,7 +686,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public OptionQuote() {
+    public ResponseTargetPortfolios() {
       OnConstruction();
     }
 
@@ -399,59 +694,86 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public OptionQuote(OptionQuote other) : this() {
-      bid_ = other.bid_;
-      ask_ = other.ask_;
+    public ResponseTargetPortfolios(ResponseTargetPortfolios other) : this() {
+      ts_ = other.ts_;
+      underlying_ = other.underlying_;
+      targetPortfolios_ = other.targetPortfolios_.Clone();
+      isLastTransmission_ = other.isLastTransmission_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public OptionQuote Clone() {
-      return new OptionQuote(this);
+    public ResponseTargetPortfolios Clone() {
+      return new ResponseTargetPortfolios(this);
     }
 
-    /// <summary>Field number for the "bid" field.</summary>
-    public const int BidFieldNumber = 1;
-    private float bid_;
+    /// <summary>Field number for the "ts" field.</summary>
+    public const int TsFieldNumber = 1;
+    private string ts_ = "";
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public float Bid {
-      get { return bid_; }
+    public string Ts {
+      get { return ts_; }
       set {
-        bid_ = value;
+        ts_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
       }
     }
 
-    /// <summary>Field number for the "ask" field.</summary>
-    public const int AskFieldNumber = 2;
-    private float ask_;
+    /// <summary>Field number for the "underlying" field.</summary>
+    public const int UnderlyingFieldNumber = 2;
+    private string underlying_ = "";
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public float Ask {
-      get { return ask_; }
+    public string Underlying {
+      get { return underlying_; }
       set {
-        ask_ = value;
+        underlying_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "target_portfolios" field.</summary>
+    public const int TargetPortfoliosFieldNumber = 3;
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolio> _repeated_targetPortfolios_codec
+        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolio.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolio> targetPortfolios_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolio>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolio> TargetPortfolios {
+      get { return targetPortfolios_; }
+    }
+
+    /// <summary>Field number for the "is_last_transmission" field.</summary>
+    public const int IsLastTransmissionFieldNumber = 4;
+    private bool isLastTransmission_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool IsLastTransmission {
+      get { return isLastTransmission_; }
+      set {
+        isLastTransmission_ = value;
       }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
-      return Equals(other as OptionQuote);
+      return Equals(other as ResponseTargetPortfolios);
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public bool Equals(OptionQuote other) {
+    public bool Equals(ResponseTargetPortfolios other) {
       if (ReferenceEquals(other, null)) {
         return false;
       }
       if (ReferenceEquals(other, this)) {
         return true;
       }
-      if (!pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.Equals(Bid, other.Bid)) return false;
-      if (!pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.Equals(Ask, other.Ask)) return false;
+      if (Ts != other.Ts) return false;
+      if (Underlying != other.Underlying) return false;
+      if(!targetPortfolios_.Equals(other.targetPortfolios_)) return false;
+      if (IsLastTransmission != other.IsLastTransmission) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -459,8 +781,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override int GetHashCode() {
       int hash = 1;
-      if (Bid != 0F) hash ^= pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.GetHashCode(Bid);
-      if (Ask != 0F) hash ^= pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.GetHashCode(Ask);
+      if (Ts.Length != 0) hash ^= Ts.GetHashCode();
+      if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
+      hash ^= targetPortfolios_.GetHashCode();
+      if (IsLastTransmission != false) hash ^= IsLastTransmission.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -479,13 +803,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       output.WriteRawMessage(this);
     #else
-      if (Bid != 0F) {
-        output.WriteRawTag(13);
-        output.WriteFloat(Bid);
+      if (Ts.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Ts);
       }
-      if (Ask != 0F) {
-        output.WriteRawTag(21);
-        output.WriteFloat(Ask);
+      if (Underlying.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Underlying);
+      }
+      targetPortfolios_.WriteTo(output, _repeated_targetPortfolios_codec);
+      if (IsLastTransmission != false) {
+        output.WriteRawTag(32);
+        output.WriteBool(IsLastTransmission);
       }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
@@ -497,13 +826,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
-      if (Bid != 0F) {
-        output.WriteRawTag(13);
-        output.WriteFloat(Bid);
+      if (Ts.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Ts);
       }
-      if (Ask != 0F) {
-        output.WriteRawTag(21);
-        output.WriteFloat(Ask);
+      if (Underlying.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Underlying);
+      }
+      targetPortfolios_.WriteTo(ref output, _repeated_targetPortfolios_codec);
+      if (IsLastTransmission != false) {
+        output.WriteRawTag(32);
+        output.WriteBool(IsLastTransmission);
       }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
@@ -515,11 +849,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public int CalculateSize() {
       int size = 0;
-      if (Bid != 0F) {
-        size += 1 + 4;
+      if (Ts.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Ts);
       }
-      if (Ask != 0F) {
-        size += 1 + 4;
+      if (Underlying.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Underlying);
+      }
+      size += targetPortfolios_.CalculateSize(_repeated_targetPortfolios_codec);
+      if (IsLastTransmission != false) {
+        size += 1 + 1;
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -529,15 +867,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public void MergeFrom(OptionQuote other) {
+    public void MergeFrom(ResponseTargetPortfolios other) {
       if (other == null) {
         return;
       }
-      if (other.Bid != 0F) {
-        Bid = other.Bid;
+      if (other.Ts.Length != 0) {
+        Ts = other.Ts;
       }
-      if (other.Ask != 0F) {
-        Ask = other.Ask;
+      if (other.Underlying.Length != 0) {
+        Underlying = other.Underlying;
+      }
+      targetPortfolios_.Add(other.targetPortfolios_);
+      if (other.IsLastTransmission != false) {
+        IsLastTransmission = other.IsLastTransmission;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -554,12 +896,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
-          case 13: {
-            Bid = input.ReadFloat();
+          case 10: {
+            Ts = input.ReadString();
             break;
           }
-          case 21: {
-            Ask = input.ReadFloat();
+          case 18: {
+            Underlying = input.ReadString();
+            break;
+          }
+          case 26: {
+            targetPortfolios_.AddEntriesFrom(input, _repeated_targetPortfolios_codec);
+            break;
+          }
+          case 32: {
+            IsLastTransmission = input.ReadBool();
             break;
           }
         }
@@ -577,12 +927,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
-          case 13: {
-            Bid = input.ReadFloat();
+          case 10: {
+            Ts = input.ReadString();
             break;
           }
-          case 21: {
-            Ask = input.ReadFloat();
+          case 18: {
+            Underlying = input.ReadString();
+            break;
+          }
+          case 26: {
+            targetPortfolios_.AddEntriesFrom(ref input, _repeated_targetPortfolios_codec);
+            break;
+          }
+          case 32: {
+            IsLastTransmission = input.ReadBool();
             break;
           }
         }

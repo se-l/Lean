@@ -19,10 +19,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         ///
         public Securities.Option.Option Contract { get; }
         public Symbol UnderlyingSymbol { get; }
-        public Func<decimal?, decimal?, double, double> IV;
-        public Func<double, double, double> DeltaCached;
-        public Func<double, double, double> GammaCached;
-        public Func<double, double, double> VegaCached;
+        public Func<decimal?, decimal?, double, double> IV { get; internal set; }
+        public Func<double, double, double> DeltaCached { get; internal set; }
+        public Func<double, double, double> GammaCached { get; internal set; }
+        public Func<double, double, double> VegaCached { get; internal set; }
         //public Func<SimpleQuote, double, double> VegaCached;
 
         private readonly Foundations _algo;
@@ -36,18 +36,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private readonly double strikePrice;
         private readonly Option.Type optionType;
         private SimpleQuote spotQuote;
-        private SimpleQuote riskFreeRateQuote;
-        private Handle<Quote> riskFreeRateQuoteHandle;
-        private SimpleQuote dividendYieldQuote;
-        private Handle<Quote> dividendYieldQuoteHandle;
+        private readonly SimpleQuote riskFreeRateQuote;
+        private readonly Handle<Quote> riskFreeRateQuoteHandle;
+        private readonly SimpleQuote dividendYieldQuote;
+        private readonly Handle<Quote> dividendYieldQuoteHandle;
         private SimpleQuote hvQuote;
-        private Handle<Quote> hvQuoteHandle;
-        private PlainVanillaPayoff payoff;
-        private AmericanExercise amExercise;
-        private EuropeanExercise euExercise;
-        private VanillaOption amOption;
-        private VanillaOption euOption;
-        private BlackScholesMertonProcess bsmProcess;
+        //private Handle<Quote> hvQuoteHandle;
+        private readonly PlainVanillaPayoff payoff;
+        private readonly AmericanExercise amExercise;
+        private readonly EuropeanExercise euExercise;
+        private readonly VanillaOption amOption;
+        private readonly VanillaOption euOption;
+        private readonly BlackScholesMertonProcess bsmProcess;
         
         //private BlackScholesProcess bsProcess;
         //private List<Date> dividendExDates;
@@ -93,7 +93,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             SetSpotQuotePriceUnderlying();
             SetHistoricalVolatility();
-            hvQuoteHandle = new Handle<Quote>(hvQuote);
+            //hvQuoteHandle = new Handle<Quote>(hvQuote);
 
             riskFreeRateQuote = new SimpleQuote((double)_algo.Cfg.DiscountRateMarket);
             riskFreeRateQuoteHandle = new Handle<Quote>(riskFreeRateQuote);
@@ -705,7 +705,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return option;
         }
 
-        public DividendVanillaOption SetEngine(DividendVanillaOption option, BlackScholesProcess bsProcess, int steps = 100, OptionPricingModel optionPricingModel = OptionPricingModel.FdBlackScholesVanillaEngine)
+        internal static DividendVanillaOption SetEngine(DividendVanillaOption option, BlackScholesProcess bsProcess, int steps = 100, OptionPricingModel optionPricingModel = OptionPricingModel.FdBlackScholesVanillaEngine)
         {
             DividendVanillaOption.Engine engine = optionPricingModel switch
             {
@@ -716,7 +716,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return option;
         }
         
-        public double FDApprox2ndDerivative(SimpleQuote quote, VanillaOption option, double d_pct = 0.01, string derive = "NPV")
+        internal double FDApprox2ndDerivative(SimpleQuote quote, VanillaOption option, double d_pct = 0.01, string derive = "NPV")
         {
             // f''(x) ≈ (f(x+h) -2f(x) + f(x-h)) / (h**2); h: step size;
             SetEvaluationDateToCalcDate();
@@ -734,7 +734,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return (pPlus - 2 * pZero + pMinus) / Math.Pow(q0 * d_pct, 2);
         }
 
-        public void PerturbQuote(SimpleQuote quote, double q0, double d_pct = 0.01)
+        internal static void PerturbQuote(SimpleQuote quote, double q0, double d_pct = 0.01)
         {
             if (q0 == 0)            
             {
@@ -747,7 +747,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
-        public double? NPV(VanillaOption option)
+        internal double? NPV(VanillaOption option)
         {
             try
             {
@@ -760,7 +760,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
-        public double? Invoke(VanillaOption option, Derive invoke=Derive.NPV)
+        internal double? Invoke(VanillaOption option, Derive invoke=Derive.NPV)
         {
             try
             {
@@ -800,7 +800,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         }
             
 
-        public double FiniteDifferenceApprox(SimpleQuote quote, VanillaOption option, double d_pct = 0.01, Derive derive = Derive.NPV, SimpleQuote d1perturbance = null, Method method = Method.central)
+        internal double FiniteDifferenceApprox(SimpleQuote quote, VanillaOption option, double d_pct = 0.01, Derive derive = Derive.NPV, SimpleQuote d1perturbance = null, Method method = Method.central)
         {
             // f'(x) ≈ (f(x+h) - f(x-h)) / (2h); h: step size;
             double result;
@@ -874,7 +874,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return result;
         }
 
-        public double FiniteDifferenceApproxTime(Derive derive = Derive.NPV, int nDays = 1, Method method = Method.forward)
+        internal double FiniteDifferenceApproxTime(Derive derive = Derive.NPV, int nDays = 1, Method method = Method.forward)
         {
             double hv = hvQuote.value();
             try

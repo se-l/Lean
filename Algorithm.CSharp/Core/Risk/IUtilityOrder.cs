@@ -28,6 +28,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// 
         /// </summary>
         public double Utility { get; }
+        public double UtilityPV { get; }
         public double UtilityProfitSpread { get; }
         public double UtilityManualOrderInstructions { get; }
         //public double UtilityVegaIV2Ewma { get => _utilityVegaIV2Ewma ??= GetUtilityVegaIV2Ewma(); }

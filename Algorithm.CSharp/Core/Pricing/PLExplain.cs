@@ -54,11 +54,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             //        # Missing changes in Correlation leading to portfolio valuation differences.
         }
 
-        private decimal DS(decimal s1, decimal s0) => s1 - s0;
-        private double DT(DateTime ts1, DateTime ts0) => (ts1 - ts0).TotalSeconds / 86400;
-        private double DIV(double iv1, double iv0) => (iv1 == 0 || iv0 == 0) ? 0 : iv1 - iv0;  // On expiration IV appears to be returned as zero. shouln't use that.
-        private double DR(double r1, double r0) => r1 - r0;
-        private decimal DIVdS(decimal iVdS1, decimal iVdS0) => iVdS1 - iVdS0;
+        private static decimal DS(decimal s1, decimal s0) => s1 - s0;
+        private static double DT(DateTime ts1, DateTime ts0) => (ts1 - ts0).TotalSeconds / 86400;
+        private static double DIV(double iv1, double iv0) => (iv1 == 0 || iv0 == 0) ? 0 : iv1 - iv0;  // On expiration IV appears to be returned as zero. shouln't use that.
+        private static double DR(double r1, double r0) => r1 - r0;
+        private static decimal DIVdS(decimal iVdS1, decimal iVdS0) => iVdS1 - iVdS0;
 
         public PLExplain Update(List<PositionSnap> snaps)
         {

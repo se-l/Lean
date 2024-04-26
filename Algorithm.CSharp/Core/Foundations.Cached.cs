@@ -185,6 +185,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
 
             Symbol underlying = Underlying(symbol);
+
+            if (IsEODAcrossDsHedge(underlying))
+            {
+                decimal quantity = -(decimal)LastDeltaAcrossDs[underlying] - Portfolio[underlying].Quantity;
+                Log($"{Time} {underlying} GetHedgeOptionWithUnderlying with DeltaTotalAcrossDs: {LastDeltaAcrossDs[underlying]}, quantity: {quantity}, Position: {Portfolio[underlying].Quantity}");
+                if (Math.Abs(quantity) > 1)
+                {
+                    ExecuteHedge(underlying, quantity, OrderType.Market);
+                }
+                return;
+            }
+
             decimal deltaTotal = DeltaMV(symbol);
             if (PfRisk.IsUnderlyingDeltaExceedingBand(symbol, deltaTotal))
             {
@@ -195,6 +207,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Log($"{Time} GetHedgeOptionWithUnderlying. underlying={underlying} Not hedging because deltaTotal={deltaTotal}.");
             }
         }
+
+        public bool IsEODAcrossDsHedge(Symbol underlying)
+        {
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return false;
+
+            DateTime nextReleaseDate = NextReleaseDate(underlying);
+            if (LastDeltaAcrossDs.ContainsKey(underlying) && Time.TimeOfDay >= new TimeSpan(15, 45, 0) && nextReleaseDate == Time.Date)
+            {
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>
         /// Closely related to GedHedgeWithIndex, but hedges with the underlying instead of the index.
         /// To avoid dynamic over hedging, best used rarely. For example once per fill only.
@@ -265,7 +290,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (quantity != 0 && !existingOrders.Any())
             {
                 OrderType _orderType = orderType ?? GetEquityHedgeOrderType(equity);
-                price = GetEquityHedgePrice(equity, _orderType);
+                price = GetEquityHedgePrice(equity, _orderType, quantity);
 
                 // Place new order. Market if no position yet, otherwise limit
                 switch (Portfolio[symbol].Quantity)
@@ -320,28 +345,30 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// Gamma long - trailing limit orders.
         /// Gamma short - hedge more tightly - midPrice Limit Orders.
         /// </summary>
-        public decimal GetEquityHedgePrice(Equity equity, OrderType orderType, OrderTicket? ticket = null)
+        public decimal GetEquityHedgePrice(Equity equity, OrderType orderType, decimal quantity, OrderTicket? ticket = null)
         {
             decimal touchPrice;
             decimal price;
+            OrderDirection direction = quantity > 0 ? OrderDirection.Buy : OrderDirection.Sell;
 
             switch (orderType)
             {
                 case OrderType.Market:
-                    return 0;
+                    return MidPrice(equity.Symbol);
+
                 case OrderType.Limit:
                     if (ticket == null)
                     {
-                        return MidPrice(equity.Symbol);
+                        return direction == OrderDirection.Buy ? equity.BidPrice + 0.01m : equity.AskPrice - 0.01m;
                     }
-                    else if (ticket.UpdateRequests.Count > 0) // Price apparently moving away. Fill quickly.
+                    else if (ticket.UpdateRequests.Count > Cfg.LimitOrderUpdateBeforeMarketOrderConversion) // Price apparently moving away. Fill quickly.
                     {
-                        // Unlikely to fall into this as it'll be turned into a market order.
+                        // Aggressively limit order at price of market.
                         return ticket.Quantity > 0 ? equity.AskPrice : equity.BidPrice;
                     }
                     else
                     {
-                        return MidPrice(equity.Symbol);
+                        return direction == OrderDirection.Buy ? equity.BidPrice + 0.01m : equity.AskPrice - 0.01m;
                     }
                 default:
                     return 0;

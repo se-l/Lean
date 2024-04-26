@@ -1,0 +1,29 @@
+syntax = "proto3";
+package QuantConnect.Algorithm.CSharp.Core.IO;
+
+option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
+
+enum Channel {
+    HB = 0;
+    TARGET_PORTFOLIO = 1;
+    ECHO = 2;
+    TERMINATE = 3;
+    STRESS_TEST_DS = 4;
+}
+
+enum Action {
+    SUBSCRIBE = 0;
+    UNSUBSCRIBE = 1;
+}
+
+message Message {
+
+  Channel channel = 1;
+
+  string id = 2;
+
+  Action action = 3;
+
+  bytes payload = 4;
+
+}

@@ -460,13 +460,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public static void ExportToCsv<T>(IEnumerable<T> objects, string filePath)
         {
-            var fileExists = File.Exists(filePath);
-            // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
-            if (!fileExists)
+            try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                var fileExists = File.Exists(filePath);
+                // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
+                if (!fileExists)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                }
+                File.WriteAllText(filePath, ToCsv(objects));
+            } 
+            catch (Exception e)
+            {
+                Logging.Log.Error($"ExportToCsv. Failed to write to {filePath}. {e}");
             }
-            File.WriteAllText(filePath, ToCsv(objects));
         }
         public static decimal ToDecimal(double originalValue)
         {

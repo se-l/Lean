@@ -75,5 +75,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, Dictionary<string, List<double>>> DeltaAdjustmentParameters { get; set; }
         public int LimitOrderUpdateBeforeMarketOrderConversion { get; set; }
         public decimal MaxSpreadForMarketOrderHedging { get; set; }
+        public Dictionary<string, List<List<double>>> SweepLongSchedule { get; set; }
+        public Dictionary<string, List<List<double>>> SweepShortSchedule { get; set; }
+        public int WS_PORT { get; set; }
     }
 }

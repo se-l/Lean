@@ -45,7 +45,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// 
         /// </summary>
         public abstract double Utility { get;  }
-        
+        public virtual double UtilityPV { get => 0; }
+
         //public virtual double UtilityProfit { get => 0; }
         //public virtual double UtilityRisk { get => 0; }
         protected HashSet<string> _utilitiesToLog = new() {
@@ -194,7 +195,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         // Increase/Decrease in subsequent hedging costs, a function of fwdVola, pfGamma, pfDelta
         /// </summary>
         /// <returns></returns>
-        protected double GetUtilityEquityPosition()
+        protected virtual double GetUtilityEquityPosition()
         {
             double util;
             double b = 0.1;
@@ -222,14 +223,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 double absPfUtil = Math.Abs(absWhatIfUtil - absCurrentPfUtil);
                 util = -Math.Sign(optionDelta) * Math.Sign(orderDelta) * absPfUtil * scaleByOrder;
             }
-
-            // CalendarSpread. Not hedging risk with front, but back months. To be refactored getting target expiries, rather than hard coding day range.
-            //if ((_regimes.Contains(Regime.SellEventCalendarHedge) && _option.Expiry < EventDate.AddDays(_algo.Cfg.CalendarSpreadPeriodDays) && util > 0) ||
-            //    (_regimes.Contains(Regime.SellEventCalendarHedge) && _option.Expiry >= EventDate.AddDays(_algo.Cfg.CalendarSpreadPeriodDays) && Quantity < 0 && util > 0)
-            //    )
-            //{
-            //    util = 0;
-            //}
             return util;
         }
         /// <summary>
@@ -545,6 +538,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return _algo.Time.Date.DayOfWeek == DayOfWeek.Friday ? 2 : 1;
         }
         protected decimal MidPriceUnderlying { get { return _algo.MidPrice(Underlying); } }
+
         protected double IV(decimal? price = null)
         {
             //return _algo.MidIV(Symbol);

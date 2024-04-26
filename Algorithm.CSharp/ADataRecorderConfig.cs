@@ -9,6 +9,6 @@ namespace QuantConnect.Algorithm.CSharp
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public HashSet<string> Ticker { get; set; }
-        public string DataFolderOut { get; set; }
+        public string DataFolderTmp { get; set; }
     }
 }

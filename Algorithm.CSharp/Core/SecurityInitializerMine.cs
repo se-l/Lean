@@ -13,6 +13,9 @@ using QuantConnect.Data;
 using System.Collections.Generic;
 using QuantConnect.Algorithm.CSharp.Core.Synchronizer;
 using QuantConnect.Indicators;
+using QuantConnect.Algorithm.CSharp.Core.Risk;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -97,16 +100,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Refactor - turn percentages over to some config.
                 _algo.UnderlyingMovedX[(symbol, 0.001m)] = new((Equity)security, 0.001m);
                 _algo.UnderlyingMovedX[(symbol, 0.002m)] = new((Equity)security, 0.002m);
-                //_algo.UnderlyingMovedX[(symbol, 0.005m)] = new((Equity)security, 0.005m);
+                _algo.UnderlyingMovedX[(symbol, 0.005m)] = new((Equity)security, 0.005m);
                 _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.001m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
                 _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.002m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
-                //_algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.005m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
+                _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.005m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
 
                 _algo.ConsecutiveTicksTrend[symbol] = new((Equity)security);
                 _algo.RegisterIndicator(symbol, _algo.ConsecutiveTicksTrend[symbol], _algo.QuoteBarConsolidators[symbol], (IBaseData b) => (((QuoteBar)b).Bid.Close + ((QuoteBar)b).Ask.Close) / 2);
 
                 _algo.SignalsLastRun[security.Symbol] = DateTime.MinValue;
                 _algo.IsSignalsRunning[security.Symbol] = false;
+
+                _algo.RiskProfiles[security.Symbol] = new RiskProfile(_algo, (Equity)security);
+                _algo.UtilityWriters[security.Symbol] = new UtilityWriter(_algo, (Equity)security);
+                _algo.OrderEventWriters[security.Symbol] = new OrderEventWriter(_algo, (Equity)security);
+                _algo.AbsoluteDiscounts[security.Symbol] = new RiskDiscount(_algo, _algo.Cfg, security.Symbol, Metric.Absolute);
             }
 
             else if (security.Type == SecurityType.Option)
@@ -135,6 +143,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 security.SetDataFilter(new OptionTickDataFilter(_algo));
             }
+
+            if (!symbol.ID.Symbol.Contains("VolatilityBar"))
+            {
+                _algo.SweepState[symbol] = new();
+                foreach (var direction in new[] { Orders.OrderDirection.Buy, Orders.OrderDirection.Sell })
+                {
+                    _algo.SweepState[symbol][direction] = new Sweep(_algo, symbol, direction);
+                }
+            }            
+
             WarmUpSecurity(security);
         }
 
