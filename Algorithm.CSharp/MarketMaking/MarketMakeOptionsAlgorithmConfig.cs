@@ -1,37 +1,37 @@
+using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using System;
 using System.Collections.Generic;
 
-namespace QuantConnect.Algorithm.CSharp
+namespace QuantConnect.Algorithm.CSharp.MarketMaking
 {
-    public class AMarketMakeOptionsAlgorithmConfig : AlgoConfig
+    public class MarketMakeOptionsAlgorithmConfig : AlgoConfig
     {
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public HashSet<string> Ticker { get; set; }
         public HashSet<string> LiquidateTicker { get; set; }
-        public Dictionary<string, bool> SkipRunSignals {  get; set; }
+        public Dictionary<string, bool> SkipRunSignals { get; set; }
+        public bool ExecuteManualOrderInstructions { get; set; }
+        public Dictionary<string, decimal> BacktestingHoldings { get; set; }
         public int VolatilityPeriodDays { get; set; }
-        public decimal scopeContractStrikeOverUnderlyingMax { get; set; }
-        public decimal scopeContractStrikeOverUnderlyingMaxSignal { get; set; }
-        public decimal scopeContractStrikeOverUnderlyingMin { get; set; }
-        public decimal scopeContractStrikeOverUnderlyingMinSignal { get; set; }
-        public decimal scopeContractStrikeOverUnderlyingMargin { get; set; }
-        public decimal scopeContractMoneynessITM { get; set; }
-        public int scopeContractMinDTE { get; set; }
-        public int scopeContractMaxDTE { get; set; }
-        public int scopeContractIsLiquidDays { get; set; }
+        public decimal ScopeContractStrikeOverUnderlyingMax { get; set; }
+        public decimal ScopeContractStrikeOverUnderlyingMaxSignal { get; set; }
+        public decimal ScopeContractStrikeOverUnderlyingMin { get; set; }
+        public decimal ScopeContractStrikeOverUnderlyingMinSignal { get; set; }
+        public decimal ScopeContractStrikeOverUnderlyingMargin { get; set; }
+        public decimal ScopeContractMoneynessITM { get; set; }
+        public int ScopeContractMinDTE { get; set; }
+        public int ScopeContractMaxDTE { get; set; }
+        public int ScopeContractIsLiquidDays { get; set; }
         public double ZMRiskAversion { get; set; }
         public double ZMProportionalTransactionCost { get; set; }
         public Dictionary<string, DiscountParams> DiscountParams { get; set; }
-        public decimal RiskLimitGammaScalpDeltaTotalLong { get; set; }
-        public decimal RiskLimitGammaScalpDeltaTotalShort { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalLong { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
-        public Dictionary<string, decimal> RiskLimitHedgeDeltaTotalLong { get; set; }
-        public Dictionary<string, decimal> RiskLimitHedgeDeltaTotalShort { get; set; }
+        public Dictionary<string, decimal> TotalDeltaHedgeThresholdIntercept { get; set; }
+        public Dictionary<string, decimal> TotalDeltaHedgeThresholdGammaFactor { get; set; }
         public Dictionary<string, double> IVSurfaceRelativeStrikeAlpha { get; set; }
-        public double SurfaceVerticalResetThreshold { get; set; }
         public int WarmUpDays { get; set; }
         public bool LogOrderUpdates { get; set; }
         public bool SkipWarmUpSecurity { get; set; }
@@ -54,11 +54,27 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, double> MarginUtilScaleFactor { get; set; }
         public int MinSubmitRequestsUnprocessedBlockingSubmit { get; set; }
         public int MinCancelRequestsUnprocessedBlockingSubmit { get; set; }
-        public decimal PeggedToStockDeltaRangeOffsetFactor { get; set; }
-        public decimal MinimumIVOffsetBeforeUpdatingPeggedOptionOrder { get; set; }
+        // Pegged Orders not in use because IB limits number of simultaneous pegged orders.
+        //public decimal PeggedToStockDeltaRangeOffsetFactor { get => 0.05; set; } -> 0.05
+        //public decimal MinimumIVOffsetBeforeUpdatingPeggedOptionOrder { get; set; }  -> 0.003
         public Dictionary<string, int> HedgingMode { get; set; }
         public Dictionary<string, bool> UpcomingEventLongIV { get; set; }
         public Dictionary<string, int> UpcomingEventCalendarSpreadStartDaysPrior { get; set; }
-        public bool SetBacktestingHoldings { get; set; }
+        public int CalendarSpreadPeriodDays { get; set; }
+        public decimal EquityShortingRate { get; set; }
+        public decimal DiscountRatePortfolioCAGR { get; set; }
+        public decimal DiscountRateMarket { get; set; }
+        public Dictionary<string, double> DividendYield { get; set; }
+        public Dictionary<string, double> MinUtility { get; set; }
+        public Dictionary<string, decimal> CorrelationSpotVolatility { get; set; }
+        public Dictionary<string, decimal> VolatilityOfVolatility { get; set; }
+        public Dictionary<string, double> SlopeNeg { get; set; }
+        public Dictionary<string, double> SlopePos { get; set; }
+        public Dictionary<string, double> ZeroSDUtil { get; set; }
+        public Dictionary<string, double> UtilBidTaperer { get; set; }
+        public Dictionary<string, decimal> MaxSpreadDiscount { get; set; }
+        public Dictionary<string, Dictionary<string, List<double>>> DeltaAdjustmentParameters { get; set; }
+        public int LimitOrderUpdateBeforeMarketOrderConversion { get; set; }
+        public decimal MaxSpreadForMarketOrderHedging { get; set; }
     }
 }

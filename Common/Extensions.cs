@@ -213,9 +213,11 @@ namespace QuantConnect
         /// <param name="url">The url to download data from</param>
         /// <param name="headers">Add custom headers for the request</param>
         /// <param name="httpClient">Optionally, pass the HttpClient instance for performance boost.</param>
-        public static string DownloadData(this string url, Dictionary<string, string> headers = null, HttpClient httpClient = null)
+        /// <param name="retry"></param>
+        /// <param name="timeout"></param>
+        public static string DownloadData(this string url, Dictionary<string, string> headers = null, HttpClient httpClient = null, int retry = 0, int timeout = 10)
         {
-            var client = httpClient ?? new HttpClient();
+            HttpClient client = httpClient ?? new();
             if (headers != null)
             {
                 foreach (var kvp in headers)
@@ -225,7 +227,7 @@ namespace QuantConnect
             }
             try
             {
-                using var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                using var tokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(timeout));
                 using var response = client.GetAsync(url, tokenSource.Token).Result;
                 using var content = response.Content;
                 return content.ReadAsStringAsync().Result;
@@ -237,8 +239,15 @@ namespace QuantConnect
             }
             catch (AggregateException ex)
             {
-                Log.Error(ex, $"DownloadData(): {Messages.Extensions.DownloadDataFailed(url)}. Retrying the same request, may lead to recursion / stack overflow error.");
-                return DownloadData(url, headers, httpClient);
+                Log.Trace($"DownloadData() attempt # {retry} failed: timeout: {timeout}. Retrying the same request up to 5 times with increased timeout: {timeout + 20}.");
+                if (retry >= 5)
+                {
+                    throw;
+                }
+                else
+                {
+                    return DownloadData(url, headers, httpClient, retry: retry + 1, timeout: timeout + 20);
+                }                
             }
             finally
             {

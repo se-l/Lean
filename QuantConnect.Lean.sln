@@ -60,6 +60,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IQFeed.CSharpApiClient", ".
 EndProject
 Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "docker-compose.dcproj", "{77DBCF6B-A68B-4D20-8551-0756D723AE6C}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Api.GRPC", "Api.GRPC\QuantConnect.Api.GRPC.csproj", "{2C902311-0C7D-454C-92A9-9803AC95B535}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -164,6 +166,10 @@ Global
 		{77DBCF6B-A68B-4D20-8551-0756D723AE6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{77DBCF6B-A68B-4D20-8551-0756D723AE6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{77DBCF6B-A68B-4D20-8551-0756D723AE6C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C902311-0C7D-454C-92A9-9803AC95B535}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C902311-0C7D-454C-92A9-9803AC95B535}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C902311-0C7D-454C-92A9-9803AC95B535}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C902311-0C7D-454C-92A9-9803AC95B535}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

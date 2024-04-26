@@ -13,6 +13,9 @@ using QuantConnect.Data;
 using System.Collections.Generic;
 using QuantConnect.Algorithm.CSharp.Core.Synchronizer;
 using QuantConnect.Indicators;
+using QuantConnect.Algorithm.CSharp.Core.Risk;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -42,8 +45,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             // Margin Model
             security.MarginModel = SecurityMarginModel.Null;
-            //security.MarginModel = new BuyingPowerModelMine(_algo);
-            //security.SetBuyingPowerModel(new BuyingPowerModelMine(_algo));
+            security.SetBuyingPowerModel(BuyingPowerModel.Null);
+            // security.MarginModel = new BuyingPowerModelMine(_algo);
+            // security.SetBuyingPowerModel(new BuyingPowerModelMine(_algo));
 
             if (!_algo.QuoteBarConsolidators.ContainsKey(symbol))
             {
@@ -63,19 +67,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 };
 
                 int totalRollingPeriods = (int)(VolatilityPeriodDays * 6.5 * 60 * 60 / samplePeriods);
-                security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: totalRollingPeriods, _algo.resolution, TimeSpan.FromSeconds(samplePeriods));
+                security.VolatilityModel = new VolatilityModelMine(_algo, security, periods: totalRollingPeriods, _algo.resolution, TimeSpan.FromSeconds(samplePeriods));
 
                 foreach (var tradeBar in _algo.HistoryWrap(symbol, _algo.Periods(days: VolatilityPeriodDays + 2), _algo.resolution))
                 {
                     security.VolatilityModel.Update(security, tradeBar);
-                }
-                _algo.Log($"SecurityInitializer.Initialize: {symbol} WarmedUp Volatility To: {security.VolatilityModel.Volatility}");
+                }                
 
                 // Initialize a Security Specific Hedge Band or Risk Limit object. Constitutes underlying, hence risk limit not just by security but also its derivatives.
                 // Adjust delta by underlying's volatility.
                 security.RiskLimit = new SecurityRiskLimit(security, delta100BpLong: _algo.Cfg.RiskLimitEODDelta100BpUSDTotalLong, delta100BpShort: _algo.Cfg.RiskLimitEODDelta100BpUSDTotalShort);
 
+                decimal vola = security.VolatilityModel.Volatility;
                 InitializeIVSurfaces(symbol);
+                _algo.Log($"SecurityInitializer.Initialize: {symbol} WarmedUp Volatility To: PostSurface: {security.VolatilityModel.Volatility}, PreSurface: {vola}");
+
                 _algo.QuoteBarConsolidators[symbol].DataConsolidated += (object sender, QuoteBar consolidated) =>
                 {
                     if (_algo.IsEventNewQuote(symbol))
@@ -91,14 +97,24 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.IVSurfaceRelativeStrikeBid[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Bid);
                 _algo.IVSurfaceRelativeStrikeAsk[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Ask);
 
-                _algo.UnderlyingMovedX[symbol] = new((Equity)security);
-                _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[symbol], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
+                // Refactor - turn percentages over to some config.
+                _algo.UnderlyingMovedX[(symbol, 0.001m)] = new((Equity)security, 0.001m);
+                _algo.UnderlyingMovedX[(symbol, 0.002m)] = new((Equity)security, 0.002m);
+                _algo.UnderlyingMovedX[(symbol, 0.005m)] = new((Equity)security, 0.005m);
+                _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.001m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
+                _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.002m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
+                _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.005m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
 
                 _algo.ConsecutiveTicksTrend[symbol] = new((Equity)security);
                 _algo.RegisterIndicator(symbol, _algo.ConsecutiveTicksTrend[symbol], _algo.QuoteBarConsolidators[symbol], (IBaseData b) => (((QuoteBar)b).Bid.Close + ((QuoteBar)b).Ask.Close) / 2);
 
                 _algo.SignalsLastRun[security.Symbol] = DateTime.MinValue;
                 _algo.IsSignalsRunning[security.Symbol] = false;
+
+                _algo.RiskProfiles[security.Symbol] = new RiskProfile(_algo, (Equity)security);
+                _algo.UtilityWriters[security.Symbol] = new UtilityWriter(_algo, (Equity)security);
+                _algo.OrderEventWriters[security.Symbol] = new OrderEventWriter(_algo, (Equity)security);
+                _algo.AbsoluteDiscounts[security.Symbol] = new RiskDiscount(_algo, _algo.Cfg, security.Symbol, Metric.Absolute);
             }
 
             else if (security.Type == SecurityType.Option)
@@ -107,7 +123,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 Option option = (Option)security;
                 option.PriceModel = new CurrentPriceOptionPriceModel();
-                option.SetOptionAssignmentModel(new DefaultOptionAssignmentModel(0, TimeSpan.FromDays(0)));  //CustomOptionAssignmentModel
+                option.SetOptionAssignmentModel(new DefaultOptionAssignmentModel(0, new TimeSpan(-1, 2, 30, 0)));  //CustomOptionAssignmentModel
 
                 // No need for particular option contract's volatility.
                 security.VolatilityModel = VolatilityModel.Null;
@@ -121,14 +137,33 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.IVAsks[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceRelativeStrikeAsk[option.Symbol.Underlying].ScheduleUpdate();
 
                 _algo.PutCallRatios[option.Symbol] = new PutCallRatioIndicator(option, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
-                _algo.RegisterIndicator(option.Symbol, _algo.PutCallRatios[option.Symbol], _algo.TradeBarConsolidators[option.Symbol], (IBaseData b) => ((TradeBar)b)?.Volume ?? 0);
             }
 
             if (security.Resolution == Resolution.Tick)
             {
                 security.SetDataFilter(new OptionTickDataFilter(_algo));
             }
+
+            if (!symbol.ID.Symbol.Contains("VolatilityBar"))
+            {
+                _algo.SweepState[symbol] = new();
+                foreach (var direction in new[] { Orders.OrderDirection.Buy, Orders.OrderDirection.Sell })
+                {
+                    _algo.SweepState[symbol][direction] = new Sweep(_algo, symbol, direction);
+                }
+            }            
+
             WarmUpSecurity(security);
+        }
+
+        public void RegisterIndicators(Option option)
+        {
+            _algo.Log($"{_algo.Time} SecurityInitializer.RegisterIndicators: {option.Symbol}");
+            Symbol symbol = option.Symbol;
+            _algo.RegisterIndicator(symbol, _algo.IVBids[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVBids[symbol].Selector);
+            _algo.RegisterIndicator(symbol, _algo.IVAsks[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVAsks[symbol].Selector);
+            _algo.RegisterIndicator(symbol, _algo.PutCallRatios[symbol], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Volume ?? 0);
+            //_algo.IVSurfaceAndreasenHuge[(symbol.Underlying, option.Right)].RegisterSymbol(option);
         }
 
         private void InitializeIVSurfaces(Symbol underlying)
@@ -141,13 +176,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 _algo.IVSurfaceRelativeStrikeAsk[underlying] = new IVSurfaceRelativeStrike(_algo, underlying, QuoteSide.Ask, true);
             }
+            //if (!_algo.IVSurfaceAndreasenHuge.ContainsKey((underlying, OptionRight.Call)))
+            //{
+            //    _algo.IVSurfaceAndreasenHuge[(underlying, OptionRight.Call)] = new IVSurfaceAndreasenHuge(_algo, underlying, OptionRight.Call, true);
+            //}
+            //if (!_algo.IVSurfaceAndreasenHuge.ContainsKey((underlying, OptionRight.Put)))
+            //{
+            //    _algo.IVSurfaceAndreasenHuge[(underlying, OptionRight.Put)] = new IVSurfaceAndreasenHuge(_algo, underlying, OptionRight.Put, true);
+            //}
         }
         public DateTime HistoryRequestEndDate(Security security)
         {
             if (_algo.LiveMode && _algo.Time.TimeOfDay < new TimeSpan(9, 30, 0))
             {
                 SecurityExchangeHours SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, security.Symbol, security.Type);
-                return Time.EachTradeableDay(SecurityExchangeHours, _algo.Time.Date.AddDays(-7), _algo.Time.Date.AddDays(-1)).Last();
+                return Time.EachTradeableDay(SecurityExchangeHours, _algo.Time.Date.AddDays(-4), _algo.Time.Date.AddDays(-1)).Last();
             }
             else if (_algo.LiveMode && _algo.Time.TimeOfDay >= new TimeSpan(9, 30, 0))
             {
@@ -158,6 +201,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return _algo.StartDate;
             }
         }
+        /// <summary>
+        /// FIX ME: The stored historical volatilities were calculated at 0 yield. Need to adjust IV for configured yield term structure.
+        /// </summary>
+        /// <param name="security"></param>
         public void WarmUpSecurity(Security security)
         {
             Symbol symbol;

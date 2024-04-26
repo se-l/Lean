@@ -15,6 +15,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public Trade? Trade1 { get; internal set; }
         private readonly Position? _prevPosition;
         public SecurityType SecurityType { get => Security.Type; }
+        private List<double> _deltaAdjustmentParameters;
+        private List<double> DeltaAdjustmentParameters { get
+            {
+                if (_deltaAdjustmentParameters == null && SecurityType == SecurityType.Option)
+                {
+                    Dictionary<string, List<double>> putCallParams = _algo.Cfg.DeltaAdjustmentParameters.TryGetValue(SecurityUnderlying.Symbol, out putCallParams) ? putCallParams : _algo.Cfg.DeltaAdjustmentParameters[CfgDefault];
+                    _deltaAdjustmentParameters = putCallParams[Option.Right.ToLower()];
+                }
+                return _deltaAdjustmentParameters;
+            }
+        }
 
         /// <summary>
         /// Constructor for Pos0 off Portfolio Holdings.
@@ -49,19 +60,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Trade0 = trade;
             Symbol = trade.Symbol;
             Quantity = trade.Quantity;
-        }
-
-        /// <summary>
-        /// Instead of calculating the PnL of the new position given the net Quantity after T1, returning PnL for the previous Position given the final snapshot after T1 executed.
-        /// </summary>
-        public Position RealizedPosition(Trade trade1)
-        {
-            Position pos = new(this, Trade0, _algo, trade1)
-            {
-                Quantity = Quantity
-            };
-            pos.Snap();
-            return pos;
         }
 
         public decimal Quantity { get; internal set; }
@@ -158,6 +156,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public GreeksPlus GetGreeks1(double? volatility = null)
         {
             GreeksPlus greeks = Trade1?.Greeks ?? GetGreeks();
+            if (volatility != null)
+            {
+                greeks.SetIV((double)volatility);
+            }
             if (SecurityType == SecurityType.Option && Trade1 == null)
             {
                 greeks.OCW.SetIndependents(Mid1Underlying, Mid1, volatility ?? (double)SecurityUnderlying.VolatilityModel.Volatility);
@@ -222,47 +224,61 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Option contract = (Option)Security;
             return contract.ContractMultiplier * Mid1Underlying;
         }
-        public decimal DeltaTotal()
+
+        public double DeltaAdjusted(double? volatility = null)
+        {
+            switch (SecurityType)
+            {
+                case SecurityType.Equity:
+                    return 1;
+                case SecurityType.Option:
+                    double delta = Delta(volatility);
+                    return DeltaAdjustmentParameters[0] + delta * (DeltaAdjustmentParameters[1] + DeltaAdjustmentParameters[2] * delta + DeltaAdjustmentParameters[3] * Math.Pow(delta, 2));
+                default:
+                    throw new NotSupportedException();
+            }
+        }
+        public decimal DeltaTotal(double? volatility = null)
         {
             return SecurityType switch
             {
                 SecurityType.Equity => Quantity,
-                SecurityType.Option => (decimal)Delta() * Multiplier * Quantity
+                SecurityType.Option => ToDecimal(DeltaAdjusted(volatility)) * Multiplier * Quantity,
+                _ => throw new NotSupportedException(),
             };
+            ;
         }
-        public decimal DeltaXBpUSDTotal(double dS = 100)
+        public decimal DeltaXBpUSDTotal(double dS = 100, double? volatility = null)
         {
-            //if (x==100)
-            //{
-            //    _algo.Log($"DeltaXBpUSDTotal: {SecurityType} {Symbol} Mid1Underlying={Mid1Underlying} Quantity={Quantity} Delta={Delta()} DecimalDeltaxX={(decimal)(Delta() * x)} BP={BP} Multiplier={Multiplier} Result={(decimal)(Delta() * x) * Mid1Underlying * BP * Multiplier * Quantity}");
-            //}            
             return SecurityType switch
             {
-                SecurityType.Equity => Mid1Underlying * (decimal)dS * BP * Quantity,
-                SecurityType.Option => (decimal)(Delta() * dS) * Mid1Underlying * BP * Multiplier * Quantity
+                SecurityType.Equity => Mid1Underlying * ToDecimal(dS) * BP * Quantity,
+                SecurityType.Option => ToDecimal(DeltaAdjusted(volatility) * dS) * Mid1Underlying * BP * Multiplier * Quantity,
+                _ => throw new NotSupportedException(),
             };
+            ;
         }
         public decimal DeltaImpliedTotal(double volatility)
         {
             return SecurityType switch
             {
                 SecurityType.Equity => Quantity,
-                SecurityType.Option => (decimal)Delta(volatility) * Multiplier * Quantity
+                SecurityType.Option => ToDecimal(DeltaAdjusted(volatility)) * Multiplier * Quantity
             };
         }
         public decimal DeltaImpliedXBpUSDTotal(double volatility, double x = 100)
         {
             return SecurityType switch
             {
-                SecurityType.Equity => Mid1Underlying * (decimal)x * BP * Quantity,
-                SecurityType.Option => (decimal)(Delta(volatility) * x) * Mid1Underlying * BP * Multiplier * Quantity
+                SecurityType.Equity => Mid1Underlying * ToDecimal(x) * BP * Quantity,
+                SecurityType.Option => ToDecimal(DeltaAdjusted(volatility) * x) * Mid1Underlying * BP * Multiplier * Quantity
             };
         }
 
         //dS2
-        public double Gamma()
+        public double Gamma(double? volatility=null)
         {
-            return GetGreeks1().Gamma;
+            return GetGreeks1(volatility).Gamma;
         }
         public double GammaImplied(double volatility)
         {
@@ -282,11 +298,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     return 0;
             }
         }
-        public decimal GammaTotal()
+        public decimal GammaTotal(double? volatility=null)
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)Gamma() * Multiplier * Quantity,
+                SecurityType.Option => ToDecimal(Gamma(volatility)) * Multiplier * Quantity,
                 _ => 0
             }; ;
         }
@@ -294,69 +310,86 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)GetGreeks1(volatility: volatility).Gamma * Multiplier * Quantity,
+                SecurityType.Option => ToDecimal(GetGreeks1(volatility: volatility).Gamma) * Multiplier * Quantity,
                 _ => 0
             }; ;
         }
-        public decimal GammaXBpUSDTotal(double dS = 100)
+        public decimal GammaXBpUSDTotal(double dS = 100, double? volatility = null)
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)(0.5 * Gamma() * Math.Pow((double)Mid1Underlying * dS * (double)BP, 2)) * Multiplier * Quantity,
+                SecurityType.Option => ToDecimal((0.5 * Gamma(volatility)) * Math.Pow((double)Mid1Underlying * dS * (double)BP, 2)) * Multiplier * Quantity,
                 _ => 0
             };
         }
         // dSdIV
-        public decimal VannaXBpUSDTotal(decimal dIV = 100)  // How much USD costs a 1% change in IV and its change to Delta?
+        public decimal VannaXBpUSDTotal(decimal dIV = 100, double? volatility = null)  // How much USD costs a 1% change in IV and its change to Delta?
         {
             return SecurityType switch
             {
                 // Change in Delta * Position
-                SecurityType.Option => (decimal)GetGreeks1().Vanna * BP * dIV * Mid0Underlying * Multiplier * Quantity,
+                SecurityType.Option => ToDecimal(GetGreeks1(volatility ?? _algo.MidIV(Symbol)).Vanna) * BP * dIV * Mid0Underlying * Multiplier * Quantity,
                 _ => 0
             };
         }
-        public decimal VannaTotal() => (decimal)GetGreeks1().Vanna * Multiplier * Quantity;
-        public decimal BsmIVdS() => (decimal)GetGreeks1().IVdS;
+        public decimal VannaTotal() => ToDecimal(GetGreeks1().Vanna) * Multiplier * Quantity;
+        public decimal BsmIVdS() => ToDecimal(GetGreeks1().IVdS);
 
         public decimal BsmIVdSTotal() => BsmIVdS() * Multiplier * Quantity;
-        public decimal SurfaceIVdSBid => Trade1?.SurfaceIVdSBid ?? (decimal)(_algo.IVSurfaceRelativeStrikeBid[UnderlyingSymbol].IVdS(Symbol) ?? 0);
-        public decimal SurfaceIVdSAsk => Trade1?.SurfaceIVdSAsk ?? (decimal)(_algo.IVSurfaceRelativeStrikeAsk[UnderlyingSymbol].IVdS(Symbol) ?? 0);
+        public decimal SurfaceIVdSBid => Trade1?.SurfaceIVdSBid ?? ToDecimal(_algo.IVSurfaceRelativeStrikeBid[UnderlyingSymbol].IVdS(Symbol) ?? 0);
+        public decimal SurfaceIVdSAsk => Trade1?.SurfaceIVdSAsk ?? ToDecimal(_algo.IVSurfaceRelativeStrikeAsk[UnderlyingSymbol].IVdS(Symbol) ?? 0);
         public decimal SurfaceIVdS { get {
             if (SurfaceIVdSBid == 0) { return SurfaceIVdSAsk; }
             if (SurfaceIVdSAsk == 0) { return SurfaceIVdSBid; }
             return (SurfaceIVdSBid + SurfaceIVdSAsk) / 2;
         }}
         public decimal SurfacedIVdSTotal => SurfaceIVdSAsk * Multiplier * Quantity;
-        public decimal DeltaIVdSTotal()
+        /// <summary>
+        /// From Derman, The volatility smile. Chapter 22, Heston model minmize PL Variance.
+        /// </summary>
+        /// <param name="spot"></param>
+        /// <returns></returns>
+        public decimal DeltaMVTerm(decimal? spot = null)
         {
-            return (decimal)GetGreeks1().Vega * SurfaceIVdS * Multiplier * Quantity;
+            decimal _spot = spot ?? Mid1Underlying;
+            decimal vega = (decimal)GetGreeks1().Vega;
+            decimal iv = (decimal)_algo.MidIV(Symbol);
+            decimal vv = _algo.Cfg.VolatilityOfVolatility.TryGetValue(UnderlyingSymbol, out vv) ? vv : _algo.Cfg.VolatilityOfVolatility[CfgDefault];
+            decimal rho = _algo.Cfg.CorrelationSpotVolatility.TryGetValue(UnderlyingSymbol, out rho) ? rho : _algo.Cfg.CorrelationSpotVolatility[CfgDefault];
+            if (iv * _spot == 0) { return 0; }
+            return rho * vv * vega / iv * _spot;
+        }
+        public decimal DeltaIVdSTotal()
+        {            
+            return DeltaMVTerm() * Multiplier * Quantity;
+            //return ToDecimal(GetGreeks1().Vega) * SurfaceIVdS * Multiplier * Quantity;
         }
         public decimal DeltaIVdSXBpUSDTotal(decimal dS = 100)
         {
-            return (decimal)GetGreeks1().Vega * SurfaceIVdS * Mid1Underlying * dS * BP * Multiplier * Quantity;
+            return DeltaMVTerm(Mid1Underlying * dS * BP) * Multiplier * Quantity;
+            //return ToDecimal(GetGreeks1().Vega) * SurfaceIVdS * Mid1Underlying * dS * BP * Multiplier * Quantity;
         }
-        public decimal SpeedXBpUSDTotal(double dS = 100)
+        public decimal SpeedXBpUSDTotal(double dS = 100, double? volatility = null)
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)((1/6.0) * GetGreeks1().DS3 * Math.Pow((double)Mid1Underlying * dS * (double)BP, 3)) * Multiplier * Quantity,
+                SecurityType.Option => ToDecimal(((1/6.0) * GetGreeks1(volatility ?? _algo.MidIV(Symbol)).DS3) * Math.Pow((double)Mid1Underlying * dS * (double)BP, 3)) * Multiplier * Quantity,
                 _ => 0
             };
         }
-        public decimal VegaXBpUSDTotal(double dIV = 100)
+        public decimal VegaXBpUSDTotal(double dIV = 100, double? volatility = null)
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)(GetGreeks1().Vega * dIV) * BP * Multiplier * Quantity,
+                SecurityType.Option => ToDecimal(GetGreeks1(volatility ?? _algo.MidIV(Symbol)).Vega * dIV) * BP * Multiplier * Quantity,
                 _ => 0
             };
         }
-        public decimal VolgaXBpUSDTotal(double dIV = 100)
+        public decimal VolgaXBpUSDTotal(double dIV = 100, double? volatility = null)
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)(GetGreeks1().DIV2 * Math.Pow(dIV * (double)BP, 2) * (double)(Multiplier * Quantity)),
+                SecurityType.Option => ToDecimal(GetGreeks1(volatility ?? _algo.MidIV(Symbol)).DIV2 * Math.Pow(dIV * (double)BP, 2) * (double)(Multiplier * Quantity)),
                 _ => 0
             };
         }
@@ -364,7 +397,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)(0.5 * GammaImplied(volatility) * Math.Pow((double)Mid1Underlying * dS * (double)BP, 2)) * Multiplier * Quantity,
+                SecurityType.Option => ToDecimal(0.5 * GammaImplied(volatility) * Math.Pow((double)Mid1Underlying * dS * (double)BP, 2)) * Multiplier * Quantity,
                 _ => 0
             };
         }
@@ -372,11 +405,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return SecurityType switch
             {
-                SecurityType.Option => (decimal)GetGreeks1().ThetaTillExpiry * Multiplier * Quantity,
+                SecurityType.Option => ToDecimal(GetGreeks1().ThetaTillExpiry) * Multiplier * Quantity,
                 _ => 0,
             };
         }
-        public decimal ThetaTotal(decimal dT = 1) => (decimal)GetGreeks1().Theta * Multiplier * Quantity * dT;
+        public decimal ThetaTotal(decimal dT = 1) => ToDecimal(GetGreeks1().Theta) * Multiplier * Quantity * dT;
 
         public decimal IntrinsicValue1 => SecurityType switch
         {
@@ -388,10 +421,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         // dIV
         public double Vega() => GetGreeks1().Vega;
-        public decimal VegaTotal() => (decimal)GetGreeks1().Vega * Multiplier * Quantity;
+        public decimal VegaTotal() => ToDecimal(GetGreeks1().Vega) * Multiplier * Quantity;
         public double Ts0Sec { get => (Trade0.Ts0 - new DateTime(1970, 1, 1, 0, 0, 0)).TotalSeconds; }
         public decimal DP { get => P1 - Trade0.PriceFillAvg; }
         public decimal DPMid { get => Trade1?.Mid0 ?? Mid1 - Trade0.Mid0; }
+        public decimal DPMidTotal { get => (Trade1?.Mid0 ?? Mid1 - Trade0.Mid0) * Multiplier * Quantity; }
         public decimal DeltaFillMid1 { get => P1 - Mid1; }
         public decimal DS { get => Mid1Underlying - Mid0Underlying; }
         public double DTDays { get => (Ts1 - Trade0.Ts0).TotalSeconds / 86400; }
@@ -431,9 +465,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// </summary>
         private PLExplain GetPLExplain()
         {
-            LastSnap = new PositionSnap(_algo, Symbol);
-            _pLExplain ??= new PLExplain(_algo, this);
-            return _pLExplain.Update(LastSnap);
+            _pLExplain ??= new PLExplain(this);
+            _algo.LastSnap(Symbol);
+            return _pLExplain.Update(_algo.PositionSnaps[Symbol].Concat(new List<PositionSnap>() { new PositionSnap(_algo, Symbol) } ).ToList());
         }
 
         /// <summary>
@@ -457,18 +491,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             return positions;
         }
-
-        //private readonly List<PositionSnap> Snaps = new();
-        public PositionSnap LastSnap { get; internal set; }
-
-        public void Snap()
-        {
-            PositionSnap LastSnap = new(_algo, Symbol);
-            //Snaps.Add(snap);
-            _pLExplain = GetPLExplain();
-            _pLExplain.Update(LastSnap);
-        }
-
         public DateTime TsQueried { get => _algo.Time; }
     }
 }

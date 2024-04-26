@@ -9,6 +9,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
     {
         private readonly Foundations _algo;
         public Symbol Symbol { get; internal set; }
+        public string SnapID { get => $"{Symbol.Value} {Ts0:yyyyMMddHHmmss}"; }
         public Security Security { get; internal set; }
         public Symbol UnderlyingSymbol
         {
@@ -71,6 +72,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 return (SurfaceIVdSBid + SurfaceIVdSAsk) / 2;
             }
         }
+        //public decimal SurfaceIVAHdS
+        //{
+        //    get
+        //    {
+        //        if (SecurityType != SecurityType.Option) return 0;                
+        //        return (decimal)_algo.IVSurfaceAndreasenHuge[(UnderlyingSymbol, Symbol.ID.OptionRight)].IVdS(Symbol);
+        //    }
+        //}
 
         /// <summary>
         /// For option expiration

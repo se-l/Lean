@@ -9,6 +9,7 @@ using QuantConnect.Securities;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
+using QuantConnect.Algorithm.CSharp.Core.Indicators;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -26,6 +27,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Func<Symbol, decimal> TickSize;
         public Func<decimal> PositionsTotal;
         public Func<int> PositionsN;
+        public Func<Symbol, double, double> AtmIVCached;
 
         public void AssignCachedFunctions()
         {
@@ -40,8 +42,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
             TickSize = Cache(GetTickSize, (Symbol symbol) => symbol, maxKeys: 1);
             PositionsTotal = Cache(GetPositionsTotal, () => Time.Ticks, maxKeys: 1);
             PositionsN = Cache(GetPositionsN, () => Time.Ticks, maxKeys: 1);
+            AtmIVCached = Cache(GetAtmIV, (Symbol symbol, double defaultSpread) => (Time.Ticks, symbol, defaultSpread));
 
             IntrinsicValue = (Option option) => option.GetIntrinsicValue(MidPrice(option.Underlying.Symbol));
+        }
+        public double AtmIV(Symbol symbol, double defaultSpread = 0.005) => AtmIVCached(symbol, defaultSpread);
+        /// <summary>
+        /// Ask IV strongly slopes up close to expiration (1-3 days), therefore rendering midIV not a good indicator. Would wanna use contracts expiring later. This will lead to a
+        /// jump in AtmIV when referenced contracts are switched. How to make it smooth?
+        /// </summary>
+        public double GetAtmIV(Symbol symbol, double defaultSpread = 0.005)
+        {
+            double bidIV = IVSurfaceRelativeStrikeBid.TryGetValue(Underlying(symbol), out IVSurfaceRelativeStrike bidSurface) ? bidSurface.AtmIv() : 0;
+            double askIV = IVSurfaceRelativeStrikeAsk.TryGetValue(Underlying(symbol), out IVSurfaceRelativeStrike askSurface) ? askSurface.AtmIv() : 0;
+            return InterpolateMidIVIfAnyZero(bidIV, askIV, defaultSpread);
         }
 
         private double GetBeta(Symbol index, Symbol asset, int periods, Resolution resolution = Resolution.Daily)
@@ -171,6 +185,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
 
             Symbol underlying = Underlying(symbol);
+
+            if (IsEODAcrossDsHedge(underlying))
+            {
+                decimal quantity = -(decimal)LastDeltaAcrossDs[underlying] - Portfolio[underlying].Quantity;
+                Log($"{Time} {underlying} GetHedgeOptionWithUnderlying with DeltaTotalAcrossDs: {LastDeltaAcrossDs[underlying]}, quantity: {quantity}, Position: {Portfolio[underlying].Quantity}");
+                if (Math.Abs(quantity) > 1)
+                {
+                    ExecuteHedge(underlying, quantity, OrderType.Market);
+                }
+                return;
+            }
+
             decimal deltaTotal = DeltaMV(symbol);
             if (PfRisk.IsUnderlyingDeltaExceedingBand(symbol, deltaTotal))
             {
@@ -181,6 +207,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Log($"{Time} GetHedgeOptionWithUnderlying. underlying={underlying} Not hedging because deltaTotal={deltaTotal}.");
             }
         }
+
+        public bool IsEODAcrossDsHedge(Symbol underlying)
+        {
+            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return false;
+
+            DateTime nextReleaseDate = NextReleaseDate(underlying);
+            if (LastDeltaAcrossDs.ContainsKey(underlying) && Time.TimeOfDay >= new TimeSpan(15, 45, 0) && nextReleaseDate == Time.Date)
+            {
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>
         /// Closely related to GedHedgeWithIndex, but hedges with the underlying instead of the index.
         /// To avoid dynamic over hedging, best used rarely. For example once per fill only.
@@ -214,10 +253,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             decimal deltaMVTotal = 0;
             decimal deltaTotal = PfRisk.RiskByUnderlying(symbol, HedgeMetric(Underlying(symbol)));
-            //decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);  // MV
+            
+            // decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);  // MV
 
             deltaMVTotal += deltaTotal;
-            //deltaMVTotal += deltaIVdSTotal;
+            // deltaMVTotal += deltaIVdSTotal;
             // Log($"{Time} DeltaMV {symbol}: deltaMVTotal={deltaMVTotal}, deltaTotal={deltaTotal}, deltaIVdSTotal={deltaIVdSTotal}");
             return deltaMVTotal;
         }
@@ -236,13 +276,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             List<OrderTicket> tickets = orderTickets.TryGetValue(symbol, out tickets) ? tickets : new List<OrderTicket>();
 
-            // Hedge is taken through EventHandler -> UpdateLimitOrderEquity.
-            bool anyLimitOrders = tickets.Where(t => t.OrderType == OrderType.Limit).Any();
+            // Cancel any opposite one's.
+            tickets.Where(t => t.Quantity * quantity < 0).ToList().ForEach(t => t.Cancel());
+            // If market order, cancel any limit orders
+            if (orderType == OrderType.Market)
+            {
+                tickets.Where(t => t.OrderType == OrderType.Limit).ToList().ForEach(t => t.Cancel());
+            }
 
-            if (quantity != 0 && !anyLimitOrders)
+            // Hedge is taken through EventHandler -> UpdateLimitOrderEquity.
+            var existingOrders = tickets.Where(t => orderTypeMarketLimit.Contains(t.OrderType) && !orderFilledCanceledInvalid.Contains(t.Status));
+
+            if (quantity != 0 && !existingOrders.Any())
             {
                 OrderType _orderType = orderType ?? GetEquityHedgeOrderType(equity);
-                price = GetEquityHedgePrice(equity, _orderType);
+                price = GetEquityHedgePrice(equity, _orderType, quantity);
 
                 // Place new order. Market if no position yet, otherwise limit
                 switch (Portfolio[symbol].Quantity)
@@ -259,9 +307,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                                     { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
                                 OrderEquity(symbol, quantity, price, orderType: _orderType);
                                 break;
-                            case OrderType.LimitIfTouched:
-                                // Handled by GammaScalper, whichs a LimitOrder as argument
-                                break;
                             default:
                                 throw new NotImplementedException();
                         }
@@ -270,7 +315,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             else
             {
-                Log($"{Time} ExecuteHedge: Not hedging because quantity={quantity}, anyLimitOrders={anyLimitOrders}, orders={string.Join(",", tickets.Where(t => t.OrderType == OrderType.Limit))}.");
+                string msg = $"{Time} ExecuteHedge: Not hedging because quantity={quantity}, anyExistingOrders={existingOrders.Any()}, OrderId={string.Join(",", existingOrders.Select(t => t.OrderId))}.";
+                Log(msg);
+                //DiscordClient.Send(msg, DiscordChannel.Emergencies);
             }
         }
 
@@ -282,49 +329,46 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <returns></returns>
         public OrderType GetEquityHedgeOrderType(Equity equity, OrderTicket? ticket = null)
         {
-            return OrderType.Market;
-            if (ticket != null && ticket.UpdateRequests.Count > 0)
+            if (ticket != null && ticket.UpdateRequests.Count > Cfg.LimitOrderUpdateBeforeMarketOrderConversion)
             {
                 return OrderType.Market;
             }
 
-            double gammaTotal = (double)PfRisk.RiskByUnderlying(equity.Symbol, Metric.GammaTotal);
-
-            if (gammaTotal > 0 && GammaScalpers[equity.Symbol].IsScalping)
+            if (Spread(equity) <= Cfg.MaxSpreadForMarketOrderHedging)
             {
-                return OrderType.LimitIfTouched;
+                return OrderType.Market;
             }
-            else
-            {
-                return OrderType.Limit;
-            }
+            
+            return OrderType.Limit;
         }
         /// <summary>
         /// Gamma long - trailing limit orders.
         /// Gamma short - hedge more tightly - midPrice Limit Orders.
         /// </summary>
-        public decimal GetEquityHedgePrice(Equity equity, OrderType orderType, OrderTicket? ticket = null)
+        public decimal GetEquityHedgePrice(Equity equity, OrderType orderType, decimal quantity, OrderTicket? ticket = null)
         {
             decimal touchPrice;
             decimal price;
+            OrderDirection direction = quantity > 0 ? OrderDirection.Buy : OrderDirection.Sell;
 
             switch (orderType)
             {
                 case OrderType.Market:
-                    return 0;
+                    return MidPrice(equity.Symbol);
+
                 case OrderType.Limit:
                     if (ticket == null)
                     {
-                        return MidPrice(equity.Symbol);
+                        return direction == OrderDirection.Buy ? equity.BidPrice + 0.01m : equity.AskPrice - 0.01m;
                     }
-                    else if (ticket.UpdateRequests.Count > 0) // Price apparently moving away. Fill quickly.
+                    else if (ticket.UpdateRequests.Count > Cfg.LimitOrderUpdateBeforeMarketOrderConversion) // Price apparently moving away. Fill quickly.
                     {
-                        // Unlikely to fall into this as it'll be turned into a market order.
+                        // Aggressively limit order at price of market.
                         return ticket.Quantity > 0 ? equity.AskPrice : equity.BidPrice;
                     }
                     else
                     {
-                        return MidPrice(equity.Symbol);
+                        return direction == OrderDirection.Buy ? equity.BidPrice + 0.01m : equity.AskPrice - 0.01m;
                     }
                 default:
                     return 0;

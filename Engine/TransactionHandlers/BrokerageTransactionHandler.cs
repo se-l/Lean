@@ -488,6 +488,11 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                     // send the request to be processed
                     request.SetResponse(OrderResponse.Success(request), OrderRequestStatus.Processing);
                     _cancelRequestsUnprocessed.TryAdd(request.OrderId, request);
+
+                    // Remove from other queues in case handler waited for an answer. Canceling is the latest.
+                    _submitRequestsUnprocessed.TryRemove(request.OrderId, out _);
+                    _updateRequestsUnprocessed.TryRemove(request.OrderId, out _);
+
                     _orderRequestQueue.Add(request);
                 }
             }

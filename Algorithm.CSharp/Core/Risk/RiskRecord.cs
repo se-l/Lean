@@ -58,15 +58,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public decimal MidPriceUnderlying => _algo.MidPrice(Symbol);
         public decimal HistoricalVolatility => _algo.Securities[Symbol].VolatilityModel.Volatility;
-        public double AtmIV => _algo.PfRisk.AtmIV(Symbol);
+        public double AtmIV => _algo.AtmIV(Symbol);
         public double AtmIVEWMA => _algo.PfRisk.AtmIVEWMA(Symbol);
         public double? SkewStrikeBid => _algo.IVSurfaceRelativeStrikeBid[Symbol].SkewStrike();
         public double? SkewStrikeAsk => _algo.IVSurfaceRelativeStrikeAsk[Symbol].SkewStrike();
         public decimal PosWeightedIV => _pfRisk.RiskByUnderlying(Symbol, Metric.PosWeightedIV);
         public decimal DeltaIVdSTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdSTotal);
         public decimal DeltaIVdS100BpUSDTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdS100BpUSDTotal);
-        public decimal PnL => _algo.Portfolio.TotalPortfolioValue - _algo.TotalPortfolioValueSinceStart;
-        //public decimal PnL => _algo.Positions.Values.Where(p => p.UnderlyingSymbol == Symbol).Sum(p => p.PL);
+        public decimal PL => _algo.Portfolio.TotalPortfolioValue - _algo.TotalPortfolioValueSinceStart;
         public decimal TotalMarginUsed => _algo.Portfolio.TotalMarginUsed;
         public decimal MarginRemaining => _algo.Portfolio.MarginRemaining;
         public RiskRecord(Foundations algo, PortfolioRisk pfRisk, Equity equity)

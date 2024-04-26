@@ -16,10 +16,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
     {
         public int VolatilityPeriodDays { get; set; }
 
-        private Foundations algo;
+        private Foundations _algo;
         public SecurityInitializerIVExporter(IBrokerageModel brokerageModel, Foundations algo, ISecuritySeeder securitySeeder, int volatilityPeriodDays)
         : base(brokerageModel, securitySeeder) {
-            this.algo = algo;
+            this._algo = algo;
             VolatilityPeriodDays = volatilityPeriodDays;
         }
 
@@ -30,7 +30,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             base.Initialize(security);
             Symbol symbol = security.Symbol;
 
-            if (!algo.LiveMode)
+            if (!_algo.LiveMode)
             {
                 // Margin Model
                 security.MarginModel = SecurityMarginModel.Null;
@@ -39,19 +39,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 security.SetFillModel(new FillModelMine());
             }
 
-            if (!algo.QuoteBarConsolidators.ContainsKey(symbol))
+            if (!_algo.QuoteBarConsolidators.ContainsKey(symbol))
             {
-                algo.QuoteBarConsolidators[symbol] = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
+                _algo.QuoteBarConsolidators[symbol] = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
             }
 
             if (security.Type == SecurityType.Equity)
             {
-                algo.QuoteBarConsolidators[symbol].DataConsolidated += (object sender, QuoteBar consolidated) =>
+                _algo.QuoteBarConsolidators[symbol].DataConsolidated += (object sender, QuoteBar consolidated) =>
                 {
-                    if (algo.IsEventNewQuote(symbol))
+                    if (_algo.IsEventNewQuote(symbol))
                     {
-                        algo.IVBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
-                        algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                        _algo.IVBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                        _algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
                     }
                 };
             }
@@ -64,18 +64,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // No need for particular option contract's volatility.
                 security.VolatilityModel = VolatilityModel.Null;
 
-                algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, algo);
-                algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, algo);
-                algo.IVTrades[symbol] = new IVTrade(option, algo);
+                _algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, _algo);
+                _algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, _algo);
+                _algo.IVTrades[symbol] = new IVTrade(option, _algo);
                 // Window size must capture one day of entries. Second resolution ; 6.5*60*60 = 23400. Then it's reset at eod.
-                algo.RollingIVBid[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
-                algo.RollingIVAsk[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
-                algo.RollingIVTrade[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
+                _algo.RollingIVBid[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
+                _algo.RollingIVAsk[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
+                _algo.RollingIVTrade[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
             }
 
             if (security.Type == SecurityType.Equity)
             {
-                int samplePeriods = algo.resolution switch
+                int samplePeriods = _algo.resolution switch
                 {
                     Resolution.Daily => 1,
                     Resolution.Hour => 1,
@@ -83,14 +83,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     Resolution.Second => 300,
                     _ => 1
                 };
-                security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: algo.Periods(days: VolatilityPeriodDays) / samplePeriods, algo.resolution, TimeSpan.FromSeconds(samplePeriods));
+                security.VolatilityModel = new StandardDeviationOfReturnsVolatilityModel(periods: _algo.Periods(days: VolatilityPeriodDays) / samplePeriods, _algo.resolution, TimeSpan.FromSeconds(samplePeriods));
 
-                foreach (var tradeBar in algo.HistoryWrap(security.Symbol, algo.Periods(days: VolatilityPeriodDays + 1), algo.resolution))
+                foreach (var tradeBar in _algo.HistoryWrap(security.Symbol, _algo.Periods(days: VolatilityPeriodDays + 1), _algo.resolution))
                 {
                     security.VolatilityModel.Update(security, tradeBar);
                 }
-                algo.Log($"SecurityInitializer.Initialize: {security.Symbol} WarmedUp Volatility To: {security.VolatilityModel.Volatility}");
+                _algo.Log($"SecurityInitializer.Initialize: {security.Symbol} WarmedUp Volatility To: {security.VolatilityModel.Volatility}");
             }
+        }
+        public void RegisterIndicators(Option option)
+        {
+            _algo.Log($"{_algo.Time} SecurityInitializer.RegisterIndicators: {option.Symbol}");
+            Symbol symbol = option.Symbol;
+            _algo.RegisterIndicator(symbol, _algo.IVBids[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVBids[symbol].Selector);
+            _algo.RegisterIndicator(symbol, _algo.IVAsks[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVAsks[symbol].Selector);
         }
     }
 }

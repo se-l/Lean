@@ -47,9 +47,9 @@ namespace QuantConnect.ToolBox.IQFeedDownloader
 
             if (!resolutions.Any() || tickers.IsNullOrEmpty())
             {
-                Console.WriteLine("IQFeedDownloader ERROR: '--tickers=' or '--resolution=' parameter is missing");
-                Console.WriteLine("--tickers=SPY,AAPL");
-                Console.WriteLine("--resolutions=Tick/Second/Minute/Hour/Daily");
+                Log.Trace("IQFeedDownloader ERROR: '--tickers=' or '--resolution=' parameter is missing");
+                Log.Trace("--tickers=SPY,AAPL");
+                Log.Trace("--resolutions=Tick/Second/Minute/Hour/Daily");
                 Environment.Exit(1);
             }
             try

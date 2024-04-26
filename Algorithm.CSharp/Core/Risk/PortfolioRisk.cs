@@ -44,22 +44,25 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             RiskByUnderlyingCached = _algo.Cache(RiskByUnderlying, (Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility, double? dX) => (Underlying(symbol), metric, positions.Select(p => (p.Symbol.Value, p.Quantity)).ToHashSet(), volatility, dX, _algo.Time));
         }
 
-        private decimal RiskByUnderlying(Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility, double? dX = null)
+        private decimal RiskByUnderlying(Symbol symbol, Metric metric, IEnumerable<Position> positions, double? volatility = null, double? dX = null)
         {
             return metric switch
             {
-                Metric.DeltaTotal => positions.Sum(p => p.DeltaTotal()),
+                Metric.DeltaTotal => positions.Sum(p => p.DeltaTotal(volatility)),
                 Metric.DeltaImpliedTotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIV(p.Symbol))),
                 Metric.DeltaImpliedAtmTotal => positions.Sum(p => p.DeltaImpliedTotal(AtmIVEWMA(symbol))),
+                Metric.DeltaImpliedEWMATotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIVEWMA(symbol))),
 
                 Metric.DeltaXBpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(dX ?? 0)),
                 Metric.Delta100BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(100)),
                 Metric.DeltaImplied100BpUSDTotal => positions.Sum(p => p.DeltaImpliedXBpUSDTotal(AtmIVEWMA(symbol), 100)),
                 Metric.Delta500BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(500)),
                 Metric.EquityDeltaTotal => positions.Where(p => p.SecurityType == SecurityType.Equity).Sum(p => p.DeltaTotal()),
+                Metric.EquityDPriceMidTotal => positions.Where(p => p.SecurityType == SecurityType.Equity).Sum(p => p.DPMidTotal),
+                Metric.OptionDPriceMidTotal => positions.Where(p => p.SecurityType == SecurityType.Option).Sum(p => p.DPMidTotal),
 
-                Metric.Gamma => (decimal)positions.Sum(p => p.Gamma()),
-                Metric.GammaTotal => positions.Sum(p => p.GammaTotal()),
+                Metric.Gamma => (decimal)positions.Sum(p => p.Gamma(volatility)),
+                Metric.GammaTotal => positions.Sum(p => p.GammaTotal(volatility)),
                 Metric.GammaImpliedTotal => (decimal)positions.Sum(p => p.GammaImplied(AtmIVEWMA(symbol))),
                 Metric.GammaXBpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(dX ?? 0)),
                 Metric.Gamma100BpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(100)),
@@ -88,7 +91,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, double? dX = null, bool skipCache = false)
         {
             Symbol underlying = Underlying(symbol);
-            var positions = _algo.Positions.Values.ToList().Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
+            IEnumerable<Position> positions;
+            lock (_algo.Positions)
+            {
+                positions = _algo.Positions.Values.ToList();
+            }
+            positions = positions.Where(x => x.UnderlyingSymbol == underlying && x.Quantity != 0);
 
             if (metric == Metric.PosWeightedIV)
             {
@@ -104,7 +112,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// <summary>
         /// Excludes position of derivative's respective underlying
         /// </summary>
-        public decimal DerivativesRiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null)
+        public decimal DerivativesRiskByUnderlying(Symbol symbol, Metric metric, double? volatility=null)
         {
             return RiskByUnderlying(symbol, metric, volatility, positions => positions.Where(p => p.SecurityType == SecurityType.Option && p.Quantity != 0));
         }
@@ -151,7 +159,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             decimal minOffset = (decimal)(_algo.Cfg.MinZMOffset.TryGetValue(underlying, out double _minOffset) ? _minOffset : _algo.Cfg.MinZMOffset[CfgDefault]);
             decimal maxOffset = _algo.Cfg.MaxZMOffset.TryGetValue(underlying, out maxOffset) ? maxOffset : _algo.Cfg.MaxZMOffset[CfgDefault];
-            return Math.Min(Math.Max(CastGracefully(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), minOffset), maxOffset);
+            return Math.Min(Math.Max(ToDecimal(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), minOffset), maxOffset);
         }
 
         public (decimal, decimal) ZMBands2(IEnumerable<Position> positions)
@@ -167,7 +175,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     _algo.Log($"ZM Bands are zero for {positions.Count()} positions with quantity {positions.Sum(p => p.Quantity)}. DeltaZMs: {positions.Select(p => DeltaZM(p)).ToList()}");
                 }
             }
-            return (CastGracefully(deltaZM - offsetZM), CastGracefully(deltaZM + offsetZM));
+            return (ToDecimal(deltaZM - offsetZM), ToDecimal(deltaZM + offsetZM));
         }
 
         public (decimal, decimal) ZMBands(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
@@ -190,27 +198,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     _algo.Log($"ZM Bands are zero for {positions.Count()} positions with quantity {quantity}. DeltaZMs: {positions.Select(p => DeltaZM(p, volatility)).ToList()}");
                 }
             }
-            return (CastGracefully(deltaZM - offsetZM), CastGracefully(deltaZM + offsetZM));
+            return (ToDecimal(deltaZM - offsetZM), ToDecimal(deltaZM + offsetZM));
         }
-        /// <summary>
-        /// Ask IV strongly slopes up close to expiration (1-3 days), therefore rendering midIV not a good indicator. Would wanna use contracts expiring later. This will lead to a
-        /// jump in AtmIV when referenced contracts are switched. How to make it smooth?
-        /// </summary>
-        public double AtmIV(Symbol symbol)
-        {
-            return (double)(_algo.IVSurfaceRelativeStrikeBid[Underlying(symbol)].AtmIv() + _algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIv()) / 2;
-        }
+        
+        public double AtmIVEWMA(Symbol symbol) => _algo.AtmIVEWMA(symbol);
 
-        public double AtmIVEWMA(Symbol symbol)
-        {
-            return (double)(_algo.IVSurfaceRelativeStrikeBid[Underlying(symbol)].AtmIvEwma() + _algo.IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIvEwma()) / 2;
-        }
-
-        public decimal RiskIfFilled(Symbol symbol, decimal quantity, Metric riskMetric)
+        public decimal RiskIfFilled(Symbol symbol, decimal quantity, Metric riskMetric, double? volatility = null)
         {
             Trade trade = new(_algo, symbol, quantity, _algo.MidPrice(symbol));
             Position position = new(_algo, trade);
-            return RiskByUnderlyingCached(symbol, riskMetric, new List<Position>() { position }, null, null);
+            return RiskByUnderlyingCached(symbol, riskMetric, new List<Position>() { position }, volatility, null);
         }
 
         public decimal PortfolioValue(string method = "Mid")
@@ -294,7 +291,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             riskDeltaTotal += riskPutCallRatio;
 
             CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
-            bool exceeded = _algo.GetHedgingMode(symbol) == HedgingMode.Zakamulin ? IsUnderlyingDeltaExceedingBandZM(symbol) : IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal);
+            bool exceeded = IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal);
             if (exceeded)
             {
                 _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
@@ -307,13 +304,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (_algo.IsWarmingUp) return false;
 
             Symbol underlying = Underlying(symbol);
+            if (!_algo.ticker.Contains(underlying)) return false;
 
-            decimal riskLimitHedgeDeltaTotalLong = _algo.Cfg.RiskLimitHedgeDeltaTotalLong.TryGetValue(underlying.Value, out riskLimitHedgeDeltaTotalLong) ? riskLimitHedgeDeltaTotalLong : _algo.Cfg.RiskLimitHedgeDeltaTotalLong[CfgDefault];
-            decimal riskLimitHedgeDeltaTotalShort = _algo.Cfg.RiskLimitHedgeDeltaTotalShort.TryGetValue(underlying.Value, out riskLimitHedgeDeltaTotalShort) ? riskLimitHedgeDeltaTotalShort : _algo.Cfg.RiskLimitHedgeDeltaTotalShort[CfgDefault];
+            decimal gammaTotal = RiskByUnderlying(underlying, Metric.GammaTotal);
 
-            if (riskDeltaTotal > riskLimitHedgeDeltaTotalLong || riskDeltaTotal < riskLimitHedgeDeltaTotalShort)
+            decimal totalDeltaHedgeThresholdIntercept = _algo.Cfg.TotalDeltaHedgeThresholdIntercept.TryGetValue(underlying.Value, out totalDeltaHedgeThresholdIntercept) ? totalDeltaHedgeThresholdIntercept : _algo.Cfg.TotalDeltaHedgeThresholdIntercept[CfgDefault];
+            decimal totalDeltaHedgeThresholdGammaFactor = _algo.Cfg.TotalDeltaHedgeThresholdGammaFactor.TryGetValue(underlying.Value, out totalDeltaHedgeThresholdGammaFactor) ? totalDeltaHedgeThresholdGammaFactor : _algo.Cfg.TotalDeltaHedgeThresholdGammaFactor[CfgDefault];
+            decimal totalDeltaHedgeThreshold = totalDeltaHedgeThresholdIntercept + Math.Abs(totalDeltaHedgeThresholdGammaFactor * gammaTotal);
+
+            if (Math.Abs(riskDeltaTotal) > totalDeltaHedgeThreshold)
             {
-                _algo.Log($"{_algo.Time} IsPortfolioDeltExceedingBand: riskDSTotal={riskDeltaTotal}");
+                string gammaScalpingStatus = _algo.GammaScalpers.TryGetValue(underlying, out GammaScalper gs) ? gs.StatusShort() : "NoGammaScalper";
+                _algo.Log($"{_algo.Time} IsPortfolioDeltExceedingBand: totalDeltaHedgeThreshold={totalDeltaHedgeThreshold}, riskDSTotal={riskDeltaTotal}, MidUnderlying={_algo.MidPrice(underlying)}, gammaTotal={gammaTotal}, {gammaScalpingStatus}");
                 return true;
             }
             return false;

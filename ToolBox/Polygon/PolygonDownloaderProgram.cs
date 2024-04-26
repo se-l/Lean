@@ -15,7 +15,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using QuantConnect.Configuration;
 using QuantConnect.Data;
@@ -149,6 +151,10 @@ namespace QuantConnect.ToolBox.Polygon
                     })).ToList();
                 }
 
+                int completedRequests = 0;
+                int nRequests = requests.Count();
+                double previousProgress = 0.0;
+
                 Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = nClients }, request =>
                 {
                     var writer = new LeanDataWriter(resolution, request.Symbol, dataDirectory, request.TickType, _diskDataCacheProvider);
@@ -182,6 +188,16 @@ namespace QuantConnect.ToolBox.Polygon
                     {
                         writer.WriteEmptyFileIfNotExists(date, request.Symbol);
                     });
+
+                    // Increment the completed requests counter using Interlocked.Increment
+                    Interlocked.Increment(ref completedRequests);
+                    double progressPercentage = 100 * (double)completedRequests / nRequests;
+                    // Check if the progress has increased by 0.5% or more
+                    if (progressPercentage - previousProgress >= 0.2)
+                    {
+                        Console.WriteLine($"Progress: {progressPercentage.ToString("0.00", CultureInfo.InvariantCulture)}%. Handled {completedRequests} / {nRequests} requests.");
+                        previousProgress = progressPercentage;
+                    }
                 });
             }
             catch (Exception err)
@@ -191,6 +207,7 @@ namespace QuantConnect.ToolBox.Polygon
             finally
             {
                 _diskDataCacheProvider.DisposeSafely();
+                Console.WriteLine("PolygonDownloader Program Completed.");
             }
         }
     }

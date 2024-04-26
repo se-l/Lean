@@ -52,8 +52,8 @@ namespace QuantConnect.Orders
         public EquityExerciseOrder(OptionExerciseOrder order, OrderFillData orderFillData)
             : base(
                   order.Symbol.Underlying, 
-                  order.Symbol.ID.OptionRight == OptionRight.Call ? -100*order.Quantity : 100 * order.Quantity, 
-                  order.Time, 
+                  order.Symbol.ID.OptionRight == OptionRight.Call ? -100*order.Quantity : 100 * order.Quantity,
+                  orderFillData.Time, // localTime
                   $"Simulated order based on option assignment at Strike: {order.Symbol.ID.StrikePrice}",
                   order.Properties
                   )

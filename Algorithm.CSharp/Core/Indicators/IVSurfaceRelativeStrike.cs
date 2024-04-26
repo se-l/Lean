@@ -450,8 +450,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public IEnumerable<Symbol> ATMContracts(int minDTE = 5)
         {
-            var atmStrikeLower = _strikes[MinExpiry(minDTE)].Where(x => x < MidPriceUnderlying).Max();
-            var atmStrikeUpper = _strikes[MinExpiry(minDTE)].Where(x => x > MidPriceUnderlying).Min();
+            var minExpiry = MinExpiry(minDTE);
+            if (minExpiry == null)
+            {
+                _algo.Error($"ATMContracts: No expiry found for minDTE={minDTE}");
+                return new List<Symbol>();
+            }
+            var atmStrikeLower = _strikes[(DateTime)MinExpiry(minDTE)].Where(x => x < MidPriceUnderlying).Max();
+            var atmStrikeUpper = _strikes[(DateTime)MinExpiry(minDTE)].Where(x => x > MidPriceUnderlying).Min();
             var atmStrikes = new HashSet<decimal>() { atmStrikeLower, atmStrikeUpper };
             return _algo.Securities.Where(x => x.Key.SecurityType == SecurityType.Option && x.Key.Underlying == Underlying && x.Key.ID.Date == MinExpiry(minDTE) && atmStrikes.Contains(x.Key.ID.StrikePrice)).Select(x => x.Key);
         }
@@ -459,25 +465,30 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public IEnumerable<Bin> ATMBins(int minDTE = 5)
         {
             // Should be warmed up. No null here.
-            // Derive ATM volatility from the bin with value 100. OTM only. And smallest expiry.
+            // Derive ATM volatility from the bin with value 100. OTM only. And smallest expiry. Fix this, use multiple expiries, normed to today.
             var minExpiry = MinExpiry(minDTE);
+            if (minExpiry == null)
+            {
+                _algo.Error($"ATMBins: No expiry found for minDTE={minDTE}");
+                return new List<Bin>();
+            }
             foreach (OptionRight optionRight in OptionRights)
             {
-                if (!_bins.ContainsKey((optionRight, minExpiry, 100)))
+                if (!_bins.ContainsKey((optionRight, (DateTime)minExpiry, 100)))
                 {
-                    InitalizeNewBin(optionRight, minExpiry, 100);
+                    InitalizeNewBin(optionRight, (DateTime)minExpiry, 100);
                     Update();
                 }
             }
             
-            return OptionRights.Select(right => _bins[(right, minExpiry, 100)]);
+            return OptionRights.Select(right => _bins[(right, (DateTime)minExpiry, 100)]);
         }
 
         public double AtmIvEwma()
         {
             /// Mean is not good. Use weighted mean. Weight by distance.
             IEnumerable<double?> vols = ATMBins().Select(b => b.IVEWMA);
-            if (vols.Any(x => x == null))
+            if (vols.Any(x => x == null) || !vols.Any())
             {
                 _algo.Error($"An AtmIVEWMA is null. WarmUp Failed for expiry={MinExpiry()}");
                 return 0;
@@ -489,7 +500,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         {
             /// Mean is not good. Use weighted mean. Weight by distance.
             IEnumerable<double?> vols = ATMBins(minDTE).Select(b => b.IV);
-            if (vols.Any(x => x == null))
+            if (vols.Any(x => x == null) || !vols.Any())
             {
                 _algo.Error($"AtmIV is null for expiry={MinExpiry(minDTE)}");
                 return 0;
@@ -497,9 +508,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return (double)vols.Mean();
         }
 
-        public DateTime MinExpiry(int minDTE = 0)
+        public DateTime? MinExpiry(int minDTE = 0)
         {
-            return Expiries(minDTE).Min();
+            var expiries = Expiries(minDTE);
+            return expiries.Any() ? expiries.Min() : null;
         }
 
         public List<DateTime> Expiries(int minDTE = 0)
@@ -557,7 +569,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 header = new List<string>();
             }
             
-            csv.AppendLine("Time,OptionRight,Expiry," + string.Join(",", header));
+            csv.AppendLine("Time,OptionRight,Expiry,Spot," + string.Join(",", header));
             return csv.ToString();
         }
         public void WriteCsvRows()
@@ -581,7 +593,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 foreach (var expiry in dict[optionRight].Keys)
                 {
                     string ts = _algo.Time.ToString(_dateTimeFmt, CultureInfo.InvariantCulture);
-                    string row = $"{ts},{optionRight},{expiry.ToString(_dateFmt, CultureInfo.InvariantCulture)}," + string.Join(",", sortedKeys.Select(d => dict[optionRight][expiry][d]?.ToString(CultureInfo.InvariantCulture)));
+                    string row = $"{ts},{optionRight},{expiry.ToString(_dateFmt, CultureInfo.InvariantCulture)},{_algo.MidPrice(Underlying)}," + string.Join(",", sortedKeys.Select(d => dict[optionRight][expiry][d]?.ToString(CultureInfo.InvariantCulture)));
                     csv.AppendLine(row);
                 }
             }
@@ -596,7 +608,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 foreach (var expiry in dict[optionRight].Keys)
                 {
                     string ts = _algo.Time.ToString(_dateTimeFmt, CultureInfo.InvariantCulture);
-                    string row = $"{ts},{optionRight},{expiry.ToString(_dateFmt, CultureInfo.InvariantCulture)}," + string.Join(",", sortedKeys.Select(d => dict[optionRight][expiry][d]?.ToString(CultureInfo.InvariantCulture)));
+                    string row = $"{ts},{optionRight},{expiry.ToString(_dateFmt, CultureInfo.InvariantCulture)},{_algo.MidPrice(Underlying)}," + string.Join(",", sortedKeys.Select(d => dict[optionRight][expiry][d]?.ToString(CultureInfo.InvariantCulture)));
                     csv.AppendLine(row);
                 }
             }
@@ -662,17 +674,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public double? SkewStrike(DateTime? expiry = null, int minDTE=5)
         {
-            DateTime _expiry = expiry ?? MinExpiry(minDTE);
-            var call_skew = GetBin(OptionRight.Call, _expiry, 110).IV - GetBin(OptionRight.Call, _expiry, 90).IV;
-            var put_skew = GetBin(OptionRight.Put, _expiry, 110).IV - GetBin(OptionRight.Put, _expiry, 90).IV;
+            var _expiry = expiry ?? MinExpiry(minDTE);
+            if (_expiry == null) return null;
+            var call_skew = GetBin(OptionRight.Call, (DateTime)_expiry, 110).IV - GetBin(OptionRight.Call, (DateTime)_expiry, 90).IV;
+            var put_skew = GetBin(OptionRight.Put, (DateTime)_expiry, 110).IV - GetBin(OptionRight.Put, (DateTime)_expiry, 90).IV;
             return (call_skew + put_skew) / 2;
         }
 
         public double? SkewStrikeOTMPut(DateTime? expiry = null, int minDTE = 5)
         {
-            DateTime _expiry = expiry ?? MinExpiry(minDTE);
-            var call_skew = GetBin(OptionRight.Call, _expiry, 110).IV - GetBin(OptionRight.Call, _expiry, 90).IV;
-            var put_skew = GetBin(OptionRight.Put, _expiry, 110).IV - GetBin(OptionRight.Put, _expiry, 90).IV;
+            var _expiry = expiry ?? MinExpiry(minDTE);
+            if (_expiry == null) return null;
+            var call_skew = GetBin(OptionRight.Call, (DateTime)_expiry, 110).IV - GetBin(OptionRight.Call, (DateTime)_expiry, 90).IV;
+            var put_skew = GetBin(OptionRight.Put, (DateTime)_expiry, 110).IV - GetBin(OptionRight.Put, (DateTime)_expiry, 90).IV;
             return (call_skew + put_skew) / 2;
         }
 

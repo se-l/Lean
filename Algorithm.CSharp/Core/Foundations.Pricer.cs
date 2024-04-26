@@ -1,111 +1,23 @@
+using MathNet.Numerics.LinearAlgebra.Factorization;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
-using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using static QuantConnect.Messages;
 
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations : QCAlgorithm
     {
-        public QuoteDiscount DiscountMetric(QuoteRequest<Option> qr, RiskDiscount riskDiscount)
-        {
-            // Distinguish between urgent risk (high absolute risk including equity) and non-urgent risk (high abs. delta summing derivatives only).
-            // In order to maintain good cash book, want to keep stocks low, but no need to give up much spread for that.
-
-            double riskCurrent = (double)PfRisk.DerivativesRiskByUnderlying(qr.Symbol, riskDiscount.Metric);  // These 2 risk functions probably take 30% of CPU time in GetQuoteDiscounts.
-            double riskIfFilled = riskCurrent + (double)PfRisk.RiskIfFilled(qr.Symbol, qr.Quantity, riskDiscount.Metric);
-            //double riskBenefit = riskCurrent - riskIfFilled;
-            // x0 is targetRisk in 100BpUnderlying Price Change
-
-            // So the discount for a hypotheical trade that sets risk to target minus the trade discussed. That is meant to account for 
-            // different discount in high-risk (more disc/punishment) vs low-risk (free tradin) regimes as well as risk reversals (eg -low-risk to +high-risk).
-            double discountToZeroRisk = riskDiscount.Discount(riskCurrent - riskDiscount.TargetRisk);
-            double discountToRiskIfFilled = riskDiscount.Discount(riskIfFilled - riskDiscount.TargetRisk);
-
-            double discount = discountToZeroRisk - discountToRiskIfFilled;
-            return new QuoteDiscount(
-                riskDiscount.Metric,
-                Math.Min(Math.Max(riskDiscount.CapMin, discount), riskDiscount.CapMax),
-                riskCurrent,
-                riskIfFilled,
-                (riskIfFilled - riskDiscount.TargetRisk)
-                );
-        }
-
-        public QuoteDiscount DiscountEvents(Option option, decimal quantity)
-        {
-            double discount = 0;
-            // Get out / Liquidate Discount (e.g. earnings release, rollover/assignments/expiry, etc.) to be refined.
-            // Trade Embargo pricing. and avoid assignments
-
-            RiskDiscount riskDiscount = EventDiscounts[option.Underlying.Symbol];
-            
-            if (
-                embargoedSymbols.Contains(option.Symbol)
-                || (option.Symbol.ID.Date - Time.Date).Days <= 2  // Options too close to expiration. This is not enough. Imminent Gamma squeeze risk. Get out fast.
-                )
-            {
-                //double discount = riskDiscount.X0 + riskDiscount.X1 * deltaTargetRisk + riskDiscount.X2 * Math.Pow(deltaTargetRisk, 2);
-                discount = riskDiscount.X0;
-            }
-            return new QuoteDiscount(
-                riskDiscount.Metric,
-                Math.Min(Math.Max(riskDiscount.CapMin, discount), riskDiscount.CapMax),
-                0, 0, 0
-                ); 
-        }
-
-        public IEnumerable<QuoteDiscount> GetQuoteDiscounts(QuoteRequest<Option> qr)  // 30% of CPU time here.
-        {
-            QuoteDiscount discountDelta;
-            QuoteDiscount discountGamma;
-            // Refactor to send this through as object, so it can be logged if actually filled.
-            // For every metric that should influence the price, 3 params are configurable for a quadratic / progressive discount. 0,1,2.
-            // The discounts are summed up and min/max capped (configurable).
-            // targetRisk is absolute, while x0,x1 and x2 are relative to the precentage deviation off absoltue target risk.
-            // Need to punish/incentivize how much a trade changes risk profile, but also how urgent it is....
-            // Big negative delta while pf is pos, great, but only if whole portfolio is not worse off afterwards. Essentially need the area where nothing changes.
-
-            discountDelta = DiscountMetric(qr, DeltaDiscounts[qr.Option.Underlying.Symbol]);
-
-            HashSet<Regime> regimes = ActiveRegimes.TryGetValue(qr.Underlying, out regimes) ? regimes : new HashSet<Regime>();
-            bool wantToAdjustGammaFast = regimes.Contains(Regime.SellEventCalendarHedge);
-
-            var gammaRiskDiscount = GammaDiscounts[qr.Option.Underlying.Symbol];
-            if (wantToAdjustGammaFast)
-            {
-                gammaRiskDiscount.DiscountParams.X0 = 0.4;
-            }            
-            discountGamma = DiscountMetric(qr, gammaRiskDiscount);
-                       
-            QuoteDiscount discountEvents = DiscountEvents(qr.Option, qr.Quantity);
-
-            return new List<QuoteDiscount>() { discountDelta, discountGamma, discountEvents };
-        }
-
-        public double? SurfaceIV(Symbol symbol, OrderDirection orderDirection)
-        {
-            return orderDirection switch
-            {
-                OrderDirection.Buy => IVSurfaceRelativeStrikeBid[symbol.Underlying].IV(symbol),
-                OrderDirection.Sell => IVSurfaceRelativeStrikeAsk[symbol.Underlying].IV(symbol),
-                _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
-            };
-        }
-
-
         /// <summary>
         /// Sudden quote jumps, leading to price spread variation can mess up my discounting expressed in a factor*priceSpread. Therefore, taking min/max of IVSurface derived and market surface. IV surface can get too wide, tight too at times, pending fix.
         /// </summary>
         /// <param name="symbol"></param>
         /// <returns></returns>
-        public decimal PriceSpread(OptionContractWrap ocw)
+        internal decimal PriceSpread(OptionContractWrap ocw)
         {
             decimal iVSurfaceSpread;
             var option = ocw.Contract;
@@ -142,117 +54,155 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
-        /// Derive a price from the IV surface.
+        /// Override in respective Strategy.
+        /// def D(uD1, uD0, b= .001):
+        ///    if uD1 > uD0:
+        ///        return np.nan
+        ///    dUdD = uD1 - uD0
+        ///    d0 = sd(uD0)
+        ///    return d0 + b* d0 * dUdD
+        /// 
         /// </summary>
-        public double? IVStrikePrice(OptionContractWrap ocw, OrderDirection orderDirection)
+        public decimal SpreadDiscount(Symbol underlying, IUtilityOrder utilityOrderHigh, IUtilityOrder utilityOrderLow)
         {
-            double? iv = SurfaceIV(ocw.Contract.Symbol, orderDirection);
+            double utilLow = utilityOrderLow.Utility;
+            double utilHigh = utilityOrderHigh.Utility;
 
-            return orderDirection switch
+            double discountUtilHigh;
+            if (utilLow > utilHigh)
             {
-                OrderDirection.Buy => (iv ?? 0) == 0 ? 0 : ocw.AnalyticalIVToPrice((double)iv),
-                OrderDirection.Sell => (iv ?? 0) == 0 ? 0 : ocw.AnalyticalIVToPrice((double)iv),
-                _ => throw new ArgumentException($"AdjustPriceForMarket: Unknown order direction {orderDirection}")
-            };
+                if (utilLow > utilHigh * 1.05)
+                {
+                    Error($"SpreadDiscount: utilLow={utilLow} > utilHigh={utilHigh}. Swapping for now. Investigate.");
+                }
+                (utilLow, utilHigh) = (utilHigh, utilLow);
+            }
+            double dUdD = utilLow - utilHigh;
+
+            double zeroSDUtil = Cfg.ZeroSDUtil.TryGetValue(underlying, out zeroSDUtil) ? zeroSDUtil : Cfg.ZeroSDUtil[CfgDefault];
+            double slopeNeg = Cfg.SlopeNeg.TryGetValue(underlying, out slopeNeg) ? slopeNeg : Cfg.SlopeNeg[CfgDefault];
+            double slopePos = Cfg.SlopeNeg.TryGetValue(underlying, out slopePos) ? slopePos : Cfg.SlopePos[CfgDefault];
+            double utilBidTaperer = Cfg.UtilBidTaperer.TryGetValue(underlying, out utilBidTaperer) ? utilBidTaperer : Cfg.UtilBidTaperer[CfgDefault];
+
+            if (utilHigh >= zeroSDUtil)
+            {
+                discountUtilHigh = 2 / (1 + Math.Exp(slopePos * (utilHigh - zeroSDUtil))) - 1;
+            }
+            else
+            {
+                discountUtilHigh = 2 / (1 + Math.Exp(slopeNeg * (utilHigh - zeroSDUtil))) - 1;
+            }
+
+            decimal maxSpreadDiscount = Cfg.MaxSpreadDiscount.TryGetValue(underlying, out maxSpreadDiscount) ? maxSpreadDiscount : Cfg.MaxSpreadDiscount[CfgDefault];
+            return Math.Min(maxSpreadDiscount, ToDecimal(discountUtilHigh + utilBidTaperer * discountUtilHigh * dUdD));
         }
 
-        public Quote<Option> GetQuote(QuoteRequest<Option> qr)
+        /// <summary>
+        /// Should not make price based on very unstable market data quotes. Need util(IV)
+        /// </summary>
+        /// <param name="qr"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentException"></exception>
+        internal Quote<Option> GetQuote(QuoteRequest<Option> qr)
         {
-            // Intrinsice value
-            // Extrinsic Time value:
-            //      Volatility value Implied
-            //      Volatility value Historical
-            //      Volatility value Forecasted
-            //      Directional Bias / Drift
-            //
-            // Interest rate
-            // Dividend rate
-            // Option Liquidity
-            // Prices options based on portfolio risk (delta - just dont trade); gamma (higher price for bad gamma), extrinsic value (better price if much is captured), IV/market bid ask, HV forecasts, dividends, liquidity of contract, interest rate.
-
-            // Risk reduction
-            // Options with detrimental delta dont arrive here at the moment
-            // Gamma: (gamma pf + gammaIfFilled) -> 0 best price -1/1 worse prices. 0: 0.5 of spread. intercepting spreadfactor 1 at (tune: 0.5 gamma). beyond which spreadfactor is larger than 1.
-            // correction: form rewards trades, not where in portfolio we'end up, hence:   (gammaPfNow - gammaPfIfFilled) -> 0 best price -1/1 worse prices. 0: 0.5 of spread. intercepting spreadfactor 1 at (tune: 0.5 gamma). beyond which spreadfactor is larger than 1.
-
-            // Profit maximization
-            // For contracts where I expect higher volume, reduce the spread in order to maximise volume * spread. Usually spread covers hedging costs. So just for very liquid contracts, can offer better rates. Try for selected ones and plot! Fees more
-            // relevant then. Might only work at NasdaqQM.
-            decimal? smoothedIVPrice;
-            decimal price;
-
-            var quoteDiscounts = GetQuoteDiscounts(qr);
-            decimal netSpreadFactor = (decimal)quoteDiscounts.Sum(qd => qd.SpreadFactor);
-
+            IUtilityOrder utilityOrderCrossSpread;
             OptionContractWrap ocw = OptionContractWrap.E(this, qr.Option, Time.Date);
             decimal priceSpread = PriceSpread(ocw);
             decimal marketPriceSpread = qr.Option.AskPrice - qr.Option.BidPrice;
-
 
             if (!IVSurfaceRelativeStrikeBid.ContainsKey(qr.Underlying) || !IVSurfaceRelativeStrikeAsk.ContainsKey(qr.Underlying))
             {
                 Error($"GetQuote: Missing IV indicator for {qr.Symbol}. Expected to have been filled in securityInitializer. Quoting 0.");
                 Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts, qr.UtilityOrder);
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, qr.UtilityOrder, null);
             }
 
-            double? bidIV = IVSurfaceRelativeStrikeBid[qr.Symbol.Underlying].IV(qr.Symbol);
-            double? askIV = IVSurfaceRelativeStrikeAsk[qr.Symbol.Underlying].IV(qr.Symbol);
-            if (bidIV > askIV)
+            // Since the signal, markets might have moved. Update the quote request's utility order.
+            switch (qr.OrderDirection)
+                {                 
+                case OrderDirection.Buy:
+                    qr.UtilityOrder = UtilityOrderFactory.Create(this, qr.Option, qr.Quantity, qr.Option.BidPrice);
+                    utilityOrderCrossSpread = UtilityOrderFactory.Create(this, qr.Option, qr.Quantity, qr.Option.AskPrice);
+                    break;
+                case OrderDirection.Sell:
+                    qr.UtilityOrder = UtilityOrderFactory.Create(this, qr.Option, qr.Quantity, qr.Option.AskPrice);
+                    utilityOrderCrossSpread = UtilityOrderFactory.Create(this, qr.Option, qr.Quantity, qr.Option.BidPrice);
+                    break;
+                default:
+                    throw new ArgumentException($"GetQuote: Unknown order direction {qr.OrderDirection}");
+            }
+
+            double minUtility = Cfg.MinUtility.TryGetValue(qr.Underlying.Value, out minUtility) ? minUtility : Cfg.MinUtility[CfgDefault];
+            if (qr.UtilityOrder.Utility < minUtility)
             {
-                Error($"GetQuote: IVSurface: BidIV > AskIV for {qr.Symbol.Underlying} {qr.Symbol.ID.Date} {qr.Symbol.ID.OptionRight} {qr.Symbol.ID.StrikePrice} {bidIV} {askIV}");
-                //Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts, qr.UtilityOrder);
+                Log($"GetQuote: UtilityHigh not anymore greater minUtil => Quoting Price 0. utilityOrderHigh={qr.UtilityOrder.Utility}. utilityOrderLowCrossSpread={utilityOrderCrossSpread.Utility}. QuoteRequest Util: {qr.UtilityOrder.Utility}");
+                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, qr.UtilityOrder, null);
             }
 
-            smoothedIVPrice = (decimal?)IVStrikePrice(ocw, qr.OrderDirection);
-
+            //// Only for debugging purposes. Uncomment if debugging utilLow > utilHigh.
+            //if (utilityOrderCrossSpread.Utility > qr.UtilityOrder.Utility)
+            //{
+            //    UtilityOrder utilOrder;
+            //    UtilityOrder utilityOrderCrossSpread2;
+            //    switch (qr.OrderDirection)
+            //    {
+            //        case OrderDirection.Buy:
+            //            utilOrder = new(this, qr.Option, qr.Quantity, qr.Option.BidPrice);
+            //            utilityOrderCrossSpread2 = new(this, qr.Option, qr.Quantity, qr.Option.AskPrice);
+            //            break;
+            //        case OrderDirection.Sell:
+            //            utilOrder = new(this, qr.Option, qr.Quantity, qr.Option.AskPrice);
+            //            utilityOrderCrossSpread2 = new(this, qr.Option, qr.Quantity, qr.Option.BidPrice);
+            //            break;
+            //        default:
+            //            throw new ArgumentException($"GetQuote: Unknown order direction {qr.OrderDirection}");
+            //    }
+            //}
             RiskDiscount discountAbsolute = AbsoluteDiscounts[qr.Option.Underlying.Symbol];
-            smoothedIVPrice = (smoothedIVPrice ?? 0) + qr.OrderDirection switch
-            {
-                OrderDirection.Buy => (decimal)discountAbsolute.X0,
-                OrderDirection.Sell => (decimal)-discountAbsolute.X0,
-                _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
-            };
 
-            if (smoothedIVPrice == null || smoothedIVPrice <= 0)
+            decimal spreadDiscount;
+            decimal price;
+
+            if (SweepState[qr.Symbol][qr.OrderDirection].IsSweepScheduled())
             {
-                Error($"GetQuote: IVStrikePrice returned invalid price. smoothedIVPrice={smoothedIVPrice}. Quoting 0.");
-                //Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, quoteDiscounts, qr.UtilityOrder);
+                spreadDiscount = SpreadDiscountSweep(qr.UtilityOrder);
+            }
+            else
+            {
+                spreadDiscount = SpreadDiscount(qr.Underlying, qr.UtilityOrder, utilityOrderCrossSpread);
             }
 
-            smoothedIVPrice = qr.OrderDirection switch
-            {
-                OrderDirection.Buy => (decimal)smoothedIVPrice + priceSpread * netSpreadFactor,
-                OrderDirection.Sell => (decimal)smoothedIVPrice - priceSpread * netSpreadFactor,
-                _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
-            };
-
-            // THe 0.2 / 0.8 - to be refactored ...
             price = qr.OrderDirection switch
             {
-                OrderDirection.Buy => Math.Min((decimal)smoothedIVPrice, qr.Option.BidPrice + 0.2m * marketPriceSpread),
-                OrderDirection.Sell => Math.Max((decimal)smoothedIVPrice, qr.Option.BidPrice + 0.8m * marketPriceSpread),
+                OrderDirection.Buy => qr.Option.BidPrice + spreadDiscount * marketPriceSpread + (decimal)discountAbsolute.X0,
+                OrderDirection.Sell => qr.Option.AskPrice - spreadDiscount * marketPriceSpread - (decimal)discountAbsolute.X0,
                 _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
             };
 
             // For tight spreads, a tickSize difference of, e.g., 0.01 can make a signiicant difference in terms of IV spread. Therefore, the price is rounded defensively away from midPrice.
-            decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection == OrderDirection.Buy ? false : true);
+            decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection != OrderDirection.Buy);
             double ivPrice = (double)ocw.IV(price, MidPrice(qr.Symbol.Underlying), 0.001);
-            //if (true) //qr.Symbol.Value == "PFE   240119C00038000" && Time.TimeOfDay > new TimeSpan(0, 9, 49) & Time.TimeOfDay < new TimeSpan(0, 9, 50))
-            //{
-            //    Log($"option: {qr.Symbol}");
-            //    Log($"priceSpread: {priceSpread}");
-            //    Log($"Option.BidPrice : {qr.Option.BidPrice}");
-            //    Log($"Option.AskPrice : {qr.Option.AskPrice}");
-            //    Log($"bidIV: {bidIV}");
-            //    Log($"askIV: {askIV}");
-            //    Log($"smoothedIVPrice: {smoothedIVPrice}");
-            //    Log($"price : {price}");
-            //    Log($"priceRounded : {priceRounded}");
-            //}
-            return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, ivPrice, quoteDiscounts, qr.UtilityOrder);
+            return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, ivPrice, qr.UtilityOrder, utilityOrderCrossSpread, spreadDiscount);
+        }
+
+        public decimal SpreadDiscountSweep(IUtilityOrder utilityOrder)
+        {
+            Symbol symbol = utilityOrder.Symbol;
+
+            decimal bid = Securities[symbol].BidPrice;
+            decimal ask = Securities[symbol].AskPrice;
+            decimal spread = ask - bid;
+
+            decimal sweepRatio = SweepState[symbol][utilityOrder.OrderDirection].SweepRatio;
+
+            double utilPV = utilityOrder.UtilityPV;  // That'll be okayish, directly comparable with spreads to pay.
+            decimal maxAcceptableSpreadRatio = spread <= 0 || utilPV == 0 ? sweepRatio : ToDecimal((utilPV / 2)) / (100 * spread);
+
+            var res = Math.Min(sweepRatio, maxAcceptableSpreadRatio);
+            Log($"SpreadDiscountSweep: {symbol} res={res} sweepRatio={sweepRatio}, maxAcceptableSpreadRatio={maxAcceptableSpreadRatio}, " +
+                $"spread={spread} utilPV={utilPV}, utilEquityPosition={utilityOrder.UtilityEquityPosition}");
+
+            return Math.Min(res, 1);
         }
     }
 }

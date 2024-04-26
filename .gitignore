@@ -296,3 +296,6 @@ Data/
 /Launcher/config.json
 docker-compose.yml
 !run.sh
+/Api.GRPC
+/AWS ECS files
+/dataLive

@@ -10,6 +10,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public Security Security { get; internal set; }
         public OptionContractWrap? OCW;
         private double? _iV;
+        //private double? _iVAH;
         private double? _hV;
         private double? _nPV;
         private double? _iVdS;
@@ -25,6 +26,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private double? _thetaTotal;
         private double? _thetaDecay;
         private double? _vega;
+        //private double? _vegaAH;
         private double? _dSdIV;
         private double? _vegaDecay;
         private double? _dIV2;
@@ -43,23 +45,34 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 return _iV ?? 0;
             }
         }
+        //public double IVAH
+        //{
+        //    get
+        //    {
+        //        if (_iVAH != null && _iVAH != 0) return _iVAH ?? 0;
+
+        //        _iVAH = _algo.IVAH(Security.Symbol);
+        //        return _iVAH ?? 0;
+        //    }
+        //}
         public double NPV { get => _nPV ?? OCW.NPV(); }  // theoretical price
         public double IVdS { get => _iVdS ?? OCW.IVdS(IV); }
         public int DTE { get => _dte ?? OCW.DaysToExpiration(); }
 
         // Greeks. 1st order followed by dS, dT, dIV. Then 3rd at end.
         // dS
-        public double Delta { get => _delta ?? OCW.Delta(); }  // dP ; sensitivity to underlying price}
-        public double Gamma { get => _gamma ?? OCW.Gamma(); }  // dP2
-        public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(); }  // dPdT
+        public double Delta { get => _delta ?? OCW.Delta(IV); }  // dP ; sensitivity to underlying price}
+        public double Gamma { get => _gamma ?? OCW.Gamma(IV); }  // dP2
+        public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(IV); }  // dPdT
         public double DDeltadIV { get => _dSdIV ?? OCW.DDeltadIV(IV); }  // dVegadP ; Vanna
         public double Vanna { get => DDeltadIV; }
         // dT
-        public double Theta { get => _theta ?? OCW.Theta(); }  // dT ; sensitivity to time
-        public double ThetaTillExpiry { get => _thetaTotal ?? OCW.ThetaTillExpiry(); }
-        public double ThetaDecay { get => _thetaDecay ?? OCW.ThetaDecay(); }  // dT2
+        public double Theta { get => _theta ?? OCW.Theta(IV); }  // dT ; sensitivity to time
+        public double ThetaTillExpiry { get => _thetaTotal ?? OCW.ThetaTillExpiry(IV); }
+        public double ThetaDecay { get => _thetaDecay ?? OCW.ThetaDecay(IV); }  // dT2
         // dIV
         public double Vega { get => _vega ?? OCW.Vega(IV); }  // dIV ; sensitivity to volatility
+        //public double VegaAH { get => _vegaAH ?? OCW.Vega(IVAH); }
         // Vanna - above in delta
         public double VegaDecay { get => _vegaDecay ?? OCW.VegaDecay(IV); }  // dIVdT
         public double DIV2 { get => _dIV2 ?? OCW.DIV2(IV); }  // Vomma / Volga
@@ -67,8 +80,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double Rho { get => _rho ?? OCW.Rho(); }  // dR ; sensitivity to interest rate
 
         // 3rd order
-        public double DS3 { get => _dS3 ?? OCW.DS3(); }  // dP3
-        public double GammaDecay { get => _gammaDecay ?? OCW.GammaDecay(); }  // dP2dT
+        public double DS3 { get => _dS3 ?? OCW.DS3(IV); }  // dP3
+        public double GammaDecay { get => _gammaDecay ?? OCW.GammaDecay(IV); }  // dP2dT
         public double DS2dIV { get => _dGammaDIV ?? OCW.DS2dIV(IV); }  // dP2dIV
 
         public double DeltaZM(int direction)
@@ -119,6 +132,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _thetaDecay = 0;
 
             _vega = 0;
+            //_vegaAH = 0;
             _vegaDecay = 0;
             _dIV2 = 0;
 
@@ -137,8 +151,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 return this;
             }
 
-            _hV = IV;
+            _iV = IV;
             _hV = HV;
+            //_iVAH = IVAH;
             _nPV = NPV;
             _iVdS = IVdS;
             _dte = DTE;
@@ -153,6 +168,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _thetaDecay = ThetaDecay;
 
             _vega = Vega;
+            //_vegaAH = VegaAH;
             _vegaDecay = VegaDecay;
             _dIV2 = DIV2;
 
@@ -169,6 +185,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             _iV = 0;
             _hV = HV;
+            //_iVAH = IVAH;
             _nPV = 0;
             _iVdS = 0;
             _dte = 0;
@@ -183,6 +200,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _thetaDecay = 0;
 
             _vega = 0;
+            //_vegaAH = 0;
             _vegaDecay = 0;
             _dIV2 = 0;
 

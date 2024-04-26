@@ -30,6 +30,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             HistoricalVolatility,
             ImpliedVolatility,
             Zakamulin,
+            ImpliedVolatilityAtm,
+            ImpliedVolatilityEWMA,
         }
 
         public static Dictionary<int, HedgingMode> HedgingModeMap { get; } = new()
@@ -38,6 +40,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             { 1, HedgingMode.HistoricalVolatility },
             { 2, HedgingMode.ImpliedVolatility },
             { 3, HedgingMode.Zakamulin },
+            { 4, HedgingMode.ImpliedVolatilityAtm },
+            { 5, HedgingMode.ImpliedVolatilityEWMA },
         };
 
         public static HashSet<Type> PrimitiveTypes = new()
@@ -154,12 +158,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
             DeltaTotal,
             DeltaImpliedTotal,
             DeltaImpliedAtmTotal,
+            DeltaImpliedEWMATotal,
 
             Delta100BpUSDTotal,
             DeltaImplied100BpUSDTotal,
             Delta500BpUSDTotal,           
             
             EquityDeltaTotal,
+            EquityDPriceMidTotal,
+            OptionDPriceMidTotal,
 
             Gamma,
             GammaTotal,
@@ -206,6 +213,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
         public static Metric[] DSMetrics = new Metric[] { Metric.DeltaXBpUSDTotal, Metric.GammaXBpUSDTotal, Metric.SpeedXBpUSDTotal };
         public static Metric[] DIVMetrics = new Metric[] { Metric.VegaXBpUSDTotal, Metric.VannaXBpUSDTotal, Metric.VolgaXpUSDTotal };
+
+        public enum VolatilityType
+        {
+            HVHedge,
+            IVMid,
+            IVATM,
+            IVBid,
+            IVAsk,
+        }
         public static IEnumerable<T> ToIEnumerable<T>(this IEnumerator<T> enumerator)
         {
             while (enumerator.MoveNext())
@@ -407,8 +423,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }                    
                 }
             }
-            string value = val?.ToString() ?? "";
-            value = value.Contains(",") ? "\"" + value + "\"" : value;
+            string value = "";
+            if (val is DateTime)
+            {
+                value = ((DateTime?)val)?.ToStringInvariant("yyyy-MM-dd HH:mm:ss") ?? "";
+            }
+            else
+            {
+                value = val?.ToString() ?? "";
+                value = value.Contains(",") ? "\"" + value + "\"" : value;
+            }
             return value;
         }
 
@@ -436,20 +460,37 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public static void ExportToCsv<T>(IEnumerable<T> objects, string filePath)
         {
-            var fileExists = File.Exists(filePath);
-            // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
-            if (!fileExists)
+            try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                var fileExists = File.Exists(filePath);
+                // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
+                if (!fileExists)
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                }
+                File.WriteAllText(filePath, ToCsv(objects));
+            } 
+            catch (Exception e)
+            {
+                Logging.Log.Error($"ExportToCsv. Failed to write to {filePath}. {e}");
             }
-            File.WriteAllText(filePath, ToCsv(objects));
         }
-        public static decimal CastGracefully(double originalValue)
+        public static decimal ToDecimal(double originalValue)
         {
             if (originalValue >= (double)decimal.MinValue && originalValue <= (double)decimal.MaxValue)
             {
                 // The original value is within the valid range for a decimal
                 return (decimal)originalValue;
+            }
+            else if (originalValue > (double)decimal.MaxValue)
+            {
+                // The original value is too big
+                return decimal.MaxValue;
+            }
+            else if (originalValue < (double)decimal.MinValue)
+            {
+                // The original value is too small
+                return decimal.MinValue;
             }
             else
             {
@@ -535,6 +576,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 cache[key] = result;
                 return result;
             };
+        }
+
+        public static QuantLib.Date DateQl(DateTime date)
+        {
+            return new QuantLib.Date(date.Day, (QuantLib.Month)date.Month, date.Year);
         }
     }
 }
