@@ -17,6 +17,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
     {
         public const string CfgDefault = "_";
         public const string VolatilityBar = "VolatilityBar";
+        public const string DtFmtISO = "yyyy-MM-dd";
+        public const string DatetTmeFmtProto = "yyyy-MM-ddTHH:mm:ss";
 
         public enum Regime
         {

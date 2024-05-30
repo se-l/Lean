@@ -38,6 +38,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             SamplingPeriod = samplingPeriod ?? TimeSpan.FromMinutes(5);
         }
 
+        /// <summary>
+        /// Improvements: Update based on events, not time. For example volume. Issue: Far volume magnitudes lower than near.
+        /// </summary>
+        /// <param name="time"></param>
+        /// <param name="iv"></param>
         public void Update(DateTime time, double iv)
         {
             if (time <= Time || iv == 0) { return; }

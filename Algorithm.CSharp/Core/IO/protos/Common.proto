@@ -19,6 +19,11 @@ message OptionQuote {
 
 }
 
+enum OptionRight {
+    CALL = 0;
+    PUT = 1;
+}
+
 message MarketDataSnapByUnderlying {
 
   string ts = 1;
@@ -29,4 +34,9 @@ message MarketDataSnapByUnderlying {
 
   map<string, OptionQuote> option_quotes = 4;
 
+}
+
+message VectorDouble
+{
+    repeated double values = 1;    
 }

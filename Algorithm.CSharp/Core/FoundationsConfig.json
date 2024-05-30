@@ -10,16 +10,16 @@
   },
   "ExecuteManualOrderInstructions": true,
   "BacktestingHoldings": {},
-  "LogOrderUpdates": false,
+  "LogOrderUpdates": true,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
   "WarmUpDays": 2, // Reduce for debugging. Usually 2.
   "VolatilityPeriodDays": 3,
 
   /// Scoping Contracts for data feed subscription
-  "ScopeContractStrikeOverUnderlyingMax": 1.25,
-  "ScopeContractStrikeOverUnderlyingMaxSignal": 1.15,
-  "ScopeContractStrikeOverUnderlyingMin": 0.75,
-  "ScopeContractStrikeOverUnderlyingMinSignal": 0.85,
+  "ScopeContractStrikeOverUnderlyingMax": 1.35,
+  "ScopeContractStrikeOverUnderlyingMaxSignal": 1.25,
+  "ScopeContractStrikeOverUnderlyingMin": 0.65,
+  "ScopeContractStrikeOverUnderlyingMinSignal": 0.75,
   "ScopeContractStrikeOverUnderlyingMargin": 0.05,
   "ScopeContractMoneynessITM": 1.05, // Replace with delta
   "ScopeContractMinDTE": 0,
@@ -89,7 +89,7 @@
 
   /// Gamma scalping
   "GammaScalpingEnabled": {
-    "_": true
+    "_": false
   },
   "TrailingHedgePct": {
     "_": 0.003,
@@ -99,7 +99,7 @@
   ///
 
   "MaxOptionOrderQuantity": {
-    "_": 5
+    "_": 5 // Needs to depend on underlying price.
   },
   "TargetMaxEquityPositionUSD": {
     "_": 4000
@@ -120,8 +120,7 @@
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
   "TotalDeltaHedgeThresholdIntercept": {
-    "_": 20,
-    "CSCO": 19
+    "_": 10
   },
   "TotalDeltaHedgeThresholdGammaFactor": {
     "_": -0.3,
@@ -208,10 +207,22 @@
       [ 0, 14, 16, 30 ],
 
       // After release
-      [ 1, 9, 10, 15 ],
-      [ 1, 10, 11, 30 ],
+      [ 1, 9, 10, 10 ],
+      [ 1, 10, 11, 20 ],
+      [ 1, 11, 16, 60 ],
       [ 2, 9, 16, 60 ]
     ]
   },
-  "WS_PORT":  8001
+  "KalmanScopedMoneyness": {
+    "_": [ 0.8, 1.2 ]
+  },
+  "KalmanAlphaBid": {
+    "_": 0.8
+  },
+  "KalmanAlphaAsk": {
+    "_": 0.8
+  },
+  "PrepareEarningsPeriodDays": {
+    "_": 1
+  }
 }

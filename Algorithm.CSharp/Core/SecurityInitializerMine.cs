@@ -16,6 +16,8 @@ using QuantConnect.Indicators;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
+using static QLNet.Utils;
+using System.ComponentModel.Composition.Primitives;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -84,7 +86,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 _algo.QuoteBarConsolidators[symbol].DataConsolidated += (object sender, QuoteBar consolidated) =>
                 {
-                    if (_algo.IsEventNewQuote(symbol))
+                    if (_algo.IsEventNewQuote(symbol))  // Can refactor this to event driven. THen IVBids/Asks subscribe to EventNewQuote. Saves checking for underlying. Maybe cleaner?
                     {
                         _algo.IVBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
                         _algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
@@ -139,19 +141,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.PutCallRatios[option.Symbol] = new PutCallRatioIndicator(option, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
             }
 
-            if (security.Resolution == Resolution.Tick)
-            {
-                security.SetDataFilter(new OptionTickDataFilter(_algo));
-            }
-
-            if (!symbol.ID.Symbol.Contains("VolatilityBar"))
+            var equityOptions = new HashSet<SecurityType>() { SecurityType.Option, SecurityType.Equity };
+            if (equityOptions.Contains(security.Type) && !symbol.ID.Symbol.Contains("VolatilityBar"))
             {
                 _algo.SweepState[symbol] = new();
                 foreach (var direction in new[] { Orders.OrderDirection.Buy, Orders.OrderDirection.Sell })
                 {
                     _algo.SweepState[symbol][direction] = new Sweep(_algo, symbol, direction);
                 }
-            }            
+            }
+
+            if (security.Resolution == Resolution.Tick)
+            {
+                security.SetDataFilter(new OptionTickDataFilter(_algo));
+            }
 
             WarmUpSecurity(security);
         }

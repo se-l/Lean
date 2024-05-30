@@ -7,6 +7,11 @@ using QuantConnect.Logging;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
+    //public static bool HasProperty(this object obj, string propertyName)
+    //{
+    //    return obj.GetType().GetProperty(propertyName) != null;
+    //}
+
     public class AlgoConfig
     {
         public void OverrideWithEnvironmentVariables<T>()
@@ -45,16 +50,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     Log.Trace($"OverrideWithEnvironmentVariables: {typeof(T)}, {attr.Name}: {envValue}");
                 }
             }
-        }
+        }        
 
         public void OverrideWith<T>(T other) where T : AlgoConfig
         {
             // Loop over all getter attributes
-            foreach (var otherAttr in typeof(T).GetProperties())
+            foreach (var otherAttr in typeof(T).GetProperties().Where(otherAttr => this.GetType().GetProperty(otherAttr.Name) != null))
             {
                 try
                 {
-                    // check if the attribute exists in this object, this
                     this.SetPropertyValue(otherAttr.Name, otherAttr.GetValue(other));
                     Log.Trace($"OverrideWith: {otherAttr.Name}: {otherAttr}");
                 }

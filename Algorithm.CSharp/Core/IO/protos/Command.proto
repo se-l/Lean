@@ -1,0 +1,16 @@
+syntax = "proto3";
+package QuantConnect.Algorithm.CSharp.Core.IO;
+
+option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
+
+message CmdCancelOID {
+
+  int32 oid = 1;
+
+}
+
+message CmdFetchTargetPortfolio {
+
+    string symbol = 1;
+
+}

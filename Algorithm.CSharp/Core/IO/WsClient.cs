@@ -11,6 +11,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
     {
         public event EventHandler<ResponseTargetPortfolios> EventHandlerResponseTargetPortfolios;
         public event EventHandler<ResultStressTestDs> EventHandlerResultStressTestDs;
+        public event EventHandler<CmdFetchTargetPortfolio> EventHandlerCmdFetchTargetPortfolio;
+        public event EventHandler<CmdCancelOID> EventHandlerCmdCancelOID;
+        public event EventHandler<ResponseKalmanInit> EventHandlerResponseKalmanInit;
 
         private ClientWebSocket WS;
         private CancellationTokenSource CTS;
@@ -83,7 +86,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                         _algo.Error($"Reconnecting failed: {e}");
                     }
                 }
-                else if (DateTime.Now - lastHeartbeat > TimeSpan.FromSeconds(30))
+                else if (DateTime.Now - lastHeartbeat > TimeSpan.FromSeconds(60))
                 {
                     _algo.Error($"No heartbeat received. Last at: {lastHeartbeat}. Reconnecting...");
                     DisconnectAsync().Wait(TimeSpan.FromSeconds(10));
@@ -166,30 +169,34 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
         public async Task<Task> SendMessageAsync(RequestTargetPortfolios requestTargetPortfolios)
         {
-            Message message = new()
+            return SendMessage(new Message()
             {
                 Channel = Channel.TargetPortfolio,
                 Id = Guid.NewGuid().ToString(),
                 Action = Action.Subscribe,
                 Payload = requestTargetPortfolios.ToByteString()
-            };
-            using var buffer = new MemoryStream();
-            message.WriteTo(buffer);
-            return WS.SendAsync(new ArraySegment<byte>(buffer.GetBuffer(), 0, (int)buffer.Length), WebSocketMessageType.Binary, true, CTS.Token);
+            });
+        }
+        public async Task<Task> SendMessageAsync(RequestKalmanInit requestKalmanInit)
+        {
+            return SendMessage(new Message()
+            {
+                Channel = Channel.KalmanInit,
+                Id = Guid.NewGuid().ToString(),
+                Action = Action.Subscribe,
+                Payload = requestKalmanInit.ToByteString()
+            });
         }
 
         public async Task<Task> SendMessageAsync(RequestStressTestDs requestStressTestDs)
         {
-            Message message = new()
+            return SendMessage(new Message()
             {
                 Channel = Channel.StressTestDs,
                 Id = Guid.NewGuid().ToString(),
                 Action = Action.Subscribe,
                 Payload = requestStressTestDs.ToByteString()
-            };
-            using var buffer = new MemoryStream();
-            message.WriteTo(buffer);
-            return WS.SendAsync(new ArraySegment<byte>(buffer.GetBuffer(), 0, (int)buffer.Length), WebSocketMessageType.Binary, true, CTS.Token);
+            });
         }
 
         public async Task<Task> SubscribeHeartbeat()
@@ -203,6 +210,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 Payload = ByteString.Empty
             };
             lastHeartbeat = DateTime.Now;
+            return SendMessage(message);
+        }
+
+        public async Task<Task> SendMessage(Message message)
+        {
             using var buffer = new MemoryStream();
             message.WriteTo(buffer);
             return WS.SendAsync(new ArraySegment<byte>(buffer.GetBuffer(), 0, (int)buffer.Length), WebSocketMessageType.Binary, true, CTS.Token);
@@ -224,6 +236,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     break;
                 case Channel.StressTestDs:
                     HandleStressTestDs(message);
+                    break;
+                case Channel.CmdFetchTargetPortfolio:
+                    HandleCmdFetchTargetPortfolio(message);
+                    break;
+                case Channel.CmdCancelOid:
+                    HandleCmdCancelOID(message);
+                    break;
+                case Channel.KalmanInit:
+                    HandleKalmanInit(message);
                     break;
                 default:
                     _algo.Error($"Unknown message channel: {message.Channel}");
@@ -251,6 +272,25 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             ResultStressTestDs resultStressTestDs = ResultStressTestDs.Parser.ParseFrom(message.Payload);
             ReleaseThread();
             EventHandlerResultStressTestDs?.Invoke(this, resultStressTestDs);            
+        }
+
+        private void HandleCmdFetchTargetPortfolio(Message message)
+        {
+            CmdFetchTargetPortfolio cmdFetchTargetPortfolio = CmdFetchTargetPortfolio.Parser.ParseFrom(message.Payload);
+            EventHandlerCmdFetchTargetPortfolio?.Invoke(this, cmdFetchTargetPortfolio);
+        }
+
+        private void HandleCmdCancelOID(Message message)
+        {
+            CmdCancelOID cmdCancelOID = CmdCancelOID.Parser.ParseFrom(message.Payload);
+            EventHandlerCmdCancelOID?.Invoke(this, cmdCancelOID);
+        }
+
+        private void HandleKalmanInit(Message message)
+        {
+            ResponseKalmanInit responseKalmanInit = ResponseKalmanInit.Parser.ParseFrom(message.Payload);
+            EventHandlerResponseKalmanInit?.Invoke(this, responseKalmanInit);
+
         }
 
         public void Dispose() => DisconnectAsync().Wait();

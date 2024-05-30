@@ -9,6 +9,9 @@ enum Channel {
     ECHO = 2;
     TERMINATE = 3;
     STRESS_TEST_DS = 4;
+    CMD_FETCH_TARGET_PORTFOLIO = 5;
+    CMD_CANCEL_OID = 6;
+    KALMAN_INIT = 7;
 }
 
 enum Action {

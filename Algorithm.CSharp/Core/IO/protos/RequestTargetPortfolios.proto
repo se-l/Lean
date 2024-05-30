@@ -8,6 +8,7 @@ package QuantConnect.Algorithm.CSharp.Core.IO;
 option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
 
 message TargetPortfolio {
+
   string underlying = 1;
 
   repeated Holding holdings = 2;
@@ -16,8 +17,7 @@ message TargetPortfolio {
 
   map<string, double> ivs = 4;
 
-  ResultStressTestDs result_stress_test_ds  = 5;
-
+  ResultStressTestDs result_stress_test_ds = 5;
 }
 
 message RequestTargetPortfolios {
@@ -28,8 +28,7 @@ message RequestTargetPortfolios {
   
   repeated Holding holdings = 3;
   
-  repeated MarketDataSnapByUnderlying market_data_snaps = 4; 
-
+  repeated MarketDataSnapByUnderlying market_data_snaps = 4;
 }
 
 message ResponseTargetPortfolios {
@@ -41,5 +40,4 @@ message ResponseTargetPortfolios {
   repeated TargetPortfolio target_portfolios = 3;
   
   bool is_last_transmission = 4;
-
 }

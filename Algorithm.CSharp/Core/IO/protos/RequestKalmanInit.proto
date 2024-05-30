@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+import "Common.proto";
+
+package QuantConnect.Algorithm.CSharp.Core.IO;
+
+option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
+
+
+message RequestKalmanInit {
+
+  string ts = 1;
+  string underlying = 2;  
+  string expiry = 3;
+  OptionRight option_right = 4;  
+  string date_fit_start = 5;
+  string date_fit_end = 6;
+  repeated double scoped_moneyness = 7;
+}
+
+message ResponseKalmanInit {
+
+  RequestKalmanInit request = 1;  
+  repeated double init_state = 2;
+  repeated VectorDouble init_covariance = 3;
+
+}

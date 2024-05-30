@@ -266,6 +266,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             decimal price;
             Equity equity = (Equity)Securities[symbol];
+            if (!Cfg.Ticker.Contains(equity.ToString()))
+            {
+                Log($"{Time} ExecuteHedge: Not hedging because {equity} is not in Ticker: {string.Join(",", Cfg.Ticker)}");
+                return;
+            }
 
             // Adjusting Heding Frequency by adjusting volatilty. Not making sense to me how adjust vola helps with hedging frequency, but can adjust the threhold...
             // Vola Bias (Vola up -> All Deltas closer to 0.5 (C) / -0.5 (P))

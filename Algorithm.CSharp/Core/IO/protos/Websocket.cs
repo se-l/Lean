@@ -29,10 +29,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uQ2hhbm5lbBIK",
             "CgJpZBgCIAEoCRI9CgZhY3Rpb24YAyABKA4yLS5RdWFudENvbm5lY3QuQWxn",
             "b3JpdGhtLkNTaGFycC5Db3JlLklPLkFjdGlvbhIPCgdwYXlsb2FkGAQgASgM",
-            "KlQKB0NoYW5uZWwSBgoCSEIQABIUChBUQVJHRVRfUE9SVEZPTElPEAESCAoE",
-            "RUNITxACEg0KCVRFUk1JTkFURRADEhIKDlNUUkVTU19URVNUX0RTEAQqKAoG",
-            "QWN0aW9uEg0KCVNVQlNDUklCRRAAEg8KC1VOU1VCU0NSSUJFEAFCKKoCJVF1",
-            "YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU9iBnByb3RvMw=="));
+            "KpkBCgdDaGFubmVsEgYKAkhCEAASFAoQVEFSR0VUX1BPUlRGT0xJTxABEggK",
+            "BEVDSE8QAhINCglURVJNSU5BVEUQAxISCg5TVFJFU1NfVEVTVF9EUxAEEh4K",
+            "GkNNRF9GRVRDSF9UQVJHRVRfUE9SVEZPTElPEAUSEgoOQ01EX0NBTkNFTF9P",
+            "SUQQBhIPCgtLQUxNQU5fSU5JVBAHKigKBkFjdGlvbhINCglTVUJTQ1JJQkUQ",
+            "ABIPCgtVTlNVQlNDUklCRRABQiiqAiVRdWFudENvbm5lY3QuQWxnb3JpdGht",
+            "LkNTaGFycC5Db3JlLklPYgZwcm90bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
           new pbr::GeneratedClrTypeInfo(new[] {typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Channel), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Action), }, null, new pbr::GeneratedClrTypeInfo[] {
@@ -49,6 +51,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [pbr::OriginalName("ECHO")] Echo = 2,
     [pbr::OriginalName("TERMINATE")] Terminate = 3,
     [pbr::OriginalName("STRESS_TEST_DS")] StressTestDs = 4,
+    [pbr::OriginalName("CMD_FETCH_TARGET_PORTFOLIO")] CmdFetchTargetPortfolio = 5,
+    [pbr::OriginalName("CMD_CANCEL_OID")] CmdCancelOid = 6,
+    [pbr::OriginalName("KALMAN_INIT")] KalmanInit = 7,
   }
 
   public enum Action {

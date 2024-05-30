@@ -57,26 +57,34 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _isSweeping = false;
 
             DateTime nextReleaseDate = _algo.NextReleaseDate(Underlying).Date;
+            DateTime prevReleaseDate = _algo.PreviouReleaseDate(Underlying).Date;
 
 
             List<List<double>> cfgSchedule = Direction switch
             {
                 OrderDirection.Buy => _algo.Cfg.SweepLongSchedule.TryGetValue(Underlying, out cfgSchedule) ? cfgSchedule : _algo.Cfg.SweepLongSchedule[CfgDefault],
-                OrderDirection.Sell => _algo.Cfg.SweepLongSchedule.TryGetValue(Underlying, out cfgSchedule) ? cfgSchedule : _algo.Cfg.SweepShortSchedule[CfgDefault],
+                OrderDirection.Sell => _algo.Cfg.SweepShortSchedule.TryGetValue(Underlying, out cfgSchedule) ? cfgSchedule : _algo.Cfg.SweepShortSchedule[CfgDefault],
                 _ => throw new ArgumentOutOfRangeException()
             };
 
             foreach (var schedule in cfgSchedule)
             {
-                DateTime date = nextReleaseDate.Date + TimeSpan.FromDays(schedule[0]);
-                DateTime start = date.Date + TimeSpan.FromHours(schedule[1]);
-                DateTime end = date.Date + TimeSpan.FromHours(schedule[2]);
+                int offset = (int)schedule[0];
+                DateTime date = offset <= 0 ? nextReleaseDate.Date : prevReleaseDate.Date;
+                date += TimeSpan.FromDays(offset);
+                DateTime start = date + TimeSpan.FromHours(schedule[1]);
+                DateTime end = date + TimeSpan.FromHours(schedule[2]);
                 schedules.Add(new SweepSchedule(start, end, schedule[3]));
             }
         }
 
         public bool IsSweepScheduled()
         {
+            //_algo.Log($"{_algo.Time} IsSweepScheduled. _algo.Time={_algo.Time}, #schedules={schedules.Count}");
+            //foreach (var s in schedules)
+            //{
+            //   _algo.Log($"s.Start={s.Start}, s.End={s.End}, s.Duration={s.Duration}");
+            //}
             return schedules.Any(s => s.Start <= _algo.Time && _algo.Time <= s.End);
         }
 

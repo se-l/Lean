@@ -71,5 +71,7 @@
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestTargetPortfolios.proto&quot;" />
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\Websocket.proto&quot;" />
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\StressTestDs.proto&quot;" />
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\Command.proto&quot;" />
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestKalmanInit.proto&quot;" />
   </Target>
 </Project>

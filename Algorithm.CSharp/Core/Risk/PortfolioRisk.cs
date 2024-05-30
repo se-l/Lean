@@ -274,8 +274,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 {
                     foreach (var t in tickets.ToList().Where(t => !_algo.orderCanceledOrPending.Contains(t.Status) && t?.CancelRequest == null && t.Quantity * riskDelta > 0))
                     {
-                        string tag = $"{_algo.Time} CancelDeltaIncreasingEquityTickets. Cancelling ticket {t.OrderId} for {t.Symbol} with quantity {t.Quantity} because riskDelta={riskDelta}.";
-                        _algo.Log(tag);
+                        string tag = $"CancelDeltaIncreasingEquityTickets: Cancelling ticket {t.OrderId} for {t.Symbol} with quantity {t.Quantity} because riskDelta={riskDelta}.";
                         _algo.Cancel(t, tag);
                     }
                 }
@@ -283,6 +282,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public bool CheckHandleDeltaRiskExceedingBand(Symbol symbol)
         {
+            if (_algo.IsWarmingUp || !_algo.IsMarketOpen(symbol)) return false;
+
             Symbol underlying = Underlying(symbol);
 
             var riskDeltaTotal = _algo.DeltaMV(symbol);

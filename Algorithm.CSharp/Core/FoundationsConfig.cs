@@ -76,6 +76,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public decimal MaxSpreadForMarketOrderHedging { get; set; }
         public Dictionary<string, List<List<double>>> SweepLongSchedule { get; set; }
         public Dictionary<string, List<List<double>>> SweepShortSchedule { get; set; }
-        public int WS_PORT { get; set; }
+        public Dictionary<string, List<double>> KalmanScopedMoneyness { get; set; }
+        public Dictionary<string, double> KalmanAlphaBid { get; set; }
+        public Dictionary<string, double> KalmanAlphaAsk { get; set; }
+        public Dictionary<string, int> PrepareEarningsPeriodDays { get; set; }
     }
 }

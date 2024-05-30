@@ -1,6 +1,7 @@
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Securities.Option;
+using QuantConnect.Orders;
 using System;
 using System.Collections.Generic;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
@@ -77,10 +78,16 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
 
             DateTime nextReleaseDate = _algo.NextReleaseDate(Underlying);
+
             if (nextReleaseDate - _algo.Time < TimeSpan.FromDays(0))
             {
                 double marginalUtility = _algo.MarginalWeightedDNLV.TryGetValue(Symbol, out marginalUtility) ? marginalUtility : 0;
                 utility = marginalUtility * Math.Sign(Quantity);
+            }
+            else if ((_algo.PreviouReleaseDate(Underlying) + TimeSpan.FromDays(1)).Date == _algo.Time.Date && _algo.Time.TimeOfDay < new TimeSpan(0, 13, 0, 0) && OrderDirection == OrderDirection.Buy)
+            {
+                // Dont buy back any options before noon. Waiting for IVs to drop further.
+                utility = -1000;
             }
             else
             {
@@ -107,14 +114,22 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             double b = 0.01;
             double c = 0.005;
 
-            decimal deltaPfTotal = _algo.DeltaMV(Symbol);
+            decimal deltaPfTotal = _algo.LastDeltaAcrossDs.TryGetValue(Underlying, out double lastDeltaAcrossD) ? (decimal)lastDeltaAcrossD : _algo.DeltaMV(Symbol);
+
             double optionDelta = (double)(deltaPfTotal - _algo.Securities[Underlying].Holdings.Quantity);
             double orderDelta = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, _algo.HedgeMetric(Underlying));
 
             var whatIfOptionDelta = optionDelta + orderDelta;
 
-
-            if (Math.Abs(whatIfOptionDelta) > Math.Abs(optionDelta) && Math.Abs(whatIfOptionDelta) > 150)  // refactor this back to a threshold considering volatility and underlying price. So a vola adjusted DeltaUSD.
+            // Need to become very strict on reducing abs deltaAcross within last 30min of release date.
+            DateTime nextReleaseDate = _algo.NextReleaseDate(Underlying);
+            if (nextReleaseDate == _algo.Time.Date && new TimeSpan(0, 16, 0, 0) - _algo.Time.TimeOfDay < TimeSpan.FromMinutes(30) &&
+                Math.Abs(whatIfOptionDelta) > Math.Abs(optionDelta) && Math.Abs(whatIfOptionDelta) > 50)
+            {
+                util = -3000;
+            }
+            // more relaxed threshold beforehand
+            else if (Math.Abs(whatIfOptionDelta) > Math.Abs(optionDelta) && Math.Abs(whatIfOptionDelta) > 150)  // refactor this back to a threshold considering volatility and underlying price. So a vola adjusted DeltaUSD.
             {
                 util = -3000;
             }

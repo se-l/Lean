@@ -1,3 +1,5 @@
+using Accord.Statistics.Kernels;
+using Microsoft.VisualBasic;
 using QLNet;
 using System;
 using System.Collections.Generic;
@@ -24,6 +26,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public Func<double, double, double> GammaCached { get; internal set; }
         public Func<double, double, double> VegaCached { get; internal set; }
         //public Func<SimpleQuote, double, double> VegaCached;
+        public decimal NetYield { get; internal set; }
+        public double Tenor { get; internal set; }
 
         private readonly Foundations _algo;
         private static readonly Dictionary<(Symbol, DateTime), OptionContractWrap> instances = new();
@@ -87,6 +91,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             maturityDate = new Date(contract.Expiry.Day, contract.Expiry.Month, contract.Expiry.Year);
             this.calculationDate = calculationDate;
             this.calculationDate = Date.Min(this.calculationDate, maturityDate);
+            Tenor = (maturityDate - this.calculationDate) / 365.0;
             settlementDate = this.calculationDate;
             strikePrice = (double)contract.StrikePrice;
             optionType = contract.Right == OptionRight.Call ? Option.Type.Call : Option.Type.Put;
@@ -101,6 +106,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double dividendYield = _algo.DividendYield.TryGetValue(UnderlyingSymbol.Value, out dividendYield) ? dividendYield : _algo.DividendYield[CfgDefault];
             dividendYieldQuote = new SimpleQuote(dividendYield);
             dividendYieldQuoteHandle = new Handle<Quote>(dividendYieldQuote);
+            NetYield = _algo.Cfg.DiscountRateMarket - (decimal)dividendYield;
 
             payoff = new PlainVanillaPayoff(optionType, strikePrice);
             amExercise = new AmericanExercise(settlementDate, maturityDate);
@@ -636,6 +642,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
+        public double NPV(double iv, decimal? priceUnderlying)
+        {            
+            SetEvaluationDateToCalcDate();
+            SetHistoricalVolatility(iv);
+            SetSpotQuotePriceUnderlying(priceUnderlying);
+            try
+            {
+                return amOption.NPV();
+            }
+            catch (Exception e)
+            {
+                _algo.Error($"OptionContractWrap.NPV. {Contract.Symbol}, calculationDate={calculationDate}, hvQuote={hvQuote.value()}, spotQuote={spotQuote.value()}. {e}");
+                return 0;
+            }
+        }
+
         /// <summary>
         /// Calendar Days
         /// </summary>
@@ -923,6 +945,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public decimal ExtrinsicValue()
         {
             return _algo.MidPrice(Contract.Symbol) - Contract.GetPayOff(_algo.MidPrice(UnderlyingSymbol));
+        }
+
+        public double MoneynessFwd()
+        {
+            return (double)(Contract.StrikePrice / _algo.MidPrice(UnderlyingSymbol)) * Math.Exp((double)NetYield * Tenor);
+        }
+
+        public double MoneynessFwdLn()
+        {
+            return Math.Log(MoneynessFwd());
         }
     }
 }

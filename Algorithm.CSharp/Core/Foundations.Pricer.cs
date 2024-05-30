@@ -1,3 +1,4 @@
+using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
@@ -96,7 +97,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
-        /// Should not make price based on very unstable market data quotes. Need util(IV)
+        /// Need to unify a bunch of concepts that flow into this. Currently, somewhat of a majority vote.
         /// </summary>
         /// <param name="qr"></param>
         /// <returns></returns>
@@ -163,10 +164,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (SweepState[qr.Symbol][qr.OrderDirection].IsSweepScheduled())
             {
+                // Aggressive
                 spreadDiscount = SpreadDiscountSweep(qr.UtilityOrder);
             }
             else
             {
+                //Log($"GetQuote: Not sweeping. Using SweepDiscount. qr.Symbol={qr.Symbol}, qr.OrderDirection={qr.OrderDirection}");
                 spreadDiscount = SpreadDiscount(qr.Underlying, qr.UtilityOrder, utilityOrderCrossSpread);
             }
 
@@ -177,9 +180,85 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
             };
 
+            // Aggressive/Defensive: KalmanFilter price override
+            //if (PreparingEarningsRelease(qr.Underlying) && KalmanFilters.TryGetValue((qr.Underlying, qr.Option.Expiry, qr.Option.Right), out KalmanFilter kf))
+            //{
+            //    //double meanIV = kf.KalmanMeanIV(qr.Option);
+            //    //double bidIV = IVBids[qr.Option.Symbol].IVBidAsk.IV;
+            //    //double askIV = IVAsks[qr.Option.Symbol].IVBidAsk.IV;
+            //    // Log($"GetQuoteBid {qr.Option}: KF Mean IV: {meanIV}, Bid IV: {bidIV}, Ask IV: {askIV}");
+
+            //    decimal kfPrice;
+            //    switch (qr.OrderDirection)
+            //    {
+            //        case OrderDirection.Buy:
+            //            kfPrice = kf.KalmanBidPrice(qr.Option);
+            //            Log($"GetQuoteBid {qr.Option}: kfBidPrice={kfPrice}, sweepPrice={price}, bid={qr.Option.BidPrice}, ask={qr.Option.AskPrice}");
+            //            price = Math.Max(kfPrice, price);
+            //            break;
+            //        case OrderDirection.Sell:
+            //            kfPrice = kf.KalmanAskPrice(qr.Option);
+            //            Log($"GetQuoteAsk {qr.Option}: kfAskPrice={kfPrice}, sweepPrice={price}, bid={qr.Option.BidPrice}, ask={qr.Option.AskPrice}");
+            //            price = Math.Min(kfPrice, price);
+            //            break;
+            //        default:
+            //            throw new ArgumentException($"Unknown order direction {qr.OrderDirection}");
+            //    }
+            //    price = qr.OrderDirection switch
+            //    {
+            //        OrderDirection.Buy => Math.Min(kf.KalmanBidPrice(qr.Option), price),
+            //        OrderDirection.Sell => Math.Max(kf.KalmanAskPrice(qr.Option), price),
+            //        _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
+            //    };
+            //}
+            //else if (PreparingEarningsRelease(qr.Underlying))
+            //{
+            //    Log($"GetQuote: No KalmanFilter found for {qr.Underlying}, {qr.Option.Expiry}, {qr.Option.Right}");
+            //}
+
+            // Defensive: IV Model price override
+            // Somewhat temporary and to be refactored. Limit the price to the presumedFillIV coming from the model - a discount dependent on the utility.
+            // Essentially, both KalmanFilter price and this PresumedIV-utility based price must be good enough to offer competitive quotes.
+            if (PreparingEarningsRelease(qr.Underlying) && PresumedFillIV.ContainsKey(qr.Option))
+            {
+                decimal presumedFillPrice = (decimal)ocw.NPV(PresumedFillIV[qr.Option], MidPrice(qr.Underlying));
+                decimal priceDiscount = 0; // Math.Abs((decimal)qr.UtilityOrder.Utility / qr.Quantity) / (4*100);  too untested
+                decimal overridePrice;
+                switch (qr.OrderDirection)
+                {
+                    case OrderDirection.Buy:
+                        overridePrice = presumedFillPrice + priceDiscount;
+                        if (overridePrice < price)  // Defensive. (price can be higher than presumedFillPrice due to sweep discounting.
+                        {
+                            Log($"GetQuote: Defensively overriding Quote Price {price} with {overridePrice}. modelPresumedPrice={presumedFillPrice}, ModelIV={PresumedFillIV[qr.Option]}, priceDiscount={priceDiscount}");
+                        }
+                        price = Math.Min(overridePrice, price);
+                        break;
+                    case OrderDirection.Sell:
+                        overridePrice = presumedFillPrice - priceDiscount;
+                        if (overridePrice > price)  // Defensive. (price can be higher than presumedFillPrice due to sweep discounting.
+                        {
+                            Log($"GetQuote: Defensively overriding Quote Price {price} with {overridePrice}. modelPresumedPrice={presumedFillPrice}, ModelIV={PresumedFillIV[qr.Option]}, priceDiscount={priceDiscount}");
+                        }
+                        price = Math.Max(overridePrice, price);
+                        break;
+                    default:
+                        throw new ArgumentException($"Unknown order direction {qr.OrderDirection}");
+                }
+            }
+
+            // ensuring we dont quote spending more than necessary.
+            price = qr.OrderDirection switch
+            {
+                OrderDirection.Buy => Math.Min(price, qr.Option.AskPrice),
+                OrderDirection.Sell => Math.Max(price, qr.Option.BidPrice),
+                _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
+            };
+
             // For tight spreads, a tickSize difference of, e.g., 0.01 can make a signiicant difference in terms of IV spread. Therefore, the price is rounded defensively away from midPrice.
-            decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection != OrderDirection.Buy);
+            decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection == OrderDirection.Sell);  // Can go against sweep
             double ivPrice = (double)ocw.IV(price, MidPrice(qr.Symbol.Underlying), 0.001);
+ 
             return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, ivPrice, qr.UtilityOrder, utilityOrderCrossSpread, spreadDiscount);
         }
 
@@ -197,10 +276,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal maxAcceptableSpreadRatio = spread <= 0 || utilPV == 0 ? sweepRatio : ToDecimal((utilPV / 2)) / (100 * spread);
 
             var res = Math.Min(sweepRatio, maxAcceptableSpreadRatio);
-            Log($"SpreadDiscountSweep: {symbol} res={res} sweepRatio={sweepRatio}, maxAcceptableSpreadRatio={maxAcceptableSpreadRatio}, " +
-                $"spread={spread} utilPV={utilPV}, utilEquityPosition={utilityOrder.UtilityEquityPosition}");
+            res = Math.Min(res, 1.001m);
 
-            return Math.Min(res, 1);
+            Log($"{Time} SpreadDiscountSweep: {symbol} res={res} sweepRatio={sweepRatio}, maxAcceptableSpreadRatio={maxAcceptableSpreadRatio}, " +
+                $"spread={spread} utilPV={utilPV}, utilEquityPosition={utilityOrder.UtilityEquityPosition}. bid={bid}, ask={ask}");
+
+            return res;
         }
     }
 }

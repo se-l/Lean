@@ -75,7 +75,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             {
                 case OrderDirection.Buy:
 
-                    if (prices.Low <= limitPrice)
+                    if (prices.Low <= limitPrice
+                        || (asset.AskPrice <= limitPrice)
+                        )
                     {
                         //Set order fill:
                         fill.Status = OrderStatus.Filled;
@@ -89,7 +91,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
                     break;
                 case OrderDirection.Sell:
 
-                    if (prices.High > limitPrice || (prices.High == limitPrice && asset.AskPrice > limitPrice))  // better: if AskPrice was lowered after my limitPrice, I should be filled, first in order book.
+                    if (prices.High > limitPrice 
+                        || (prices.High == limitPrice && asset.AskPrice > limitPrice)  // better: if AskPrice was lowered after my limitPrice, I should be filled, first in order book.
+                        || (asset.BidPrice >= limitPrice)
+                        )
                     {
                         fill.Status = OrderStatus.Filled;
                         // fill at the worse price this bar or the limit price, this allows far out of the money limits

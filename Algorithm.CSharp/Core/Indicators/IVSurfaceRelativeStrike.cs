@@ -514,9 +514,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return expiries.Any() ? expiries.Min() : null;
         }
 
-        public List<DateTime> Expiries(int minDTE = 0)
+        public IEnumerable<DateTime> Expiries(int minDTE = 0)
         {
-            return _expiries.Where(e => e > _algo.Time.Date + TimeSpan.FromDays(minDTE)).ToList();
+            return _expiries.Where(e => e > _algo.Time.Date + TimeSpan.FromDays(minDTE));
         }
 
         public Dictionary<OptionRight, Dictionary<DateTime, Dictionary<decimal, double?>>> ToDictionary(decimal minBin = 70, decimal maxBin = 130, Func<Bin, double?>? binGetter = null)
