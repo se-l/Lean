@@ -63,7 +63,7 @@ namespace QuantConnect.Tests.Engine.Results
         {
             using var messagging = new QuantConnect.Messaging.Messaging();
             var result = new LiveTradingResultHandler();
-            result.Initialize(new LiveNodePacket(), messagging, null, new BacktestingTransactionHandler());
+            result.Initialize(new(new LiveNodePacket(), messagging, null, new BacktestingTransactionHandler(), null));
 
             var algorithm = new AlgorithmStub();
             algorithm.AddEquity("SPY");
@@ -149,7 +149,7 @@ namespace QuantConnect.Tests.Engine.Results
             using var messagging = new QuantConnect.Messaging.Messaging();
             var referenceDate = new DateTime(2020, 11, 25);
             var resultHandler = new LiveTradingResultHandler();
-            resultHandler.Initialize(new LiveNodePacket(), messagging, api, new BacktestingTransactionHandler());
+            resultHandler.Initialize(new (new LiveNodePacket(), messagging, api, new BacktestingTransactionHandler(), null));
 
             var algo = new AlgorithmStub(createDataManager:false);
             algo.SetFinishedWarmingUp();
@@ -168,8 +168,8 @@ namespace QuantConnect.Tests.Engine.Results
             Assert.IsTrue(resultHandler.Charts.ContainsKey("Strategy Equity"));
             Assert.AreEqual(1, resultHandler.Charts["Strategy Equity"].Series["Equity"].Values.Count);
 
-            var currentEquityValue = resultHandler.Charts["Strategy Equity"].Series["Equity"].Values.Last().y;
-            Assert.AreEqual(101000, currentEquityValue);
+            var currentEquityValue = (Candlestick)resultHandler.Charts["Strategy Equity"].Series["Equity"].Values.Last();
+            Assert.AreEqual(101000, currentEquityValue.Close);
 
             // Add value to portfolio, see if portfolio updates with new sample
             // will be changed to 'extendedMarketHoursEnabled' = true
@@ -179,8 +179,8 @@ namespace QuantConnect.Tests.Engine.Results
             resultHandler.Sample(referenceDate.AddHours(22));
             Assert.AreEqual(2, resultHandler.Charts["Strategy Equity"].Series["Equity"].Values.Count);
 
-            currentEquityValue = resultHandler.Charts["Strategy Equity"].Series["Equity"].Values.Last().y;
-            Assert.AreEqual(extendedMarketHoursEnabled ? 111000 : 101000, currentEquityValue);
+            currentEquityValue = (Candlestick)resultHandler.Charts["Strategy Equity"].Series["Equity"].Values.Last();
+            Assert.AreEqual(extendedMarketHoursEnabled ? 111000 : 101000, currentEquityValue.Close);
 
             resultHandler.Exit();
         }

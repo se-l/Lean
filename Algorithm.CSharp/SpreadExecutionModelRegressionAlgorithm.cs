@@ -95,15 +95,18 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "20"},
+            {"Total Orders", "19"},
             {"Average Win", "0.62%"},
             {"Average Loss", "-0.19%"},
-            {"Compounding Annual Return", "399.082%"},
+            {"Compounding Annual Return", "398.867%"},
             {"Drawdown", "1.500%"},
-            {"Expectancy", "1.396"},
-            {"Net Profit", "2.077%"},
-            {"Sharpe Ratio", "10.497"},
-            {"Probabilistic Sharpe Ratio", "70.088%"},
+            {"Expectancy", "1.395"},
+            {"Start Equity", "100000"},
+            {"End Equity", "102076.08"},
+            {"Net Profit", "2.076%"},
+            {"Sharpe Ratio", "10.465"},
+            {"Sortino Ratio", "21.499"},
+            {"Probabilistic Sharpe Ratio", "70.084%"},
             {"Loss Rate", "44%"},
             {"Win Rate", "56%"},
             {"Profit-Loss Ratio", "3.31"},
@@ -111,14 +114,14 @@ namespace QuantConnect.Algorithm.CSharp
             {"Beta", "1.115"},
             {"Annual Standard Deviation", "0.261"},
             {"Annual Variance", "0.068"},
-            {"Information Ratio", "8.85"},
+            {"Information Ratio", "8.837"},
             {"Tracking Error", "0.086"},
-            {"Treynor Ratio", "2.461"},
-            {"Total Fees", "$41.65"},
-            {"Estimated Strategy Capacity", "$2100000.00"},
+            {"Treynor Ratio", "2.453"},
+            {"Total Fees", "$40.66"},
+            {"Estimated Strategy Capacity", "$1900000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
             {"Portfolio Turnover", "146.73%"},
-            {"OrderListHash", "ac25829306d9fb41b6fc8eebf438c505"}
+            {"OrderListHash", "36ab6f7236250f7a064b77af9b4870c4"}
         };
     }
 }

@@ -49,7 +49,12 @@ namespace QuantConnect
         public static TimeSpan EndOfTimeTimeSpan = new TimeSpan(EndOfTime.Ticks);
 
         /// <summary>
-        /// Provides a value far enough in the past that can be used as a lower bound on dates
+        /// Provides a common and normalized start time for Lean data
+        /// </summary>
+        public static readonly DateTime Start = new DateTime(1998, 1, 2);
+
+        /// <summary>
+        /// Provides a value far enough in the past that can be used as a lower bound on dates, 12/30/1899
         /// </summary>
         /// <value>
         /// DateTime.FromOADate(0)
@@ -139,6 +144,30 @@ namespace QuantConnect
 
         private static readonly DateTime EpochTime = new DateTime(1970, 1, 1, 0, 0, 0, 0);
         private const long SecondToMillisecond = 1000;
+
+        /// <summary>
+        /// Helper method to get the new live auxiliary data due time
+        /// </summary>
+        /// <returns>The due time for the new auxiliary data emission</returns>
+        public static TimeSpan GetNextLiveAuxiliaryDataDueTime()
+        {
+            return GetNextLiveAuxiliaryDataDueTime(DateTime.UtcNow);
+        }
+
+        /// <summary>
+        /// Helper method to get the new live auxiliary data due time
+        /// </summary>
+        /// <param name="utcNow">The current utc time</param>
+        /// <returns>The due time for the new auxiliary data emission</returns>
+        public static TimeSpan GetNextLiveAuxiliaryDataDueTime(DateTime utcNow)
+        {
+            var nowNewYork = utcNow.ConvertFromUtc(TimeZones.NewYork);
+            if (nowNewYork.TimeOfDay < LiveAuxiliaryDataOffset)
+            {
+                return LiveAuxiliaryDataOffset - nowNewYork.TimeOfDay;
+            }
+            return nowNewYork.Date.AddDays(1).Add(+LiveAuxiliaryDataOffset) - nowNewYork;
+        }
 
         /// <summary>
         /// Helper method to adjust a waiting time, in milliseconds, so it's uneven with the second turn around
@@ -452,6 +481,18 @@ namespace QuantConnect
         }
 
         /// <summary>
+        /// Define an enumerable date time range using the given time step
+        /// </summary>
+        /// <param name="from">DateTime start date time</param>
+        /// <param name="thru">DateTime end date time</param>
+        /// <returns>Enumerable date time range</returns>
+        public static IEnumerable<DateTime> DateTimeRange(DateTime from, DateTime thru, TimeSpan step)
+        {
+            for (var dateTime = from; dateTime <= thru; dateTime = dateTime.Add(step))
+                yield return dateTime;
+        }
+
+        /// <summary>
         /// Define an enumerable date range and return each date as a datetime object in the date range
         /// </summary>
         /// <param name="from">DateTime start date</param>
@@ -459,8 +500,7 @@ namespace QuantConnect
         /// <returns>Enumerable date range</returns>
         public static IEnumerable<DateTime> EachDay(DateTime from, DateTime thru)
         {
-            for (var day = from.Date; day.Date <= thru.Date; day = day.AddDays(1))
-                yield return day;
+            return DateTimeRange(from.Date, thru.Date, TimeSpan.FromDays(1));
         }
 
 

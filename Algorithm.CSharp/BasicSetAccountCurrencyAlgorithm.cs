@@ -35,11 +35,15 @@ namespace QuantConnect.Algorithm.CSharp
             SetStartDate(2018, 04, 04);  //Set Start Date
             SetEndDate(2018, 04, 04);    //Set End Date
             SetBrokerageModel(BrokerageName.GDAX, AccountType.Cash);
+            SetAccountCurrency();
+            _btcEur = AddCrypto("BTCEUR").Symbol;
+        }
+
+        public virtual void SetAccountCurrency()
+        {
             //Before setting any cash or adding a Security call SetAccountCurrency
             SetAccountCurrency("EUR");
             SetCash(100000);             //Set Strategy Cash
-
-            _btcEur = AddCrypto("BTCEUR").Symbol;
         }
 
         /// <summary>
@@ -80,14 +84,17 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000.00"},
+            {"End Equity", "92395.59"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -101,9 +108,9 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "€298.35"},
             {"Estimated Strategy Capacity", "€85000.00"},
-            {"Lowest Capacity Asset", "BTCEUR XJ"},
+            {"Lowest Capacity Asset", "BTCEUR 2XR"},
             {"Portfolio Turnover", "107.64%"},
-            {"OrderListHash", "2ba443899dcccc79dc0f04441f797bf9"}
+            {"OrderListHash", "6819dc936b86af6e4b89b6017b7d5284"}
         };
     }
 }

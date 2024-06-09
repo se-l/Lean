@@ -21,6 +21,7 @@ using System.Reflection;
 using QuantConnect.Data.Custom.IconicTypes;
 using QuantConnect.Data.Fundamental;
 using QuantConnect.Data.Market;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Python;
 
 namespace QuantConnect.Data
@@ -48,7 +49,11 @@ namespace QuantConnect.Data
         private Lazy<DataDictionary<SymbolData>> _data;
         // UnlinkedData -> DataDictonary<UnlinkedData>
         private Dictionary<Type, object> _dataByType;
-        private List<BaseData> _rawDataList;
+
+        /// <summary>
+        /// All the data hold in this slice
+        /// </summary>
+        public List<BaseData> AllData { get; private set; }
 
         /// <summary>
         /// Gets the timestamp for this slice of data
@@ -247,7 +252,7 @@ namespace QuantConnect.Data
         {
             Time = slice.Time;
             UtcTime = slice.UtcTime;
-            _rawDataList = slice._rawDataList;
+            AllData = slice.AllData;
             _dataByType = slice._dataByType;
 
             _data = slice._data;
@@ -289,9 +294,9 @@ namespace QuantConnect.Data
         {
             Time = time;
             UtcTime = utcTime;
-            _rawDataList = data;
+            AllData = data;
             // market data
-            _data = new Lazy<DataDictionary<SymbolData>>(() => CreateDynamicDataDictionary(_rawDataList));
+            _data = new Lazy<DataDictionary<SymbolData>>(() => CreateDynamicDataDictionary(AllData));
 
             HasData = hasData ?? _data.Value.Count > 0;
 
@@ -355,8 +360,19 @@ namespace QuantConnect.Data
         /// Gets the data of the specified type.
         /// </summary>
         /// <remarks>Supports both C# and Python use cases</remarks>
-        protected static dynamic GetImpl(Type type, Slice instance)
+        protected dynamic GetImpl(Type type, Slice instance)
         {
+            if (type == typeof(Fundamentals))
+            {
+                // backwards compatibility for users doing a get of Fundamentals type
+                type = typeof(FundamentalUniverse);
+            }
+            else if (type == typeof(ETFConstituentData))
+            {
+                // backwards compatibility for users doing a get of ETFConstituentData type
+                type = typeof(ETFConstituentUniverse);
+            }
+
             if (instance._dataByType == null)
             {
                 // for performance we only really create this collection if someone used it
@@ -371,6 +387,7 @@ namespace QuantConnect.Data
                 {
                     var dataDictionaryCache = GenericDataDictionary.Get(type, isPythonData: false);
                     dictionary = Activator.CreateInstance(dataDictionaryCache.GenericType);
+                    ((dynamic)dictionary).Time = Time;
 
                     foreach (var data in instance.Ticks)
                     {
@@ -427,6 +444,7 @@ namespace QuantConnect.Data
 
                     var dataDictionaryCache = GenericDataDictionary.Get(type, isPythonData);
                     dictionary = Activator.CreateInstance(dataDictionaryCache.GenericType);
+                    ((dynamic)dictionary).Time = Time;
 
                     foreach (var data in instance._data.Value.Values)
                     {
@@ -513,20 +531,20 @@ namespace QuantConnect.Data
             _symbolChangedEvents = (SymbolChangedEvents)UpdateCollection(_symbolChangedEvents, inputSlice.SymbolChangedEvents);
             _marginInterestRates = (MarginInterestRates)UpdateCollection(_marginInterestRates, inputSlice.MarginInterestRates);
 
-            if (inputSlice._rawDataList.Count != 0)
+            if (inputSlice.AllData.Count != 0)
             {
-                if (_rawDataList.Count == 0)
+                if (AllData.Count == 0)
                 {
-                    _rawDataList = inputSlice._rawDataList;
+                    AllData = inputSlice.AllData;
                     _data = inputSlice._data;
                 }
                 else
                 {
                     // Should keep this._rawDataList last so that selected data points are not overriden
                     // while creating _data
-                    inputSlice._rawDataList.AddRange(_rawDataList);
-                    _rawDataList = inputSlice._rawDataList;
-                    _data = new Lazy<DataDictionary<SymbolData>>(() => CreateDynamicDataDictionary(_rawDataList));
+                    inputSlice.AllData.AddRange(AllData);
+                    AllData = inputSlice.AllData;
+                    _data = new Lazy<DataDictionary<SymbolData>>(() => CreateDynamicDataDictionary(AllData));
                 }
             }
         }

@@ -25,6 +25,7 @@ using QuantConnect.Algorithm.CSharp;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Logging;
 using QuantConnect.Util;
+using QuantConnect.Securities;
 
 namespace QuantConnect.Tests.Common.Securities
 {
@@ -40,6 +41,17 @@ namespace QuantConnect.Tests.Common.Securities
         private readonly SecurityIdentifier SPY_Put_19550 = SecurityIdentifier.GenerateOption(new DateTime(2015, 09, 18), SPY, Market.USA, 195.50m, OptionRight.Put, OptionStyle.European);
         // this is euro-dollar futures contract (for tests)
         private readonly SecurityIdentifier ED_Dec_2020 = SecurityIdentifier.GenerateFuture(new DateTime(2020, 12, 15), "ED", Market.USA);
+
+        [TestCase("SPY", "SPY", "20230403")]
+        [TestCase("GOOG", "GOOG", "20140403")]
+        [TestCase("GOOG", "GOOCV", "20140402")]
+        public void Ticker(string symbol, string expectedTicker, string date)
+        {
+            var equity = Symbol.Create(symbol, SecurityType.Equity, Market.USA);
+            var ticker = SecurityIdentifier.Ticker(equity, Time.ParseDate(date));
+
+            Assert.AreEqual(expectedTicker, ticker);
+        }
 
         [Test]
         public void GenerateEquityProperlyResolvesFirstDate()
@@ -555,7 +567,10 @@ namespace QuantConnect.Tests.Common.Securities
 
             foreach (var date in Time.EachDay(start, end))
             {
-                if (USHoliday.Dates.Contains(date) || date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
+                if (MarketHoursDatabase.FromDataFolder()
+                        .GetEntry(Market.USA, (string)null, SecurityType.Equity)
+                        .ExchangeHours
+                        .Holidays.Contains(date) || date.DayOfWeek == DayOfWeek.Saturday || date.DayOfWeek == DayOfWeek.Sunday)
                 {
                     continue;
                 }

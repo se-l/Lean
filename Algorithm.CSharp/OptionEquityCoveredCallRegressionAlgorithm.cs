@@ -50,7 +50,7 @@ namespace QuantConnect.Algorithm.CSharp
                     var initialMargin = Portfolio.MarginRemaining;
                     // covered call
                     MarketOrder(atmContract.Symbol, -5);
-                    AssertDefaultGroup(atmContract.Symbol, -5);
+                    AssertOptionStrategyIsPresent(OptionStrategyDefinitions.NakedCall.Name, 5);
                     MarketOrder(atmContract.Symbol.Underlying, 500);
                     var freeMarginPostTrade = Portfolio.MarginRemaining;
                     AssertOptionStrategyIsPresent(OptionStrategyDefinitions.CoveredCall.Name, 5);
@@ -77,7 +77,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 475788;
+        public override long DataPoints => 471135;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -89,14 +89,17 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "200000"},
+            {"End Equity", "199479.25"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -108,11 +111,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Information Ratio", "0"},
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$3.75"},
+            {"Total Fees", "$5.75"},
             {"Estimated Strategy Capacity", "$1100000.00"},
             {"Lowest Capacity Asset", "GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "201.44%"},
-            {"OrderListHash", "539232baa4a3a8467a2ceb3d86e186dc"}
+            {"OrderListHash", "0eee5332f35455eb689a4ef2a27f11fc"}
         };
     }
 }

@@ -35,6 +35,8 @@ namespace QuantConnect.Orders
         private decimal? _limitPrice;
         private decimal? _triggerPrice;
         private decimal? _stopPrice;
+        private decimal? _trailingAmount;
+        private bool? _trailingAsPercentage;
 
         /// <summary>
         /// Id of the order this event comes from.
@@ -192,11 +194,44 @@ namespace QuantConnect.Orders
         public bool IsInTheMoney { get; set; }
 
         /// <summary>
-        /// Any message from the exchange.
+        /// The trailing stop amount
         /// </summary>
-        [DefaultValue(""), JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         [ProtoMember(18)]
-        public string Exchange { get; set; }
+        public decimal? TrailingAmount
+        {
+            get { return _trailingAmount; }
+            set
+            {
+                if (value.HasValue)
+                {
+                    _trailingAmount = value.Value.Normalize();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether the <see cref="TrailingAmount"/> is a percentage or an absolute currency value
+        /// </summary>
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
+        [ProtoMember(19)]
+        public bool? TrailingAsPercentage
+        {
+            get { return _trailingAsPercentage; }
+            set
+            {
+                if (value.HasValue)
+                {
+                    _trailingAsPercentage = value.Value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The order ticket associated to the order
+        /// </summary>
+        [JsonIgnore]
+        public OrderTicket Ticket { get; set; }
 
         /// <summary>
         /// Order Event empty constructor required for json converter

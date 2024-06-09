@@ -99,7 +99,7 @@ namespace QuantConnect.Algorithm.CSharp
             }
         }
 
-        public void OnData(TradeBars data)
+        public override void OnData(Slice data)
         {
             if (!Portfolio.Invested)
             {
@@ -200,14 +200,17 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "272.157%"},
             {"Drawdown", "2.200%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "101694.38"},
             {"Net Profit", "1.694%"},
-            {"Sharpe Ratio", "8.897"},
+            {"Sharpe Ratio", "8.863"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "67.609%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -218,12 +221,12 @@ namespace QuantConnect.Algorithm.CSharp
             {"Annual Variance", "0.049"},
             {"Information Ratio", "-14.534"},
             {"Tracking Error", "0.001"},
-            {"Treynor Ratio", "1.98"},
+            {"Treynor Ratio", "1.972"},
             {"Total Fees", "$3.45"},
             {"Estimated Strategy Capacity", "$310000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "19.96%"},
-            {"OrderListHash", "e10039d74166b161f3ea2851a5e85843"}
+            {"OrderListHash", "8c925e7c6c10ff1da3a40669accba91a"}
         };
     }
 }

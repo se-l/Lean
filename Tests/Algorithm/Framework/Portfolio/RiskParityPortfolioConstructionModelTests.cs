@@ -41,30 +41,29 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
         public virtual void SetUp()
         {
             _nowUtc = new DateTime(2021, 1, 10);
-            _algorithm = new QCAlgorithm();
+            _algorithm = new AlgorithmStub();
             _algorithm.SetFinishedWarmingUp();
-            _algorithm.SetPandasConverter();
-            _algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(_algorithm));
+            _algorithm.Settings.MinimumOrderMarginPortfolioPercentage = 0;
+            _algorithm.Settings.FreePortfolioValue = 250;
             _algorithm.SetDateTime(_nowUtc.ConvertToUtc(_algorithm.TimeZone));
             _algorithm.SetCash(1200);
             var historyProvider = new SubscriptionDataReaderHistoryProvider();
-            var dataProvider = new SingleEntryDataCacheProvider(TestGlobals.DataProvider);
             _algorithm.SetHistoryProvider(historyProvider);
 
             historyProvider.Initialize(new HistoryProviderInitializeParameters(
                 new BacktestNodePacket(),
                 null,
                 TestGlobals.DataProvider,
-                dataProvider,
+                TestGlobals.DataCacheProvider,
                 TestGlobals.MapFileProvider,
                 TestGlobals.FactorFileProvider,
                 i => { },
                 true,
-                new DataPermissionManager()));
-
-            dataProvider.Dispose();
+                new DataPermissionManager(),
+                _algorithm.ObjectStore,
+                _algorithm.Settings));
         }
-        
+
         [TestCase(Language.CSharp)]
         [TestCase(Language.Python)]
         public void DoesNotReturnTargetsIfSecurityPriceIsZero(Language language)
@@ -90,8 +89,11 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
         {
             if (bias == PortfolioBias.Short)
             {
-                var exception = Assert.Throws<ArgumentException>(() => GetPortfolioConstructionModel(language, bias, Resolution.Daily));
-                Assert.That(exception.Message, Is.EqualTo("Long position must be allowed in RiskParityPortfolioConstructionModel."));
+                var throwsConstraint = language == Language.CSharp
+                    ? Throws.InstanceOf<ArgumentException>()
+                    : Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<ArgumentException>();
+                Assert.That(() => GetPortfolioConstructionModel(language, bias, Resolution.Daily),
+                    throwsConstraint.And.Message.EqualTo("Long position must be allowed in RiskParityPortfolioConstructionModel."));
                 return;
             }
 
@@ -111,7 +113,7 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
                 new Insight(_nowUtc, aapl.Symbol, TimeSpan.FromDays(1), InsightType.Price, InsightDirection.Up, null, null),
                 new Insight(_nowUtc, spy.Symbol, TimeSpan.FromDays(1), InsightType.Price, InsightDirection.Down, null, null)
             };
-            
+
             foreach (var target in _algorithm.PortfolioConstruction.CreateTargets(_algorithm, insights))
             {
                 if (target.Quantity == 0)
@@ -145,7 +147,7 @@ namespace QuantConnect.Tests.Algorithm.Framework.Portfolio
                 new Insight(_nowUtc.AddDays(2), aapl.Symbol, TimeSpan.FromDays(1), InsightType.Price, InsightDirection.Up, null, null),
                 new Insight(_nowUtc.AddDays(2), spy.Symbol, TimeSpan.FromDays(1), InsightType.Price, InsightDirection.Up, null, null)
             };
-            
+
             _algorithm.Insights.AddRange(insights);
 
             var targets = _algorithm.PortfolioConstruction.CreateTargets(_algorithm, insights).ToArray();

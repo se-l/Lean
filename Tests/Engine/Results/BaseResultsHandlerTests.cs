@@ -50,6 +50,7 @@ namespace QuantConnect.Tests.Engine.Results
             {
                 Config.Set(ResultsDestinationFolderKey, overrideValue);
             }
+            Globals.Reset();
 
             _baseResultsHandler = new BaseResultsHandlerTestable(AlgorithmId);
 
@@ -90,8 +91,7 @@ namespace QuantConnect.Tests.Engine.Results
             mockResultHandler.CallBase = true;
             var protectedMockResultHandler = mockResultHandler.Protected();
 
-
-            protectedMockResultHandler.Setup("SampleEquity", ItExpr.IsAny<DateTime>(), ItExpr.IsAny<decimal>());
+            protectedMockResultHandler.Setup("SampleEquity", ItExpr.IsAny<DateTime>());
             protectedMockResultHandler.Setup("SampleBenchmark", ItExpr.IsAny<DateTime>(), ItExpr.IsAny<decimal>());
             protectedMockResultHandler
                 .Setup<decimal>("GetBenchmarkValue", ItExpr.IsAny<DateTime>())
@@ -105,8 +105,8 @@ namespace QuantConnect.Tests.Engine.Results
             var sampleInvocations = new List<SampleParams>();
             protectedMockResultHandler
                 .Setup("Sample", ItExpr.IsAny<string>(), ItExpr.IsAny<string>(), ItExpr.IsAny<int>(), ItExpr.IsAny<SeriesType>(),
-                    ItExpr.IsAny<DateTime>(), ItExpr.IsAny<decimal>(), ItExpr.IsAny<string>())
-                .Callback((string chartName, string seriesName, int seriesIndex, SeriesType seriesType, DateTime time, decimal value, string unit) =>
+                    ItExpr.IsAny<ISeriesPoint>(), ItExpr.IsAny<string>())
+                .Callback((string chartName, string seriesName, int seriesIndex, SeriesType seriesType, ISeriesPoint value, string unit) =>
                 {
                     sampleInvocations.Add(new SampleParams
                     {
@@ -114,7 +114,6 @@ namespace QuantConnect.Tests.Engine.Results
                         SeriesName = seriesName,
                         SeriesIndex = seriesIndex,
                         SeriesType = seriesType,
-                        Time = time,
                         Value = value,
                         Unit = unit
                     });
@@ -125,7 +124,7 @@ namespace QuantConnect.Tests.Engine.Results
             var timeKeeper = new TimeKeeper(new DateTime(2014, 6, 24, 12, 0, 0).ConvertToUtc(TimeZones.NewYork), new[] { TimeZones.NewYork });
             var securities = new SecurityManager(timeKeeper);
             var transactions = new SecurityTransactionManager(null, securities);
-            var portfolio = new SecurityPortfolioManager(securities, transactions);
+            var portfolio = new SecurityPortfolioManager(securities, transactions, new AlgorithmSettings());
 
             var algorithm = new QCAlgorithm();
             algorithm.Securities = securities;
@@ -144,12 +143,12 @@ namespace QuantConnect.Tests.Engine.Results
             mockResultHandler.Object.Sample(timeKeeper.UtcTime);
 
             // BaseResultHandler.Algorithm property accessed once by BaseResultHandler.SampleExposure()
-            // and once by BaseResultHandler.GetPortfolioValue()
-            protectedMockResultHandler.VerifyGet<IAlgorithm>("Algorithm", Times.Exactly(2));
+            // and once by BaseResultHandler.GetPortfolioValue() + 2 for sampling current equity value
+            protectedMockResultHandler.VerifyGet<IAlgorithm>("Algorithm", Times.Exactly(5));
 
             // Sample should've been called twice, by BaseResultHandler.SampleExposure(), once for the long and once for the short positions
             protectedMockResultHandler.Verify("Sample", Times.Exactly(2), ItExpr.IsAny<string>(), ItExpr.IsAny<string>(),
-                ItExpr.IsAny<int>(), ItExpr.IsAny<SeriesType>(), ItExpr.IsAny<DateTime>(), ItExpr.IsAny<decimal>(), ItExpr.IsAny<string>());
+                ItExpr.IsAny<int>(), ItExpr.IsAny<SeriesType>(), ItExpr.IsAny<ISeriesPoint>(), ItExpr.IsAny<string>());
             Assert.AreEqual(2, sampleInvocations.Count);
 
             var positionSides = new[] { PositionSide.Long, PositionSide.Short };
@@ -160,7 +159,7 @@ namespace QuantConnect.Tests.Engine.Results
                 Assert.AreEqual($"{spy.Type} - {positionSides[i]} Ratio", invocation.SeriesName);
                 Assert.AreEqual(0, invocation.SeriesIndex);
                 Assert.AreEqual(SeriesType.Line, invocation.SeriesType);
-                Assert.AreEqual(timeKeeper.UtcTime, invocation.Time);
+                Assert.AreEqual(timeKeeper.UtcTime, invocation.Value.Time);
                 Assert.AreEqual("", invocation.Unit);
             }
 
@@ -169,21 +168,21 @@ namespace QuantConnect.Tests.Engine.Results
 
             if (holdingsQuantity == 0)
             {
-                Assert.AreEqual(0, longInvocation.Value);
-                Assert.AreEqual(0, shortInvocation.Value);
+                Assert.AreEqual(0, ((ChartPoint)longInvocation.Value).y);
+                Assert.AreEqual(0, ((ChartPoint)shortInvocation.Value).y);
             }
             else
             {
                 var expectedExposure = Math.Round(spy.Holdings.HoldingsValue / portfolio.TotalPortfolioValue, 4);
                 if (holdingsQuantity > 0)
                 {
-                    Assert.AreEqual(expectedExposure, longInvocation.Value);
-                    Assert.AreEqual(0, shortInvocation.Value);
+                    Assert.AreEqual(expectedExposure, ((ChartPoint)longInvocation.Value).y);
+                    Assert.AreEqual(0, ((ChartPoint)shortInvocation.Value).y);
                 }
                 else
                 {
-                    Assert.AreEqual(0, longInvocation.Value);
-                    Assert.AreEqual(expectedExposure, shortInvocation.Value);
+                    Assert.AreEqual(0, ((ChartPoint)longInvocation.Value).y);
+                    Assert.AreEqual(expectedExposure, ((ChartPoint)shortInvocation.Value).y);
                 }
             }
         }
@@ -214,8 +213,7 @@ namespace QuantConnect.Tests.Engine.Results
                                            string seriesName,
                                            int seriesIndex,
                                            SeriesType seriesType,
-                                           DateTime time,
-                                           decimal value,
+                                           ISeriesPoint value,
                                            string unit = "$")
             {
                 throw new NotImplementedException();
@@ -232,8 +230,7 @@ namespace QuantConnect.Tests.Engine.Results
             public string SeriesName { get; set; }
             public int SeriesIndex { get; set; }
             public SeriesType SeriesType { get; set; }
-            public DateTime Time { get; set; }
-            public decimal Value { get; set; }
+            public ISeriesPoint Value { get; set; }
             public string Unit { get; set; }
         }
     }

@@ -54,7 +54,7 @@ namespace QuantConnect.Orders
         /// Option Exercise Order Type (6)
         /// </summary>
         OptionExercise,
-        
+
         /// <summary>
         ///  Limit if Touched Order Type - a limit order to be placed after first reaching a trigger value (7)
         /// </summary>
@@ -76,9 +76,9 @@ namespace QuantConnect.Orders
         ComboLegLimit,
 
         /// <summary>
-        ///  Pegged To Stock Order Type - (11)
+        /// Trailing Stop Order Type - (11)
         /// </summary>
-        PeggedToStock,
+        TrailingStop
     }
 
     /// <summary>
@@ -104,6 +104,32 @@ namespace QuantConnect.Orders
         /// there are backtests saved that reference the values in this order
         /// </remarks>
         Hold
+    }
+
+    /// <summary>
+    /// Position of the order
+    /// </summary>
+    public enum OrderPosition
+    {
+        /// <summary>
+        /// Indicates the buy order will result in a long position, starting either from zero or an existing long position (0)
+        /// </summary>
+        BuyToOpen,
+
+        /// <summary>
+        /// Indicates the buy order is starting from an existing short position, resulting in a closed or long position (1)
+        /// </summary>
+        BuyToClose,
+
+        /// <summary>
+        /// Indicates the sell order will result in a short position, starting either from zero or an existing short position (2)
+        /// </summary>
+        SellToOpen,
+
+        /// <summary>
+        /// Indicates the sell order is starting from an existing long position, resulting in a closed or short position (3)
+        /// </summary>
+        SellToClose,
     }
 
     /// <summary>
@@ -147,7 +173,7 @@ namespace QuantConnect.Orders
         Invalid = 7,
 
         /// <summary>
-        /// Order waiting for confirmation of cancellation (6)
+        /// Order waiting for confirmation of cancellation (8)
         /// </summary>
         CancelPending = 8,
 

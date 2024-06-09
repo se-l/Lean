@@ -55,12 +55,8 @@ namespace QuantConnect.Algorithm.CSharp
                     var freeMarginPostTrade = Portfolio.MarginRemaining;
                     AssertOptionStrategyIsPresent(OptionStrategyDefinitions.Straddle.Name, 10);
 
-                    var initialMarginRequiredPut = Securities[put.Symbol].BuyingPowerModel.GetInitialMarginRequirement(
-                        new InitialMarginParameters(Securities[put.Symbol], 10));
-                    var initialMarginRequiredCall = Securities[call.Symbol].BuyingPowerModel.GetInitialMarginRequirement(
-                        new InitialMarginParameters(Securities[call.Symbol], 10));
-
-                    var expectedMarginUsage = initialMarginRequiredPut + initialMarginRequiredCall;
+                    // Long straddles have no margin requirement
+                    var expectedMarginUsage = 0m;
                     if (expectedMarginUsage != Portfolio.TotalMarginUsed)
                     {
                         throw new Exception("Unexpect margin used!");
@@ -79,7 +75,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public override long DataPoints => 475788;
+        public override long DataPoints => 471135;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -91,14 +87,17 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "200000"},
+            {"End Equity", "197787"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -110,11 +109,11 @@ namespace QuantConnect.Algorithm.CSharp
             {"Information Ratio", "0"},
             {"Tracking Error", "0"},
             {"Treynor Ratio", "0"},
-            {"Total Fees", "$5.00"},
-            {"Estimated Strategy Capacity", "$820000.00"},
+            {"Total Fees", "$13.00"},
+            {"Estimated Strategy Capacity", "$270000.00"},
             {"Lowest Capacity Asset", "GOOCV W78ZFMML01JA|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "14.41%"},
-            {"OrderListHash", "a094feaf779fe36c2ab75023d80985b3"}
+            {"OrderListHash", "15b312a11b54cf67489d550260c68f5c"}
         };
     }
 }

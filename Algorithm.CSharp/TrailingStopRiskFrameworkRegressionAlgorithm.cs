@@ -34,7 +34,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             SetRiskManagement(new TrailingStopRiskManagementModel(0.01m));
         }
-        
+
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
@@ -45,30 +45,30 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override Dictionary<string, string> ExpectedStatistics => new ()
         {
-            { "Total Trades", "2" },
+            { "Total Orders", "2" },
             { "Average Win", "0%" },
             { "Average Loss", "-0.41%" },
             { "Compounding Annual Return", "-4.899%" },
             { "Drawdown", "1.100%" },
             { "Expectancy", "-1" },
             { "Net Profit", "-0.407%" },
-            { "Sharpe Ratio", "-2.896" },
+            { "Sharpe Ratio", "-3.521"},
             { "Probabilistic Sharpe Ratio", "0.370%" },
             { "Loss Rate", "100%" },
             { "Win Rate", "0%" },
             { "Profit-Loss Ratio", "0" },
-            { "Alpha", "-0.032" },
+            { "Alpha", "-0.04" },
             { "Beta", "-0.012" },
             { "Annual Standard Deviation", "0.012" },
             { "Annual Variance", "0" },
             { "Information Ratio", "-4.647" },
             { "Tracking Error", "0.05" },
-            { "Treynor Ratio", "2.998" },
+            { "Treynor Ratio", "3.644" },
             { "Total Fees", "$2.00" },
             { "Estimated Strategy Capacity", "$74000000.00" },
             { "Lowest Capacity Asset", "AAPL R735QTJ8XC9X" },
             { "Portfolio Turnover", "6.66%" },
-            { "OrderListHash", "84080b4c6747a2eeb6c9b90e61bb1c39" }
+            { "OrderListHash", "90cee73c60e9769050bfd8f0c192cdea" }
         };
     }
 }

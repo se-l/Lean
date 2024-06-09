@@ -108,7 +108,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 5568;
+        public long DataPoints => 5503;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -120,30 +120,33 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "74"},
-            {"Average Win", "2.44%"},
-            {"Average Loss", "-2.28%"},
-            {"Compounding Annual Return", "-4.581%"},
-            {"Drawdown", "30.500%"},
-            {"Expectancy", "-0.081"},
-            {"Net Profit", "-8.951%"},
-            {"Sharpe Ratio", "-0.137"},
-            {"Probabilistic Sharpe Ratio", "2.627%"},
-            {"Loss Rate", "56%"},
-            {"Win Rate", "44%"},
-            {"Profit-Loss Ratio", "1.07"},
-            {"Alpha", "-0.071"},
-            {"Beta", "0.978"},
-            {"Annual Standard Deviation", "0.152"},
-            {"Annual Variance", "0.023"},
-            {"Information Ratio", "-0.748"},
-            {"Tracking Error", "0.097"},
-            {"Treynor Ratio", "-0.021"},
-            {"Total Fees", "$264.99"},
-            {"Estimated Strategy Capacity", "$55000000.00"},
+            {"Total Orders", "68"},
+            {"Average Win", "2.35%"},
+            {"Average Loss", "-2.23%"},
+            {"Compounding Annual Return", "-1.896%"},
+            {"Drawdown", "25.500%"},
+            {"Expectancy", "-0.033"},
+            {"Start Equity", "100000"},
+            {"End Equity", "96244.17"},
+            {"Net Profit", "-3.756%"},
+            {"Sharpe Ratio", "-0.112"},
+            {"Sortino Ratio", "-0.105"},
+            {"Probabilistic Sharpe Ratio", "3.818%"},
+            {"Loss Rate", "53%"},
+            {"Win Rate", "47%"},
+            {"Profit-Loss Ratio", "1.06"},
+            {"Alpha", "-0.04"},
+            {"Beta", "0.594"},
+            {"Annual Standard Deviation", "0.126"},
+            {"Annual Variance", "0.016"},
+            {"Information Ratio", "-0.497"},
+            {"Tracking Error", "0.115"},
+            {"Treynor Ratio", "-0.024"},
+            {"Total Fees", "$261.35"},
+            {"Estimated Strategy Capacity", "$35000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
-            {"Portfolio Turnover", "5.06%"},
-            {"OrderListHash", "bdb23325dc6c1fa04f63a329346be794"}
+            {"Portfolio Turnover", "4.65%"},
+            {"OrderListHash", "aff4aa8a9a931dca60529d7d2f348293"}
         };
     }
 }

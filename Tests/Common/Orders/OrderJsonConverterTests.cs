@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using NUnit.Framework;
 using QuantConnect.Orders;
@@ -170,6 +171,26 @@ namespace QuantConnect.Tests.Common.Orders
             var actual = TestOrderType(expected);
 
             Assert.AreEqual(expected.StopPrice, actual.StopPrice);
+        }
+
+        [TestCase(Symbols.SymbolsKey.SPY)]
+        [TestCase(Symbols.SymbolsKey.EURUSD)]
+        [TestCase(Symbols.SymbolsKey.BTCUSD)]
+        public void DeserializesTrailingStopOrder(Symbols.SymbolsKey key)
+        {
+            var expected = new TrailingStopOrder(Symbols.Lookup(key), 100, 210.10m, 0.1m, true, new DateTime(2015, 11, 23, 17, 15, 37), "now")
+            {
+                Id = 12345,
+                Price = 209.03m,
+                ContingentId = 123456,
+                BrokerId = new List<string> { "727", "54970" }
+            };
+
+            var actual = TestOrderType(expected);
+
+            Assert.AreEqual(expected.StopPrice, actual.StopPrice);
+            Assert.AreEqual(expected.TrailingAmount, actual.TrailingAmount);
+            Assert.AreEqual(expected.TrailingAsPercentage, actual.TrailingAsPercentage);
         }
 
         [TestCase(Symbols.SymbolsKey.SPY)]
@@ -490,7 +511,8 @@ namespace QuantConnect.Tests.Common.Orders
                 CanceledTime = DateTime.UtcNow,
                 Status = OrderStatus.Filled,
                 OrderSubmissionData = new OrderSubmissionData(321.47m, 321.48m, 321.49m),
-                Properties = { TimeInForce = timeInForce }
+                Properties = { TimeInForce = timeInForce },
+                PriceAdjustmentMode = DataNormalizationMode.Adjusted
             };
 
             var converter = new OrderJsonConverter();
@@ -521,6 +543,7 @@ namespace QuantConnect.Tests.Common.Orders
             Assert.AreEqual(expected.OrderSubmissionData.AskPrice, actual.OrderSubmissionData.AskPrice);
             Assert.AreEqual(expected.OrderSubmissionData.BidPrice, actual.OrderSubmissionData.BidPrice);
             Assert.AreEqual(expected.OrderSubmissionData.LastPrice, actual.OrderSubmissionData.LastPrice);
+            Assert.AreEqual(expected.PriceAdjustmentMode, actual.PriceAdjustmentMode);
         }
 
         [Test]

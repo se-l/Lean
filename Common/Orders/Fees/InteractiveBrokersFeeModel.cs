@@ -83,11 +83,6 @@ namespace QuantConnect.Orders.Fees
             }
 
             var quantity = order.AbsoluteQuantity;
-            if (order.GroupOrderManager != null)
-            {
-                quantity *= order.GroupOrderManager.AbsoluteQuantity;
-            }
-
             decimal feeResult;
             string feeCurrency;
             var market = security.Symbol.ID.Market;
@@ -115,7 +110,7 @@ namespace QuantConnect.Orders.Fees
                         throw new KeyNotFoundException(Messages.InteractiveBrokersFeeModel.UnexpectedOptionMarket(market));
                     }
                     // applying commission function to the order
-                    var optionFee = optionsCommissionFunc(quantity, order.Price);
+                    var optionFee = optionsCommissionFunc(quantity, GetPotentialOrderPrice(order, security));
                     feeResult = optionFee.Amount;
                     feeCurrency = optionFee.Currency;
                     break;
@@ -177,6 +172,20 @@ namespace QuantConnect.Orders.Fees
                     feeResult = Math.Abs(tradeFee);
                     break;
 
+                case SecurityType.Cfd:
+                    var value = Math.Abs(order.GetValue(security));
+                    feeResult = 0.00002m * value; // 0.002%
+                    feeCurrency = security.QuoteCurrency.Symbol;
+
+                    var minimumFee = security.QuoteCurrency.Symbol switch
+                    {
+                        "JPY" => 40.0m,
+                        "HKD" => 10.0m,
+                        _ => 1.0m
+                    };
+                    feeResult = Math.Max(feeResult, minimumFee);
+                    break;
+
                 default:
                     // unsupported security type
                     throw new ArgumentException(Messages.FeeModel.UnsupportedSecurityType(security));
@@ -185,6 +194,54 @@ namespace QuantConnect.Orders.Fees
             return new OrderFee(new CashAmount(
                 feeResult,
                 feeCurrency));
+        }
+
+        /// <summary>
+        /// Approximates the order's price based on the order type
+        /// </summary>
+        protected static decimal GetPotentialOrderPrice(Order order, Security security)
+        {
+            decimal price = 0;
+            switch (order.Type)
+            {
+                case OrderType.TrailingStop:
+                    price = (order as TrailingStopOrder).StopPrice;
+                    break;
+                case OrderType.StopMarket:
+                    price = (order as StopMarketOrder).StopPrice;
+                    break;
+                case OrderType.ComboMarket:
+                case OrderType.MarketOnOpen:
+                case OrderType.MarketOnClose:
+                case OrderType.Market:
+                    decimal securityPrice;
+                    if (order.Direction == OrderDirection.Buy)
+                    {
+                        price = security.BidPrice;
+                    }
+                    else
+                    {
+                        price = security.AskPrice;
+                    }
+                    break;
+                case OrderType.ComboLimit:
+                    price = (order as ComboLimitOrder).GroupOrderManager.LimitPrice;
+                    break;
+                case OrderType.ComboLegLimit:
+                    price = (order as ComboLegLimitOrder).LimitPrice;
+                    break;
+                case OrderType.StopLimit:
+                    price = (order as StopLimitOrder).LimitPrice;
+                    break;
+                case OrderType.LimitIfTouched:
+                    price = (order as LimitIfTouchedOrder).LimitPrice;
+                    break;
+                case OrderType.Limit:
+                    price = (order as LimitOrder).LimitPrice;
+                    break;
+            }
+
+            return price;
         }
 
         /// <summary>

@@ -75,9 +75,9 @@ namespace QuantConnect.Report
             _cacheProvider = new ZipDataCacheProvider(new DefaultDataProvider(), false);
             var historyProvider = new SubscriptionDataReaderHistoryProvider();
 
-            var dataPermissionManager = new DataPermissionManager();
-            historyProvider.Initialize(new HistoryProviderInitializeParameters(null, null, null, _cacheProvider, mapFileProvider, factorFileProvider, (_) => { }, false, dataPermissionManager));
             Algorithm = new PortfolioLooperAlgorithm((decimal)startingCash, orders, algorithmConfiguration);
+            var dataPermissionManager = new DataPermissionManager();
+            historyProvider.Initialize(new HistoryProviderInitializeParameters(null, null, null, _cacheProvider, mapFileProvider, factorFileProvider, (_) => { }, false, dataPermissionManager, Algorithm.ObjectStore, Algorithm.Settings));
             Algorithm.SetHistoryProvider(historyProvider);
 
             // Dummy LEAN datafeed classes and initializations that essentially do nothing
@@ -95,7 +95,8 @@ namespace QuantConnect.Report
                         symbolPropertiesDataBase,
                         Algorithm,
                         RegisteredSecurityDataTypesProvider.Null,
-                        new SecurityCacheProvider(Algorithm.Portfolio)),
+                        new SecurityCacheProvider(Algorithm.Portfolio),
+                        algorithm: Algorithm),
                     dataPermissionManager,
                     new DefaultDataProvider()),
                 Algorithm,
@@ -110,7 +111,8 @@ namespace QuantConnect.Report
                 symbolPropertiesDataBase,
                 Algorithm,
                 RegisteredSecurityDataTypesProvider.Null,
-                new SecurityCacheProvider(Algorithm.Portfolio));
+                new SecurityCacheProvider(Algorithm.Portfolio),
+                algorithm: Algorithm);
 
             var transactions = new BacktestingTransactionHandler();
             _resultHandler = new BacktestingResultHandler();
@@ -128,7 +130,7 @@ namespace QuantConnect.Report
             Algorithm.FromOrders(orders);
 
             // More initialization, this time with Algorithm and other misc. classes
-            _resultHandler.Initialize(job, new Messaging.Messaging(), new Api.Api(), transactions);
+            _resultHandler.Initialize(new (job, new Messaging.Messaging(), new Api.Api(), transactions, mapFileProvider));
             _resultHandler.SetAlgorithm(Algorithm, Algorithm.Portfolio.TotalPortfolioValue);
 
             Algorithm.Transactions.SetOrderProcessor(transactions);

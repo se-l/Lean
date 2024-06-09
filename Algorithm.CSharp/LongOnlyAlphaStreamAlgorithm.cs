@@ -112,30 +112,33 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "13"},
+            {"Total Orders", "9"},
             {"Average Win", "0.99%"},
-            {"Average Loss", "-0.20%"},
-            {"Compounding Annual Return", "216.590%"},
+            {"Average Loss", "-0.60%"},
+            {"Compounding Annual Return", "216.678%"},
             {"Drawdown", "2.300%"},
-            {"Expectancy", "0.476"},
-            {"Net Profit", "1.484%"},
-            {"Sharpe Ratio", "7.296"},
-            {"Probabilistic Sharpe Ratio", "64.952%"},
-            {"Loss Rate", "75%"},
-            {"Win Rate", "25%"},
-            {"Profit-Loss Ratio", "4.91"},
+            {"Expectancy", "0.318"},
+            {"Start Equity", "1000000"},
+            {"End Equity", "1014847.05"},
+            {"Net Profit", "1.485%"},
+            {"Sharpe Ratio", "7.265"},
+            {"Sortino Ratio", "0"},
+            {"Probabilistic Sharpe Ratio", "64.957%"},
+            {"Loss Rate", "50%"},
+            {"Win Rate", "50%"},
+            {"Profit-Loss Ratio", "1.64"},
             {"Alpha", "-0.36"},
             {"Beta", "1.003"},
             {"Annual Standard Deviation", "0.223"},
             {"Annual Variance", "0.05"},
-            {"Information Ratio", "-100.202"},
+            {"Information Ratio", "-100.088"},
             {"Tracking Error", "0.004"},
-            {"Treynor Ratio", "1.624"},
-            {"Total Fees", "$313.73"},
-            {"Estimated Strategy Capacity", "$16000000.00"},
+            {"Treynor Ratio", "1.617"},
+            {"Total Fees", "$309.75"},
+            {"Estimated Strategy Capacity", "$15000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "179.37%"},
-            {"OrderListHash", "bdee04be3413e3cd32c3ce95bcc4994b"}
+            {"OrderListHash", "15b25d354d282abb9adfcc80bd4d67bc"}
         };
     }
 }

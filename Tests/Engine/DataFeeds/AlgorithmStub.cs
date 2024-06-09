@@ -14,6 +14,7 @@
  *
 */
 
+using QuantConnect.Python;
 using QuantConnect.Algorithm;
 using QuantConnect.Securities;
 using System.Collections.Generic;
@@ -31,6 +32,22 @@ namespace QuantConnect.Tests.Engine.DataFeeds
         public List<SecurityChanges> SecurityChangesRecord = new List<SecurityChanges>();
         public DataManager DataManager;
         public IDataFeed DataFeed;
+
+        /// <summary>
+        /// Lanzy PandasConverter only if used
+        /// </summary>
+        public override PandasConverter PandasConverter
+        {
+            get
+            {
+                if(base.PandasConverter == null)
+                {
+                    SetPandasConverter();
+                }
+                return base.PandasConverter;
+            }
+        }
+
         public AlgorithmStub(bool createDataManager = true)
         {
             if (createDataManager)

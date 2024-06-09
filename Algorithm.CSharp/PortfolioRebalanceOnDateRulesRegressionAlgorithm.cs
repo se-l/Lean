@@ -41,6 +41,10 @@ namespace QuantConnect.Algorithm.CSharp
             // Commented so regression algorithm is more sensitive
             //Settings.MinimumOrderMarginPortfolioPercentage = 0.005m;
 
+            // let's use 0 minimum order margin percentage so we can assert trades are only submitted immediately after rebalance on Wednesday
+            // if not, due to TPV variations happening every day we might no cross the minimum on wednesday but yes another day of the week
+            Settings.MinimumOrderMarginPortfolioPercentage = 0m;
+
             SetStartDate(2015, 1, 1);
             SetEndDate(2017, 1, 1);
 
@@ -81,7 +85,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 6075;
+        public long DataPoints => 6076;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -93,30 +97,33 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "362"},
+            {"Total Orders", "359"},
             {"Average Win", "0.06%"},
             {"Average Loss", "-0.03%"},
-            {"Compounding Annual Return", "11.407%"},
+            {"Compounding Annual Return", "11.414%"},
             {"Drawdown", "18.200%"},
-            {"Expectancy", "1.300"},
-            {"Net Profit", "24.116%"},
-            {"Sharpe Ratio", "0.626"},
-            {"Probabilistic Sharpe Ratio", "24.868%"},
-            {"Loss Rate", "24%"},
-            {"Win Rate", "76%"},
-            {"Profit-Loss Ratio", "2.01"},
-            {"Alpha", "0.035"},
+            {"Expectancy", "1.289"},
+            {"Start Equity", "100000"},
+            {"End Equity", "124130.05"},
+            {"Net Profit", "24.130%"},
+            {"Sharpe Ratio", "0.563"},
+            {"Sortino Ratio", "0.662"},
+            {"Probabilistic Sharpe Ratio", "24.886%"},
+            {"Loss Rate", "23%"},
+            {"Win Rate", "77%"},
+            {"Profit-Loss Ratio", "1.98"},
+            {"Alpha", "0.036"},
             {"Beta", "1.019"},
             {"Annual Standard Deviation", "0.141"},
             {"Annual Variance", "0.02"},
-            {"Information Ratio", "0.504"},
+            {"Information Ratio", "0.505"},
             {"Tracking Error", "0.072"},
-            {"Treynor Ratio", "0.087"},
-            {"Total Fees", "$366.83"},
-            {"Estimated Strategy Capacity", "$40000000.00"},
+            {"Treynor Ratio", "0.078"},
+            {"Total Fees", "$363.83"},
+            {"Estimated Strategy Capacity", "$71000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.33%"},
-            {"OrderListHash", "20d5c49aff16826f5a7fba8f3b9c23f2"}
+            {"OrderListHash", "fbc4fc832ebbd969bd449d38886575c0"}
         };
     }
 }

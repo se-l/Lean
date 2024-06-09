@@ -16,7 +16,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
 using QuantConnect.Orders;
@@ -44,21 +43,24 @@ namespace QuantConnect.Algorithm.CSharp
     {
         private Symbol _spx;
         private Symbol _spxOption;
+        private int _optionOrders;
         private Symbol _expectedContract;
+
+        protected virtual Resolution Resolution => Resolution.Minute;
 
         public override void Initialize()
         {
             SetStartDate(2021, 1, 4);
             SetEndDate(2021, 1, 31);
 
-            _spx = AddIndex("SPX", Resolution.Minute).Symbol;
+            _spx = AddIndex("SPX", Resolution).Symbol;
 
             // Select a index option call expiring OTM, and adds it to the algorithm.
             _spxOption = AddIndexOptionContract(OptionChainProvider.GetOptionContractList(_spx, Time)
                 .Where(x => x.ID.StrikePrice >= 4250m && x.ID.OptionRight == OptionRight.Call && x.ID.Date.Year == 2021 && x.ID.Date.Month == 1)
                 .OrderBy(x => x.ID.StrikePrice)
                 .Take(1)
-                .Single(), Resolution.Minute).Symbol;
+                .Single(), Resolution).Symbol;
 
             _expectedContract = QuantConnect.Symbol.CreateOption(_spx, Market.USA, OptionStyle.European, OptionRight.Call, 4250m, new DateTime(2021, 1, 15));
             if (_spxOption != _expectedContract)
@@ -143,6 +145,7 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 throw new Exception("Exercised option, even though it expires OTM");
             }
+            _optionOrders++;
         }
 
         /// <summary>
@@ -155,6 +158,11 @@ namespace QuantConnect.Algorithm.CSharp
             {
                 throw new Exception($"Expected no holdings at end of algorithm, but are invested in: {string.Join(", ", Portfolio.Keys)}");
             }
+
+            if (_optionOrders != 2)
+            {
+                throw new Exception("Option orders were not as expected!");
+            }
         }
 
         /// <summary>
@@ -165,12 +173,12 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate which languages this algorithm is written in.
         /// </summary>
-        public Language[] Languages { get; } = { Language.CSharp, Language.Python };
+        public virtual Language[] Languages { get; } = { Language.CSharp, Language.Python };
 
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 15656;
+        public virtual long DataPoints => 15941;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -180,32 +188,35 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// This is used by the regression test system to indicate what the expected statistics are from running the algorithm
         /// </summary>
-        public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
+        public virtual Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "-0.01%"},
             {"Compounding Annual Return", "-0.142%"},
             {"Drawdown", "0.000%"},
             {"Expectancy", "-1"},
+            {"Start Equity", "100000"},
+            {"End Equity", "99990"},
             {"Net Profit", "-0.010%"},
-            {"Sharpe Ratio", "-4.584"},
+            {"Sharpe Ratio", "-15.959"},
+            {"Sortino Ratio", "-124989.863"},
             {"Probabilistic Sharpe Ratio", "0.015%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.001"},
+            {"Alpha", "-0.004"},
             {"Beta", "0"},
             {"Annual Standard Deviation", "0"},
             {"Annual Variance", "0"},
             {"Information Ratio", "-0.334"},
             {"Tracking Error", "0.138"},
-            {"Treynor Ratio", "-9.47"},
+            {"Treynor Ratio", "-32.969"},
             {"Total Fees", "$0.00"},
             {"Estimated Strategy Capacity", "$22000.00"},
             {"Lowest Capacity Asset", "SPX XL80P59H5E6M|SPX 31"},
             {"Portfolio Turnover", "0.00%"},
-            {"OrderListHash", "fc2a346635cf62e08cf0c6f49579bc93"}
+            {"OrderListHash", "3cfa774d70e5d7e9dcd5e56a047d7c80"}
         };
     }
 }

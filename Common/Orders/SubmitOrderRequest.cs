@@ -110,6 +110,22 @@ namespace QuantConnect.Orders
         }
 
         /// <summary>
+        /// Trailing amount for a trailing stop order
+        /// </summary>
+        public decimal TrailingAmount
+        {
+            get; private set;
+        }
+
+        /// <summary>
+        /// Determines whether the <see cref="TrailingAmount"/> is a percentage or an absolute currency value
+        /// </summary>
+        public bool TrailingAsPercentage
+        {
+            get; private set;
+        }
+
+        /// <summary>
         /// Gets the order properties for this request
         /// </summary>
         public IOrderProperties OrderProperties
@@ -157,7 +173,58 @@ namespace QuantConnect.Orders
         /// <param name="securityType">The symbol's <see cref="SecurityType"/></param>
         /// <param name="symbol">The symbol to be traded</param>
         /// <param name="quantity">The number of units to be ordered</param>
-        /// <param name="stopPrice">The stop price for stop orders, non-stop orers this value is ignored</param>
+        /// <param name="stopPrice">The stop price for stop orders, non-stop orders this value is ignored</param>
+        /// <param name="limitPrice">The limit price for limit orders, non-limit orders this value is ignored</param>
+        /// <param name="triggerPrice">The trigger price for limit if touched orders, for non-limit if touched orders this value is ignored</param>
+        /// <param name="trailingAmount">The trailing amount to be used to update the stop price</param>
+        /// <param name="trailingAsPercentage">Whether the <paramref name="trailingAmount"/> is a percentage or an absolute currency value</param>
+        /// <param name="time">The time this request was created</param>
+        /// <param name="tag">A custom tag for this request</param>
+        /// <param name="properties">The order properties for this request</param>
+        /// <param name="groupOrderManager">The manager for this combo order</param>
+        public SubmitOrderRequest(
+            OrderType orderType,
+            SecurityType securityType,
+            Symbol symbol,
+            decimal quantity,
+            decimal stopPrice,
+            decimal limitPrice,
+            decimal triggerPrice,
+            decimal trailingAmount,
+            bool trailingAsPercentage,
+            DateTime time,
+            string tag,
+            IOrderProperties properties = null,
+            GroupOrderManager groupOrderManager = null,
+            string ocaGroup = "",
+            int ocaType = 0
+            )
+            : base(time, (int)OrderResponseErrorCode.UnableToFindOrder, tag)
+        {
+            SecurityType = securityType;
+            Symbol = symbol;
+            GroupOrderManager = groupOrderManager;
+            OrderType = orderType;
+            Quantity = quantity;
+            LimitPrice = limitPrice;
+            StopPrice = stopPrice;
+            TriggerPrice = triggerPrice;
+            TrailingAmount = trailingAmount;
+            TrailingAsPercentage = trailingAsPercentage;
+            OrderProperties = properties;
+            OcaGroup = ocaGroup;
+            OcaType = ocaType;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SubmitOrderRequest"/> class.
+        /// The <see cref="OrderRequest.OrderId"/> will default to <see cref="OrderResponseErrorCode.UnableToFindOrder"/>
+        /// </summary>
+        /// <param name="orderType">The order type to be submitted</param>
+        /// <param name="securityType">The symbol's <see cref="SecurityType"/></param>
+        /// <param name="symbol">The symbol to be traded</param>
+        /// <param name="quantity">The number of units to be ordered</param>
+        /// <param name="stopPrice">The stop price for stop orders, non-stop orders this value is ignored</param>
         /// <param name="limitPrice">The limit price for limit orders, non-limit orders this value is ignored</param>
         /// <param name="triggerPrice">The trigger price for limit if touched orders, for non-limit if touched orders this value is ignored</param>
         /// <param name="time">The time this request was created</param>
@@ -175,23 +242,11 @@ namespace QuantConnect.Orders
             DateTime time,
             string tag,
             IOrderProperties properties = null,
-            GroupOrderManager groupOrderManager = null,
-            string ocaGroup = "",
-            int ocaType = 0
+            GroupOrderManager groupOrderManager = null
             )
-            : base(time, (int) OrderResponseErrorCode.UnableToFindOrder, tag)
+            : this(orderType, securityType, symbol, quantity, stopPrice, limitPrice, triggerPrice, 0, false, time, tag, properties,
+                  groupOrderManager)
         {
-            SecurityType = securityType;
-            Symbol = symbol;
-            GroupOrderManager = groupOrderManager;
-            OrderType = orderType;
-            Quantity = quantity;
-            LimitPrice = limitPrice;
-            StopPrice = stopPrice;
-            TriggerPrice = triggerPrice;
-            OrderProperties = properties;
-            OcaGroup = ocaGroup;
-            OcaType = ocaType;
         }
 
         /// <summary>
@@ -202,7 +257,7 @@ namespace QuantConnect.Orders
         /// <param name="securityType">The symbol's <see cref="SecurityType"/></param>
         /// <param name="symbol">The symbol to be traded</param>
         /// <param name="quantity">The number of units to be ordered</param>
-        /// <param name="stopPrice">The stop price for stop orders, non-stop orers this value is ignored</param>
+        /// <param name="stopPrice">The stop price for stop orders, non-stop orders this value is ignored</param>
         /// <param name="limitPrice">The limit price for limit orders, non-limit orders this value is ignored</param>
         /// <param name="time">The time this request was created</param>
         /// <param name="tag">A custom tag for this request</param>

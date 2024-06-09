@@ -49,6 +49,14 @@ namespace QuantConnect.Brokerages
         public event EventHandler<List<OrderEvent>> OrdersStatusChanged;
 
         /// <summary>
+        /// Event that fires each time an order is updated in the brokerage side
+        /// </summary>
+        /// <remarks>
+        /// These are not status changes but mainly price changes, like the stop price of a trailing stop order
+        /// </remarks>
+        public event EventHandler<OrderUpdateEvent> OrderUpdated;
+
+        /// <summary>
         /// Event that fires each time a short option position is assigned
         /// </summary>
         public event EventHandler<OrderEvent> OptionPositionAssigned;
@@ -164,6 +172,22 @@ namespace QuantConnect.Brokerages
         protected virtual void OnOrderEvent(OrderEvent e)
         {
             OnOrderEvents(new List<OrderEvent> { e });
+        }
+
+        /// <summary>
+        /// Event invocator for the OrderUpdated event
+        /// </summary>
+        /// <param name="e">The update event</param>
+        protected virtual void OnOrderUpdated(OrderUpdateEvent e)
+        {
+            try
+            {
+                OrderUpdated?.Invoke(this, e);
+            }
+            catch (Exception err)
+            {
+                Log.Error(err);
+            }
         }
 
         /// <summary>
@@ -410,6 +434,24 @@ namespace QuantConnect.Brokerages
             return Enumerable.Empty<BaseData>();
         }
 
+        /// <summary>
+        /// Gets the position that might result given the specified order direction and the current holdings quantity.
+        /// This is useful for brokerages that require more specific direction information than provided by the OrderDirection enum
+        /// (e.g. Tradier differentiates Buy/Sell and BuyToOpen/BuyToCover/SellShort/SellToClose)
+        /// </summary>
+        /// <param name="orderDirection">The order direction</param>
+        /// <param name="holdingsQuantity">The current holdings quantity</param>
+        /// <returns>The order position</returns>
+        protected static OrderPosition GetOrderPosition(OrderDirection orderDirection, decimal holdingsQuantity)
+        {
+            return orderDirection switch
+            {
+                OrderDirection.Buy => holdingsQuantity >= 0 ? OrderPosition.BuyToOpen : OrderPosition.BuyToClose,
+                OrderDirection.Sell => holdingsQuantity <= 0 ? OrderPosition.SellToOpen : OrderPosition.SellToClose,
+                _ => throw new ArgumentOutOfRangeException(nameof(orderDirection), orderDirection, "Invalid order direction")
+            };
+        }
+
         #region IBrokerageCashSynchronizer implementation
 
         /// <summary>
@@ -459,7 +501,7 @@ namespace QuantConnect.Brokerages
 
                 Log.Trace("Brokerage.PerformCashSync(): Sync cash balance");
 
-                var balances = new List<CashAmount>();
+                List<CashAmount> balances = null;
                 try
                 {
                     balances = GetCashBalance();
@@ -469,7 +511,8 @@ namespace QuantConnect.Brokerages
                     Log.Error(err, "Error in GetCashBalance:");
                 }
 
-                if (balances.Count == 0)
+                // empty cash balance is valid, if there was No error/exception
+                if (balances == null)
                 {
                     Log.Trace("Brokerage.PerformCashSync(): No cash balances available, cash sync not performed");
                     return false;
@@ -485,6 +528,7 @@ namespace QuantConnect.Brokerages
                     }
                 }
 
+                var totalPorfolioValueThreshold = algorithm.Portfolio.TotalPortfolioValue * 0.02m;
                 // if we were returned our balances, update everything and flip our flag as having performed sync today
                 foreach (var kvp in algorithm.Portfolio.CashBook)
                 {
@@ -496,7 +540,7 @@ namespace QuantConnect.Brokerages
                     {
                         // compare in account currency
                         var delta = cash.Amount - balanceCash.Amount;
-                        if (Math.Abs(algorithm.Portfolio.CashBook.ConvertToAccountCurrency(delta, cash.Symbol)) > 5)
+                        if (Math.Abs(algorithm.Portfolio.CashBook.ConvertToAccountCurrency(delta, cash.Symbol)) > totalPorfolioValueThreshold)
                         {
                             // log the delta between
                             Log.Trace($"Brokerage.PerformCashSync(): {balanceCash.Currency} Delta: {delta:0.00}", true);

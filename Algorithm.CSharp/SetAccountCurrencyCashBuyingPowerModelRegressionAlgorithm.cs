@@ -22,6 +22,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Statistics;
+using QuantConnect.Algorithm.Framework.Portfolio;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -127,7 +128,7 @@ namespace QuantConnect.Algorithm.CSharp
 
         private void UpdateExpectedOrderQuantity(decimal target)
         {
-            _expectedOrderQuantity = ((Portfolio.TotalPortfolioValue - Settings.FreePortfolioValue) * target - _btcUsd.Holdings.HoldingsValue)
+            _expectedOrderQuantity = (Portfolio.TotalPortfolioValueLessFreeBuffer * target - _btcUsd.Holdings.HoldingsValue)
                 / (_btcUsd.Price * _btcUsd.QuoteCurrency.ConversionRate);
             _expectedOrderQuantity--; // minus 1 per fees
             _expectedOrderQuantity -= _expectedOrderQuantity % _btcUsd.SymbolProperties.LotSize;
@@ -245,14 +246,17 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "3"},
+            {"Total Orders", "4"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "0%"},
             {"Drawdown", "0%"},
             {"Expectancy", "0"},
+            {"Start Equity", "8141.93"},
+            {"End Equity", "8087.60"},
             {"Net Profit", "0%"},
             {"Sharpe Ratio", "0"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -266,9 +270,9 @@ namespace QuantConnect.Algorithm.CSharp
             {"Treynor Ratio", "0"},
             {"Total Fees", "€48.58"},
             {"Estimated Strategy Capacity", "€9000.00"},
-            {"Lowest Capacity Asset", "BTCUSD XJ"},
+            {"Lowest Capacity Asset", "BTCUSD 2XR"},
             {"Portfolio Turnover", "200.21%"},
-            {"OrderListHash", "6e0350f4d7625028c7bc43bd29806d04"}
+            {"OrderListHash", "407df5c68369b6d1aa21506a762f3bbd"}
         };
     }
 }

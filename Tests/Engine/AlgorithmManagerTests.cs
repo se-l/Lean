@@ -38,6 +38,7 @@ using QuantConnect.Orders;
 using QuantConnect.Packets;
 using QuantConnect.Scheduling;
 using QuantConnect.Securities;
+using QuantConnect.Statistics;
 using Log = QuantConnect.Logging.Log;
 
 namespace QuantConnect.Tests.Engine
@@ -55,7 +56,7 @@ namespace QuantConnect.Tests.Engine
             AlgorithmManagerAlgorithmStatusTest.AlgorithmStatus = algorithmStatus;
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters("QuantConnect.Tests.Engine.AlgorithmManagerTests+AlgorithmManagerAlgorithmStatusTest",
                 new Dictionary<string, string> {
-                    {"Total Trades", "0"},
+                    {PerformanceMetrics.TotalOrders, "0"},
                     {"Average Win", "0%"},
                     {"Average Loss", "0%"},
                     {"Compounding Annual Return", "0%"},
@@ -125,7 +126,7 @@ namespace QuantConnect.Tests.Engine
             algorithm.Initialize();
             algorithm.PostInitialize();
 
-            results.Initialize(job, new QuantConnect.Messaging.Messaging(), new Api.Api(), transactions);
+            results.Initialize(new (job, new QuantConnect.Messaging.Messaging(), new Api.Api(), transactions, null));
             results.SetAlgorithm(algorithm, algorithm.Portfolio.TotalPortfolioValue);
             transactions.Initialize(algorithm, new BacktestingBrokerage(algorithm), results);
             feed.Initialize(algorithm, job, results, null, null, null, dataManager, null, null);
@@ -182,13 +183,6 @@ namespace QuantConnect.Tests.Engine
             public bool IsActive { get; }
 
             public void OnSecuritiesChanged(SecurityChanges changes)
-            {
-            }
-
-            public void Initialize(AlgorithmNodePacket job,
-                IMessagingHandler messagingHandler,
-                IApi api,
-                ITransactionHandler transactionHandler)
             {
             }
 
@@ -253,6 +247,27 @@ namespace QuantConnect.Tests.Engine
             }
 
             public void SetDataManager(IDataFeedSubscriptionManager dataManager)
+            {
+            }
+
+            public StatisticsResults StatisticsResults()
+            {
+                return new StatisticsResults();
+            }
+
+            public void SetSummaryStatistic(string name, string value)
+            {
+            }
+
+            public void AlgorithmTagsUpdated(HashSet<string> tags)
+            {
+            }
+
+            public void AlgorithmNameUpdated(string name)
+            {
+            }
+
+            public void Initialize(ResultHandlerInitializeParameters parameters)
             {
             }
         }

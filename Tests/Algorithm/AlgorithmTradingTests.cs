@@ -28,6 +28,8 @@ using QuantConnect.Orders.Fees;
 using QuantConnect.Tests.Common.Securities;
 using QuantConnect.Tests.Engine.DataFeeds;
 using System.Linq;
+using QuantConnect.Data;
+using QuantConnect.Indicators;
 
 namespace QuantConnect.Tests.Algorithm
 {
@@ -1160,7 +1162,7 @@ namespace QuantConnect.Tests.Algorithm
             var actual = algo.CalculateOrderQuantity(symbol, 1m);
             Assert.AreEqual(3000m, actual);
 
-            var btcusd = algo.AddCrypto("BTCUSD", market: Market.GDAX);
+            var btcusd = algo.AddCrypto("BTCUSD", market: Market.Coinbase);
             btcusd.FeeModel = new ConstantFeeModel(0);
             // Set Price to $26
             Update(btcusd, 26);
@@ -1185,7 +1187,7 @@ namespace QuantConnect.Tests.Algorithm
             var actual = algo.CalculateOrderQuantity(symbol, -1m);
             Assert.AreEqual(-3000m, actual);
 
-            var btcusd = algo.AddCrypto("BTCUSD", market: Market.GDAX);
+            var btcusd = algo.AddCrypto("BTCUSD", market: Market.Coinbase);
             btcusd.BuyingPowerModel = new CashBuyingPowerModel();
             btcusd.FeeModel = new ConstantFeeModel(0);
             // Set Price to $26
@@ -1374,6 +1376,13 @@ namespace QuantConnect.Tests.Algorithm
             algo.StopLimitOrder(Symbols.MSFT, 1.0, 1, 2);
             algo.StopLimitOrder(Symbols.MSFT, 1.0m, 1, 2);
 
+            algo.TrailingStopOrder(Symbols.MSFT, 1, 1, true);
+            algo.TrailingStopOrder(Symbols.MSFT, 1.0, 1, true);
+            algo.TrailingStopOrder(Symbols.MSFT, 1.0m, 1, true);
+            algo.TrailingStopOrder(Symbols.MSFT, 1, 1, 0.01m, false);
+            algo.TrailingStopOrder(Symbols.MSFT, 1.0, 1, 0.01m, false);
+            algo.TrailingStopOrder(Symbols.MSFT, 1.0m, 1, 0.01m, false);
+
             algo.LimitIfTouchedOrder(Symbols.MSFT, 1, 1, 2);
             algo.LimitIfTouchedOrder(Symbols.MSFT, 1.0, 1, 2);
             algo.LimitIfTouchedOrder(Symbols.MSFT, 1.0m, 1, 2);
@@ -1383,7 +1392,7 @@ namespace QuantConnect.Tests.Algorithm
             algo.SetHoldings(Symbols.MSFT, 1.0m);
             algo.SetHoldings(Symbols.MSFT, 1.0f);
 
-            const int expected = 38;
+            const int expected = 44;
             Assert.AreEqual(expected, algo.Transactions.LastOrderId);
         }
 
@@ -1450,6 +1459,28 @@ namespace QuantConnect.Tests.Algorithm
 
             var ticket = algo.MarketOnOpenOrder(es20h20.Symbol, 1);
             Assert.That(ticket, Has.Property("Status").EqualTo(OrderStatus.Invalid));
+        }
+
+        [Test]
+        public void OptionOrdersAreNotAllowedDuringASplit()
+        {
+            var algo = GetAlgorithm(out _, 1, 0);
+            var aapl = algo.AddEquity("AAPL");
+            var applOptionContract = algo.AddOptionContract(
+                Symbol.CreateOption(aapl.Symbol, Market.USA, OptionStyle.American, OptionRight.Call, 40m, new DateTime(2014, 07, 19)));
+
+            var splitDate = new DateTime(2014, 06, 09);
+            aapl.SetMarketPrice(new IndicatorDataPoint(splitDate, 650m));
+            applOptionContract.SetMarketPrice(new IndicatorDataPoint(splitDate, 5m));
+
+            algo.SetCurrentSlice(new Slice(splitDate, new[] { new Split(aapl.Symbol, splitDate, 650m, 1 / 7, SplitType.SplitOccurred) }, splitDate));
+
+            var ticket = algo.MarketOrder(applOptionContract.Symbol, 1);
+            Assert.AreEqual(OrderStatus.Invalid, ticket.Status);
+            Assert.IsTrue(ticket.SubmitRequest.Response.IsError);
+            Assert.AreEqual(OrderResponseErrorCode.OptionOrderOnStockSplit, ticket.SubmitRequest.Response.ErrorCode);
+            Assert.IsTrue(ticket.SubmitRequest.Response.ErrorMessage.Contains(
+                "Options orders are not allowed when a split occurred for its underlying stock", StringComparison.InvariantCulture));
         }
 
         [TestCase(OrderType.MarketOnOpen)]
@@ -1582,6 +1613,7 @@ namespace QuantConnect.Tests.Algorithm
         {
             var algo = GetAlgorithm(out _, 1, 0);
             algo.SetTimeZone(TimeZones.London);
+            algo.SetDateTime(new DateTime(2023, 02, 16));
 
             var es20h20 = algo.AddFutureContract(
                 Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, new DateTime(2020, 3, 20)),
@@ -1612,6 +1644,7 @@ namespace QuantConnect.Tests.Algorithm
         {
             //Initialize algorithm
             var algo = new QCAlgorithm();
+            algo.Settings.MinimumOrderMarginPortfolioPercentage = 0;
             algo.SubscriptionManager.SetDataManager(new DataManagerStub(algo));
             algo.AddSecurity(SecurityType.Equity, "MSFT");
             algo.SetCash(100000);
@@ -1622,6 +1655,7 @@ namespace QuantConnect.Tests.Algorithm
             algo.Transactions.SetOrderProcessor(_fakeOrderProcessor);
             msft = algo.Securities[Symbols.MSFT];
             msft.SetLeverage(leverage);
+            algo.SetCurrentSlice(new Slice(DateTime.MinValue, Enumerable.Empty<BaseData>(), DateTime.MinValue));
             return algo;
         }
 
