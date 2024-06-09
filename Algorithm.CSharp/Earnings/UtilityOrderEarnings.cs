@@ -5,11 +5,13 @@ using QuantConnect.Orders;
 using System;
 using System.Collections.Generic;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 
 namespace QuantConnect.Algorithm.CSharp.Earnings
 {
     public class UtilityOrderEarnings : UtilityOrderBase
     {
+        private readonly double UtilNo = -2000;
         public UtilityOrderEarnings(Foundations algo, Option option, decimal quantity, decimal? price = null)
         {
             _algo = algo;
@@ -63,36 +65,48 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         /// <summary>
         /// Options of very high liquidity, lowest tenor, expiring same week should only be sold on release day, can buy day earlier.
+        /// Too many if clauses. With an IV intraday forecast model, could simplify this. 
         /// </summary>
         /// <returns></returns>
         protected double GetUtilityTargetHoldings()
         {
-            double utility;
+            double utility = UtilNo;
 
-            decimal targetQuantity = _algo.TargetHoldings.TryGetValue(Symbol.Value, out targetQuantity) ? targetQuantity : 0;
-            decimal orderQuantity = targetQuantity - _algo.Portfolio[Symbol].Quantity;
+            decimal orderQuantity = _algo.QuantityToTargetHolding(Symbol);
             if (orderQuantity == 0 || Quantity * orderQuantity < 0)
             {
-                utility = -2000;
-                return utility;
+                return UtilNo;
             }
 
-            DateTime nextReleaseDate = _algo.NextReleaseDate(Underlying);
+            bool isAfterRelease = (_algo.PreviouReleaseDate(Underlying) + TimeSpan.FromDays(1)).Date == _algo.Time.Date;
+            OptionContractWrap ocw = OptionContractWrap.E(_algo, _option, Time.Date);
+            int dte = ocw.DaysToExpiration();
+            double absDelta = Math.Abs(ocw.Delta(_algo.IV(_option)));
 
-            if (nextReleaseDate - _algo.Time < TimeSpan.FromDays(0))
+            // Before earnings release, utility is managed by the marginal util coming from estimator.
+            if (_algo.PreparingEarningsRelease(Underlying))
             {
                 double marginalUtility = _algo.MarginalWeightedDNLV.TryGetValue(Symbol, out marginalUtility) ? marginalUtility : 0;
                 utility = marginalUtility * Math.Sign(Quantity);
             }
-            else if ((_algo.PreviouReleaseDate(Underlying) + TimeSpan.FromDays(1)).Date == _algo.Time.Date && _algo.Time.TimeOfDay < new TimeSpan(0, 13, 0, 0) && OrderDirection == OrderDirection.Buy)
+            // After release, sell any longs from SOD.
+            else if (isAfterRelease 
+                && OrderDirection == OrderDirection.Sell
+                && _algo.Time.TimeOfDay > new TimeSpan(0, 9, 32, 0)
+                && ((dte >= 7) || (dte < 7 && absDelta < 0.95))  // Dont sell deep ITM options, too much trouble adjusting the hedge. Just get let it exercise.
+                )
             {
-                // Dont buy back any options before noon. Waiting for IVs to drop further.
-                utility = -1000;
+                utility = 200;
             }
-            else
+            //After release, sell any longs only after noon when vola has dropped.
+            else if (isAfterRelease 
+                && OrderDirection == OrderDirection.Buy 
+                && _algo.Time.TimeOfDay > new TimeSpan(0, 12, 0, 0)
+                )
             {
-                utility = 100;
+                utility = 200;
             }
+
             return utility;
         }
 
@@ -110,6 +124,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// <returns></returns>
         protected override double GetUtilityEquityPosition()
         {
+            // Move these model parameters to a config file or with model specs.
             double util;
             double b = 0.01;
             double c = 0.005;
@@ -120,18 +135,23 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             double orderDelta = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, _algo.HedgeMetric(Underlying));
 
             var whatIfOptionDelta = optionDelta + orderDelta;
+            DateTime nextReleaseDate = _algo.NextReleaseDate(Underlying);
 
             // Need to become very strict on reducing abs deltaAcross within last 30min of release date.
-            DateTime nextReleaseDate = _algo.NextReleaseDate(Underlying);
-            if (nextReleaseDate == _algo.Time.Date && new TimeSpan(0, 16, 0, 0) - _algo.Time.TimeOfDay < TimeSpan.FromMinutes(30) &&
-                Math.Abs(whatIfOptionDelta) > Math.Abs(optionDelta) && Math.Abs(whatIfOptionDelta) > 50)
+            if (nextReleaseDate == _algo.Time.Date 
+                && new TimeSpan(0, 16, 0, 0) - _algo.Time.TimeOfDay < TimeSpan.FromMinutes(15) 
+                && Math.Abs(whatIfOptionDelta) > Math.Abs(optionDelta) && Math.Abs(whatIfOptionDelta) > 50
+                )
             {
-                util = -3000;
+                util = UtilNo;
             }
-            // more relaxed threshold beforehand
-            else if (Math.Abs(whatIfOptionDelta) > Math.Abs(optionDelta) && Math.Abs(whatIfOptionDelta) > 150)  // refactor this back to a threshold considering volatility and underlying price. So a vola adjusted DeltaUSD.
+            // More relaxed threshold beforehand
+            else if (
+                Math.Abs(whatIfOptionDelta) > Math.Abs(optionDelta) 
+                && Math.Abs(whatIfOptionDelta) > 150
+                )  // Refactor this back to a threshold considering volatility and underlying price. So a vola adjusted DeltaUSD.
             {
-                util = -3000;
+                util = UtilNo;
             }
             else
             {

@@ -24,6 +24,7 @@ using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
 using QuantConnect.Orders.Fees;
+using QuantConnect.Scheduling;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using QuantConnect.Securities.Positions;
@@ -301,6 +302,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 _completeOrderTickets.TryAdd(ticket.OrderId, ticket);
                 _submitRequestsUnprocessed.TryAdd(request.OrderId, request);
                 _orderRequestQueue.Add(request);
+                Log.Trace("BrokerageTransactionHandler.AddOrder(): Added request to requestQueue. LeanID=" + ticket.OrderId);
 
                 // wait for the transaction handler to set the order reference into the new order ticket,
                 // so we can ensure the order has already been added to the open orders,
@@ -644,6 +646,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             {
                 foreach (var request in _orderRequestQueue.GetConsumingEnumerable(_cancellationTokenSource.Token))
                 {
+                    Log.Trace($"BrokerageTransactionHandler.Run(): Processing request: {request}");
                     HandleOrderRequest(request);
                     ProcessAsynchronousEvents();
                 }
@@ -899,7 +902,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             catch (Exception err)
             {
                 Log.Error(err);
-                _algorithm.Error($"Order Error: id: {order.Id.ToStringInvariant()}, Error executing margin models: {err.Message}");
+                _algorithm.Error($"Order Error: LeanId: {order.Id.ToStringInvariant()}, Error executing margin models: {err.Message}");
                 HandleOrderEvent(new OrderEvent(order,
                     _algorithm.UtcTime,
                     OrderFee.Zero,
@@ -921,7 +924,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             {
                 if (!_algorithm.BrokerageModel.CanSubmitOrder(kvp.Value, kvp.Key, out var message))
                 {
-                    var errorMessage = $"BrokerageModel declared unable to submit order: [{string.Join(",", orders.Select(o => o.Id))}]";
+                    var errorMessage = $"BrokerageModel declared unable to submit orders. LeanID={string.Join(",", orders.Select(o => o.Id))}";
 
                     // if we couldn't actually process the order, mark it as invalid and bail
                     message ??= new BrokerageMessageEvent(BrokerageMessageType.Warning, "InvalidOrder", string.Empty);
@@ -937,7 +940,17 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             bool orderPlaced;
             try
             {
-                orderPlaced = orders.All(o => _brokerage.PlaceOrder(o));
+                Log.Trace("BrokerageTransactionHandler.HandleSubmitOrderRequest(): Submitting orders. LeanID=" + string.Join(",", orders.Select(o => o.Id)));
+                if (_algorithm.LiveMode)
+                {
+                    orderPlaced = orders.All(o => _brokerage.PlaceOrder(o));
+                }
+                else
+                {
+                    // Assume a latency here for every request, submit/cancel/update
+                    _algorithm.Schedule.On(_algorithm.Schedule.DateRules.Today, _algorithm.Schedule.TimeRules.At(_algorithm.Time.TimeOfDay + TimeSpan.FromSeconds(2)), () => orders.DoForEach(o => _brokerage.PlaceOrder(o)));
+                    orderPlaced = true;                    
+                }
             }
             catch (Exception err)
             {

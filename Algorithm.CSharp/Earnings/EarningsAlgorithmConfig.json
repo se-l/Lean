@@ -1,12 +1,12 @@
 {
   //"StartDate": "2024-02-20",
   //"EndDate": "2024-02-21",
-  "StartDate": "2024-03-13",
-  "EndDate": "2024-03-14",
+  "StartDate": "2024-03-08",
+  "EndDate": "2024-03-08",
   //"ticker": [ "PEP", "CDNS" ],
   //"StartDate": "2023-11-27",
   //"EndDate": "2023-11-29",
-  "Ticker": [ "DKS" ],
+  "Ticker": [ "DOCU" ],
   "WsHost": "localhost",
   "WsPort": 8002
 }

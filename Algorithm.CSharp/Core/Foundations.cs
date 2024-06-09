@@ -684,8 +684,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     if (LiveMode)
                     {
                         Log($"{Time} ConsumeSignal. WAITING with signal submission: Queue Length: {_signalQueue.Count()}, " +
-                        $"CancelRequestsUnprocessed: Count={Transactions.CancelRequestsUnprocessed.Count()}, OrderId={string.Join(", ", Transactions.CancelRequestsUnprocessed.Select(r => r.OrderId))}, " +
-                        $"SubmitRequestsUnprocessed: Count={Transactions.SubmitRequestsUnprocessed.Count()}, OrderId={string.Join(", ", Transactions.SubmitRequestsUnprocessed.Select(r => r.OrderId))}, " +
+                        $"CancelRequestsUnprocessed: Count={Transactions.CancelRequestsUnprocessed.Count()}, LeanID={string.Join(", ", Transactions.CancelRequestsUnprocessed.Select(r => r.OrderId))}, " +
+                        $"SubmitRequestsUnprocessed: Count={Transactions.SubmitRequestsUnprocessed.Count()}, LeanID={string.Join(", ", Transactions.SubmitRequestsUnprocessed.Select(r => r.OrderId))}, " +
                         $"UpdateRequestsUnprocessed: Count={Transactions.UpdateRequestsUnprocessed.Count()}");
                     }                    
                     AlertLateOrderRequests();
@@ -1218,13 +1218,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     // Assigning fairly negative utility to this inventory increase.
                     if (ticket.Quantity * quantity >= 0)
                     {
-                        QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"{symbol}. Already have an order ticket with same sign: OrderId={ticket.OrderId}. Status: {ticket.Status}. For now only want 1 order. Not processing" } });
+                        QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"{symbol}. Already have an order ticket with same sign: LeanID={ticket.OrderId}. Status: {ticket.Status}. For now only want 1 order. Not processing" } });
                         return false;
                     }
 
                     if (ticket.Quantity * quantity <= 0)
                     {
-                        QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"IsOrderValid. {symbol}. IB does not allow opposite-side simultaneous order: OrderId: {ticket.OrderId}. Status: {ticket.Status} Not processing..." } });
+                        QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"IsOrderValid. {symbol}. IB does not allow opposite-side simultaneous order: LeanID={ticket.OrderId}. Status: {ticket.Status} Not processing..." } });
                         return false;
                     }
                 }
@@ -1291,12 +1291,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             OrderTicket2UtilityOrder[orderTicket.OrderId] = utilityOrder;
 
-            // Occasionally limit orders dont get processed timely eventually hitting a timeout set to 15min by QC resulting in runtime error.
+            // Occasionally limit orders dont get processed resulting in losses due to missing hedging. Also, these eventually hit a timeout set to 15min by QC resulting in runtime error.
             // Therefore, checking frequently whether a ticket has been process - orderTicket.SubmitRequest.Status;
             // Expecting orderStatus to be at least Submitted. If not, cancel and allow algo to resubmit.
 
-            // Something bad with this closure. If so, would also be bad during backtesting...
-            int timeout = 30;
+            // Expecting very fast turnaround time for equity orders. Options order are ok to take longer as they are not used to hedge currently.
+
+            int timeout = 10;
             Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromSeconds(timeout)), () => CancelOrderTicketIfUnprocessed(orderTicket.OrderId, timeout));
 
             OrderEventWriters[Underlying(orderTicket.Symbol)].Write(orderTicket);
@@ -1306,15 +1307,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
             OrderTicket ticket = Transactions.GetOrderTicket(orderId);
             if (ticket?.CancelRequest == null && ticket.SubmitRequest.Status == OrderRequestStatus.Unprocessed)
             {
-                string tag = $"CancelOrderTicketIfUnprocessed: {ticket.Symbol} Status: {ticket.Status} remained Unprocessed for {sec} sec after new submission. Canceling LeanId: {ticket.OrderId}";
+                // This was not encountered.
+                string tag = $"CancelOrderTicketIfUnprocessed: {ticket.Symbol} Status: {ticket.Status} remained Unprocessed for {sec} sec after new submission. Canceling LeanID={ticket.OrderId}";
                 Cancel(ticket, tag);
             }
             else if (ticket?.CancelRequest == null && $"{ticket.Status}" == $"{OrderStatus.New}" && $"{ticket.SubmitRequest.Status}" == $"{OrderRequestStatus.Error}")
             {
-                // SubmitRequest.Status is initialized with error.
-                // true even if log prints false, therefore evaluating as string now..
+                // SubmitRequest.Status is initialized with error. true even if log prints false, therefore evaluating as string now..
                 // SubmitRequest.Status=Processed. 15. Remains in bad submission state after 52 seconds. Canceling.
-                string tag = $"CancelOrderTicketIfUnprocessed: OrderTicket {ticket}. LeanId: {ticket.OrderId} {ticket.Symbol} {ticket.Quantity} {ticket.Status} SubmitRequest.Status={ticket.SubmitRequest.Status}. {ticket.SubmitRequest.OrderId}. Remains in bad submission state after {sec} seconds. Canceling.";
+                string tag = $"CancelOrderTicketIfUnprocessed: Remains in bad submission state after {sec} seconds. Sybmol={ticket.Symbol}, OrderTicket={ticket}, LeanId={ticket.OrderId}, Quantity={ticket.Quantity}, Ticket.Status={ticket.Status}, Ticket.SubmitRequest.Status={ticket.SubmitRequest.Status}.";
                 Cancel(ticket, tag);
             };
         }
@@ -1564,7 +1565,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     //if (Math.Abs(idealLimitPrice - limitPrice) >= tickSize && idealLimitPrice >= tickSize)
                     if (idealLimitPrice >= tickSize && idealLimitPrice != limitPrice)
                     {
-                        var tag = $"{Time}: UPDATE LIMIT Price Symbol={symbol}, OrderId={ticket.OrderId}, OcaGroup/Type={ticket.OcaGroup}/{ticket.OcaType}, currentLimitPrice={limitPrice}, newLimitPrice={idealLimitPrice}, Bid={option.BidPrice}, Ask={option.AskPrice}";
+                        var tag = $"{Time}: UPDATE LIMIT Price Symbol={symbol}, LeanId={ticket.OrderId}, OcaGroup/Type={ticket.OcaGroup}/{ticket.OcaType}, currentLimitPrice={limitPrice}, newLimitPrice={idealLimitPrice}, Bid={option.BidPrice}, Ask={option.AskPrice}";
                         var response = ticket.UpdateLimitPrice(idealLimitPrice, tag);
                         if (Cfg.LogOrderUpdates || LiveMode)
                         {
@@ -1581,7 +1582,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     // Quantity - low overhead. SignalQuantity needs risk metrics that are also fetched for getting a price and cached.
                     if (ticket.Quantity != quote.Quantity && Math.Abs(ticket.Quantity - quote.Quantity) >= 2)
                     {
-                        var tag = $"{Time}: UPDATE LIMIT Quantity Symbol {symbol}, OrderId: {ticket.OrderId}, OcaGroup/Type: {ticket.OcaGroup}/{ticket.OcaType}, Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
+                        var tag = $"{Time}: UPDATE LIMIT Quantity Symbol {symbol}, LeanID={ticket.OrderId}, OcaGroup/Type: {ticket.OcaGroup}/{ticket.OcaType}, Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
                         var response = ticket.UpdateQuantity(quote.Quantity, tag);
                         if (Cfg.LogOrderUpdates || LiveMode)
                         {
@@ -1602,7 +1603,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (orderCanceledOrPending.Contains(ticket.Status)) return null;
 
-            Log($"{Time} Cancel: {ticket.Symbol}, OrderId={ticket.OrderId}, Status={ticket.Status} {ticket}, CancelTag={tag}");
+            Log($"{Time} Cancel: {ticket.Symbol}, LeanID={ticket.OrderId}, Status={ticket.Status} {ticket}, CancelTag={tag}");
             var response = ticket.Cancel(tag);
             OrderEventWriters[Underlying(ticket.Symbol)].Write(ticket);
             return response;
@@ -1676,7 +1677,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 quantity -= orderedQuantityMarket;
                 if (orderedQuantityMarket != 0)
                 {
-                    Log($"{Time} EquityHedgeQuantity: Market Orders present for {underlying} {orderedQuantityMarket} OrderId={string.Join(", ", marketOrders.Select(t => t.OrderId))}.");
+                    Log($"{Time} EquityHedgeQuantity: Market Orders present for {underlying} {orderedQuantityMarket} LeanID={string.Join(", ", marketOrders.Select(t => t.OrderId))}.");
                 }
                 Log($"{Time} EquityHedgeQuantity: DeltaTotal={deltaTotal}");//, deltaIVdSTotal={deltaIVdSTotal} (not used)");
             }
@@ -2029,6 +2030,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (orderDirection == OrderDirection.Hold) { throw new ArgumentException("OrderDirection.Hold not allowed in SignalQuantity."); }
 
             decimal absQuantity;
+            decimal maxOptionOrderQuantity = Math.Abs(Cfg.MaxOptionOrderQuantity.TryGetValue(Underlying(symbol).Value, out maxOptionOrderQuantity) ? maxOptionOrderQuantity : Cfg.MaxOptionOrderQuantity[CfgDefault]);
             // Move this into the UtilityOrder class. Let that class determine the best quantity.
 
             //decimal signalQuantityFraction = Cfg.SignalQuantityFraction.TryGetValue(Underlying(symbol).Value, out signalQuantityFraction) ? signalQuantityFraction : Cfg.SignalQuantityFraction[CfgDefault];
@@ -2045,12 +2047,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (TargetHoldings.ContainsKey(symbol))
             {
-                absQuantity = Math.Abs(TargetHoldings[symbol] - Portfolio[symbol].Quantity);
+                absQuantity = Math.Abs(QuantityToTargetHolding(symbol));
             }
             else
             {
-                decimal maxOptionOrderQuantity = Cfg.MaxOptionOrderQuantity.TryGetValue(Underlying(symbol).Value, out maxOptionOrderQuantity) ? maxOptionOrderQuantity : Cfg.MaxOptionOrderQuantity[CfgDefault];
-
                 absQuantity = new HashSet<decimal>() {
                     maxOptionOrderQuantity,
                     AbsMaxFeeMinimizingQuantity(symbol, orderDirection),  // This is not just fee minimizing, but putting a threshold on the equity position. That should be left to a risk based margin reducing model, eg, only increase margin in steps of 0.5k.
@@ -2058,13 +2058,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     MaxGammaRespectingQuantity(symbol, orderDirection),
                     MaxLongRespectingDeltaQuantity(symbol, orderDirection)
                 }.Min();
-            }
+            }          
 
-            absQuantity = Math.Round(Math.Min(Math.Max(absQuantity, 1), 1), 0);
-            //if(absQuantity == 0)
-            //{
-            //    Log($"{Time} SignalQuantity: {symbol} absQuantity=0. Not trading.");
-            //}
+            absQuantity = Math.Round(Math.Min(Math.Max(absQuantity, 1), maxOptionOrderQuantity), 0);
+            if (absQuantity == 0)
+            {
+                Log($"{Time} SignalQuantity is 0, not trading: {symbol} absquantity={absQuantity}, maxOptionOrderQuantity={maxOptionOrderQuantity}, QuantityToTargetHolding={QuantityToTargetHolding(symbol)}");
+            }
 
             return DIRECTION2NUM[orderDirection] * absQuantity;
         }
@@ -2194,6 +2194,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             return HedgingModeMap[Cfg.HedgingMode.TryGetValue(Underlying(symbol).Value, out int hedgeMode) ? hedgeMode : Cfg.HedgingMode[CfgDefault]];
         }
+        /// <summary>
+        /// To be deprecated. Delete.
+        /// </summary>
         public void SetTradingRegime()
         {
             // Events - earnings. Future, auto-detect events.
@@ -2220,12 +2223,32 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
+        /// <summary>
+        /// Release date is referred to as last trading session before earnings release, so adding a day.
+        /// </summary>
+        /// <param name="underlying"></param>
+        /// <param name="days"></param>
+        /// <returns></returns>
+        public bool IsAfterRelease(Symbol underlying, int days = 1)
+        {
+            DateTime prevReleaseDate = PreviouReleaseDate(underlying);
+            return Time.Date > prevReleaseDate.Date && Time.Date <= (prevReleaseDate + TimeSpan.FromDays(days)).Date;
+        }
+
         public bool PreparingEarningsRelease(Symbol underlying)
         {
             DateTime releaseDate = NextReleaseDate(underlying);
             int prepDays = Cfg.PrepareEarningsPeriodDays.TryGetValue(underlying, out prepDays) ? prepDays : Cfg.PrepareEarningsPeriodDays[CfgDefault] - 1;
             prepDays = Math.Max(prepDays, 0);
             return Time.Date >= releaseDate - TimeSpan.FromDays(prepDays) && Time.Date <= releaseDate;
+        }
+        public decimal QuantityToTargetHolding(Symbol symbol)
+        {
+            if (TargetHoldings.TryGetValue(symbol, out decimal targetQuantity))
+            {
+                return targetQuantity - Portfolio[symbol].Quantity;
+            }
+            return 0;
         }
     }
 }

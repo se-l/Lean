@@ -80,5 +80,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, double> KalmanAlphaBid { get; set; }
         public Dictionary<string, double> KalmanAlphaAsk { get; set; }
         public Dictionary<string, int> PrepareEarningsPeriodDays { get; set; }
+        public int BacktestingBrokerageLatency {  get; set; }
     }
 }

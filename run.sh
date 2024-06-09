@@ -13,6 +13,6 @@ ln -s /mnt/d/trade/dataLive/ /repos/quantconnect/Lean
 mkdir -p /repos/quantconnect/Lean/Launcher/bin
 ln -s /mnt/c/repos/quantconnect/Lean/Launcher/bin/Analytics/ /repos/quantconnect/Lean/Launcher/bin
 
-cd /repos/quantconnect/Lean/Launcher/bin/Debug/
+cd /repos/quantconnect/Lean/Launcher/bin/Release/
 dotnet QuantConnect.Lean.Launcher.dll
 #/bin/bash

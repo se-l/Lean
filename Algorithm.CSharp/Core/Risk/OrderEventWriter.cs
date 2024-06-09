@@ -18,7 +18,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private bool _headerWritten;
         private List<string> _header = new() { "Ts", "TimeMS", "OrderId", "BrokerId", "OrderDirection", "OrderStatus", "SecurityType", "Underlying", "Symbol", "Quantity", "FillQuantity", 
             "LimitPrice", "FillPrice", "Fee", "PriceUnderlying", "BestBid", "BestAsk", "Delta2Mid", "OrderType", 
-            "SubmitRequest.Status", "SubmitRequest.Time", "SubmitRequest.TimeMS",
+            "SubmitRequest.Status", "SubmitRequestResponseErrorMessage", "SubmitRequest.Time", "SubmitRequest.TimeMS",
             "CancelRequest.Status", "CancelRequest.Time", "CancelRequest.TimeMS",
             "LastUpdateRequest.Status", "LastUpdateRequest.Time", "LastUpdateRequest.TimeMS",
             "Tag", "TimeOrderLastUpdated", "TimeOrderLastUpdatedMS",
@@ -83,6 +83,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 ("Delta2Mid", () => delta2Mid.ToString(CultureInfo.InvariantCulture) ),
                 ("OrderType", () => orderTicket.OrderType.ToString() ),
                 ("SubmitRequestStatus", () => orderTicket.SubmitRequest.Status.ToString() ),
+                ("SubmitRequestResponseErrorMessage", () => orderTicket.SubmitRequest?.Response?.ErrorMessage ?? "" ),
                 ("SubmitRequestTime", () => orderTicket.SubmitRequest.Time.ConvertFromUtc(_algo.TimeZone).ToString("yyyyMMdd HHmmss", CultureInfo.InvariantCulture) ),
                 ("SubmitRequestTimeMS", () => (orderTicket.SubmitRequest.Time.ConvertFromUtc(_algo.TimeZone).Ticks / TimeSpan.TicksPerMillisecond).ToString(CultureInfo.InvariantCulture) ),
                 ("CancelRequestStatus", () => orderTicket.CancelRequest?.Status.ToString(CultureInfo.InvariantCulture) ),

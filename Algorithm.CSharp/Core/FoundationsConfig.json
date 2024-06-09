@@ -9,7 +9,20 @@
     "_": false
   },
   "ExecuteManualOrderInstructions": true,
-  "BacktestingHoldings": {},
+  "BacktestingHoldings": {
+    "DOCU  240308C00063000": 12.0,
+    "DOCU  240308P00049500": -5.0,
+    "DOCU  240308P00054000": -15.0,
+    "DOCU  240308P00055000": -1.0,
+    "DOCU  240308P00057000": -4.0,
+    "DOCU  240308P00058000": -5.0,
+    "DOCU  240308P00060000": 1.0,
+    "DOCU  240308P00062000": -12.0,
+    "DOCU  240315P00059000": 7.0,
+    "DOCU  240315P00062500": 15.0,
+    "DOCU  240426P00051000": 3.0,
+    "DOCU  240426P00052000": 20.0
+  },
   "LogOrderUpdates": true,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
   "WarmUpDays": 2, // Reduce for debugging. Usually 2.
@@ -98,8 +111,10 @@
   },
   ///
 
+  // Needs to depend on underlying price, delta, and jumps.
   "MaxOptionOrderQuantity": {
-    "_": 5 // Needs to depend on underlying price.
+    "_": 1,
+    "DOCU": 5
   },
   "TargetMaxEquityPositionUSD": {
     "_": 4000
@@ -161,7 +176,7 @@
     "_": 0.1
   },
   "MinUtility": {
-    "_": 30
+    "_": 10
   },
   "SlopeNeg": {
     "_": -0.005
@@ -224,5 +239,6 @@
   },
   "PrepareEarningsPeriodDays": {
     "_": 1
-  }
+  },
+  "BacktestingBrokerageLatency":  2
 }
