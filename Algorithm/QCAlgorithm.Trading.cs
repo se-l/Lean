@@ -427,21 +427,6 @@ namespace QuantConnect.Algorithm
 
             return SubmitOrderRequest(request);
         }
-        public OrderTicket PeggedToStockOrder(Symbol symbol, decimal quantity, decimal delta, decimal startingPrice, decimal stockReferencePrice, decimal underlyingRangeLow, decimal underlyingLyingRangeHigh, string tag = "", IOrderProperties orderProperties = null)
-        {
-            var security = Securities[symbol];
-            if (security.Type != SecurityType.Option)
-            {
-                throw new ArgumentException("PeggedToStockOrder is only supported for options");
-            }
-            if (delta < 1 || delta > 100)
-            {
-                throw new ArgumentException("PeggedToStockOrder delta must be between 1 and 100");
-            }
-            var request = new SubmitOrderRequest(OrderType.PeggedToStock, security.Type, security.Symbol, quantity, delta, startingPrice, stockReferencePrice, underlyingRangeLow, underlyingLyingRangeHigh, UtcTime, tag, orderProperties ?? DefaultOrderProperties?.Clone(), null);
-
-            return SubmitOrderRequest(request);
-        }
 
         /// <summary>
         /// Create a stop market order and return the newly created order id; or negative if the order is invalid

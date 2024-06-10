@@ -63,14 +63,6 @@ namespace QuantConnect.Python
             return _model.InvokeMethod<OrderEvent>(nameof(LimitFill), asset, order);
         }
 
-        public override OrderEvent PeggedToStockFill(Security asset, PeggedToStockOrder order)
-        {
-            using (Py.GIL())
-            {
-                return (_model.PeggedToStockFill(asset, order) as PyObject).GetAndDispose<OrderEvent>();
-            }
-        }
-
         /// <summary>
         /// Limit if Touched Fill Model. Return an order event with the fill details.
         /// </summary>

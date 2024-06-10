@@ -17,7 +17,9 @@ using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.ToolBox.AlgoSeekFuturesConverter;
 using QuantConnect.ToolBox.CoarseUniverseGenerator;
+using QuantConnect.ToolBox.IQFeedDownloader;
 using QuantConnect.ToolBox.KaikoDataConverter;
+using QuantConnect.ToolBox.Polygon;
 using QuantConnect.ToolBox.RandomDataGenerator;
 using QuantConnect.Util;
 using System;
@@ -66,6 +68,7 @@ namespace QuantConnect.ToolBox
                 var toDate = optionsObject.ContainsKey("to-date")
                     ? Parse.DateTimeExact(optionsObject["to-date"].ToString(), "yyyyMMdd-HH:mm:ss")
                     : DateTime.UtcNow;
+                var apiKey = optionsObject.ContainsKey("api-key") ? optionsObject["api-key"].ToString() : "";
                 switch (targetApp)
                 {
                     case "iqfdl":

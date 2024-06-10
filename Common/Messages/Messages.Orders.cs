@@ -100,24 +100,6 @@ namespace QuantConnect
         }
 
         /// <summary>
-        /// Provides user-facing messages for the <see cref="Orders.PeggedToStockOrder"/> class and its consumers or related classes
-        /// </summary>
-        public static class PeggedToStockOrder
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static string Tag(Orders.PeggedToStockOrder order)
-            {
-                return Invariant($"Delta: {order.Delta:C}, StartingPrice: {order.StartingPrice}");
-            }
-
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static string ToString(Orders.PeggedToStockOrder order)
-            {
-                return Invariant($"{Messages.Order.ToString(order)} at Delta: {order.Delta.SmartRounding()}, StartingPrice: {order.StartingPrice}");
-            }
-        }
-
-        /// <summary>
         /// Provides user-facing messages for the <see cref="Orders.Order"/> class and its consumers or related classes
         /// </summary>
         public static class Order

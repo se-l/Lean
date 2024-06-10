@@ -488,10 +488,6 @@ namespace QuantConnect.Orders
                     order = new ComboMarketOrder(symbol, quantity, time, groupOrderManager, tag, properties);
                     break;
 
-                case OrderType.PeggedToStock:
-                    order = new PeggedToStockOrder(symbol, quantity, delta, startingPrice, stockRefPrice, underlyingRangeLow, underlyingRangeHigh, time, tag, properties);
-                    break;
-
                 default:
                     throw new ArgumentOutOfRangeException();
             }

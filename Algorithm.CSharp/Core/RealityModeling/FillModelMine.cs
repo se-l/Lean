@@ -18,31 +18,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             return InternalLimitFill(asset, order, order.LimitPrice, order.Quantity);
         }
 
-        public override OrderEvent PeggedToStockFill(Security asset, PeggedToStockOrder order)
-        {
-            
-            //Initialise;
-            var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
-            var fill = new OrderEvent(order, utcTime, OrderFee.Zero);
-
-            //If its cancelled don't need anymore checks:
-            if (order.Status == OrderStatus.Canceled) return fill;
-
-            //Get the range of prices in the last bar:
-            var orderDirection = order.Direction;
-            var prices = GetPricesCheckingPythonWrapper(asset, orderDirection);
-            var pricesEndTime = prices.EndTime.ConvertToUtc(asset.Exchange.TimeZone);
-
-            // do not fill on stale data
-            if (pricesEndTime <= order.Time) return fill;
-
-            Option option = (Option)asset;
-            decimal midPriceUnderlying = (option.Underlying.BidPrice + option.Underlying.AskPrice) / 2;
-            decimal limitPrice = order.StartingPriceInternal + 0.01m * order.Delta * (midPriceUnderlying - order.StockRefPriceInternal);
-
-            return InternalLimitFill(asset, order, limitPrice, order.Quantity);
-        }
-
         /// <summary>
         /// Default limit order fill model in the base security class.
         /// </summary>

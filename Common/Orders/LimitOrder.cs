@@ -62,6 +62,7 @@ namespace QuantConnect.Orders
             LimitPrice = limitPrice;
             OcaGroup = ocaGroup;
             OcaType = ocaType;
+        }
 
         /// <summary>
         /// Gets the default tag for this order

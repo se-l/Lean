@@ -57,11 +57,6 @@
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <None Include="instruments_oanda.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\..\IQFeed.CSharpApiClient\src\IQFeed.CSharpApiClient\IQFeed.CSharpApiClient.csproj" />
     <ProjectReference Include="..\Brokerages\QuantConnect.Brokerages.csproj" />
     <ProjectReference Include="..\Common\QuantConnect.csproj" />

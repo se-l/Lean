@@ -52,7 +52,6 @@ using Index = QuantConnect.Securities.Index.Index;
 using QuantConnect.Securities.CryptoFuture;
 using QuantConnect.Algorithm.Framework.Alphas.Analysis;
 using QuantConnect.Algorithm.Framework.Portfolio.SignalExports;
-using Elastic.Clients.Elasticsearch;
 
 namespace QuantConnect.Algorithm
 {
@@ -144,8 +143,6 @@ namespace QuantConnect.Algorithm
         private readonly HistoryRequestFactory _historyRequestFactory;
 
         private IApi _api;
-
-        private readonly ElasticsearchClient _elasticsearchClient = new();
 
         /// <summary>
         /// QCAlgorithm Base Class Constructor - Initialize the underlying QCAlgorithm components.

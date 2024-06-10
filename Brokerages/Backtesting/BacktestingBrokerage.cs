@@ -27,9 +27,6 @@ using QuantConnect.Orders.Fees;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using QuantConnect.Util;
-using QuantConnect.Configuration;
-using Newtonsoft.Json;
-using System.Globalization;
 
 namespace QuantConnect.Brokerages.Backtesting
 {
@@ -311,7 +308,6 @@ namespace QuantConnect.Brokerages.Backtesting
                         continue;
                     }
 
-                    HasSufficientBuyingPowerForOrderResult hasSufficientBuyingPowerResult;
                     // verify sure we have enough cash to perform the fill
                     HasSufficientBuyingPowerForOrderResult hasSufficientBuyingPowerResult;
                     try
@@ -322,15 +318,9 @@ namespace QuantConnect.Brokerages.Backtesting
                     {
                         // if we threw an error just mark it as invalid and remove the order from our pending list
                         RemoveOrders(orders, OrderStatus.Invalid, err.Message);
-
-                            Log.Error(err);
-                            Algorithm.Error($"Order Error: ids: [{string.Join(",", orders.Select(o => o.Id))}], Error executing margin models: {err.Message}");
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        hasSufficientBuyingPowerResult = new HasSufficientBuyingPowerForOrderResult(true, string.Empty);
+                        Log.Error(err);
+                        Algorithm.Error($"Order Error: ids: [{string.Join(",", orders.Select(o => o.Id))}], Error executing margin models: {err.Message}");
+                        continue;
                     }
 
                     var fills = new List<OrderEvent>();

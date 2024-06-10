@@ -260,8 +260,7 @@ namespace QuantConnect.Orders
             decimal fillPrice,
             decimal fillQuantity,
             OrderFee orderFee,
-            string message = "",
-            string exchange = ""
+            string message = ""
             )
         {
             OrderId = orderId;
@@ -275,7 +274,6 @@ namespace QuantConnect.Orders
             OrderFee = orderFee;
             Message = message;
             IsAssignment = false;
-            Exchange = exchange;
         }
 
         /// <summary>

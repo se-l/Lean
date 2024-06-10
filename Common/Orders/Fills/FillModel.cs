@@ -74,11 +74,6 @@ namespace QuantConnect.Orders.Fills
                         ? PythonWrapper.LimitFill(parameters.Security, parameters.Order as LimitOrder)
                         : LimitFill(parameters.Security, parameters.Order as LimitOrder));
                     break;
-                case OrderType.PeggedToStock:
-                    orderEvents.Add(PythonWrapper != null
-                        ? PythonWrapper.PeggedToStockFill(parameters.Security, parameters.Order as PeggedToStockOrder)
-                        : PeggedToStockFill(parameters.Security, parameters.Order as PeggedToStockOrder));
-                    break;
                 case OrderType.LimitIfTouched:
                     orderEvents.Add(PythonWrapper != null
                         ? PythonWrapper.LimitIfTouchedFill(parameters.Security, parameters.Order as LimitIfTouchedOrder)
@@ -661,42 +656,6 @@ namespace QuantConnect.Orders.Fills
         public virtual OrderEvent LimitFill(Security asset, LimitOrder order)
         {
             return InternalLimitFill(asset, order, order.LimitPrice, order.Quantity);
-        }
-
-        public virtual OrderEvent PeggedToStockFill(Security asset, PeggedToStockOrder order)
-        {
-            return InternalPeggedToStockFill((Option)asset, order);
-        }
-
-        /// <summary>
-        /// Default limit order fill model in the base security class.
-        /// </summary>
-        private OrderEvent InternalPeggedToStockFill(Option asset, PeggedToStockOrder order)
-        {
-            //Initialise;
-            var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);
-            var fill = new OrderEvent(order, utcTime, OrderFee.Zero);
-
-            //If its cancelled don't need anymore checks:
-            if (order.Status == OrderStatus.Canceled) return fill;
-
-            // make sure the exchange is open before filling -- allow pre/post market fills to occur
-            if (!IsExchangeOpen(asset))
-            {
-                return fill;
-            }
-            //Get the range of prices in the last bar:
-            var orderDirection = order.Direction;
-            var prices = GetPricesCheckingPythonWrapper(asset, orderDirection);
-            var pricesEndTime = prices.EndTime.ConvertToUtc(asset.Exchange.TimeZone);
-
-            // do not fill on stale data
-            if (pricesEndTime <= order.Time) return fill;
-
-            decimal midPriceUnderlying = (asset.Underlying.BidPrice + asset.Underlying.AskPrice) / 2;
-            decimal limitPrice = order.StartingPriceInternal + 0.01m * order.Delta * (midPriceUnderlying - order.StockRefPriceInternal);
-
-            return InternalLimitFill(asset, order, limitPrice, order.Quantity);
         }
 
         /// <summary>

@@ -35,6 +35,7 @@
     <DebugType>portable</DebugType>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.27.1" />
     <PackageReference Include="QuantConnect.pythonnet" Version="2.0.38" />
     <PackageReference Include="Accord" Version="3.6.0" />
     <PackageReference Include="Accord.Fuzzy" Version="3.6.0" />

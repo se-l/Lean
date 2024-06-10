@@ -143,10 +143,6 @@ namespace QuantConnect.Orders
             var lastUpdateTime = jObject["LastUpdateTime"];
             var canceledTime = jObject["CanceledTime"];
 
-            var lastFillTime = jObject["LastFillTime"] ?? jObject["lastFillTime"];
-            var lastUpdateTime = jObject["LastUpdateTime"] ?? jObject["lastUpdateTime"];
-            var canceledTime = jObject["CanceledTime"] ?? jObject["canceledTime"];
-
             if (canceledTime != null && canceledTime.Type != JTokenType.Null)
             {
                 order.CanceledTime = canceledTime.Value<DateTime>();

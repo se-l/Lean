@@ -319,21 +319,6 @@ namespace QuantConnect.Orders
                     fieldValue = AccessOrder<TrailingStopOrder, bool>(this, field, o => o.TrailingAsPercentage, r => r.TrailingAsPercentage);
                     break;
 
-                case OrderField.Delta:
-                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.Delta, r => r.Delta);
-
-                case OrderField.StartingPrice:
-                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.StartingPrice ?? 0, r => r.StartingPrice ?? 0);
-
-                case OrderField.StockRefPrice:
-                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.StockRefPrice ?? 0, r => r.StockRefPrice ?? 0);
-
-                case OrderField.UnderlyingRangeLow:
-                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.UnderlyingRangeLow ?? 0, r => r.UnderlyingRangeLow ?? 0);
-
-                case OrderField.UnderlyingRangeHigh:
-                    return AccessOrder<PeggedToStockOrder>(this, field, o => o.UnderlyingRangeHigh ?? 0, r => r.UnderlyingRangeHigh ?? 0);
-
                 default:
                     throw new ArgumentOutOfRangeException(nameof(field), field, null);
             }
@@ -412,20 +397,6 @@ namespace QuantConnect.Orders
             var fields = new UpdateOrderFields()
             {
                 LimitPrice = limitPrice,
-                Tag = tag
-            };
-            return Update(fields);
-        }
-
-        public OrderResponse UpdatePeggedToStockOrder(decimal delta, decimal startingPrice, decimal stockRefPrice, decimal? underlyingRangeLow = null, decimal? underlyingRangeHigh = null, string tag = null)
-        {
-            var fields = new UpdateOrderFields()
-            {
-                Delta = delta,
-                StartingPrice = startingPrice,
-                StockRefPrice = stockRefPrice,
-                UnderlyingRangeLow = underlyingRangeLow,
-                UnderlyingRangeHigh = underlyingRangeHigh,
                 Tag = tag
             };
             return Update(fields);
