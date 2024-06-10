@@ -87,7 +87,10 @@ namespace QuantConnect
                 CacheDataFolder = cacheLocation;
             }
 
+            LiveMode = Config.GetBool("live-mode");
+
             PathAnalytics = GetPathAnalytics();
+            ResultsDestinationFolder = Config.Get("results-destination-folder", Directory.GetCurrentDirectory());
         }
 
         /// <summary>
