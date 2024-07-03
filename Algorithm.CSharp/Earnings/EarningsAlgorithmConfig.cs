@@ -11,5 +11,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         public HashSet<string> Ticker { get; set; }
         public string WsHost { get; set; }
         public int WsPort { get; set; }
+        public Dictionary<string, int> RequestTargetPfNContracts { get; set; }
+        public Dictionary<string, List<int>> EarningsEntryStartTime { get; set; }
+
     }
 }

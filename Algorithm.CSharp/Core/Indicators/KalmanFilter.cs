@@ -115,7 +115,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             scopedMoneynessFitting = Tuple.Create(scopedMoneynessFittingLst[0], scopedMoneynessFittingLst[1]);
 
             string rightStr = Right == OptionRight.Call ? "call" : "put";
-            _path = Path.Combine(Globals.PathAnalytics, "Kalman", Underlying.Value, $"{expiry.ToString(DtFmtISO, CultureInfo.InvariantCulture)}-{rightStr}.csv");            
+            _path = Path.Combine(Globals.PathAnalytics, "Kalman", Underlying.Value, $"{expiry.ToString(DtFmtISO, CultureInfo.InvariantCulture)}-{rightStr}.csv");
             Directory.CreateDirectory(Path.GetDirectoryName(_path));
             _writer = new StreamWriter(_path, true);
         }

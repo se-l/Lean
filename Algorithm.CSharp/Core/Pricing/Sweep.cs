@@ -15,7 +15,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             Start = start;
             End = end;
-            Duration = new TimeSpan(0, 0, (int)durationMinutes, 0);
+            Duration = new TimeSpan(0, 0, (int)Math.Max(durationMinutes, 1), 0);
         }
     }
     /// <summary>
@@ -80,11 +80,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public bool IsSweepScheduled()
         {
-            //_algo.Log($"{_algo.Time} IsSweepScheduled. _algo.Time={_algo.Time}, #schedules={schedules.Count}");
-            //foreach (var s in schedules)
-            //{
-            //   _algo.Log($"s.Start={s.Start}, s.End={s.End}, s.Duration={s.Duration}");
-            //}
             return schedules.Any(s => s.Start <= _algo.Time && _algo.Time <= s.End);
         }
 
@@ -111,7 +106,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _sweepStartTime = DateTime.MaxValue;
         }
 
-        private TimeSpan SweepDuration => schedules.Where(s => s.Start <= _algo.Time && _algo.Time <= s.End).FirstOrDefault()?.Duration ?? TimeSpan.Zero;
+        private TimeSpan SweepDuration => schedules.Where(s => s.Start <= _algo.Time && _algo.Time <= s.End).FirstOrDefault()?.Duration ?? TimeSpan.FromSeconds(1);
 
         public decimal SweetRatioByDuration => (decimal)((_algo.Time - _sweepStartTime).TotalSeconds / SweepDuration.TotalSeconds);
 

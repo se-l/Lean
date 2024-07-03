@@ -24,7 +24,6 @@ using QuantConnect.Data.UniverseSelection;
 using Newtonsoft.Json;
 using QuantConnect.Algorithm.Framework.Selection;
 using QuantConnect.Scheduling;
-using System.Net;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -101,8 +100,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public HashSet<OrderStatus> orderStatusFilled = new() { OrderStatus.Filled, OrderStatus.PartiallyFilled };
         public HashSet<OrderStatus> orderCanceledOrPending = new() { OrderStatus.CancelPending, OrderStatus.Canceled };
         public HashSet<OrderStatus> orderFilledCanceledInvalid = new() { OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Invalid };
+        public HashSet<OrderStatus> orderFilledCanceledCancelPendingInvalid = new() { OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.CancelPending, OrderStatus.Invalid };
         public HashSet<OrderStatus> orderPartialFilledCanceledPendingInvalid = new() { OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.CancelPending, OrderStatus.Canceled, OrderStatus.Invalid };
         public HashSet<OrderStatus> orderSubmittedPartialFilledUpdated = new() { OrderStatus.PartiallyFilled, OrderStatus.Submitted, OrderStatus.UpdateSubmitted };
+        public HashSet<OrderStatus> orderNewSubmittedPartialFilledUpdated = new() { OrderStatus.New, OrderStatus.PartiallyFilled, OrderStatus.Submitted, OrderStatus.UpdateSubmitted };
+        public HashSet<OrderStatus> orderNewSubmittedUpdated = new() { OrderStatus.New, OrderStatus.Submitted, OrderStatus.UpdateSubmitted };
         public HashSet<SecurityType> securityTypeOptionEquity = new() { SecurityType.Equity, SecurityType.Option };
         public HashSet<OrderType> orderTypeMarketLimit = new() { OrderType.Market, OrderType.Limit };
         public record MMWindow(TimeSpan Start, TimeSpan End);
@@ -112,13 +114,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public readonly ConcurrentQueue<Signal> _signalQueue = new();
         public int ocaGroupId;
         public int SignalQuantityDflt = 9999;
-        public Dictionary<string, decimal> TargetHoldings = new();
+        public Dictionary<Symbol, decimal> TargetHoldings = new();
         protected IUtilityOrderFactory UtilityOrderFactory;
         public Dictionary<Symbol, double> LastDeltaAcrossDs = new();
         public readonly ConcurrentDictionary<Symbol, double> MarginalWeightedDNLV = new();
         public ConcurrentDictionary<Symbol, ConcurrentDictionary<OrderDirection, Sweep>> SweepState = new();
         public Dictionary<(Symbol, DateTime, OptionRight), KalmanFilter> KalmanFilters = new();
-        public Dictionary<Option, double> PresumedFillIV = new();
+        public ConcurrentDictionary<Option, double> PresumedFillIV = new();
+        public Dictionary<Symbol, DateTime> CurrentMarketOpen = new();
+        public Dictionary<Symbol, DateTime> NextMarketClose = new();
+
+        public DateTime TimeWarmupFinished = DateTime.MaxValue;
 
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
@@ -129,7 +135,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             UniverseSettings.Resolution = resolution = Resolution.Second;
             SetStartDate(Cfg.StartDate);
             SetEndDate(Cfg.EndDate);
-            SetCash(100_000);
+            SetCash(1_000_000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             UniverseSettings.Leverage = 10;
@@ -187,6 +193,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, 120), ExerciseOnExpiryDate);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(TimeSpan.FromMinutes(0)), ClearNextMarketOpenClose);
 
             // Before EOD - stop trading & overnight hedge
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Stop MM
@@ -221,6 +228,40 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // For backtesting purposes: Test risk profile moves or compare BT to Live
             SetBacktestingHoldings();
         }
+        public DateTime GetCurrentMarketOpen(Symbol symbol)
+        {            
+            var security = Securities[symbol];
+            var exchangeHours = MarketHoursDatabase.GetEntry(symbol.ID.Market, symbol, symbol.SecurityType).ExchangeHours;
+            DateTime nextMarketOpen = exchangeHours.GetNextMarketOpen(Time, false);
+            return Time.Date == nextMarketOpen.Date && Time.TimeOfDay < nextMarketOpen.TimeOfDay ? nextMarketOpen : exchangeHours.GetNextMarketOpen(Time.Subtract(TimeSpan.FromDays(1)), false);
+        }
+        public DateTime GetNextMarketClose(Symbol symbol)
+        {
+            var security = Securities[symbol];
+            var exchangeHours = MarketHoursDatabase.GetEntry(symbol.ID.Market, symbol, symbol.SecurityType).ExchangeHours;
+            return exchangeHours.GetNextMarketClose(Time, false);
+            //return exchangeHours.GetNextMarketClose(Time, security.IsExtendedMarketHours);
+        }
+
+        public bool IsMyMarketOpen(Symbol symbol)
+        {
+            if (!NextMarketClose.TryGetValue(symbol, out DateTime nextMarketClose))
+            {
+                NextMarketClose[symbol] = nextMarketClose = GetNextMarketClose(symbol);
+            }
+            if (!CurrentMarketOpen.TryGetValue(symbol, out DateTime currentMarketOpen))
+            {
+                CurrentMarketOpen[symbol] = currentMarketOpen = GetCurrentMarketOpen(symbol);
+            }
+            return Time >= currentMarketOpen && Time < nextMarketClose;
+        }
+
+        public void ClearNextMarketOpenClose()
+        {
+            CurrentMarketOpen.Clear();
+            NextMarketClose.Clear();
+            Log($"{Time} ClearNextMarketOpenClose");
+        }
 
         /// <summary>
         /// The algorithm manager calls events in the following order:
@@ -242,18 +283,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             equities.DoForEach(underlying => IVSurfaceRelativeStrikeBid[underlying].ProcessUpdateFlag());
             equities.DoForEach(underlying => IVSurfaceRelativeStrikeAsk[underlying].ProcessUpdateFlag());
 
-            if (IsWarmingUp) return;
-
-            foreach (Symbol symbol in slice.QuoteBars.Keys)
-            {
-                if (IsEventNewQuote(symbol)) // also called in Consolidator. Should cache result at timestamp, update PriceCache and read here from cache.
-                {
-                    Publish(new NewBidAskEventArgs(symbol));
-                }
-                PriceCache[symbol] = Securities[symbol].Cache.Clone();
-            }
-            PfRisk.ResetCache();
-
+            // Update Option Kalman filters with trade data.
             foreach (Symbol symbol in slice.Bars.Keys)
             {
                 if (symbol.SecurityType == SecurityType.Option)
@@ -267,9 +297,37 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
             }
 
+            if (IsWarmingUp) return;
+
+            foreach (Symbol symbol in slice.QuoteBars.Keys)
+            {
+                if (IsEventNewQuote(symbol)) // also called in Consolidator. Should cache result at timestamp, update PriceCache and read here from cache.
+                {
+                    Publish(new NewBidAskEventArgs(symbol));
+                }
+                PriceCache[symbol] = Securities[symbol].Cache.Clone();
+            }
+            PfRisk.ResetCache();
+
             foreach (Symbol underlying in equities)
             {
                 if (SignalsLastRun[underlying] < Time - TimeSpan.FromMinutes(30)) RunSignals(underlying);
+            }
+        }
+
+        public void CancelOptionTicketsWithSameDeltaSign(Symbol symbol)
+        {
+            if (symbol.SecurityType != SecurityType.Option) return;
+
+            double deltaSign = OptionContractWrap.E(this, (Option)Securities[symbol], Time.Date).Delta(MidIV(symbol));
+
+            var tickets = orderTickets.Values.SelectMany(t => t).Where(t => Underlying(t.Symbol) == Underlying(symbol) && t.SecurityType == SecurityType.Option).ToList();
+            foreach (OrderTicket t in tickets)
+            {
+                if (OptionContractWrap.E(this, (Option)Securities[t.Symbol], Time.Date).Delta(MidIV(t.Symbol)) * deltaSign > 0)
+                {
+                    Cancel(t, "DeltaSign");
+                }
             }
         }
 
@@ -325,7 +383,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public void ExerciseOnExpiryDate()
         {
-            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
 
             List<Position> shortPositions = Positions.Values.Where(p => p.Quantity < 0 && p.SecurityType == SecurityType.Option && p.Expiry == Time.Date).ToList();
             List<Position> longPositions = Positions.Values.Where(p => p.Quantity > 0 && p.SecurityType == SecurityType.Option && p.Expiry == Time.Date).ToList();
@@ -366,18 +424,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public List<Symbol> AddOptionIfScoped(Symbol optionSymbol)
         {
-            //if (!IsMarketOpen(hedgeTicker[0])) return new List<Symbol>();
-
-            int susbcriptions = 0;
             var contractSymbols = OptionChainProvider.GetOptionContractList(optionSymbol, Time);
-            List<Symbol> subscribedSymbol = new();
+            List<Symbol> subscribedSymbols = new();
             foreach (var symbol in contractSymbols)
             {
                 if (Securities.ContainsKey(symbol) && Securities[symbol].IsTradable) continue;  // already subscribed
 
                 Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
-                // Todo: move the period parameter to a config
-                var historyUnderlying = HistoryWrap(symbolUnderlying, 7, Resolution.Daily).ToList();
+                
+                var historyUnderlying = HistoryWrap(symbolUnderlying, Cfg.MinHistoryDaysUnderlyingForScoping, Resolution.Daily).ToList();
                 if (historyUnderlying.Any())
                 {
                     decimal lastClose = historyUnderlying.Last().Close;
@@ -388,10 +443,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                         // This line requests quite a bit of past data. Minute and second resolution for a whole month into past.
                         AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false, extendedMarketHours: true);
-                        //securityInitializer.RegisterIndicators(option);
 
                         QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
-                        subscribedSymbol.Add(symbol);
+                        subscribedSymbols.Add(symbol);
                     }
                 }
                 else
@@ -399,12 +453,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"No history for {symbolUnderlying}. Not subscribing to its options." } });
                 }
             }
-            return subscribedSymbol;
+            return subscribedSymbols;
         }
 
         public void UpdateUniverseSubscriptions()
         {
-            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
 
             // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
             Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
@@ -430,7 +484,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             OnEndOfDay();
             ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
-            RiskRecorder.Dispose();
+            //RiskRecorder.Dispose();
             IVSurfaceRelativeStrikeBid.Values.DoForEach(s => s.Dispose());
             IVSurfaceRelativeStrikeAsk.Values.DoForEach(s => s.Dispose());
             RiskProfiles.Values.DoForEach(s => s.Dispose());
@@ -459,6 +513,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public override void OnWarmupFinished()
         {
+            TimeWarmupFinished = Time;
             IEnumerable<OrderTicket> openTransactions = Transactions.GetOpenOrderTickets();
 
             Log($"Adding Open Transactions to OrderTickets: {openTransactions.Count()}");
@@ -484,14 +539,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
             equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
             equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(Core.Indicators.IVSurfaceRelativeStrike.Status.Smoothings)));
 
-            OnWarmupFinishedCalled = true;
+            OnWarmupFinishedCalled = true;  // bad. remove flag setting design
         }
         /// <summary>
         /// Dump portfolio risk metrics by underlying to csv for outside plotting
         /// </summary>
         public void ExportRiskRecords()
         {
-            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
             optionTicker.DoForEach(ticker => RiskRecorder.Record(ticker));
         }
 
@@ -502,19 +557,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void ExportIVSurface()
         {
-            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
             IVSurfaceRelativeStrikeBid.Values.Union(IVSurfaceRelativeStrikeAsk.Values).DoForEach(s => s.WriteCsvRows());
             //IVSurfaceAndreasenHuge.Values.DoForEach(s => s.WriteCsvRows());
         }
         public void ExportPutCallRatios()
         {
-            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
             PutCallRatios.Where(kvp => kvp.Key.SecurityType == SecurityType.Equity).DoForEach(kvp => kvp.Value.Export());
         }
 
         public void HedgeDeltaFlat()
         {
-            if (!IsMarketOpen(symbolSubscribed)) return;
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
 
             foreach (string ticker in ticker)
             {
@@ -939,9 +994,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     //&& PriceCache.ContainsKey(sec.Symbol)
                     //&& PriceCache[sec.Symbol].GetData().EndTime > Time - TimeSpan.FromMinutes(5)
 
-                    && IsLiquid(sec.Symbol, 5, Resolution.Daily)
-                    && sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMinSignal)
-                    && sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMaxSignal)
+                    //&& IsLiquid(sec.Symbol, 5, Resolution.Daily)
+                    //&& sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMinSignal)
+                    //&& sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMaxSignal)
                     //&& (
                     //    ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < Cfg.ScopeContractMoneynessITM * MidPrice(sec.Symbol.Underlying) || (
                     //        orderTickets.ContainsKey(sec.Symbol) &&
@@ -950,8 +1005,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     //    )
                     //)
                     && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
-                    && IVSurfaceRelativeStrikeBid[Underlying(sec.Symbol)].IsReady(sec.Symbol)
-                    && IVSurfaceRelativeStrikeAsk[Underlying(sec.Symbol)].IsReady(sec.Symbol)
+                    //&& IVSurfaceRelativeStrikeBid[Underlying(sec.Symbol)].IsReady(sec.Symbol)
+                    //&& IVSurfaceRelativeStrikeAsk[Underlying(sec.Symbol)].IsReady(sec.Symbol)
                 //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
                 )
                 ||
@@ -960,7 +1015,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     && Portfolio[sec.Symbol].Quantity != 0  // Need to exit eventually
                 )
                 || ManualOrderInstructionBySymbol.ContainsKey(sec.Symbol.Value)
-                || TargetHoldings.ContainsKey(sec.Symbol.Value)
+                || TargetHoldings.ContainsKey(sec.Symbol)
             );
         }
 
@@ -974,12 +1029,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Underlying(s.Symbol) == underlying && 
                 ContractScopedForNewPosition(s)
             );
-            Dictionary<(Symbol, int), string> ocaGroupByUnderlyingDelta = new()
-            {
-                [(underlying, -1)] = NewOcaGroupId(),
-                [(underlying, 0)] = NewOcaGroupId(),
-                [(underlying, +1)] = NewOcaGroupId()
-            };
 
             List<Signal> signals = new();
             foreach (Security sec in scopedOptions)
@@ -993,18 +1042,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 IUtilityOrder utilBuy = UtilityOrderFactory.Create(this, option, SignalQuantity(symbol, OrderDirection.Buy), option.BidPrice);
                 IUtilityOrder utilSell = UtilityOrderFactory.Create(this, option, SignalQuantity(symbol, OrderDirection.Sell), option.AskPrice);
 
-                double delta = OptionContractWrap.E(this, option, Time.Date).Delta(MidIV(symbol));
-                string ocaGroupId = ocaGroupByUnderlyingDelta[(option.Underlying.Symbol, Math.Sign(delta))];
-
                 double minUtility = Cfg.MinUtility.TryGetValue(underlying.Value, out minUtility) ? minUtility : Cfg.MinUtility[CfgDefault];
                 // Utility from Risk and Profit are not normed and cannot be compared directly. Risk is not in USD. UtilProfitVega can change very frequently whenever market IV whipsaws around the EWMA.
                 if (utilSell.Utility >= minUtility && utilSell.Utility >= utilBuy.Utility)
                 {
-                    signals.Add(new Signal(symbol, OrderDirection.Sell, utilSell, ocaGroupId));
+                    signals.Add(new Signal(symbol, OrderDirection.Sell, utilSell));
                 }
                 else if (utilBuy.Utility >= minUtility && utilBuy.Utility > utilSell.Utility)
                 {
-                    signals.Add(new Signal(symbol, OrderDirection.Buy, utilBuy, ocaGroupId));
+                    signals.Add(new Signal(symbol, OrderDirection.Buy, utilBuy));
                 }
             }
 
@@ -1049,6 +1095,45 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
+        /// May rather need to become a manager class.Instead of checking all orderTickets, pick from sets of active OCA groups.
+        /// </summary>
+        /// <param name="signals"></param>
+        /// <param name="ticketsWithOCAGroupsToReuse"></param>
+        /// <returns></returns>
+        public IEnumerable<Signal> AssignOCAGroups(IEnumerable<Signal> signals, List<OrderTicket> ticketsWithOCAGroupsToReuse)
+        {
+            if (!signals.Any()) return signals;
+
+            Dictionary<(Symbol, int), string> ocaGroupByUnderlyingDelta = new();
+
+            // Use the remaining tickets as source for OCA groups.                
+            foreach (OrderTicket t in ticketsWithOCAGroupsToReuse)
+            {
+                Symbol ticketUnderlying = Underlying(t.Symbol);
+                if (ocaGroupByUnderlyingDelta.ContainsKey((ticketUnderlying, 1)) || ocaGroupByUnderlyingDelta.ContainsKey((ticketUnderlying, -1)))
+                {
+                    continue;
+                }                
+                double delta = OptionContractWrap.E(this, (Option)Securities[t.Symbol], Time.Date).Delta(MidIV(t.Symbol));
+                var key = (t.Symbol.Underlying, Math.Sign(delta));
+                ocaGroupByUnderlyingDelta[key] = t.OcaGroup;
+            }
+            // Now for every signal, if (underlying, sing(delta)) is found in dict, assign its OCA group to the signal
+            foreach (Signal s in signals)
+            {
+                double delta = OptionContractWrap.E(this, (Option)Securities[s.Symbol], Time.Date).Delta(MidIV(s.Symbol));
+                var key = (Underlying(s.Symbol), Math.Sign(delta));
+                if (!ocaGroupByUnderlyingDelta.ContainsKey(key))
+                {
+                       ocaGroupByUnderlyingDelta[key] = NewOcaGroupId();
+                }    
+                s.AssignOcaGroup(ocaGroupByUnderlyingDelta[key]);                
+            }
+
+            return signals;
+        }
+
+        /// <summary>
         /// Cancels undesired orders, places desired orders. In a separate thread, because would only want to place new orders, once all cancelations have been confirmed and order placement will be done in batches to not have tickets dangling in processing/unprocessed state.
         /// </summary>
         public void HandleDesiredOrders(IEnumerable<Signal> signals)
@@ -1058,64 +1143,92 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Cancel any undesired option ticket.
                 var underlying = group.Key;
                 var symbolDirectionToOrder = group.Select(s => (s.Symbol, s.OrderDirection)).ToList();
-                var ticketsToCancel = orderTickets.ToList().
+
+                List<OrderTicket> liveTickets = orderTickets.ToList().
                     Where(kvp => kvp.Key.SecurityType == SecurityType.Option && kvp.Key.Underlying == underlying).
                     SelectMany(kvp => kvp.Value).
-                    Where(t => !symbolDirectionToOrder.Contains((t.Symbol, Num2Direction(t.Quantity)))
-                            && !orderCanceledOrPending.Contains(t.Status)).
+                    Where(t => !orderFilledCanceledCancelPendingInvalid.Contains(t.Status)).
                     ToList();
+
+                var ticketsToCancel = liveTickets.Where(t => !symbolDirectionToOrder.Contains((t.Symbol, Num2Direction(t.Quantity)))).ToList();
                 if (ticketsToCancel.Any())
                 {
                     var orderIDs = string.Join(", ", ticketsToCancel.Select(t => t.OrderId).ToList());
                     string tag = $"HandleDesiredOrders. Canceling {ticketsToCancel.Count} tickets: {orderIDs}";
                     ticketsToCancel.ForEach(t => Cancel(t, tag));
                 }
+                List<OrderTicket> remainingLiveTickets = liveTickets.Where(t => !ticketsToCancel.Contains(t)).ToList();
 
                 // Sort the signals. Risk reducing first, then risk accepting. Can be done based on their UtilMargin. The larger the safer.
-                var signalByUnderlying = group.OrderByDescending(g => g.UtilityOrder.UtilityMargin).ToList();
+                IEnumerable<Signal> signalByUnderlying = group.OrderByDescending(g => g.UtilityOrder.UtilityMargin);
 
-                // ignore signal where there is already an active limit order
-                var activeLimitOrders = Transactions.GetOpenOrders().Where(o => o.Type == OrderType.Limit && o.Symbol.SecurityType == SecurityType.Option && o.Symbol.Underlying == underlying).ToList();
-                signalByUnderlying = signalByUnderlying.Where(s => !activeLimitOrders.Any(o => o.Symbol == s.Symbol)).ToList();
+                // Ignore signal where there is already an active order ticket.
+                IEnumerable<Symbol> remainingLiveSymbols = liveTickets.Select(t => t.Symbol);
+                signalByUnderlying = signalByUnderlying.Where(s => !remainingLiveSymbols.Contains(s.Symbol));
+
+                signalByUnderlying = AssignOCAGroups(signalByUnderlying, remainingLiveTickets);
+
                 AddSignals(signalByUnderlying);
             }
         }
 
         public string NewOcaGroupId()
         {
-            string ocaGroupNm = $"oco-{Time:yyMMddHHmmss}-{ocaGroupId++}";
-            return ocaGroupNm;
+            return $"oco-{Time:yyMMddHHmmss}-{ocaGroupId++}";
+        }
+        public void RunSignals()
+        {
+            var underlyings = Securities.Values.Where(s => s.Type == SecurityType.Option).Select(s => s.Symbol.Underlying).Distinct().ToList();
+            foreach (Symbol underlying in underlyings)
+            {
+                RunSignals(underlying);
+            }
+        }
+
+        public bool IsDeltaHedgedInProgress(Symbol underlying)
+        {
+            return orderTickets.ContainsKey(underlying) && orderTickets[underlying].Any(t => orderSubmittedPartialFilledUpdated.Contains(t.Status));
         }
 
         /// <summary>
         /// Event driven: On MarketOpen ok, OnFill ok. On underlying moves 0.1% ok. at least every x 5mins. Every call restarts the timer.ok.
         /// </summary>
-        public void RunSignals(Symbol? symbol = null)
+        public void RunSignals(Symbol symbol)
         {
-            var underlyings = symbol == null ? Securities.Values.Where(s => s.Type == SecurityType.Option).Select(s => s.Symbol.Underlying).Distinct().ToList() : new List<Symbol>() { Underlying(symbol) };
-            foreach (Symbol underlying in underlyings)
+            Symbol underlying = Underlying(symbol);
+            
+            if (IsSignalsRunning[underlying] ||
+                IsWarmingUp ||
+                !IsMyMarketOpen(underlying) ||
+                Time.TimeOfDay <= mmWindow.Start ||
+                Time.TimeOfDay >= mmWindow.End ||
+                !Cfg.Ticker.Contains(underlying.Value) ||
+                IsDeltaHedgedInProgress(underlying)
+                )
             {
-                if (IsSignalsRunning[underlying] || 
-                    IsWarmingUp || 
-                    !IsMarketOpen(underlying) || 
-                    Time.TimeOfDay <= mmWindow.Start || 
-                    Time.TimeOfDay >= mmWindow.End ||
-                    !Cfg.Ticker.Contains(underlying.Value)
-                    ) continue;
-                if (!OnWarmupFinishedCalled)
-                {
-                    OnWarmupFinished();
-                }
-                Log($"{Time} RunSignals. underlying={underlying}");
-                IsSignalsRunning[underlying] = true;  // if refactored as task, more elegant? Just run 1 task at a time...
-                bool skipRunSignals = Cfg.SkipRunSignals.TryGetValue(underlying.Value, out skipRunSignals) ? skipRunSignals : Cfg.SkipRunSignals[CfgDefault];
-                if (!skipRunSignals)
-                {
-                    HandleDesiredOrders(GetDesiredOrders(underlying));
-                }                
-                IsSignalsRunning[underlying] = false;
-                SignalsLastRun[underlying] = Time;
+                return;
             }
+            // This block should not be necessary...
+            if (!OnWarmupFinishedCalled)
+            {
+                OnWarmupFinished();
+            }
+            if (Time - TimeWarmupFinished < TimeSpan.FromMinutes(1))
+            {
+                Log($"{Time} RunSignals. Waiting a minute since warmup before restarting to trade. TimeWarmupFinished={TimeWarmupFinished}");
+                return;
+            };
+
+            Log($"{Time} RunSignals. underlying={underlying}");
+
+            IsSignalsRunning[underlying] = true;  // if refactored as task, more elegant? Just run 1 task at a time...
+            bool skipRunSignals = Cfg.SkipRunSignals.TryGetValue(underlying.Value, out skipRunSignals) ? skipRunSignals : Cfg.SkipRunSignals[CfgDefault];
+            if (!skipRunSignals)
+            {
+                HandleDesiredOrders(GetDesiredOrders(underlying));
+            }                
+            IsSignalsRunning[underlying] = false;
+            SignalsLastRun[underlying] = Time;
         }
 
         /// <summary>
@@ -1140,13 +1253,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void LogRiskSchedule()
         {
-            if (IsWarmingUp || !IsMarketOpen(symbolSubscribed)) return;
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
 
             LogPositions();
             LogRisk();
             LogPnL();
             LogOrderTickets();
-            Log($"{Time} LogRiskSchedule. IsMarketOpen(symbolSubscribed)={IsMarketOpen(symbolSubscribed)}, symbolSubscribed={symbolSubscribed}");
+            Log($"{Time} LogRiskSchedule. IsMarketOpen(symbolSubscribed)={IsMyMarketOpen(symbolSubscribed)}, symbolSubscribed={symbolSubscribed}");
         }
         public bool ContractScopedForSubscription(Symbol symbol, decimal? priceUnderlying = null, decimal margin = 0m)
         {
@@ -1162,8 +1275,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 || 
                 (Portfolio.ContainsKey(symbol) && Portfolio[symbol].Quantity != 0)
                 || ManualOrderInstructionBySymbol.ContainsKey(symbol.Value)
-                || TargetHoldings.ContainsKey(symbol.Value
-                );
+                || TargetHoldings.ContainsKey(symbol);
         }
 
         public void RemoveUniverseSecurity(Security security)
@@ -1319,11 +1431,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Cancel(ticket, tag);
             };
         }
-        public void OrderEquity(Symbol symbol, decimal quantity, decimal limitPrice, string tag = "", OrderType orderType = OrderType.Market)
+        public void OrderEquity(Symbol symbol, decimal quantity, decimal limitPrice, OrderType orderType, string tag = "")
         {
-            // Cancel any tickets ordering the opposite quantity
-
-
             if (!IsOrderValid(symbol, quantity)) { return; }
 
             OrderTicket orderTicket = orderType switch
@@ -1411,90 +1520,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 UpdateLimitOrderEquity(Securities[symbol] as Equity);
             }
         }
-        ///// <summary>
-        ///// Not in use due to IB limiting number of simultaneous pegged orders.
-        ///// </summary>
-        ///// <param name="option"></param>
-        //public void UpdatePeggedOrderOption(Option option)
-        //{
-        //    Symbol symbol = option.Symbol;
-        //    foreach (OrderTicket ticket in orderTickets[symbol].ToList())
-        //    {
-        //        if (orderSubmittedPartialFilledUpdated.Contains(ticket.Status) && ticket.OrderType == OrderType.PeggedToStock && ticket.CancelRequest == null)
-        //        {
-        //            decimal tickSize = TickSize(symbol);
-        //            double ticketIV = OrderIdIV.TryGetValue(ticket.OrderId, out ticketIV) ? ticketIV : 0;
-
-        //            decimal orderQuantity = SignalQuantity(symbol, Num2Direction(ticket.Quantity));
-        //            UtilityOrder utilityOrder = new(this, option, orderQuantity);
-        //            Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, orderQuantity, utilityOrder));
-
-        //            if (Math.Abs((decimal)quote.IVPrice - (decimal)ticketIV) < Cfg.MinimumIVOffsetBeforeUpdatingPeggedOptionOrder) { return; }
-
-        //            decimal quoteStartingPrice = quote.Price;
-
-        //            if (quoteStartingPrice == 0 || quote.Quantity == 0 || quote.IVPrice == 0)
-        //            {
-        //                Log($"{Time}: UpdateLimitPriceContract. Received 0 price or quantity for submitted order. Canceling {symbol}. Quote: {quote}. IVPrice={quote.IVPrice} Not trading...");
-        //                Cancel(ticket);
-        //                return;
-        //            }
-        //            quoteStartingPrice = RoundTick(quoteStartingPrice, tickSize);
-        //            decimal ticketStartingPrice = ticket.Get(OrderField.StartingPrice);
-
-        //            if (Math.Abs(quoteStartingPrice - ticketStartingPrice) >= tickSize && quoteStartingPrice >= tickSize)
-        //            {
-        //                if (quoteStartingPrice < tickSize)
-        //                {
-        //                    Log($"{Time}: CANCEL TICKET Symbol{symbol}: QuoteStartingPrice too small: {quoteStartingPrice}");
-        //                    Cancel(ticket);
-        //                }
-        //                else
-        //                {
-        //                    var tag = $"{Time}: UPDATE TICKET Symbol {symbol} Price: From: {ticketStartingPrice} To: {quoteStartingPrice}";
-        //                    var ocw = OptionContractWrap.E(this, option, Time.Date);
-        //                    decimal delta = (decimal)Math.Abs(ocw.Delta(quote.IVPrice));
-        //                    decimal gamma = (decimal)ocw.Gamma(quote.IVPrice);
-        //                    var midPriceUnderlying = MidPrice(option.Underlying.Symbol);
-        //                    var offset = delta * Cfg.PeggedToStockDeltaRangeOffsetFactor / gamma;
-        //                    var underlyingRangeLow = midPriceUnderlying - offset;
-        //                    var underlyingRangeHigh = midPriceUnderlying + offset;
-        //                    var response = ticket.UpdatePeggedToStockOrder(
-        //                        delta * 100m,
-        //                        quoteStartingPrice,
-        //                        midPriceUnderlying,
-        //                        underlyingRangeLow,
-        //                        underlyingRangeHigh,
-        //                        tag
-        //                        );
-        //                    OrderIdIV[ticket.OrderId] = quote.IVPrice;
-        //                    if (Cfg.LogOrderUpdates || LiveMode)
-        //                    {
-        //                        Log($"{tag}, Response: {response}");
-        //                    }
-        //                    Quotes[ticket.OrderId] = quote;
-        //                }
-        //            }
-
-        //            // Quantity - low overhead. SignalQuantity needs risk metrics that are also fetched for getting a price and cached.
-        //            if (ticket.Quantity != quote.Quantity && Math.Abs(ticket.Quantity - quote.Quantity) >= 2)
-        //            {
-        //                var tag = $"{Time}: UPDATE TICKET Symbol {symbol} Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
-        //                var response = ticket.UpdateQuantity(quote.Quantity, tag);
-        //                if (Cfg.LogOrderUpdates || LiveMode)
-        //                {
-        //                    Log($"{tag}, Response: {response}");
-        //                }
-        //                Quotes[ticket.OrderId] = quote;
-        //            }
-        //        }
-        //        else if (ticket.Status == OrderStatus.CancelPending) { }
-        //        //else
-        //        //{
-        //        //    Log($"{Time} UpdateLimitPriceContract {option} ticket={ticket}, OrderStatus={ticket.Status} - Should not run this function for this ticket. Cleanup orderTickets.");
-        //        //}
-        //    }
-        //}
+        
+        /// <summary>
+        /// Cache this ...
+        /// </summary>
+        /// <param name="underlying"></param>
+        /// <param name="dt"></param>
+        /// <returns></returns>
         public DateTime NextReleaseDate(Symbol underlying, DateTime? dt=null)
         {
             var dfltReleaseDate = new DateTime(2000, 1, 1);
@@ -1565,7 +1597,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     //if (Math.Abs(idealLimitPrice - limitPrice) >= tickSize && idealLimitPrice >= tickSize)
                     if (idealLimitPrice >= tickSize && idealLimitPrice != limitPrice)
                     {
-                        var tag = $"{Time}: UPDATE LIMIT Price Symbol={symbol}, LeanId={ticket.OrderId}, OcaGroup/Type={ticket.OcaGroup}/{ticket.OcaType}, currentLimitPrice={limitPrice}, newLimitPrice={idealLimitPrice}, Bid={option.BidPrice}, Ask={option.AskPrice}";
+                        // refactor this into a function logging attributes of an order ticket or extension of orderticket.
+                        var tag = $"{Time}: UPDATE LIMIT Price Symbol={symbol}, Quantity={ticket.Quantity}, LeanId={ticket.OrderId}, OcaGroup/Type={ticket.OcaGroup}/{ticket.OcaType}, currentLimitPrice={limitPrice}, newLimitPrice={idealLimitPrice}, Bid={option.BidPrice}, Ask={option.AskPrice}";
                         var response = ticket.UpdateLimitPrice(idealLimitPrice, tag);
                         if (Cfg.LogOrderUpdates || LiveMode)
                         {
@@ -1582,7 +1615,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     // Quantity - low overhead. SignalQuantity needs risk metrics that are also fetched for getting a price and cached.
                     if (ticket.Quantity != quote.Quantity && Math.Abs(ticket.Quantity - quote.Quantity) >= 2)
                     {
-                        var tag = $"{Time}: UPDATE LIMIT Quantity Symbol {symbol}, LeanID={ticket.OrderId}, OcaGroup/Type: {ticket.OcaGroup}/{ticket.OcaType}, Quantity: From: {ticket.Quantity} To: {quote.Quantity}";
+                        var tag = $"{Time}: UPDATE LIMIT Quantity Symbol {symbol}, PrevQuantity={ticket.Quantity}, NewQuantity={quote.Quantity}, LeanID={ticket.OrderId}, OcaGroup/Type={ticket.OcaGroup}/{ticket.OcaType}";
                         var response = ticket.UpdateQuantity(quote.Quantity, tag);
                         if (Cfg.LogOrderUpdates || LiveMode)
                         {
@@ -1715,12 +1748,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 decimal ts = TickSize(ticket.Symbol);
                 decimal ticketPrice = ticket.Get(OrderField.LimitPrice);
-                var orderType = GetEquityHedgeOrderType(equity, ticket);
-                if (ticket.OrderType == OrderType.Limit && orderType == OrderType.Market)
-                {
-                    Log($"{Time} UpdateLimitOrderEquity: Requested OrderType: Market for live limit order. Turning limit into aggressive limit.");
-                }
-                idealLimitPrice = GetEquityHedgePrice(equity, orderType, quantity ?? 0, ticket);
+
+                idealLimitPrice = GetEquityHedgePrice(equity, ticket.OrderType, quantity ?? 0, ticket);
                 idealLimitPrice = RoundTick(idealLimitPrice, ts);
                 if (idealLimitPrice != ticketPrice && idealLimitPrice > 0)
                 {
@@ -2044,10 +2073,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 ManualOrderInstruction manualOrderInstruction = ManualOrderInstructionBySymbol[symbol.Value];
                 return manualOrderInstruction.TargetQuantity - Portfolio[symbol].Quantity;
             }
-
-            if (TargetHoldings.ContainsKey(symbol))
+            else if (TargetHoldings.ContainsKey(symbol))
             {
                 absQuantity = Math.Abs(QuantityToTargetHolding(symbol));
+                // respect delta. Only up to 100 deltaUSD per 1% of stock price.
+                var ocw = OptionContractWrap.E(this, (Option)Securities[symbol], Time.Date);
+                double delta1PcUsd = ocw.DeltaXBpUSD(MidIV(symbol), 100);  // Ideally replace 100BP (1% move) with a underlying volatility derived metric
+                double maxDeltaUsd = Cfg.MaxDelta100BpUSDSignalQuantity.TryGetValue(Underlying(symbol), out maxDeltaUsd) ? maxDeltaUsd : Cfg.MaxDelta100BpUSDSignalQuantity[CfgDefault];
+                decimal maxDeltaQuantity = ToDecimal(Math.Floor(Math.Abs(maxDeltaUsd / delta1PcUsd)));
+
+                absQuantity = Math.Min(absQuantity, maxDeltaQuantity);
             }
             else
             {
@@ -2229,7 +2264,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <param name="underlying"></param>
         /// <param name="days"></param>
         /// <returns></returns>
-        public bool IsAfterRelease(Symbol underlying, int days = 1)
+        public bool IsAfterEarningsRelease(Symbol underlying, int days = 1)
         {
             DateTime prevReleaseDate = PreviouReleaseDate(underlying);
             return Time.Date > prevReleaseDate.Date && Time.Date <= (prevReleaseDate + TimeSpan.FromDays(days)).Date;

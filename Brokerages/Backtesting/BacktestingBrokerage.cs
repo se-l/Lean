@@ -212,7 +212,7 @@ namespace QuantConnect.Brokerages.Backtesting
             }
 
             // OCA orders
-            HashSet<int> ocaOrderIds = _ocaOrderGroups.TryGetValue(order.OcaGroup, out ocaOrderIds) ? ocaOrderIds : new() { } ;
+            HashSet<int> ocaOrderIds = order.OcaGroup == null ? null : _ocaOrderGroups.TryGetValue(order.OcaGroup, out ocaOrderIds) ? ocaOrderIds : new() { };
             if (!ocaOrderIds.IsNullOrEmpty())
             {
                 Log.Trace($"BacktestingBrokerage.CancelOrder(): OCA GroupId: {order.OcaGroup}, OrderIds:{string.Join(", ", ocaOrderIds)}");

@@ -36,7 +36,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Lean.Brokerages.InteractiveBrokers\QuantConnect.InteractiveBrokersBrokerage\QuantConnect.InteractiveBrokersBrokerage.csproj" />
-    <ProjectReference Include="..\..\Lean.DataSource.Polygon\QuantConnect.Polygon\QuantConnect.DataSource.Polygon.csproj" />
     <ProjectReference Include="..\Configuration\QuantConnect.Configuration.csproj" />
     <ProjectReference Include="..\Common\QuantConnect.csproj" />
     <ProjectReference Include="..\Logging\QuantConnect.Logging.csproj" />
@@ -46,5 +45,10 @@
       <Pack>True</Pack>
       <PackagePath></PackagePath>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="QuantConnect.Lean.DataSource.Polygon">
+      <HintPath>..\..\Lean.DataSource.Polygon\QuantConnect.Polygon\bin\Release\QuantConnect.Lean.DataSource.Polygon.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>

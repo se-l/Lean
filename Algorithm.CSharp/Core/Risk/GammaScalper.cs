@@ -63,38 +63,32 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 {
                     continue;
                 }
-                ReviewScalper(t.Symbol);                
+                _algo.Log($"{_algo.Time} GammaScalper.OnTradeEventUpdateHedgeState: Review scalper.");
+                ReviewScalper();
             }
         }
 
-        private void ReviewScalper(Symbol symbol)
+        /// <summary>
+        /// Too complicated. Error as in not hedging after an option fill and delta pretty large.
+        /// Gamma < 0 => Not scalping. Other code will handle hedging.
+        /// </summary>
+        /// <param name="symbol"></param>
+        private void ReviewScalper()
         {
             decimal deltaTotal = _algo.DeltaMV(Symbol);
-            if (symbol.SecurityType == SecurityType.Option)
-            {
-                // Restart scalping after hedging given the new option fill altered delta significantly,
-                // UNLESS band threshold is not exceeeded.
-                if (
-                    !IsScalping && _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, _algo.DeltaMV(Symbol)) ||  // hedge to delta zero before starting to scalp.// The way of checking needs to be centralized...
-                    ScalpingDirection != Num2Direction(deltaTotal)  // around delta zero or after a trade, scalping direction may have changed
-                )
-                {
-                    Reset();
-                    _algo.Log($"{_algo.Time} GammaScalper.OnTradeEventUpdateHedgeState: Noticed option fill for {symbol} and delta exceeding band. Resetting any scalping.");
-                    _algo.PfRisk.CheckHandleDeltaRiskExceedingBand(Symbol);  // Event elsewhere raised. Probably doesnt hurt raising again...
-                    return;
-                }
-                // Continue as usual...
-            }
+
+            // Restart scalping after hedging given the new option fill altered delta significantly,
+            // UNLESS band threshold is not exceeeded.
 
             double gammaTotal = (double)_algo.PfRisk.RiskByUnderlying(Symbol, Metric.GammaTotal);
-            if (gammaTotal <= 0)
-            {
-                Reset();
-                return;
-            }
-
-            if (_algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, deltaTotal) && !IsScalping)
+            if (
+                gammaTotal <= 0 ||
+                (
+                !IsScalping && _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, _algo.DeltaMV(Symbol)) ||  // hedge to delta zero before starting to scalp.// The way of checking needs to be centralized...
+                ScalpingDirection != Num2Direction(deltaTotal)  // around delta zero or after a trade, scalping direction may have changed
+                ) ||
+                (!IsScalping && _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, deltaTotal))
+                )
             {
                 Reset();
                 return;
@@ -181,7 +175,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (Num2Direction(deltaTotal) != ScalpingDirection)
             {
                 _algo.Log($"{_algo.Time} GammaScalper.UpdateTriggerPrices: Delta sign has changed. Resetting scalper.");
-                ReviewScalper(Symbol);
+                ReviewScalper();
                 return;
             }
 
@@ -223,7 +217,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (gammaTotal <= 0)
             {
                 // Should not be here. This should be checked before calling this method.
-                ReviewScalper(Symbol);
+                ReviewScalper();
                 return false;
             }
             decimal scalpedDelta = gammaTotal * (MidPrice - _startingPrice);            

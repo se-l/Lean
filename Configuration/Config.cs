@@ -241,10 +241,22 @@ namespace QuantConnect.Configuration
         /// <returns>Converted value of the config setting.</returns>
         public static T GetValue<T>(string key, T defaultValue = default(T))
         {
+            JToken token;
+
             // special case environment requests
             if (key == "environment" && typeof (T) == typeof (string)) return (T) (object) GetEnvironment();
 
-            var token = GetToken(Settings.Value, key);
+            string systemEnvValue = Environment.GetEnvironmentVariable(key);
+            if (!string.IsNullOrEmpty(systemEnvValue))
+            {
+                Log.Trace(Invariant($"Config.GetValue(): Environment variable found. {key}: {systemEnvValue}"));
+                token = JToken.Parse(systemEnvValue);
+            }
+            else
+            {
+                token = GetToken(Settings.Value, key);
+            }
+            
             if (token == null)
             {
                 var defaultValueString = defaultValue is IConvertible

@@ -1,12 +1,13 @@
 {
-  //"StartDate": "2024-02-20",
-  //"EndDate": "2024-02-21",
-  "StartDate": "2024-03-08",
-  "EndDate": "2024-03-08",
-  //"ticker": [ "PEP", "CDNS" ],
-  //"StartDate": "2023-11-27",
-  //"EndDate": "2023-11-29",
-  "Ticker": [ "DOCU" ],
+  "StartDate": "2024-06-25",
+  "EndDate": "2024-06-25",
+  "Ticker": [ "FDX" ],
   "WsHost": "localhost",
-  "WsPort": 8002
+  "WsPort": 8002,
+  "RequestTargetPfNContracts": {
+    "_": 20,
+  },
+  "EarningsEntryStartTime": {
+    "_": [ 9, 40 ]
+  }
 }

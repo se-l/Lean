@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Logging;
+using System.Globalization;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -14,6 +15,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
     public class AlgoConfig
     {
+        public const string CfgDefault = "_";
         public void OverrideWithEnvironmentVariables<T>()
         {
             // Loop over all getter attribuetes
@@ -68,6 +70,41 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
             }
 
+        }
+
+        public static TimeSpan GetTimeSpan(List<int> list)
+        {
+            if (list == null)
+            {
+                return TimeSpan.Zero;
+            }
+            return list.Count switch
+            {
+                1 => new TimeSpan(list[0]),
+                2 => TimeSpan.Zero,
+                3 => new TimeSpan(list[0], list[1], list[2]),
+                4 => new TimeSpan(list[0], list[1], list[2], list[3]),
+                5 => new TimeSpan(list[0], list[1], list[2], list[3], list[4]),
+                _ => throw new ArgumentOutOfRangeException()
+            };
+        }
+
+        public static TimeSpan GetTimeSpan(string timeString)
+        {
+            if (timeString == null)
+            {
+                return TimeSpan.Zero;
+            }        
+            return TimeSpan.ParseExact(timeString, "g", CultureInfo.InvariantCulture);
+        }
+
+        public static T GetEntry<T>(Dictionary<string, T> dict, string key)
+        {
+            if (dict.ContainsKey(key))
+            {
+                return dict[key];
+            }
+            return dict[CfgDefault];
         }
     }
 }

@@ -282,7 +282,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public bool CheckHandleDeltaRiskExceedingBand(Symbol symbol)
         {
-            if (_algo.IsWarmingUp || !_algo.IsMarketOpen(symbol)) return false;
+            if (_algo.IsWarmingUp || !_algo.IsMyMarketOpen(symbol)) return false;
 
             Symbol underlying = Underlying(symbol);
 

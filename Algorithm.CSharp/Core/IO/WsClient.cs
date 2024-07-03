@@ -13,10 +13,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         public event EventHandler<ResultStressTestDs> EventHandlerResultStressTestDs;
         public event EventHandler<CmdFetchTargetPortfolio> EventHandlerCmdFetchTargetPortfolio;
         public event EventHandler<CmdCancelOID> EventHandlerCmdCancelOID;
+        public event EventHandler<CmdCfgOverride> EventHandlerCmdCfgOverride;
         public event EventHandler<ResponseKalmanInit> EventHandlerResponseKalmanInit;
 
         private ClientWebSocket WS;
         private CancellationTokenSource CTS;
+        private CancellationTokenSource CTSHealthCheck;
         public int ReceiveBufferSize { get; set; } = 8192;
         public SemaphoreSlim semaphore = new(1, 1);  // Only during backtesting
         private readonly Foundations _algo;
@@ -63,8 +65,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
         public async Task StartHealthCheck()
         {
-            var cts = new CancellationTokenSource();
-            await Task.Factory.StartNew(CheckConnectionHealth, cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            CTSHealthCheck = new CancellationTokenSource();
+            await Task.Factory.StartNew(CheckConnectionHealth, CTSHealthCheck.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
 
         public async Task CheckConnectionHealth()
@@ -119,11 +121,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 _ = WS.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
                 _algo.Log("CloseAsync called without awaiting");
             }
+            _algo.Log("Canceling HealthCheck Thread");
+            CTSHealthCheck?.Cancel();
+
+            _algo.Log("Canceling ReceiveLoop Thread");
+            CTS?.Cancel();
+
             _algo.Log("WS Dispose about to be called");
             WS.Dispose();
             WS = null;
             CTS?.Dispose();
+            CTSHealthCheck?.Dispose();
             CTS = null;
+            CTSHealthCheck = null;
             _algo.Log("Disconnected from WebSocket");
         }
 
@@ -152,10 +162,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     ResponseReceived(outputStream);                    
                 }
             }
-            //catch (TaskCanceledException e)
-            //{
-            //    _algo.Log($"{_algo.Time} ReceiveLoop TaskCanceledException: ${e}");
-            //}
             catch (Exception e)
             {
                 _algo.Error($"ReceiveLoop Exception: ${e}");
@@ -217,6 +223,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         {
             using var buffer = new MemoryStream();
             message.WriteTo(buffer);
+            if (WS == null)
+            {
+                _algo.Error("WebSocket is null. Cannot send message.");
+                ReleaseThread();
+                return Task.CompletedTask;
+            }
             return WS.SendAsync(new ArraySegment<byte>(buffer.GetBuffer(), 0, (int)buffer.Length), WebSocketMessageType.Binary, true, CTS.Token);
         }
 
@@ -242,6 +254,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     break;
                 case Channel.CmdCancelOid:
                     HandleCmdCancelOID(message);
+                    break;
+                case Channel.CmdCfgOverride:
+                    HandleCmdCfgOverride(message);
                     break;
                 case Channel.KalmanInit:
                     HandleKalmanInit(message);
@@ -285,6 +300,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             CmdCancelOID cmdCancelOID = CmdCancelOID.Parser.ParseFrom(message.Payload);
             EventHandlerCmdCancelOID?.Invoke(this, cmdCancelOID);
         }
+        
+        private void HandleCmdCfgOverride(Message message)
+        {
+            CmdCfgOverride cmdCfgOverride = CmdCfgOverride.Parser.ParseFrom(message.Payload);
+            EventHandlerCmdCfgOverride?.Invoke(this, cmdCfgOverride);
+        }
 
         private void HandleKalmanInit(Message message)
         {
@@ -293,7 +314,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
         }
 
-        public void Dispose() => DisconnectAsync().Wait();
-
+        public void Dispose()
+        {
+            DisconnectAsync().Wait();
+        }
     }
 }

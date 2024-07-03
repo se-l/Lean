@@ -78,10 +78,23 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 return UtilNo;
             }
 
-            bool isAfterRelease = (_algo.PreviouReleaseDate(Underlying) + TimeSpan.FromDays(1)).Date == _algo.Time.Date;
+            bool isAfterRelease = _algo.IsAfterEarningsRelease(Underlying);
             OptionContractWrap ocw = OptionContractWrap.E(_algo, _option, Time.Date);
             int dte = ocw.DaysToExpiration();
             double absDelta = Math.Abs(ocw.Delta(_algo.IV(_option)));
+
+            TimeSpan earningsUtilityTargetHoldingsAfterReleaseStartTimeSell;
+            TimeSpan earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy;
+            try
+            {
+                earningsUtilityTargetHoldingsAfterReleaseStartTimeSell = AlgoConfig.GetTimeSpan(AlgoConfig.GetEntry(_algo.Cfg.EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell, Underlying.Value));
+                earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy = AlgoConfig.GetTimeSpan(AlgoConfig.GetEntry(_algo.Cfg.EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy, Underlying.Value));
+            }
+            catch (Exception e)
+            {
+                _algo.Error(e.Message);
+                return UtilNo;
+            }
 
             // Before earnings release, utility is managed by the marginal util coming from estimator.
             if (_algo.PreparingEarningsRelease(Underlying))
@@ -92,8 +105,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             // After release, sell any longs from SOD.
             else if (isAfterRelease 
                 && OrderDirection == OrderDirection.Sell
-                && _algo.Time.TimeOfDay > new TimeSpan(0, 9, 32, 0)
-                && ((dte >= 7) || (dte < 7 && absDelta < 0.95))  // Dont sell deep ITM options, too much trouble adjusting the hedge. Just get let it exercise.
+                && _algo.Time.TimeOfDay > earningsUtilityTargetHoldingsAfterReleaseStartTimeSell
+                && (dte >= 7 || (dte < 7 && absDelta < 0.95))  // Dont sell deep ITM options, too much trouble adjusting the hedge. Just get let it exercise.
                 )
             {
                 utility = 200;
@@ -101,7 +114,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             //After release, sell any longs only after noon when vola has dropped.
             else if (isAfterRelease 
                 && OrderDirection == OrderDirection.Buy 
-                && _algo.Time.TimeOfDay > new TimeSpan(0, 12, 0, 0)
+                && _algo.Time.TimeOfDay > earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy
+                && dte >= 7
                 )
             {
                 utility = 200;
@@ -111,6 +125,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         }
 
         /// <summary>
+        /// Equity Position is not the problem, Gamma is.
         /// Related to MarginUtil, which only kicks in at higher equity positions. Better unify both!
         /// Objectives: - Incentivize trades that minimize margin requirements.
         ///             - Reduce equity position as it invites hedging error.
@@ -124,6 +139,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// <returns></returns>
         protected override double GetUtilityEquityPosition()
         {
+            return 0;
+            decimal orderQuantity = _algo.QuantityToTargetHolding(Symbol);
+            if (orderQuantity == 0 || Quantity * orderQuantity < 0)
+            {
+                return UtilNo;
+            }
             // Move these model parameters to a config file or with model specs.
             double util;
             double b = 0.01;

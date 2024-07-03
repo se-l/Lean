@@ -1,0 +1,190 @@
+services:
+  
+  trader.prod.1:
+    image: sebastianluen/amm:prod
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - Ticker=NKE
+      - ib-port=4001  # 7497 for TWS
+
+      - environment=live-interactive-polygon
+      - algorithm-type-name=EarningsAlgorithm
+      - ib-tws-dir=/root/ibgateway
+      - ib-account=${ib_account_live}
+      - ib-user-name=${ib_user_name_live}
+      - ib-password=${ib_password_live}
+      - ib-trading-mode=live
+      - ignore-tws=true
+      - CONTAINER_NAME=trader.prod.1
+      - WsHost=host.docker.internal
+      - WsPort=8000
+      # - ib-host=host.docker.internal  # default: 127.0.0.1
+    networks: [net1]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: [ws.prod]
+    volumes:
+      - trade:/repos/quantconnect/Lean/trade:rw
+
+
+  trader.paper.1:
+    image: sebastianluen/amm:paper
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - Ticker=KMX
+      - ib-port=4002  # 7498 TWS
+      - tws-is-running=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
+
+      - environment=live-interactive-polygon
+      - algorithm-type-name=EarningsAlgorithm
+      - ib-tws-dir=/root/ibgateway
+      - ib-account=${ib-account-paper}
+      - ib-user-name=${ib_user_name_paper}
+      - ib-password=${ib_password_paper}
+      - ib-trading-mode=paper
+      - CONTAINER_NAME=trader.paper.1
+      - WsHost=host.docker.internal
+      - WsPort=8001
+    networks: [net1]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: [ws.paper]
+    volumes:
+      - trade:/repos/quantconnect/Lean/trade:rw
+
+
+  recorder.prod.1:
+    image: sebastianluen/amm:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=live-iqfeed
+      - algorithm-type-name=ADataRecorder
+      - Ticker=PLTR
+    networks: [net1]
+    volumes:
+      - trade:/repos/quantconnect/Lean/trade:rw
+
+
+  ws.prod:
+    image: sebastianluen/ws:prod
+    container_name: ws.prod
+    ports:
+     - "8000:8000"
+    environment:
+      - PATH_TRADE=/mnt/trade
+      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_old_2024-06-20.joblib
+      - WS_PORT=8000
+    healthcheck:
+      test: ["CMD", "python3", "/usr/app/trade/src/connector/api_minlp/terminate_zombies.py"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 1m
+    networks: [net1]
+    volumes:
+      - trade:/mnt/trade:rw
+
+
+  ws.paper:
+    image: sebastianluen/ws:paper
+    container_name: ws.paper
+    ports:
+     - "8001:8001"
+    environment:
+      - PATH_TRADE=/mnt/trade
+      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_old_2024-06-20.joblib
+      - WS_PORT=8001
+    healthcheck:
+      test: ["CMD", "python3", "/usr/app/trade/src/connector/api_minlp/terminate_zombies.py"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 1m
+    networks: [net1]
+    volumes:
+      - trade:/mnt/trade:rw
+
+
+  ws.dev:
+    image: sebastianluen/ws:dev
+    container_name: ws.dev
+    ports:
+     - "8002:8002"
+    environment:
+      - PATH_TRADE=/mnt/trade
+      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_old_2024-06-20.joblib
+      - WS_PORT=8002
+    healthcheck:
+      test: ["CMD", "python3", "/usr/app/trade/src/connector/api_minlp/terminate_zombies.py"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 1m
+    networks: [net1]
+    volumes:
+      - trade:/mnt/trade:rw
+
+
+  bt.dev.1:
+    image: sebastianluen/amm:dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=backtesting
+      - algorithm-type-name=EarningsAlgorithm
+      - StartDate=2024-06-26
+      - EndDate=2024-06-26
+      - Ticker=FDX
+      - WsHost=host.docker.internal
+      - WsPort=8002
+      - CONTAINER_NAME=bt.dev.fdx.240326
+      - BacktestingHoldings={FDX:-377,FDX   240719P00270000:1,FDX   240712P00265000:-1,FDX   240712C00250000:1,FDX   250620C00240000:-2,FDX   240705P00252500:-1,FDX   250620C00320000:-5,FDX   250620C00330000:-3,FDX   240628C00227500:1,FDX   240628C00235000:2,FDX   240628C00240000:1,FDX   240628P00267500:-1,FDX   240628C00242500:1,FDX   240628C00247500:1,FDX   240628C00250000:1,FDX   240628C00252500:1,FDX   240628C00285000:2}
+    depends_on: [ws.dev]
+    networks: [net1]
+    volumes:
+      - trade:/repos/quantconnect/Lean/trade:rw
+
+
+  bt.prod.1:
+    image: sebastianluen/amm:prod
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - environment=backtesting
+      - algorithm-type-name=MarketMakeOptionsAlgorithm
+      - StartDate=2024-01-01
+      - EndDate=2024-02-12
+      - Ticker=DELL,CSCO
+      - CONTAINER_NAME=bt.prod.jan
+    depends_on: [ws.prod]
+    volumes:
+      - trade:/repos/quantconnect/Lean/trade:rw
+
+
+  test:
+    image: ubuntu:latest
+    volumes:
+      - trade:/repos/quantconnect/Lean/trade:rw
+    entrypoint: ["tail", "-f", "/dev/null"]
+
+
+networks:
+  net1:
+    driver: bridge
+
+
+volumes:
+  trade:
+    driver: local
+    driver_opts:
+      type: ${driver_opts_type}
+      o: ${driver_opts_o}
+      device: ${device}

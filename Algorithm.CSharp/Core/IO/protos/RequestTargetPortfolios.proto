@@ -29,6 +29,8 @@ message RequestTargetPortfolios {
   repeated Holding holdings = 3;
   
   repeated MarketDataSnapByUnderlying market_data_snaps = 4;
+
+  int32 n_contracts = 5;
 }
 
 message ResponseTargetPortfolios {

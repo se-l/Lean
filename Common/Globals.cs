@@ -61,6 +61,10 @@ namespace QuantConnect
         /// The root directory of the data folder for this application
         /// </summary>
         public static string DataFolder { get; private set; }
+        /// <summary>
+        /// Post trade, log and analytics information.
+        /// </summary>
+        public static string AnalyticsFolder { get; private set; }
 
         /// <summary>
         /// True if running in live mode
@@ -89,6 +93,7 @@ namespace QuantConnect
 
             LiveMode = Config.GetBool("live-mode");
 
+            AnalyticsFolder = Config.Get("analytics-folder", Config.Get("data-directory", "../../../trade/Analytics/"));
             PathAnalytics = GetPathAnalytics();
             ResultsDestinationFolder = Config.Get("results-destination-folder", Directory.GetCurrentDirectory());
         }
@@ -128,8 +133,8 @@ namespace QuantConnect
             string mode = Config.Get("environment") == "backtesting" ? "" : "-" + Config.Get("ib-account");
             string containerName = Environment.GetEnvironmentVariable("CONTAINER_NAME");
             string folderSuffix = string.IsNullOrEmpty(containerName) ? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) : containerName;
-            string folderName = $"{DateTime.UtcNow.ToString("yyMMddHHmmss")}-{Config.Get("algorithm-type-name")}-{folderSuffix}";
-            string path = Path.Combine($"../Analytics/{Config.Get("environment")}{mode}/", folderName);
+            string folderName = $"{DateTime.UtcNow.ToString("yyMMddHHmmss", CultureInfo.InvariantCulture)}-{Config.Get("algorithm-type-name")}-{folderSuffix}";
+            string path = Path.Combine(AnalyticsFolder, $"{Config.Get("environment")}{mode}/", folderName);
             if (!Directory.Exists(path))
             {
                 Directory.CreateDirectory(path);

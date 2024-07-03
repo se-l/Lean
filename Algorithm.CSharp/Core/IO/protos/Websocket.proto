@@ -12,6 +12,7 @@ enum Channel {
     CMD_FETCH_TARGET_PORTFOLIO = 5;
     CMD_CANCEL_OID = 6;
     KALMAN_INIT = 7;
+    CMD_CFG_OVERRIDE = 8;
 }
 
 enum Action {

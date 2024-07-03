@@ -33,22 +33,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "aGFycC5Db3JlLklPLlRhcmdldFBvcnRmb2xpby5JdnNFbnRyeRJYChVyZXN1",
             "bHRfc3RyZXNzX3Rlc3RfZHMYBSABKAsyOS5RdWFudENvbm5lY3QuQWxnb3Jp",
             "dGhtLkNTaGFycC5Db3JlLklPLlJlc3VsdFN0cmVzc1Rlc3REcxoqCghJdnNF",
-            "bnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBItkBChdSZXF1",
+            "bnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBIu4BChdSZXF1",
             "ZXN0VGFyZ2V0UG9ydGZvbGlvcxIKCgJ0cxgBIAEoCRISCgp1bmRlcmx5aW5n",
             "GAIgASgJEkAKCGhvbGRpbmdzGAMgAygLMi4uUXVhbnRDb25uZWN0LkFsZ29y",
             "aXRobS5DU2hhcnAuQ29yZS5JTy5Ib2xkaW5nElwKEW1hcmtldF9kYXRhX3Nu",
             "YXBzGAQgAygLMkEuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29y",
-            "ZS5JTy5NYXJrZXREYXRhU25hcEJ5VW5kZXJseWluZyKrAQoYUmVzcG9uc2VU",
-            "YXJnZXRQb3J0Zm9saW9zEgoKAnRzGAEgASgJEhIKCnVuZGVybHlpbmcYAiAB",
-            "KAkSUQoRdGFyZ2V0X3BvcnRmb2xpb3MYAyADKAsyNi5RdWFudENvbm5lY3Qu",
-            "QWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlRhcmdldFBvcnRmb2xpbxIcChRp",
-            "c19sYXN0X3RyYW5zbWlzc2lvbhgEIAEoCEIoqgIlUXVhbnRDb25uZWN0LkFs",
-            "Z29yaXRobS5DU2hhcnAuQ29yZS5JT2IGcHJvdG8z"));
+            "ZS5JTy5NYXJrZXREYXRhU25hcEJ5VW5kZXJseWluZxITCgtuX2NvbnRyYWN0",
+            "cxgFIAEoBSKrAQoYUmVzcG9uc2VUYXJnZXRQb3J0Zm9saW9zEgoKAnRzGAEg",
+            "ASgJEhIKCnVuZGVybHlpbmcYAiABKAkSUQoRdGFyZ2V0X3BvcnRmb2xpb3MY",
+            "AyADKAsyNi5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklP",
+            "LlRhcmdldFBvcnRmb2xpbxIcChRpc19sYXN0X3RyYW5zbWlzc2lvbhgEIAEo",
+            "CEIoqgIlUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JT2IG",
+            "cHJvdG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.StressTestDsReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolio), global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolio.Parser, new[]{ "Underlying", "Holdings", "Objective", "Ivs", "ResultStressTestDs" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfolios), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfolios.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfolios), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfolios.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps", "NContracts" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseTargetPortfolios), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseTargetPortfolios.Parser, new[]{ "Ts", "Underlying", "TargetPortfolios", "IsLastTransmission" }, null, null, null, null)
           }));
     }
@@ -420,6 +421,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       underlying_ = other.underlying_;
       holdings_ = other.holdings_.Clone();
       marketDataSnaps_ = other.marketDataSnaps_.Clone();
+      nContracts_ = other.nContracts_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -475,6 +477,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       get { return marketDataSnaps_; }
     }
 
+    /// <summary>Field number for the "n_contracts" field.</summary>
+    public const int NContractsFieldNumber = 5;
+    private int nContracts_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int NContracts {
+      get { return nContracts_; }
+      set {
+        nContracts_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -494,6 +508,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Underlying != other.Underlying) return false;
       if(!holdings_.Equals(other.holdings_)) return false;
       if(!marketDataSnaps_.Equals(other.marketDataSnaps_)) return false;
+      if (NContracts != other.NContracts) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -505,6 +520,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
       hash ^= holdings_.GetHashCode();
       hash ^= marketDataSnaps_.GetHashCode();
+      if (NContracts != 0) hash ^= NContracts.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -533,6 +549,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       holdings_.WriteTo(output, _repeated_holdings_codec);
       marketDataSnaps_.WriteTo(output, _repeated_marketDataSnaps_codec);
+      if (NContracts != 0) {
+        output.WriteRawTag(40);
+        output.WriteInt32(NContracts);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -553,6 +573,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       holdings_.WriteTo(ref output, _repeated_holdings_codec);
       marketDataSnaps_.WriteTo(ref output, _repeated_marketDataSnaps_codec);
+      if (NContracts != 0) {
+        output.WriteRawTag(40);
+        output.WriteInt32(NContracts);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -571,6 +595,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       size += holdings_.CalculateSize(_repeated_holdings_codec);
       size += marketDataSnaps_.CalculateSize(_repeated_marketDataSnaps_codec);
+      if (NContracts != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeInt32Size(NContracts);
+      }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -591,6 +618,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       holdings_.Add(other.holdings_);
       marketDataSnaps_.Add(other.marketDataSnaps_);
+      if (other.NContracts != 0) {
+        NContracts = other.NContracts;
+      }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -622,6 +652,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             marketDataSnaps_.AddEntriesFrom(input, _repeated_marketDataSnaps_codec);
             break;
           }
+          case 40: {
+            NContracts = input.ReadInt32();
+            break;
+          }
         }
       }
     #endif
@@ -651,6 +685,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           }
           case 34: {
             marketDataSnaps_.AddEntriesFrom(ref input, _repeated_marketDataSnaps_codec);
+            break;
+          }
+          case 40: {
+            NContracts = input.ReadInt32();
             break;
           }
         }

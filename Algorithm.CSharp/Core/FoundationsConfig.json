@@ -1,27 +1,30 @@
 {
-  "StartDate": "2024-11-14",
-  "EndDate": "2023-11-15",
-  //"StartDate": "2023-11-16",
-  //"EndDate": "2023-11-17",
-  "Ticker": [ "TGT" ],
+  "StartDate": "2024-06-24",
+  "EndDate": "2024-06-24",
+  "Ticker": [ "FDX" ],
   "LiquidateTicker": [],
   "SkipRunSignals": {
     "_": false
   },
   "ExecuteManualOrderInstructions": true,
   "BacktestingHoldings": {
-    "DOCU  240308C00063000": 12.0,
-    "DOCU  240308P00049500": -5.0,
-    "DOCU  240308P00054000": -15.0,
-    "DOCU  240308P00055000": -1.0,
-    "DOCU  240308P00057000": -4.0,
-    "DOCU  240308P00058000": -5.0,
-    "DOCU  240308P00060000": 1.0,
-    "DOCU  240308P00062000": -12.0,
-    "DOCU  240315P00059000": 7.0,
-    "DOCU  240315P00062500": 15.0,
-    "DOCU  240426P00051000": 3.0,
-    "DOCU  240426P00052000": 20.0
+    "FDX": -377,
+    "FDX   240719P00270000": 1,
+    "FDX   240712P00265000": -1,
+    "FDX   240712C00250000": 1,
+    "FDX   250620C00240000": -2,
+    "FDX   240705P00252500": -1,
+    "FDX   250620C00320000": -5,
+    "FDX   250620C00330000": -3,
+    "FDX   240628C00227500": 1,
+    "FDX   240628C00235000": 2,
+    "FDX   240628C00240000": 1,
+    "FDX   240628P00267500": -1,
+    "FDX   240628C00242500": 1,
+    "FDX   240628C00247500": 1,
+    "FDX   240628C00250000": 1,
+    "FDX   240628C00252500": 1,
+    "FDX   240628C00285000": 2
   },
   "LogOrderUpdates": true,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
@@ -105,16 +108,13 @@
     "_": false
   },
   "TrailingHedgePct": {
-    "_": 0.003,
-    "CSCO": 0.003,
-    "DELL": 0.004
+    "_": 0.006
   },
   ///
 
   // Needs to depend on underlying price, delta, and jumps.
   "MaxOptionOrderQuantity": {
-    "_": 1,
-    "DOCU": 5
+    "_": 1
   },
   "TargetMaxEquityPositionUSD": {
     "_": 4000
@@ -135,11 +135,10 @@
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
   "TotalDeltaHedgeThresholdIntercept": {
-    "_": 10
+    "_": 20
   },
   "TotalDeltaHedgeThresholdGammaFactor": {
-    "_": -0.3,
-    "CSCO": -0.3
+    "_": -1
   },
   "DeltaAdjustmentParameters": {
     "_": {
@@ -209,7 +208,7 @@
   "SweepLongSchedule": {
     "_": [
       // Before Release
-      [ 0, 10, 16, 60 ],
+      [ 0, 12, 16, 60 ],
 
       // After release
       [ 1, 14, 16, 60 ],
@@ -219,11 +218,11 @@
   "SweepShortSchedule": {
     "_": [
       // Before release
-      [ 0, 14, 16, 30 ],
+      [ 0, 15, 16, 30 ],
 
       // After release
-      [ 1, 9, 10, 10 ],
-      [ 1, 10, 11, 20 ],
+      [ 1, 9, 10, 30 ],
+      [ 1, 10, 11, 40 ],
       [ 1, 11, 16, 60 ],
       [ 2, 9, 16, 60 ]
     ]
@@ -232,13 +231,34 @@
     "_": [ 0.8, 1.2 ]
   },
   "KalmanAlphaBid": {
-    "_": 0.8
+    "_": 0.95
   },
   "KalmanAlphaAsk": {
-    "_": 0.8
+    "_": 0.95
   },
   "PrepareEarningsPeriodDays": {
     "_": 1
   },
-  "BacktestingBrokerageLatency":  2
+  "BacktestingBrokerageLatency": 2,
+  "MinHistoryDaysUnderlyingForScoping": 7,
+  "MaxDelta100BpUSDSignalQuantity": {
+    "_": 150
+  },
+  "UseKalmanFilterAfterEarningsRelease": true,
+  "UseKalmanFilterBeforeEarningsRelease": true,
+  "TimeStartKfBeforeRelease": {
+    "_": "09:30"
+  },
+  "TimeStartKfAfterRelease": {
+    "_": "09:40"
+  },
+  "EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy": {
+    "_": "12:00"
+  },
+  "EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell": {
+    "_": "09:40"
+  },
+  "HedgeToAcrossDsAfterTime": {
+    "_": "15:45"
+  }
 }

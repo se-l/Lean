@@ -25,6 +25,8 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Util;
 using QuantConnect.Securities.Option;
+using QuantConnect.Scheduling;
+using System;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -41,10 +43,15 @@ namespace QuantConnect.Algorithm.CSharp
             //SetCash(100000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
-            Cfg = JsonConvert.DeserializeObject<FoundationsConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
+            Cfg = JsonConvert.DeserializeObject<FoundationsConfig>(File.ReadAllText(FoundationsConfigFileName));
+            Cfg.OverrideWithEnvironmentVariables<FoundationsConfig>();
+
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText(Path.Combine(Globals.DataFolder, "symbol-properties", "EarningsAnnouncements.json")));
+            DividendYield = JsonConvert.DeserializeObject<Dictionary<string, double>>(File.ReadAllText(Path.Combine(Globals.DataFolder, "symbol-properties", "DividendYields.json")));
             DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
+            ManualOrderInstructionBySymbol = JsonConvert.DeserializeObject<ManualOrderInstruction[]>(File.ReadAllText("ManualOrderInstructions.json")).GroupBy(x => x.Symbol).ToDictionary(g => g.Key, g => g.First());
             EarningsBySymbol = EarningsAnnouncements.GroupBy(ea => ea.Symbol).ToDictionary(g => g.Key, g => g.ToArray());
+            mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - ScheduledEvent.SecurityEndOfDayDelta - TimeSpan.FromMinutes(5));  // 10mins before EOD market close events fire
 
             securityInitializer = new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays);
             SetSecurityInitializer(securityInitializer);
@@ -55,7 +62,7 @@ namespace QuantConnect.Algorithm.CSharp
             //SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
             //var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
             //Log($"WarmUp TimeSpan: {timeSpan}");
-            SetWarmUp(1);
+            SetWarmUp(0);
         }
 
         public override void OnBrokerageMessage(BrokerageMessageEvent messageEvent)
@@ -105,8 +112,10 @@ namespace QuantConnect.Algorithm.CSharp
             LogToDisk();
 
             ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
-            
-            SetRunTimeError(new System.Exception("Account Snapped. Metrics logged and exported"));
+
+            OnWarmupFinishedCalled = true;  // bad. remove flag setting design
+
+            //SetRunTimeError(new System.Exception("Account Snapped. Metrics logged and exported"));
         }
         public override void OnSecuritiesChanged(SecurityChanges changes)
         {

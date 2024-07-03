@@ -28,6 +28,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         //public Func<SimpleQuote, double, double> VegaCached;
         public decimal NetYield { get; internal set; }
         public double Tenor { get; internal set; }
+        public readonly int Multiplier = 100;
 
         private readonly Foundations _algo;
         private static readonly Dictionary<(Symbol, DateTime), OptionContractWrap> instances = new();
@@ -357,6 +358,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             SetHistoricalVolatility(hv0);
             return delta;
+        }
+
+        public double DeltaXBpUSD(double volatility, decimal dS = 100)
+        {
+            return Delta(volatility) * (double)(_algo.MidPrice(UnderlyingSymbol) * dS*BP) * Multiplier;
         }
 
         /// <summary>

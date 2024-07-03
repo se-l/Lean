@@ -81,5 +81,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, double> KalmanAlphaAsk { get; set; }
         public Dictionary<string, int> PrepareEarningsPeriodDays { get; set; }
         public int BacktestingBrokerageLatency {  get; set; }
+        public int MinHistoryDaysUnderlyingForScoping { get; set; }
+        public Dictionary<string, double> MaxDelta100BpUSDSignalQuantity { get; set; }
+        public bool UseKalmanFilterAfterEarningsRelease { get; set; }
+        public bool UseKalmanFilterBeforeEarningsRelease { get; set; }
+        public Dictionary<string, string> TimeStartKfBeforeRelease { get; set; }
+        public Dictionary<string, string> TimeStartKfAfterRelease { get; set; }
+        public Dictionary<string, string> EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy { get; set; }
+        public Dictionary<string, string> EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell { get; set; }
+        public Dictionary<string, string> HedgeToAcrossDsAfterTime { get; set; }
     }
 }

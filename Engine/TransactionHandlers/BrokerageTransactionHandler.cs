@@ -842,22 +842,17 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             // mark request as processed
             request.SetResponse(response, OrderRequestStatus.Processed);
 
-            foreach (var kvp in _cancelRequestsUnprocessed.ToList())
+            lock (_cancelRequestsUnprocessed)
             {
-                if (kvp.Value.Time < (_algorithm.UtcTime - TimeSpan.FromMinutes(5)))
+                foreach (var kvp in _cancelRequestsUnprocessed)
                 {
-                    Log.Error($"BrokerageTransactionHandler.HandleOrderRequest(): Cancel request for order id  {kvp.Key} has been outstanding for more than 5 minutes, request will be removed. Investigate! Status:");
-                    _cancelRequestsUnprocessed.TryRemove(kvp.Key, out _);
+                    if (kvp.Value.Time < (_algorithm.UtcTime - TimeSpan.FromMinutes(5)))
+                    {
+                        Log.Error($"BrokerageTransactionHandler.HandleOrderRequest(): Cancel request for order id  {kvp.Key} has been outstanding for more than 5 minutes, request will be removed. Investigate! Status:");
+                        _cancelRequestsUnprocessed.TryRemove(kvp.Key, out _);
+                    }
                 }
-            }
-            foreach (var kvp in _submitRequestsUnprocessed.ToList())
-            {
-                if (kvp.Value.Time < (_algorithm.UtcTime - TimeSpan.FromMinutes(5)))
-                {
-                    Log.Error($"BrokerageTransactionHandler.HandleOrderRequest(): Submit request for order id  {kvp.Key} has been outstanding for more than 5 minutes, request will be removed. Investigate! Status:");
-                    _submitRequestsUnprocessed.TryRemove(kvp.Key, out _);
-                }
-            }
+            }            
         }
 
         /// <summary>
