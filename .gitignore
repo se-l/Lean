@@ -296,3 +296,8 @@ Data/
 /Launcher/config.json
 docker-compose.yml
 !run.sh
+/.env
+/.envaws
+/dataLive
+/trade
+/AWS ECS files
