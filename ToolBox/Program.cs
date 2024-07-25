@@ -69,7 +69,7 @@ namespace QuantConnect.ToolBox
             factorFileProvider.Initialize(mapFileProvider, dataProvider);
 
             var targetApp = GetParameterOrExit(optionsObject, "app").ToLowerInvariant();
-            if (targetApp.Contains("download") || targetApp.EndsWith("dl"))
+            if (targetApp.Contains("download") || targetApp.EndsWith("dl") || targetApp == "ive")
             {
                 var fromDate = Parse.DateTimeExact(GetParameterOrExit(optionsObject, "from-date"), "yyyyMMdd-HH:mm:ss");
                 var resolution = optionsObject.ContainsKey("resolution") ? optionsObject["resolution"].ToString() : "";
@@ -126,7 +126,10 @@ namespace QuantConnect.ToolBox
                             skipExisting,
                             nClients);
                         break;
-
+                    case "ive":
+                        int nThreads = int.Parse(optionsObject.TryGetValue("n-clients", out var nThreadsObject) ? nThreadsObject.ToString() : "16");
+                        new VolatilityExporter().Run(tickers, fromDate, toDate, nThreads: nThreads);
+                        break;
                     case "avdl":
                     case "alphavantagedownloader":
                         AlphaVantageDownloaderProgram.AlphaVantageDownloader(

@@ -26,6 +26,8 @@ using Newtonsoft.Json;
 using QuantConnect.Configuration;
 using System.Linq;
 using QuantConnect.Data.Consolidators;
+using System;
+using System.Text.RegularExpressions;
 
 namespace QuantConnect.Algorithm.CSharp
 {
@@ -42,7 +44,7 @@ namespace QuantConnect.Algorithm.CSharp
         public HashSet<string> optionTicker = new();
         public Dictionary<Symbol, QuoteBarConsolidator> QuoteBarConsolidators = new();
         public Dictionary<Symbol, TradeBarConsolidator> TradeBarConsolidators = new();
-        string dataFolderOut = "";
+        string dataFolderTmp = "";
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
         /// </summary>
@@ -51,8 +53,8 @@ namespace QuantConnect.Algorithm.CSharp
             Cfg = JsonConvert.DeserializeObject<ADataRecorderConfig>(File.ReadAllText("ADataRecorderConfig.json"));
             Cfg.OverrideWithEnvironmentVariables<ADataRecorderConfig>();
             File.Copy("./ADataRecorderConfig.json", Path.Combine(Globals.PathAnalytics, "ADataRecorderConfig.json"));
-            dataFolderOut = string.IsNullOrEmpty(Cfg.DataFolderOut) ? Config.Get("data-folder") : Cfg.DataFolderOut;
-            Log("DATA FOLDER OUT: " + dataFolderOut);
+            dataFolderTmp = string.IsNullOrEmpty(Cfg.DataFolderTmp) ? Config.Get("data-folder") : Cfg.DataFolderTmp;
+            Log("DATA FOLDER TMP: " + dataFolderTmp);
 
             UniverseSettings.Resolution = resolution = Resolution.Second;
             SetStartDate(Cfg.StartDate);
@@ -92,6 +94,8 @@ namespace QuantConnect.Algorithm.CSharp
 
             QuoteBarConsolidators.DoForEach((kvp) => SubscriptionManager.AddConsolidator(kvp.Key, kvp.Value));
             TradeBarConsolidators.DoForEach((kvp) => SubscriptionManager.AddConsolidator(kvp.Key, kvp.Value));
+
+            //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), CopyTmp2DataFolder);
         }
 
         /// <summary>
@@ -115,7 +119,7 @@ namespace QuantConnect.Algorithm.CSharp
             Resolution thisResolution = res ?? resolution;
             var writer = writers.TryGetValue((thisResolution, quoteBar.Symbol, TickType.Quote), out LeanDataWriter dataWriter)
                 ? dataWriter
-                : writers[(thisResolution, quoteBar.Symbol, TickType.Quote)] = new LeanDataWriter(thisResolution, quoteBar.Symbol, dataFolderOut, TickType.Quote, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
+                : writers[(thisResolution, quoteBar.Symbol, TickType.Quote)] = new LeanDataWriter(thisResolution, quoteBar.Symbol, dataFolderTmp, TickType.Quote, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
             writer.Write(new List<BaseData>() { quoteBar });
         }
 
@@ -124,7 +128,7 @@ namespace QuantConnect.Algorithm.CSharp
             Resolution thisResolution = res ?? resolution;
             var writer = writers.TryGetValue((thisResolution, tradeBar.Symbol, TickType.Trade), out LeanDataWriter dataWriter)
                 ? dataWriter
-                : writers[(thisResolution, tradeBar.Symbol, TickType.Trade)] = new LeanDataWriter(thisResolution, tradeBar.Symbol, dataFolderOut, TickType.Trade, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
+                : writers[(thisResolution, tradeBar.Symbol, TickType.Trade)] = new LeanDataWriter(thisResolution, tradeBar.Symbol, dataFolderTmp, TickType.Trade, _diskDataCacheProvider, writePolicy: WritePolicy.Merge);
             writer.Write(new List<BaseData>() { tradeBar });
         }
 
@@ -151,6 +155,57 @@ namespace QuantConnect.Algorithm.CSharp
         public override void OnEndOfAlgorithm()
         {
             _diskDataCacheProvider.DisposeSafely();
-        }        
+        }
+        
+        /// <summary>
+        /// Copy any .zip file in resolution folder second and minute where filenames are prefixed with the current date.
+        /// </summary>
+        public void CopyTmp2DataFolder()
+        {
+            string dt = Time.ToString("yyyyMMdd");
+            Regex pattern = new($".*[second|minute].*{dt}.*\\.zip$");
+
+            string[] files = Directory.GetFiles(dataFolderTmp, "*", SearchOption.AllDirectories).Where(f => pattern.IsMatch(f)).ToArray();
+            Log($"{Time} - CopyTmp2DataFolder. Pattern: {pattern} Found {files.Length} files to copy from {dataFolderTmp} to data folder");
+            foreach (string file in files)
+            {
+                // Extract the path of the file after dataFolderTmp
+                string dest = file.Replace("dataLive", "data");
+                try
+                {
+                    // Create folder recursively if it doesn't exist
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest));
+                    //var sourceFile = new FileInfo(file);
+                    //sourceFile.CopyTo(dest, true);
+
+                    //File.Copy(file, dest, true);
+
+                    using (var inf = new FileStream(
+                        file,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.ReadWrite))
+                    {
+                        using (var outf = new FileStream(dest, FileMode.Create))
+                        {
+                            int a;
+                            while ((a = inf.ReadByte()) != -1)
+                            {
+                                outf.WriteByte((byte)a);
+                            }
+                            inf.Close();
+                            inf.Dispose();
+                            outf.Close();
+                            outf.Dispose();
+                        }
+                    }
+                    Log($"Copied {file} to {dest}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"Error copying {file} to {dest}: {ex.Message}");
+                }                
+            }
+        }
     }
 }

@@ -483,7 +483,12 @@ namespace QuantConnect.ToolBox.Polygon
                     var url = $"{HistoryBaseUrl}/v1/historic/forex/{baseCurrency}/{quoteCurrency}/{currentDate:yyyy-MM-dd}?" +
                               $"limit={ResponseSizeLimitCurrencies}&apiKey={_apiKey}&offset={offset}";
 
-                    var response = DownloadAndParseData(typeof(ForexQuoteTickResponse[]), url, "ticks") as ForexQuoteTickResponse[];
+                    (var response, var nextUrl) = ((ForexQuoteTickResponse[], string?))DownloadAndParseData(typeof(ForexQuoteTickResponse[]), url, "ticks");
+                    while (nextUrl != null)
+                    {
+                        (var responseNext, nextUrl) = ((ForexQuoteTickResponse[], string?))DownloadAndParseData(typeof(ForexQuoteTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                        response = response.Concat(responseNext).ToArray();
+                    }
 
                     // The first results of the next page will coincide with last of the previous page, lets clear from repeating values
                     var quoteTicksList = response?.Where(x => x.Timestamp != lastTickTimestamp).ToList();
@@ -560,7 +565,12 @@ namespace QuantConnect.ToolBox.Polygon
                     var url = $"{HistoryBaseUrl}/v1/historic/crypto/{baseCurrency}/{quoteCurrency}/{currentDate:yyyy-MM-dd}?" +
                               $"limit={ResponseSizeLimitCurrencies}&apiKey={_apiKey}&offset={offset}";
 
-                    var response = DownloadAndParseData(typeof(CryptoTradeTickResponse[]), url, "ticks") as CryptoTradeTickResponse[];
+                    (var response, var nextUrl) = ((CryptoTradeTickResponse[], string?))DownloadAndParseData(typeof(CryptoTradeTickResponse[]), url, "ticks");
+                    while (nextUrl != null)
+                    {
+                        (var responseNext, nextUrl) = ((CryptoTradeTickResponse[], string?))DownloadAndParseData(typeof(CryptoTradeTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                        response = response.Concat(responseNext).ToArray();
+                    }
 
                     // The first results of the next page will coincide with last of the previous page, lets clear from repeating values
                     var tradeTicksList = response?.Where(x => x.Timestamp != lastTickTimestamp).ToList();
@@ -637,7 +647,12 @@ namespace QuantConnect.ToolBox.Polygon
 
                     var url = $"{HistoryBaseUrl}/v3/quotes/{MapSymbolToPolygonTicker(request.Symbol)}?" +
                               $"apiKey={_apiKey}&timestamp.gt={offset}&timestamp.lt={timestampEndDate}&order=asc&limit={ResponseSizeLimitEquities}";
-                    var response = DownloadAndParseData(typeof(OptionQuoteTickResponse[]), url, "results") as OptionQuoteTickResponse[];
+                    (var response, var nextUrl) = ((OptionQuoteTickResponse[], string?))DownloadAndParseData(typeof(OptionQuoteTickResponse[]), url, "results");
+                    while (nextUrl != null)
+                    {
+                        (var responseNext, nextUrl) = ((OptionQuoteTickResponse[], string?))DownloadAndParseData(typeof(OptionQuoteTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                        response = response.Concat(responseNext).ToArray();
+                    }
 
                     // The first results of the next page will coincide with last of the previous page
                     // We distinguish the results by the timestamp, lets clear from repeating values
@@ -725,7 +740,12 @@ namespace QuantConnect.ToolBox.Polygon
 
                     var url = $"{HistoryBaseUrl}/v2/ticks/stocks/nbbo/{request.Symbol.Value}/{currentDate.Date:yyyy-MM-dd}?" +
                               $"apiKey={_apiKey}&timestamp={offset}&limit={ResponseSizeLimitEquities}";
-                    var response = DownloadAndParseData(typeof(EquityQuoteTickResponse[]), url, "results") as EquityQuoteTickResponse[];
+                    (var response, var nextUrl) = ((EquityQuoteTickResponse[], string?))DownloadAndParseData(typeof(EquityQuoteTickResponse[]), url, "results");
+                    while (nextUrl != null)
+                    {
+                        (var responseNext, nextUrl) = ((EquityQuoteTickResponse[], string?))DownloadAndParseData(typeof(EquityQuoteTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                        response = response.Concat(responseNext).ToArray();
+                    }
 
                     // The first results of the next page will coincide with last of the previous page
                     // We distinguish the results by the timestamp, lets clear from repeating values
@@ -798,7 +818,12 @@ namespace QuantConnect.ToolBox.Polygon
                     var url = $"{HistoryBaseUrl}/v2/ticks/stocks/trades/{request.Symbol.ID.Symbol}/{currentDate:yyyy-MM-dd}?" +
                               $"apiKey={_apiKey}&timestamp={offset}&limit={ResponseSizeLimitEquities}";
 
-                    var response = DownloadAndParseData(typeof(EquityTradeTickResponse[]), url, "results") as EquityTradeTickResponse[];
+                    (var response, var nextUrl) = ((EquityTradeTickResponse[], string?))DownloadAndParseData(typeof(EquityTradeTickResponse[]), url, "results");
+                    while (nextUrl != null)
+                    {
+                        (var responseNext, nextUrl) = ((EquityTradeTickResponse[], string?))DownloadAndParseData(typeof(EquityTradeTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                        response = response.Concat(responseNext).ToArray();
+                    }
 
                     // The first results of the next page will coincide with last of the previous page
                     // We distinguish the results by the timestamp, lets clear from repeating values
@@ -872,7 +897,12 @@ namespace QuantConnect.ToolBox.Polygon
                     var url = $"{HistoryBaseUrl}/v3/trades/{MapSymbolToPolygonTicker(request.Symbol)}?" +
                               $"apiKey={_apiKey}&timestamp.gt={offset}&timestamp.lt={timestampEndDate}&order=asc&limit={ResponseSizeLimitEquities}";
 
-                    var response = DownloadAndParseData(typeof(OptionTradeTickResponse[]), url, "results") as OptionTradeTickResponse[];
+                    (var response, var nextUrl) = ((OptionTradeTickResponse[], string?))DownloadAndParseData(typeof(OptionTradeTickResponse[]), url, "results");
+                    while (nextUrl != null)
+                    {
+                        (var responseNext, nextUrl) = ((OptionTradeTickResponse[], string?))DownloadAndParseData(typeof(OptionTradeTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                        response = response.Concat(responseNext).ToArray();
+                    }
 
                     // The first results of the next page will coincide with last of the previous page
                     // We distinguish the results by the timestamp, lets clear from repeating values
@@ -933,7 +963,12 @@ namespace QuantConnect.ToolBox.Polygon
             var url = $"{HistoryBaseUrl}/v3/reference/options/contracts?" +
                               $"underlying_ticker={symbol.Value}&as_of={asOf.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&apiKey={_apiKey}&limit={ResponseSizeLimitOptionContracts}";
 
-            var response = DownloadAndParseData(typeof(OptionContractResponse[]), url, "results") as OptionContractResponse[];
+            (var response, var nextUrl) = ((OptionContractResponse[], string?))DownloadAndParseData(typeof(OptionContractResponse[]), url, "results");
+            while (nextUrl != null)
+            {
+                (var responseNext, nextUrl) = ((OptionContractResponse[], string?))DownloadAndParseData(typeof(OptionContractResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                response = response.Concat(responseNext).ToArray();
+            }
 
             return response.Select(x => x.ToSymbol(symbol.ID.Market));
         }
@@ -978,7 +1013,7 @@ namespace QuantConnect.ToolBox.Polygon
                 var url = $"{HistoryBaseUrl}/v2/aggs/ticker/{tickerPrefix}{request.Symbol.Value}/range/1/{historyTimespan}/{start.Date:yyyy-MM-dd}/{end.Date:yyyy-MM-dd}" +
                           $"?apiKey={_apiKey}&limit={ResponseSizeLimitAggregateData}";
 
-                var aggregatesResponse = DownloadAndParseData(typeof(AggregatesResponse), url) as AggregatesResponse;
+                (var aggregatesResponse, var nextUrl) = ((AggregatesResponse, string?))DownloadAndParseData(typeof(AggregatesResponse), url);
                 var rows = aggregatesResponse?.Results;
 
                 if (rows != null)
@@ -1319,17 +1354,18 @@ namespace QuantConnect.ToolBox.Polygon
             }
         }
 
-        private object DownloadAndParseData(Type type, string url, string jsonPropertyName = null)
+        private (object, string?) DownloadAndParseData(Type type, string url, string jsonPropertyName = null)
         {
-            var result = url.DownloadData(httpClient: httpClient);
-            if (result == null)
+            string response = url.DownloadData(httpClient: httpClient);
+            if (response == null)
             {
-                return null;
+                return (null, null);
             }
 
             // If the data download was not successful, log the reason
-            var parsedResult = JObject.Parse(result);
+            var parsedResult = JObject.Parse(response);
             var success = parsedResult["success"]?.Value<bool>() ?? false;
+            var nextUrl = parsedResult["next_url"]?.ToString();
             if (!success)
             {
                 success = parsedResult["status"]?.ToString().ToUpperInvariant() == "OK";
@@ -1337,16 +1373,16 @@ namespace QuantConnect.ToolBox.Polygon
 
             if (!success)
             {
-                Log.Debug($"No data for {url}. Reason: {result}");
-                return null;
+                Log.Debug($"No data for {url}. Reason: {response}");
+                return (null, null);
             }
 
             if (jsonPropertyName != null)
             {
-                result = parsedResult[jsonPropertyName]?.ToString();
+                response = parsedResult[jsonPropertyName]?.ToString();
             }
 
-            return result == null ? null : JsonConvert.DeserializeObject(result, type);
+            return (response == null ? null : JsonConvert.DeserializeObject(response, type), nextUrl);
         }
     }
 }

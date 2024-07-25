@@ -1,0 +1,9 @@
+{
+  "StartDate": "2023-11-28",
+  "enddate": "2023-11-29",
+  //"ticker": [ "PEP", "CDNS" ],
+  //"StartDate": "2023-11-27",
+  //"EndDate": "2023-11-29",
+  "Ticker": [ "TMUS" ],
+  "localhost": "localhost"
+}

@@ -38,7 +38,7 @@ namespace QuantConnect.Algorithm.CSharp
             //SetCash(100000);
             SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin);
             UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
-            Cfg = JsonConvert.DeserializeObject<AMarketMakeOptionsAlgorithmConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
+            Cfg = JsonConvert.DeserializeObject<FoundationsConfig>(File.ReadAllText("AMarketMakeOptionsAlgorithmConfig.json"));
 
             SetSecurityInitializer(new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays));
 

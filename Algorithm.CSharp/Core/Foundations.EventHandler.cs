@@ -40,17 +40,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void OnRiskLimitExceededEventHedge(object? sender, RiskLimitExceededEventArgs e)
         {
+            if (GammaScalpers[Underlying(e.Symbol)].IsScalping)
+            {
+                return;
+            }
             switch (e.LimitType)
             {
                 case RiskLimitType.Delta:
-                    if (GetHedgingMode(e.Symbol) == HedgingMode.Zakamulin)
-                    {
-                        HedgeOptionWithUnderlyingZMBands(e.Symbol);
-                    } 
-                    else
-                    {
-                        HedgeOptionWithUnderlying(e.Symbol);
-                    }
+                    HedgeOptionWithUnderlying(e.Symbol);
                     break;
             }
         }

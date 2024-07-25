@@ -123,7 +123,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _algo.Log($"{_algo.Time} OrderEventWriter.Write No orderTicket found for OrderId: {orderEvent.OrderId}");
                 return;
             }
-            _writer.WriteLine(CsvRow(orderTicket));
+            try
+            {
+                _writer.WriteLine(CsvRow(orderTicket));
+            }
+            catch (Exception e)
+            {
+                _algo.Error($"OrderEventWriter.Write: {e.Message}");
+            }
+            
         }
 
         public void Write(OrderTicket orderTicket)

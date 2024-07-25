@@ -173,6 +173,14 @@ namespace QuantConnect.Data.Market
             }
         }
 
+        public string ToIVQuoteString()
+        {
+            //"Time", "UnderlyingMidPrice", "BidPrice", "BidIV", "AskPrice", "AskIV", "BidDelta", "AskDelta"
+            var msSinceMidnight = EndTime.TimeOfDay.TotalSeconds * 1_000;  // + 1 as it becomes bar closing time
+            return $"{msSinceMidnight},{UnderlyingPrice.Close},{PriceBid?.Close ?? 0},{Bid?.Close ?? 0},{PriceAsk?.Close},{Ask?.Close},,";
+            //return $"{secSinceMidnight},{UnderlyingPrice.Open},{UnderlyingPrice.Close},{PriceBid.Open},{PriceBid.Close},{Bid.Open},{PriceAsk.Close}";
+        }
+
         /// <summary>
         /// The closing time of this bar, computed via the Time and Period
         /// </summary>

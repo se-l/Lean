@@ -6,6 +6,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
     {
         public string Symbol { get; set; }
         public decimal TargetQuantity { get; set; }
-        public decimal SpreadFactor { get; set; }
+        public double? Utility { get; set; }
+        public double? Volatility { get; set; }
+        public TimeSpan[][]? TimeToTrade { get; set; }
     }
 }
