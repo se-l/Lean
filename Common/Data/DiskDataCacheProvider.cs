@@ -21,6 +21,7 @@ using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using System.Collections.Generic;
+using static QuantConnect.Util.LeanData;
 
 namespace QuantConnect.Data
 {
@@ -118,6 +119,39 @@ namespace QuantConnect.Data
             {
                 Compression.ZipCreateAppendData(filePath, entryName, data, true);
             });
+        }
+
+        /// <summary>
+        /// Store the data in the cache. 
+        /// </summary>
+        public void Store(IEnumerable<FileMember> entries, bool overrideEntry = false)
+        {
+            foreach (var group in entries.GroupBy(entry => entry.FilePath))
+            {
+                var filePath = group.Key;
+                _synchronizer.Execute(filePath, singleExecution: false, () =>
+                {
+                    using (var zip = File.Exists(filePath) ? ZipFile.Read(filePath) : new ZipFile(filePath))
+                    {
+                        foreach (var entry in group)
+                        {
+                            if (zip.ContainsEntry(entry.EntryName) && overrideEntry)
+                            {
+                                zip.RemoveEntry(entry.EntryName);
+                                Log.Trace($"DiskDataCacheProvider.Store(): Override csv member: {filePath} @ {entry.EntryName}");
+                                zip.AddEntry(entry.EntryName, entry.Data);
+                            }
+                            else if (!zip.ContainsEntry(entry.EntryName))
+                            {
+                                Log.Trace($"DiskDataCacheProvider.Store(): Create csv member: {filePath} @ {entry.EntryName}");
+                                zip.AddEntry(entry.EntryName, entry.Data);
+                            }
+                        }
+                        zip.UseZip64WhenSaving = Zip64Option.Always;
+                        zip.Save();
+                    }
+                });
+            }
         }
 
         /// <summary>

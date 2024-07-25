@@ -10,7 +10,6 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
-using System.Diagnostics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -28,6 +27,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Func<decimal> PositionsTotal;
         public Func<int> PositionsN;
         public Func<Symbol, double, double> AtmIVCached;
+        public Func<Symbol, bool> IsDeltaHedgeInProgress;
 
         public void AssignCachedFunctions()
         {
@@ -35,13 +35,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Correlation = Cache(GetCorrelation, (Symbol symbol1, Symbol symbol2, int periods, Resolution resolution) => (symbol1, symbol2, periods, resolution, Time.Date));  // not correct for resolution < daily
             IsLiquid = Cache(GetIsLiquid, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
             //HedgeWithIndex = Cache(GetHedgeWithIndex, () => Time, maxKeys: 1);
-            HedgeOptionWithUnderlying = Cache(GetHedgeOptionWithUnderlying, (Symbol symbol) => (Time, Underlying(symbol)));
+            HedgeOptionWithUnderlying = Cache(GetHedgeOptionWithUnderlying, (Symbol symbol) => (Time.Trim(TimeSpan.TicksPerSecond), Underlying(symbol)));
             HistoryWrap = Cache(GetHistoryWrap, (Symbol symbol, int window, Resolution resolution) => (Time.Date, symbol, window, resolution));  // not correct for resolution < daily
             HistoryWrapQuote = Cache(GetHistoryWrapQuote, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
             TickSize = Cache(GetTickSize, (Symbol symbol) => symbol, maxKeys: 1);
-            PositionsTotal = Cache(GetPositionsTotal, () => Time.Ticks, maxKeys: 1);
-            PositionsN = Cache(GetPositionsN, () => Time.Ticks, maxKeys: 1);
-            AtmIVCached = Cache(GetAtmIV, (Symbol symbol, double defaultSpread) => (Time.Ticks, symbol, defaultSpread));
+            PositionsTotal = Cache(GetPositionsTotal, () => Time.Trim(TimeSpan.TicksPerSecond), maxKeys: 1);
+            PositionsN = Cache(GetPositionsN, () => Time.Trim(TimeSpan.TicksPerSecond), maxKeys: 1);
+            AtmIVCached = Cache(GetAtmIV, (Symbol symbol, double defaultSpread) => (Time.Trim(TimeSpan.TicksPerSecond), symbol, defaultSpread));
+            IsDeltaHedgeInProgress = Cache(GetIsDeltaHedgeInProgress, (Symbol symbol) => (Time.Trim(TimeSpan.TicksPerSecond), symbol));
 
             IntrinsicValue = (Option option) => option.GetIntrinsicValue(MidPrice(option.Underlying.Symbol));
         }
@@ -101,6 +102,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             Debug($"Correlation.Pearson({symbol1},{symbol2},{periods}: Pearson: {corrPearson}");
             return corrPearson;
+        }
+
+        private bool GetIsDeltaHedgeInProgress(Symbol underlying)
+        {
+            return orderTickets.ContainsKey(underlying) && orderTickets[underlying].Any(t => orderSubmittedPartialFilledUpdated.Contains(t.Status));
         }
 
         /// <summary>
@@ -186,10 +192,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return false;
 
             DateTime nextReleaseDate = NextReleaseDate(underlying);
-            TimeSpan hedgeToAcrossDsAfterTime = AlgoConfig.GetTimeSpan(AlgoConfig.GetEntry(Cfg.HedgeToAcrossDsAfterTime, underlying));
-
+            DateTime nextMarketClose = NextMarketClose.TryGetValue(underlying, out nextMarketClose) ? nextMarketClose : GetNextMarketClose(underlying);            
+            TimeSpan hedgeToAcrossDs = nextMarketClose.TimeOfDay - TimeSpan.FromMinutes(Cfg.MinutesBeforeCloseHedgeToAcrossDs);
+            
             return LastDeltaAcrossDs.ContainsKey(underlying)
-                && Time.TimeOfDay >= hedgeToAcrossDsAfterTime
+                && Time.TimeOfDay  >= hedgeToAcrossDs
                 && nextReleaseDate == Time.Date;
         }
 
@@ -311,6 +318,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return isTinySpread ? OrderType.Market : OrderType.Limit;
         }
 
+        enum EquityHedgeMode {
+            Agressive,
+            MidPrice,
+            Passive,
+        }
+
         /// <summary>
         /// Gamma long - trailing limit orders.
         /// Gamma short - hedge more tightly - midPrice Limit Orders.
@@ -322,6 +335,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             OrderDirection direction = quantity > 0 ? OrderDirection.Buy : OrderDirection.Sell;
 
             bool isPriceMovingAway = (ticket != null && ticket.UpdateRequests.Count > Cfg.LimitOrderUpdateBeforeMarketOrderConversion);
+            int modeInt = Cfg.EquityHedgeMode.TryGetValue(equity.Symbol.Value, out modeInt) ? modeInt : Cfg.EquityHedgeMode[CfgDefault];
+            EquityHedgeMode mode = (EquityHedgeMode)Enum.GetValues(typeof(EquityHedgeMode)).GetValue(modeInt);
+            mode = isPriceMovingAway ? EquityHedgeMode.Agressive : mode;
 
             switch (orderType)
             {
@@ -329,17 +345,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return MidPrice(equity.Symbol);
 
                 case OrderType.Limit:
-                    
-                    return (isPriceMovingAway, direction) switch
+                    return (mode, direction) switch
                     {
-                        // Aggressively limit order at worst price like a market order.
-                        (true, OrderDirection.Buy) => equity.AskPrice,
-                        (true, OrderDirection.Sell) => equity.BidPrice,
+                        //// Aggressively limit order at worst price like a market order.
+                        (EquityHedgeMode.Agressive, OrderDirection.Buy) => equity.AskPrice,
+                        (EquityHedgeMode.Agressive, OrderDirection.Sell) => equity.BidPrice,
 
                         // Earn the spread.
-                        (false, OrderDirection.Buy) => equity.BidPrice + 0.01m,
-                        (false, OrderDirection.Sell) => equity.AskPrice - 0.01m,
-                        _ => MidPrice(equity.Symbol)
+                        (EquityHedgeMode.Passive, OrderDirection.Buy) => equity.BidPrice + 0.01m,
+                        (EquityHedgeMode.Passive, OrderDirection.Sell) => equity.AskPrice - 0.01m,
+                        _ => MidPrice(equity.Symbol)  // During Simulation, above is good. During real trading, high-delta options appear to be typically filled just before a small jump in the opposite direction. Bad.
                     };
                 default:
                     return 0;

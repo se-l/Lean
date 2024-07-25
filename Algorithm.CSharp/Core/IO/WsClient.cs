@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net.WebSockets;
 using System.Threading;
@@ -15,15 +16,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         public event EventHandler<CmdCancelOID> EventHandlerCmdCancelOID;
         public event EventHandler<CmdCfgOverride> EventHandlerCmdCfgOverride;
         public event EventHandler<ResponseKalmanInit> EventHandlerResponseKalmanInit;
+        public event EventHandler<object> EventHandlerWSConnected;
 
         private ClientWebSocket WS;
         private CancellationTokenSource CTS;
         private CancellationTokenSource CTSHealthCheck;
         public int ReceiveBufferSize { get; set; } = 8192;
-        public SemaphoreSlim semaphore = new(1, 1);  // Only during backtesting
+        private SemaphoreSlim semaphore = new(1, 1);  // Only during backtesting
         private readonly Foundations _algo;
         private string url;
         private DateTime lastHeartbeat = DateTime.MaxValue;
+        private ConcurrentQueue<Message> _messageQueue = new();
 
         public WsClient(Foundations algo)
         {
@@ -38,35 +41,78 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             }            
         }
 
+        public void WaitThread()
+        {
+            if (semaphore != null)
+            {
+                semaphore.Wait();
+            }
+        }
+
         public void ReleaseThread()
         {
-            if (semaphore != null && semaphore.CurrentCount == 0)
+            try 
             {
-                semaphore.Release();
+                if (semaphore != null && semaphore.CurrentCount == 0)
+                {
+                    semaphore.Release();
+                    semaphore.Dispose();
+                }
+            }
+            catch (Exception e)
+            {
+                _algo.Error($"WsClient.ReleaseThread(): Exception: {e}");
             }
         }
 
         public async Task ConnectAsync(string url)
         {
-            this.url = url;
-            if (WS != null)
+            try
             {
-                if (WS.State == WebSocketState.Open) return;
-                else WS.Dispose();
+                _algo.Log("WsClient.ConnectAsync(): Connecting...");
+                this.url = url;
+                if (WS != null)
+                {
+                    if (WS.State == WebSocketState.Open)
+                    {
+                        _algo.Log("WsClient.ConnectAsync(): WS.State is open. Already connected.");
+                        return;
+                    }
+                    else WS.Dispose();
+                }
+                CTS?.Dispose();
+
+                WS = new ClientWebSocket();
+                CTS = new CancellationTokenSource();
+                await WS.ConnectAsync(new Uri(url), CTS.Token);
+                if (CTS is null)  // Was null in debug...
+                {
+                    _algo.Log($"WsClient.ConnectAsync(): CancellationTokenSource is null. Presuming connecting failed");
+                }
+                await Task.Factory.StartNew(ReceiveLoop, CTS.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                await Task.Factory.StartNew(SendingLoop, CTS.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                _algo.Log($"WsClient.ConnectAsync(): Connected successfully to: {url}");
+                SubscribeToHeartbeat();
+                StartHealthCheck();
             }
-            WS = new ClientWebSocket();
-            CTS?.Dispose();
-            CTS = new CancellationTokenSource();
-            await WS.ConnectAsync(new Uri(url), CTS.Token);
-            await Task.Factory.StartNew(ReceiveLoop, CTS.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-            _algo.Log($"Connected successfully to: {url}");
-            await SubscribeHeartbeat();
+            catch (Exception e)
+            {
+                _algo.Error($"WsClient.ConnectAsync(): Exception: {e}");
+                ReleaseThread();
+            }
         }
 
         public async Task StartHealthCheck()
         {
+            if (CTSHealthCheck != null && !CTSHealthCheck.Token.IsCancellationRequested)
+            { 
+                _algo.Log("WsClient.StartHealthCheck(): HealthCheck already running...");
+                return;
+            };
+
             CTSHealthCheck = new CancellationTokenSource();
             await Task.Factory.StartNew(CheckConnectionHealth, CTSHealthCheck.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            _algo.Log("WsClient.StartHealthCheck(): HealthCheck started...");
         }
 
         public async Task CheckConnectionHealth()
@@ -74,72 +120,55 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             while (true)
             {
                 await Task.Delay(1000);
-                if (WS == null || WS.State != WebSocketState.Open)
+                if (WS is null || WS.State != WebSocketState.Open)
                 {
-                    _algo.Error($"Connection {WS.State}. Reconnecting...");
-                    await DisconnectAsync();
                     ReleaseThread();
-                    try
-                    {
-                        await ConnectAsync(url);
-                    }
-                    catch (Exception e)
-                    {
-                        _algo.Error($"Reconnecting failed: {e}");
-                    }
+                    _algo.Error($"WsClient.CheckConnectionHealth(): WS={WS}, State:{WS?.State}. Reconnecting...");
+                    DisconnectAsync().Wait(TimeSpan.FromSeconds(5));
+                    ConnectAsync(url).Wait(TimeSpan.FromSeconds(5));
                 }
-                else if (DateTime.Now - lastHeartbeat > TimeSpan.FromSeconds(60))
+                else if (DateTime.Now - lastHeartbeat > TimeSpan.FromSeconds(30))
                 {
-                    _algo.Error($"No heartbeat received. Last at: {lastHeartbeat}. Reconnecting...");
-                    DisconnectAsync().Wait(TimeSpan.FromSeconds(10));
                     ReleaseThread();
-                    try
-                    {
-                        await ConnectAsync(url);
-                    }
-                    catch (Exception e)
-                    {
-                        _algo.Error($"Reconnecting failed: {e}");
-                    }
+                    _algo.Error($"WsClient.CheckConnectionHealth(): No heartbeat received. Last HB at: {lastHeartbeat}. Disconnecting");
+                    DisconnectAsync().Wait(TimeSpan.FromSeconds(5));
                 }
             }
         }
 
         public async Task DisconnectAsync()
         {
-            _algo.Log("Disconnecting from WebSocket");
             if (WS is null) return;
+
+            _algo.Log("WsClient.DisconnectAsync(): Disconnecting...");
+
             // TODO: requests cleanup code, sub-protocol dependent.
             if (WS.State == WebSocketState.Open)
             {
                 CTS?.CancelAfter(TimeSpan.FromSeconds(2));
-                _algo.Log("CancelationTocken canceled in 2 seconds");
+                _algo.Log("WsClient.DisconnectAsync(): CancelationTocken canceled in 2 seconds");
                 await WS.CloseOutputAsync(WebSocketCloseStatus.Empty, "", CancellationToken.None);
-                _algo.Log("CloseOutputAsync called");
+                _algo.Log("WsClient.DisconnectAsync(): CloseOutputAsync called");
 
                 // Below line doesnt succeed. function stops here... Therefore, now awaiting it.
                 _ = WS.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
-                _algo.Log("CloseAsync called without awaiting");
+                _algo.Log("WsClient.DisconnectAsync(): CloseAsync called without awaiting");
             }
-            _algo.Log("Canceling HealthCheck Thread");
-            CTSHealthCheck?.Cancel();
 
-            _algo.Log("Canceling ReceiveLoop Thread");
             CTS?.Cancel();
+            CTS?.Dispose();
+            CTS = null;
 
-            _algo.Log("WS Dispose about to be called");
             WS.Dispose();
             WS = null;
-            CTS?.Dispose();
-            CTSHealthCheck?.Dispose();
-            CTS = null;
-            CTSHealthCheck = null;
-            _algo.Log("Disconnected from WebSocket");
+
+            _algo.Log("WsClient.DisconnectAsync(): Disconnected from WebSocket.");
         }
 
         private async Task ReceiveLoop()
         {
-            _algo.Log("Starting ReceiveLoop...");
+            _algo.Log("WsClient.ReceiveLoop(): Starting...");
+
             var loopToken = CTS.Token;
             MemoryStream outputStream = null;
             WebSocketReceiveResult receiveResult;
@@ -162,9 +191,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     ResponseReceived(outputStream);                    
                 }
             }
+            catch (TaskCanceledException e)
+            {
+                _algo.Error($"WsClient.ReceiveLoop(): Exception: ${e}");
+                ReleaseThread();
+                CTS?.Cancel();
+            }
             catch (Exception e)
             {
-                _algo.Error($"ReceiveLoop Exception: ${e}");
+                _algo.Error($"WsClient.ReceiveLoop(): Exception: ${e}");
                 ReleaseThread();
             }
             finally
@@ -173,9 +208,56 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             }
         }
 
-        public async Task<Task> SendMessageAsync(RequestTargetPortfolios requestTargetPortfolios)
+        private async Task SendingLoop()
         {
-            return SendMessage(new Message()
+            _algo.Log("WsClient.SendingLoop(): Starting...");
+
+            var loopToken = CTS.Token;
+            
+            try
+            {
+                while (!loopToken.IsCancellationRequested)
+                {
+                    if (_messageQueue.Count == 0)
+                    {
+                        await Task.Delay(100);
+                        continue;
+                    }
+                    if (WS == null)
+                    {
+                        _algo.Error("WebSocket is null. Cannot send message.");
+                        continue;
+                    }
+                    if (!_messageQueue.TryDequeue(out Message message)) {
+                        continue;
+                    }
+                    try
+                    {
+                        using var buffer = new MemoryStream();
+                        message.WriteTo(buffer);
+                        WS.SendAsync(new ArraySegment<byte>(buffer.GetBuffer(), 0, (int)buffer.Length), WebSocketMessageType.Binary, true, CTS.Token);
+                    }
+                    catch (Exception e)
+                    {
+                        _algo.Error($"WsClient.SendingLoop(): Exception sending message: ${e}. Enqueuing message");
+                        if (message != null)
+                        {
+                            _messageQueue.Enqueue(message);
+                        }
+                        ReleaseThread();
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                _algo.Error($"WsClient.SendingLoop(): Exception: ${e}");
+                ReleaseThread();
+            }
+        }
+
+        public async void SendMessageAsync(RequestTargetPortfolios requestTargetPortfolios)
+        {
+            _messageQueue.Enqueue(new Message()
             {
                 Channel = Channel.TargetPortfolio,
                 Id = Guid.NewGuid().ToString(),
@@ -183,9 +265,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 Payload = requestTargetPortfolios.ToByteString()
             });
         }
-        public async Task<Task> SendMessageAsync(RequestKalmanInit requestKalmanInit)
+        public async void SendMessageAsync(RequestKalmanInit requestKalmanInit)
         {
-            return SendMessage(new Message()
+            _messageQueue.Enqueue(new Message()
             {
                 Channel = Channel.KalmanInit,
                 Id = Guid.NewGuid().ToString(),
@@ -194,9 +276,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             });
         }
 
-        public async Task<Task> SendMessageAsync(RequestStressTestDs requestStressTestDs)
+        public async void SendMessageAsync(RequestStressTestDs requestStressTestDs)
         {
-            return SendMessage(new Message()
+            _messageQueue.Enqueue(new Message()
             {
                 Channel = Channel.StressTestDs,
                 Id = Guid.NewGuid().ToString(),
@@ -205,9 +287,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             });
         }
 
-        public async Task<Task> SubscribeHeartbeat()
+        public async void SubscribeToHeartbeat()
         {
-            _algo.Log("Subscribing to heartbeat");
+            _algo.Log("WsClient.SubscribeToHeartbeat(): Subscribing to heartbeat");
             Message message = new()
             {
                 Channel = Channel.Hb,
@@ -216,25 +298,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 Payload = ByteString.Empty
             };
             lastHeartbeat = DateTime.Now;
-            return SendMessage(message);
-        }
-
-        public async Task<Task> SendMessage(Message message)
-        {
-            using var buffer = new MemoryStream();
-            message.WriteTo(buffer);
-            if (WS == null)
-            {
-                _algo.Error("WebSocket is null. Cannot send message.");
-                ReleaseThread();
-                return Task.CompletedTask;
-            }
-            return WS.SendAsync(new ArraySegment<byte>(buffer.GetBuffer(), 0, (int)buffer.Length), WebSocketMessageType.Binary, true, CTS.Token);
+            _messageQueue.Enqueue(message);
         }
 
         private void ResponseReceived(Stream inputStream)
         {
-            // _algo.Log($"{_algo.Time} ResponseReceived");
             Message message = Message.Parser.ParseFrom(inputStream);
             inputStream.Dispose();
 
@@ -312,6 +380,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             ResponseKalmanInit responseKalmanInit = ResponseKalmanInit.Parser.ParseFrom(message.Payload);
             EventHandlerResponseKalmanInit?.Invoke(this, responseKalmanInit);
 
+        }
+
+        public void StopHealthCheck()
+        {
+            CTSHealthCheck?.Cancel();
+            CTSHealthCheck?.Dispose();
+            CTSHealthCheck = null;
         }
 
         public void Dispose()

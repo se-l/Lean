@@ -16,8 +16,7 @@ using QuantConnect.Indicators;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
-using static QLNet.Utils;
-using System.ComponentModel.Composition.Primitives;
+using QuantConnect.Orders;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -33,6 +32,24 @@ namespace QuantConnect.Algorithm.CSharp.Core
             VolatilityPeriodDays = volatilityPeriodDays;
         }
 
+        private void HoldingsOnQuantityChanged(object sender, SecurityHoldingQuantityChangedEventArgs e)
+        {
+            // This methods appears to be called before algo updates Positions dictionary through an orderEvent. In that case, this causes a mismatch as a fill is applied as trade incrementing the quantity rather than updating it.
+            // This method is only meant to take care of fills for which algo had no order tickets.
+            // Ideally becomes an OrderEvent... but there's no order!!!
+            Symbol symbol = e.Security.Symbol;
+            if (_algo.Positions.TryGetValue(symbol, out Position position) && position.Quantity != e.Security.Holdings.Quantity)
+            {
+                _algo.Log($"{_algo.Time} HoldingsOnQuantityChanged(): {symbol} Initialize new Position from Security Holding as Quantity differs. Previously: {position.Quantity}, Now: {e.Security.Holdings.Quantity}. May impact post trade reporting.");
+                _algo.Positions[symbol] = new Position(_algo, e.Security.Holdings);
+            }
+            else if (!_algo.Positions.ContainsKey(symbol))
+            {
+                _algo.Log($"{_algo.Time} HoldingsOnQuantityChanged(): {symbol} Initialize new Position from Security Holding as Symbol is not present.");
+                _algo.Positions[symbol] = new Position(_algo, e.Security.Holdings);
+            }
+        }
+
         public override void Initialize(Security security)
         {
             // First, call the superclass definition
@@ -40,9 +57,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
             base.Initialize(security);
             Symbol symbol = security.Symbol;
 
-            if (!_algo.LiveMode)
+            if (!_algo.LiveMode && security.Type == SecurityType.Option)
             {
-                // Fill Model
+                // Option Probabilistic Fill Model
+                decimal meanDailyVolume = _algo.History<TradeBar>(security.Symbol, _algo.Periods(Resolution.Daily, days: 7), Resolution.Daily, fillForward: false).Select(bar => bar.Volume).Average();
+                _algo.Log($"SecurityInitializer.Initialize FillModelVolumeWeighted: {symbol} MeanDailyVolume={meanDailyVolume}.");
+                security.SetFillModel(new FillModelVolumeWeighted(meanDailyVolume, 500, 4));
+            }
+            else if(!_algo.LiveMode)
+            {
                 security.SetFillModel(new FillModelMine());
             }
             // Margin Model
@@ -50,15 +73,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
             security.SetBuyingPowerModel(BuyingPowerModel.Null);
             // security.MarginModel = new BuyingPowerModelMine(_algo);
             // security.SetBuyingPowerModel(new BuyingPowerModelMine(_algo));
-
-            if (!_algo.QuoteBarConsolidators.ContainsKey(symbol))
-            {
-                _algo.QuoteBarConsolidators[symbol] = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
-                _algo.TradeBarConsolidators[symbol] = new TradeBarConsolidator(TimeSpan.FromSeconds(1));
-            }
+            security.Holdings.QuantityChanged += HoldingsOnQuantityChanged;
 
             if (security.Type == SecurityType.Equity)
             {
+                if (!_algo.QuoteBarConsolidators.ContainsKey(symbol))
+                {
+                    _algo.QuoteBarConsolidators[symbol] = new QuoteBarConsolidator(TimeSpan.FromSeconds(1));
+                    _algo.TradeBarConsolidators[symbol] = new TradeBarConsolidator(TimeSpan.FromSeconds(1));
+                }
+
+                Equity equity = (Equity)security;
                 int samplePeriods = _algo.resolution switch
                 {
                     Resolution.Daily => 1,
@@ -70,11 +95,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 int totalRollingPeriods = (int)(VolatilityPeriodDays * 6.5 * 60 * 60 / samplePeriods);
                 security.VolatilityModel = new VolatilityModelMine(_algo, security, periods: totalRollingPeriods, _algo.resolution, TimeSpan.FromSeconds(samplePeriods));
-
-                foreach (var tradeBar in _algo.HistoryWrap(symbol, _algo.Periods(days: VolatilityPeriodDays + 2), _algo.resolution))
+                int samples = 0;
+                int historyPeriods = _algo.Periods(days: VolatilityPeriodDays + 2);
+                foreach (var tradeBar in _algo.HistoryWrap(symbol, historyPeriods, _algo.resolution))
                 {
                     security.VolatilityModel.Update(security, tradeBar);
-                }                
+                    samples++;
+                }
+                _algo.Log($"SecurityInitializer.Initialized VolatilityModel: {symbol} Resolution={_algo.resolution}, Periods={totalRollingPeriods}, historySamples={samples}.");
 
                 // Initialize a Security Specific Hedge Band or Risk Limit object. Constitutes underlying, hence risk limit not just by security but also its derivatives.
                 // Adjust delta by underlying's volatility.
@@ -86,37 +114,38 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 _algo.QuoteBarConsolidators[symbol].DataConsolidated += (object sender, QuoteBar consolidated) =>
                 {
-                    if (_algo.IsEventNewQuote(symbol))  // Can refactor this to event driven. THen IVBids/Asks subscribe to EventNewQuote. Saves checking for underlying. Maybe cleaner?
+                    if (_algo.IsEventNewQuote(symbol))  // Can refactor this to event driven. Then IVBids/Asks subscribe to EventNewQuote. Saves costly consolidator logic
                     {
                         _algo.IVBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
                         _algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
                     }
                 };
-                _algo.GammaScalpers[symbol] = new(_algo, (Equity)security);
-                _algo.PutCallRatios[symbol] = new PutCallRatioIndicator((Equity)security, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
-                _algo.IntradayIVDirectionIndicators[symbol] = new IntradayIVDirectionIndicator(_algo, security.Symbol);
-                _algo.AtmIVIndicators[symbol] = new AtmIVIndicator(_algo, (Equity)security);
-                _algo.IVSurfaceRelativeStrikeBid[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Bid);
-                _algo.IVSurfaceRelativeStrikeAsk[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Ask);
+                _algo.GammaScalpers[symbol] = new(_algo, equity);
+                //_algo.PutCallRatios[symbol] = new PutCallRatioIndicator(equity, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
+                //_algo.IntradayIVDirectionIndicators[symbol] = new IntradayIVDirectionIndicator(_algo, security.Symbol);
+                //_algo.AtmIVIndicators[symbol] = new AtmIVIndicator(_algo, equity);
+                //_algo.IVSurfaceRelativeStrikeBid[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Bid);
+                //_algo.IVSurfaceRelativeStrikeAsk[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Ask);
 
                 // Refactor - turn percentages over to some config.
-                _algo.UnderlyingMovedX[(symbol, 0.001m)] = new((Equity)security, 0.001m);
-                _algo.UnderlyingMovedX[(symbol, 0.002m)] = new((Equity)security, 0.002m);
-                _algo.UnderlyingMovedX[(symbol, 0.005m)] = new((Equity)security, 0.005m);
+                _algo.UnderlyingMovedX[(symbol, 0.001m)] = new(equity, 0.001m);
+                _algo.UnderlyingMovedX[(symbol, 0.002m)] = new(equity, 0.002m);
+                _algo.UnderlyingMovedX[(symbol, 0.005m)] = new(equity, 0.005m);
                 _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.001m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
                 _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.002m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
                 _algo.RegisterIndicator(symbol, _algo.UnderlyingMovedX[(symbol, 0.005m)], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Close ?? 0);
 
-                _algo.ConsecutiveTicksTrend[symbol] = new((Equity)security);
-                _algo.RegisterIndicator(symbol, _algo.ConsecutiveTicksTrend[symbol], _algo.QuoteBarConsolidators[symbol], (IBaseData b) => (((QuoteBar)b).Bid.Close + ((QuoteBar)b).Ask.Close) / 2);
+                //_algo.ConsecutiveTicksTrend[symbol] = new(equity);
+                //_algo.RegisterIndicator(symbol, _algo.ConsecutiveTicksTrend[symbol], _algo.QuoteBarConsolidators[symbol], (IBaseData b) => (((QuoteBar)b).Bid.Close + ((QuoteBar)b).Ask.Close) / 2);
 
                 _algo.SignalsLastRun[security.Symbol] = DateTime.MinValue;
                 _algo.IsSignalsRunning[security.Symbol] = false;
 
-                _algo.RiskProfiles[security.Symbol] = new RiskProfile(_algo, (Equity)security);
-                _algo.UtilityWriters[security.Symbol] = new UtilityWriter(_algo, (Equity)security);
-                _algo.OrderEventWriters[security.Symbol] = new OrderEventWriter(_algo, (Equity)security);
+                _algo.RiskProfiles[security.Symbol] = new RiskProfile(_algo, equity);
+                _algo.UtilityWriters[security.Symbol] = new UtilityWriter(_algo, equity);
+                _algo.OrderEventWriters[security.Symbol] = new OrderEventWriter(_algo, equity);
                 _algo.AbsoluteDiscounts[security.Symbol] = new RiskDiscount(_algo, _algo.Cfg, security.Symbol, Metric.Absolute);
+                _algo.RequestContractsHandlers[security.Symbol] = new RequestContractsHandler(_algo, equity);
             }
 
             else if (security.Type == SecurityType.Option)
@@ -138,7 +167,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.IVBids[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceRelativeStrikeBid[option.Symbol.Underlying].ScheduleUpdate();
                 _algo.IVAsks[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceRelativeStrikeAsk[option.Symbol.Underlying].ScheduleUpdate();
 
-                _algo.PutCallRatios[option.Symbol] = new PutCallRatioIndicator(option, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
+                foreach (OrderDirection direction in new[] { OrderDirection.Buy, OrderDirection.Sell })
+                {
+                    _algo.SpreadBuffers[direction][symbol] = new(_algo, option, direction);
+                }
+                //_algo.PutCallRatios[option.Symbol] = new PutCallRatioIndicator(option, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
             }
 
             var equityOptions = new HashSet<SecurityType>() { SecurityType.Option, SecurityType.Equity };
@@ -159,16 +192,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             WarmUpSecurity(security);
         }
 
-        public void RegisterIndicators(Option option)
-        {
-            _algo.Log($"{_algo.Time} SecurityInitializer.RegisterIndicators: {option.Symbol}");
-            Symbol symbol = option.Symbol;
-            _algo.RegisterIndicator(symbol, _algo.IVBids[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVBids[symbol].Selector);
-            _algo.RegisterIndicator(symbol, _algo.IVAsks[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVAsks[symbol].Selector);
-            _algo.RegisterIndicator(symbol, _algo.PutCallRatios[symbol], _algo.TradeBarConsolidators[symbol], (IBaseData b) => ((TradeBar)b)?.Volume ?? 0);
-            //_algo.IVSurfaceAndreasenHuge[(symbol.Underlying, option.Right)].RegisterSymbol(option);
-        }
-
         private void InitializeIVSurfaces(Symbol underlying)
         {
             if (!_algo.IVSurfaceRelativeStrikeBid.ContainsKey(underlying))
@@ -179,14 +202,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 _algo.IVSurfaceRelativeStrikeAsk[underlying] = new IVSurfaceRelativeStrike(_algo, underlying, QuoteSide.Ask, true);
             }
-            //if (!_algo.IVSurfaceAndreasenHuge.ContainsKey((underlying, OptionRight.Call)))
-            //{
-            //    _algo.IVSurfaceAndreasenHuge[(underlying, OptionRight.Call)] = new IVSurfaceAndreasenHuge(_algo, underlying, OptionRight.Call, true);
-            //}
-            //if (!_algo.IVSurfaceAndreasenHuge.ContainsKey((underlying, OptionRight.Put)))
-            //{
-            //    _algo.IVSurfaceAndreasenHuge[(underlying, OptionRight.Put)] = new IVSurfaceAndreasenHuge(_algo, underlying, OptionRight.Put, true);
-            //}
         }
         public DateTime HistoryRequestEndDate(Security security)
         {
@@ -232,16 +247,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     DateTime end = HistoryRequestEndDate(security);
                     //var historyFast = _algo.History<VolatilityBar>(volaSym, start, end, _algo.resolution, fillForward: false);  // Zero Warm Up here, because it's covered during OnData SetWarmUp().
-                    var historyFast = _algo.History<VolatilityBar>(volaSym, _algo.Periods(days: 0), _algo.resolution, fillForward: false);  // Zero Warm Up here, because it's covered during OnData SetWarmUp().
-                    var historySlow = _algo.History<VolatilityBar>(volaSym, _algo.Periods(Resolution.Daily, days: 60), Resolution.Daily, fillForward: false);
+                    var historyFast = _algo.History<VolatilityQuoteBar>(volaSym, _algo.Periods(days: _algo.Cfg.WarmUpDays), _algo.resolution, fillForward: false);  // Zero Warm Up here, because it's covered during OnData SetWarmUp().
+                    var historySlow = _algo.History<VolatilityQuoteBar>(volaSym, _algo.Periods(Resolution.Daily, days: 60), Resolution.Daily, fillForward: false);
                     // Need to synchronize the 2 histories. Otherwise fast day events update indicator before the slow second events, which would be ignore as no updates from past are processed by IVBid/Ask Indicator.
                     //var history = historySlow;
-                    using var history = new SynchronizingVolatilityBarEnumerator(new List<IEnumerator<VolatilityBar>>() { historyFast.GetEnumerator(), historySlow.GetEnumerator() });
+                    using var history = new SynchronizingVolatilityBarEnumerator(new List<IEnumerator<VolatilityQuoteBar>>() { historyFast.GetEnumerator(), historySlow.GetEnumerator() });
 
                     // IV Bid Ask Indicators which produce events
                     // Slow one must stop before Fast one kicks in, otherwise time updates will be ignored...
-                    foreach (VolatilityBar volBar in Statics.ToIEnumerable(history))
-                    //foreach (VolatilityBar volBar in history)
+                    int samples = 0;
+                    foreach (VolatilityQuoteBar volBar in Statics.ToIEnumerable(history))
                     {
                         IVQuote bid = null;
                         IVQuote ask = null;
@@ -255,20 +270,26 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         bid = new IVQuote(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceBid.Close, (double)volBar.Bid.Close);
                         ask = new IVQuote(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceAsk.Close, (double)volBar.Ask.Close);
 
-                        if (bid != null)
-                        {
-                            _algo.IVBids[symbol].Update(bid);
-                            _algo.IVAsks[symbol].Update(ask);
-                        }
+                        _algo.IVBids[symbol].Update(bid);
+                        _algo.IVAsks[symbol].Update(ask);
+                        samples++;
+                    }
+                    if (samples == 0)
+                    {
+                        _algo.Log($"SecurityInitializer.WarmUpSecurity: {symbol} No VolatilityQuoteBar history returned to warmup indicators with.");
                     }
                 }
-
-                // IV PutCall Ratios
-                var historyFastTrades = _algo.History<TradeBar>(symbol, _algo.Periods(days: _algo.Cfg.PutCallRatioWarmUpDays + 1), _algo.resolution, fillForward: false);
-                foreach (TradeBar bar in historyFastTrades)
+                else
                 {
-                    _algo.PutCallRatios[option.Symbol].Update(bar);
+                    _algo.Log($"SecurityInitializer.WarmUpSecurity: {symbol} No VolatilityQuoteBar found to warmup indicators with.");
                 }
+
+                // IV PutCall Ratios - Not relevant currently. Commenting to save CPU time.
+                //var historyFastTrades = _algo.History<TradeBar>(symbol, _algo.Periods(days: _algo.Cfg.PutCallRatioWarmUpDays + 1), _algo.resolution, fillForward: false);
+                //foreach (TradeBar bar in historyFastTrades)
+                //{
+                //    _algo.PutCallRatios[option.Symbol].Update(bar);
+                //}
             }
         }
     }

@@ -33,7 +33,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double UtilityManualOrderInstructions { get; }
         //public double UtilityVegaIV2Ewma { get => _utilityVegaIV2Ewma ??= GetUtilityVegaIV2Ewma(); }
         public double UtlityVegaMispricedIVUntilExpiry { get; }
-        public double IntradayVolatilityRisk { get; }
+        // public double IntradayVolatilityRisk { get; }
         public double UtilityInventory { get; }
         public double UtilityExpiringNetDelta { get; }
         public double UtilityRiskExpiry { get; }

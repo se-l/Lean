@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - Ticker=NKE
+      - Ticker=UNH
       - ib-port=4001  # 7497 for TWS
 
       - environment=live-interactive-polygon
@@ -28,16 +28,18 @@ services:
     volumes:
       - trade:/repos/quantconnect/Lean/trade:rw
 
-
+  # Cant run paper in parallel to prod because got only 1 Polygon WS.
   trader.paper.1:
     image: sebastianluen/amm:paper
     build:
       context: .
       dockerfile: Dockerfile
     environment:
-      - Ticker=KMX
+      - Ticker=DAL
       - ib-port=4002  # 7498 TWS
-      - tws-is-running=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
+      - ignore-tws=true=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
+      #- ib-port=7498 # TWS
+      #- tws-is-running=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
 
       - environment=live-interactive-polygon
       - algorithm-type-name=EarningsAlgorithm
@@ -78,8 +80,9 @@ services:
      - "8000:8000"
     environment:
       - PATH_TRADE=/mnt/trade
-      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_old_2024-06-20.joblib
+      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_v3_2024-07-08.joblib
       - WS_PORT=8000
+      - N_WORKERS=1
     healthcheck:
       test: ["CMD", "python3", "/usr/app/trade/src/connector/api_minlp/terminate_zombies.py"]
       interval: 60s
@@ -98,8 +101,9 @@ services:
      - "8001:8001"
     environment:
       - PATH_TRADE=/mnt/trade
-      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_old_2024-06-20.joblib
+      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_v3_2024-07-08.joblib
       - WS_PORT=8001
+      - N_WORKERS=4
     healthcheck:
       test: ["CMD", "python3", "/usr/app/trade/src/connector/api_minlp/terminate_zombies.py"]
       interval: 60s
@@ -118,8 +122,9 @@ services:
      - "8002:8002"
     environment:
       - PATH_TRADE=/mnt/trade
-      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_old_2024-06-20.joblib
+      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_v3_2024-07-08.joblib
       - WS_PORT=8002
+      - N_WORKERS=4
     healthcheck:
       test: ["CMD", "python3", "/usr/app/trade/src/connector/api_minlp/terminate_zombies.py"]
       interval: 60s
@@ -145,7 +150,7 @@ services:
       - WsHost=host.docker.internal
       - WsPort=8002
       - CONTAINER_NAME=bt.dev.fdx.240326
-      - BacktestingHoldings={FDX:-377,FDX   240719P00270000:1,FDX   240712P00265000:-1,FDX   240712C00250000:1,FDX   250620C00240000:-2,FDX   240705P00252500:-1,FDX   250620C00320000:-5,FDX   250620C00330000:-3,FDX   240628C00227500:1,FDX   240628C00235000:2,FDX   240628C00240000:1,FDX   240628P00267500:-1,FDX   240628C00242500:1,FDX   240628C00247500:1,FDX   240628C00250000:1,FDX   240628C00252500:1,FDX   240628C00285000:2}
+      # - BacktestingHoldings={FDX:-377,FDX   240719P00270000:1,FDX   240712P00265000:-1,FDX   240712C00250000:1,FDX   250620C00240000:-2,FDX   240705P00252500:-1,FDX   250620C00320000:-5,FDX   250620C00330000:-3,FDX   240628C00227500:1,FDX   240628C00235000:2,FDX   240628C00240000:1,FDX   240628P00267500:-1,FDX   240628C00242500:1,FDX   240628C00247500:1,FDX   240628C00250000:1,FDX   240628C00252500:1,FDX   240628C00285000:2}
     depends_on: [ws.dev]
     networks: [net1]
     volumes:
@@ -159,12 +164,15 @@ services:
       dockerfile: Dockerfile
     environment:
       - environment=backtesting
-      - algorithm-type-name=MarketMakeOptionsAlgorithm
+      - algorithm-type-name=EarningsAlgorithm
       - StartDate=2024-01-01
       - EndDate=2024-02-12
       - Ticker=DELL,CSCO
+      - WsHost=host.docker.internal
+      - WsPort=8000
       - CONTAINER_NAME=bt.prod.jan
     depends_on: [ws.prod]
+    networks: [net1]
     volumes:
       - trade:/repos/quantconnect/Lean/trade:rw
 
@@ -174,6 +182,15 @@ services:
     volumes:
       - trade:/repos/quantconnect/Lean/trade:rw
     entrypoint: ["tail", "-f", "/dev/null"]
+
+  toolbox:
+    image: sebastianluen/toolbox:release
+    build:
+      context: .
+      dockerfile: DockerfileToolbox
+    networks: [net1]
+    volumes:
+      - trade:/repos/quantconnect/Lean/trade:rw
 
 
 networks:

@@ -19,6 +19,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
 using NodaTime;
 using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
@@ -1507,6 +1508,49 @@ namespace QuantConnect.Util
 
             // cleanup
             consolidator.DisposeSafely();
+        }
+
+        public static void WriteEmptyFileIfNotExists(string dataDirectory, IDataCacheProvider diskDataCacheProvider, IEnumerable<DateTime> dates, HashSet<Symbol> symbols, Resolution resolution, TickType tickType)
+        {
+            List<FileMember> entries = new();
+
+            foreach (DateTime date in dates)
+            {
+                foreach (Symbol symbol in symbols)
+                {
+                    var filePath = GenerateZipFilePath(dataDirectory, symbol, date, resolution, tickType);
+
+                    // Generate this csv entry name
+                    var entryName = GenerateZipEntryName(symbol, date, resolution, tickType);
+
+                    // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
+                    if (!File.Exists(filePath))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                    }
+
+                    entries.Add(new FileMember($"{filePath}#{entryName}", Encoding.UTF8.GetBytes("")));
+                }
+
+            }
+            diskDataCacheProvider.Store(entries);
+        }
+
+        public class FileMember
+        {
+            public string Key;
+            public byte[] Data;
+            public string FilePath;
+            public string EntryName;
+
+            public FileMember(string key, byte[] data)
+            {
+                Key = key;
+                Data = data;
+                ParseKey(Key, out var filePath, out var entryName);
+                FilePath = filePath;
+                EntryName = entryName;
+            }
         }
     }
 }

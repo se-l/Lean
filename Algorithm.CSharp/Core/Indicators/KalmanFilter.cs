@@ -86,6 +86,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         private readonly double alphaBid;
         private readonly double alphaAsk;
         private Tuple<double, double> scopedMoneynessFitting = Tuple.Create( 0.8, 1.2 );
+        private int _nUpdated;
 
         // CSV writer
         private readonly string _path;
@@ -144,8 +145,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
             P = P1 - K * H * P1;
 
+            _nUpdated++;
             return residual;
         }
+
+        private int MinUpdatesToReady 
+        {
+            get {
+                int val;
+                return _algo.Cfg.KalmanMinUpdatesToReady.TryGetValue(Underlying.Value, out val) ? val : _algo.Cfg.KalmanMinUpdatesToReady[CfgDefault];
+            }         
+        }
+
+        public bool IsReady()
+        {
+            return _nUpdated > MinUpdatesToReady;
+        }
+        public int NUpdated => _nUpdated;
 
         private bool ScopedForFitting(Option option)
         {

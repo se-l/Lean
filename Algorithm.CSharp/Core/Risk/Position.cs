@@ -41,14 +41,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// <summary>
         /// Generates a position from a previous and applied a trade to it.
         /// </summary>
-        public Position(Position? position, Trade trade0, Foundations algo, Trade? trade1 = null)
+        public Position(Position? position, Trade trade0, Foundations algo, Trade? trade1 = null, decimal? totalQuantity = null)
         {
             _prevPosition = position;
             Trade0 = trade0;
             _algo = algo;
             Trade1 = trade1;
             Symbol = trade0.Symbol;
-            Quantity = (_prevPosition?.Quantity ?? 0) + trade0.Quantity;
+            Quantity = totalQuantity ?? (_prevPosition?.Quantity ?? 0) + trade0.Quantity;
         }
 
         /// <summary>
@@ -191,32 +191,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public double DeltaMVRealized => DS == 0 ? 0 : ((double)DPMid - DeltaRealizedThetaContribution) / (double)DS;
 
         public double DeltaRealizedThetaContribution => Greeks1.Theta * DTDays;
-
-        public double DeltaZM(double? volatility = null)
-        {
-            switch (SecurityType)
-            {
-                case SecurityType.Equity:
-                    return 0;  // Because ZM is to create option bands. Wouldn't want equity to dilute required bands.
-                case SecurityType.Option:
-                    try
-                    {
-                        return GetGreeks1(volatility: volatility ?? (double)SecurityUnderlying.VolatilityModel.Volatility).DeltaZM((int)Quantity);
-                    }
-                    catch
-                    {
-                        _algo.Error($"DeltaZM: Failed to derive DeltaZM. Returning BSM Delta. Symbol: {Symbol} PriceUnderlying: {Mid1Underlying} HV: {IVMid1}");
-                        return Delta();
-                    }
-                default:
-                    throw new NotSupportedException();
-            }
-        }
-
-        public double DeltaZMOffset(double? volatility = null)
-        {
-            return GetGreeks1(volatility: volatility ?? (double)SecurityUnderlying.VolatilityModel.Volatility).DeltaZMOffset((int)Quantity);
-        }
 
         public decimal TaylorTerm()
         {
@@ -429,7 +403,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal DeltaFillMid1 { get => P1 - Mid1; }
         public decimal DS { get => Mid1Underlying - Mid0Underlying; }
         public double DTDays { get => (Ts1 - Trade0.Ts0).TotalSeconds / 86400; }
-        public decimal DSPct { get => 100 * (Mid1Underlying / Mid0Underlying - 1); }
+        public decimal DSPct { get => Mid0Underlying != 0 ? 100 * (Mid1Underlying / Mid0Underlying - 1) : 0; }
         public decimal PL
         {
             get

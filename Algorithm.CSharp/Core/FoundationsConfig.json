@@ -8,27 +8,10 @@
   },
   "ExecuteManualOrderInstructions": true,
   "BacktestingHoldings": {
-    "FDX": -377,
-    "FDX   240719P00270000": 1,
-    "FDX   240712P00265000": -1,
-    "FDX   240712C00250000": 1,
-    "FDX   250620C00240000": -2,
-    "FDX   240705P00252500": -1,
-    "FDX   250620C00320000": -5,
-    "FDX   250620C00330000": -3,
-    "FDX   240628C00227500": 1,
-    "FDX   240628C00235000": 2,
-    "FDX   240628C00240000": 1,
-    "FDX   240628P00267500": -1,
-    "FDX   240628C00242500": 1,
-    "FDX   240628C00247500": 1,
-    "FDX   240628C00250000": 1,
-    "FDX   240628C00252500": 1,
-    "FDX   240628C00285000": 2
   },
   "LogOrderUpdates": true,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
-  "WarmUpDays": 2, // Reduce for debugging. Usually 2.
+  "WarmUpDays": 1, // Reduce for debugging. Usually 2.
   "VolatilityPeriodDays": 3,
 
   /// Scoping Contracts for data feed subscription
@@ -43,21 +26,8 @@
   "ScopeContractIsLiquidDays": 5,
   ///
 
-  // Whole ZM pending deletion. Not in use.
-  "ZMRiskAversion": 0.01,
-  "ZMProportionalTransactionCost": 0.0001, // tc = n * S * lambda; lambda = tc / (n * S)
-  "MinZMOffset": {
-    "_": 20
-  },
-  "MaxZMOffset": {
-    "_": 50
-  },
-  //
-
   "IVSurfaceRelativeStrikeAlpha": {
-    "_": 0.05,
-    "HPE": 0.05,
-    "DELL": 0.09
+    "_": 0.05
   },
   "PutCallRatioWarmUpDays": 0,
   "PutCallRatioTargetRisks": {
@@ -130,7 +100,7 @@
 
   /// Hedging
   "HedgingMode": {
-    "_": 1 // 1-HV ; 2-IV ; 3-ZM(HV); 4-DeltaImpliedAtmTotal
+    "_": 1 // 1-HV ; 2-IV ;
   },
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
@@ -190,7 +160,7 @@
     "_": 0.002
   },
   "MaxSpreadDiscount": {
-    "_": 1.0 //0.6
+    "_": 0.3
   },
   "DiscountParams": {
     "_-Absolute-discount-params": {
@@ -246,6 +216,7 @@
   },
   "UseKalmanFilterAfterEarningsRelease": true,
   "UseKalmanFilterBeforeEarningsRelease": true,
+  "PricerOverridePricesWithPresumedIVFillDefensively": { "_": true },
   "TimeStartKfBeforeRelease": {
     "_": "09:30"
   },
@@ -260,5 +231,43 @@
   },
   "HedgeToAcrossDsAfterTime": {
     "_": "15:45"
-  }
+  },
+  "BufferIntraSpreadRatioSpreadThreshold": 0.05,
+  "BufferIntraSpreadWaitingPeriodSeconds": 15,
+  "BufferIntraSpreadQuotes": true,
+  "RequestContractsSchedules": {
+    "_": [
+      {
+        "StartDaysOffset": 0,
+        "Start": "",
+        "EndDaysOffset": 0,
+        "End": "11:00",
+        "NRemaining": 3,
+        "Increment": 10
+      },
+      {
+        "StartDaysOffset": 0,
+        "Start": "11:00",
+        "EndDaysOffset": 0,
+        "End": "15:00",
+        "NRemaining": 2,
+        "Increment": 5
+      },
+      {
+        "StartDaysOffset": 0,
+        "Start": "15:00",
+        "EndDaysOffset": 0,
+        "End": "",
+        "NRemaining": 0,
+        "Increment": 0
+      }
+    ]
+  },
+  "KalmanMinUpdatesToReady": { "_": 15 },
+  "MinutesBeforeMarketCloseHedgeDeltaFlat": 2,
+  "MinutesAfterOpenMMWindowStarts": 1,
+  "MinutesBeforeCloseMMWindowEnds": 5,
+  "MinutesBeforeCloseHedgeToAcrossDs": 3,
+  "SpreadDiscountSweepMinSpreadRatio": { "_": 0.3 },
+  "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread 1-Mid ; 2-Passive earn spread
 }

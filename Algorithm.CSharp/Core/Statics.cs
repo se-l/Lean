@@ -19,7 +19,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public const string VolatilityBar = "VolatilityBar";
         public const string DtFmtISO = "yyyy-MM-dd";
         public const string DatetTmeFmtProto = "yyyy-MM-ddTHH:mm:ss";
-
+        public static DateTime Trim(this DateTime date, long ticks)
+        {
+            return new DateTime(date.Ticks - (date.Ticks % ticks), date.Kind);
+        }
         public enum Regime
         {
             BuyEvent,
@@ -31,8 +34,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             FwdRealizedVolatility,
             HistoricalVolatility,
             ImpliedVolatility,
-            Zakamulin,
-            ImpliedVolatilityAtm,
             ImpliedVolatilityEWMA,
         }
 
@@ -41,8 +42,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             { 0, HedgingMode.FwdRealizedVolatility },
             { 1, HedgingMode.HistoricalVolatility },
             { 2, HedgingMode.ImpliedVolatility },
-            { 3, HedgingMode.Zakamulin },
-            { 4, HedgingMode.ImpliedVolatilityAtm },
             { 5, HedgingMode.ImpliedVolatilityEWMA },
         };
 
@@ -196,11 +195,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             DeltaIVdS100BpUSDTotal,
 
             BsmIVdSTotal,
-
-            // Bands
-            ZMOffset,
-            BandZMLower,
-            BandZMUpper,
 
             Events,
             Absolute,

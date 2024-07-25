@@ -24,6 +24,7 @@ using System.Threading.Tasks;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using System.Collections.Generic;
+using QuantConnect.Data.Market;
 
 namespace QuantConnect.Brokerages
 {
@@ -80,6 +81,8 @@ namespace QuantConnect.Brokerages
         /// Event that fires each time a user's brokerage account is changed
         /// </summary>
         public event EventHandler<AccountEvent> AccountChanged;
+
+        public event EventHandler<List<Holding>> AccountHoldingsChanged;
 
         /// <summary>
         /// Event that fires each time a user's brokerage maintenance margin is changed
@@ -332,6 +335,18 @@ namespace QuantConnect.Brokerages
                 }
 
                 Message?.Invoke(this, e);
+            }
+            catch (Exception err)
+            {
+                Log.Error(err);
+            }
+        }
+
+        protected virtual void OnAccountHoldingsChanged(List<Holding> e)
+        {
+            try
+            {
+                AccountHoldingsChanged?.Invoke(this, e);
             }
             catch (Exception err)
             {

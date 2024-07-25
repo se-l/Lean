@@ -5,7 +5,6 @@ using QuantConnect.Orders.Fees;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
-using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
 {
@@ -21,7 +20,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
         /// <summary>
         /// Default limit order fill model in the base security class.
         /// </summary>
-        private OrderEvent InternalLimitFill(Security asset, Order order, decimal limitPrice, decimal quantity)
+        protected virtual OrderEvent InternalLimitFill(Security asset, Order order, decimal limitPrice, decimal quantity)
         {
             //Initialise;
             var utcTime = asset.LocalTime.ConvertToUtc(asset.Exchange.TimeZone);

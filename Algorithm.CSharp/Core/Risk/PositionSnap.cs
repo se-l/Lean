@@ -39,8 +39,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     {
                         case SecurityType.Option:
                             OptionContractWrap ocw = OptionContractWrap.E(_algo, (Option)Security, Ts0.Date);
-                            ocw.SetIndependents(Mid0Underlying, Mid0, HistoricalVolatility);
-                            _greeks = new GreeksPlus(_algo, ocw).Snap();
+                            _greeks = new GreeksPlus(_algo, ocw).Snap(Mid0Underlying, Mid0, IVMid0);
                             break;
                         case SecurityType.Equity:
                             _greeks = new GreeksPlus(_algo, Security).Snap();
@@ -103,8 +102,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private void Snap()
         {
             HistoricalVolatility = (double)_algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility;
-            IVBid0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Bid0, Mid0Underlying, 0.001) : 0;
-            IVAsk0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
+            if (SecurityType == SecurityType.Option)
+            {
+                var ocw = OptionContractWrap.E(_algo, (Option)Security, Ts0.Date);
+                IVBid0 = ocw.IV(Bid0, Mid0Underlying, ocw.Accuracy);
+                IVAsk0 = ocw.IV(Ask0, Mid0Underlying, ocw.Accuracy);
+            }
+            else
+            {
+                IVBid0 = IVAsk0 = 0;
+            }            
             _ = Greeks;
             SurfaceIVdSBid = (decimal)(_algo.IVSurfaceRelativeStrikeBid[UnderlyingSymbol].IVdS(Symbol) ?? 0);
             SurfaceIVdSAsk = (decimal)(_algo.IVSurfaceRelativeStrikeAsk[UnderlyingSymbol].IVdS(Symbol) ?? 0);

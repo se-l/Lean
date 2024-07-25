@@ -163,7 +163,7 @@ namespace QuantConnect
                     ? underlying.ID.Date
                     : (DateTime?)null;
 
-            bool isVolatilityBar = baseType == typeof(VolatilityBar);
+            bool isVolatilityBar = baseType == typeof(VolatilityQuoteBar);
 
             var sid = isVolatilityBar switch
             {

@@ -81,9 +81,14 @@ namespace QuantConnect.Orders
         TrailingStop,
 
         /// <summary>
-        /// Trailing Stop Order Type - (11)
+        /// PeggedToStock - (12)
         /// </summary>
-        PeggedToStock
+        PeggedToStock,
+
+        /// <summary>
+        /// PeggedToPrimaryVolatility - (13)
+        /// </summary>
+        PeggedToPrimVol,
     }
 
     /// <summary>

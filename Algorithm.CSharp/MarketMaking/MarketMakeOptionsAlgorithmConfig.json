@@ -27,17 +27,6 @@
   "ScopeContractIsLiquidDays": 5,
   ///
 
-  // Whole ZM pending deletion. Not in use.
-  "ZMRiskAversion": 0.01,
-  "ZMProportionalTransactionCost": 0.0001, // tc = n * S * lambda; lambda = tc / (n * S)
-  "MinZMOffset": {
-    "_": 20
-  },
-  "MaxZMOffset": {
-    "_": 50
-  },
-  //
-
   "IVSurfaceRelativeStrikeAlpha": {
     "_": 0.05,
     "HPE": 0.05,
@@ -115,7 +104,7 @@
 
   /// Hedging
   "HedgingMode": {
-    "_": 1 // 1-HV ; 2-IV ; 3-ZM(HV); 4-DeltaImpliedAtmTotal
+    "_": 1 // 1-HV ; 2-IV 
   },
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,

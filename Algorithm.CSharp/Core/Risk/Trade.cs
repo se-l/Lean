@@ -69,8 +69,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     {
                         case SecurityType.Option:
                             OptionContractWrap ocw = OptionContractWrap.E(_algo, (Option)Security, Ts0.Date);
-                            ocw.SetIndependents(Mid0Underlying, Mid0, HistoricalVolatility);
-                            _greeks = new GreeksPlus(_algo, ocw).Snap();
+                            _greeks = new GreeksPlus(_algo, ocw).Snap(Mid0Underlying, Mid0, IVMid0);
                             break;
                         case SecurityType.Equity:
                             _greeks = new GreeksPlus(_algo, Security).Snap();

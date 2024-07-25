@@ -24,8 +24,6 @@ namespace QuantConnect.Algorithm.CSharp.MarketMaking
         public int ScopeContractMinDTE { get; set; }
         public int ScopeContractMaxDTE { get; set; }
         public int ScopeContractIsLiquidDays { get; set; }
-        public double ZMRiskAversion { get; set; }
-        public double ZMProportionalTransactionCost { get; set; }
         public Dictionary<string, DiscountParams> DiscountParams { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalLong { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
@@ -35,8 +33,6 @@ namespace QuantConnect.Algorithm.CSharp.MarketMaking
         public int WarmUpDays { get; set; }
         public bool LogOrderUpdates { get; set; }
         public bool SkipWarmUpSecurity { get; set; }
-        public Dictionary<string, double> MinZMOffset { get; set; }
-        public Dictionary<string, decimal> MaxZMOffset { get; set; }
         public int PutCallRatioWarmUpDays { get; set; }
         public Dictionary<string, List<TargetRisk>> PutCallRatioTargetRisks { get; set; }
         public Dictionary<string, double> EOD2SODATMIVJumpThreshold { get; set; }

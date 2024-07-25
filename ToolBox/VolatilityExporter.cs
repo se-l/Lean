@@ -36,33 +36,6 @@ using QuantConnect.Algorithm.CSharp.Core;
 
 namespace QuantConnect.ToolBox
 {
-    class VolatilityTradeBar
-    {
-        public DateTime Time;
-        public DateTime EndTime;
-        public Symbol Symbol;
-        public decimal UnderlyingMidPrice;
-        public decimal Price;
-        public decimal IV;
-        public decimal? Delta;
-
-        public VolatilityTradeBar(DateTime time, Symbol symbol, decimal underlyingMidPrice, decimal price, decimal iv, decimal? delta = null)
-        {
-            Time = time;
-            EndTime = time + TimeSpan.FromSeconds(1);
-            Symbol = symbol;
-            UnderlyingMidPrice = underlyingMidPrice;
-            Price = price;
-            IV = iv;
-            Delta = delta;
-        }
-
-        public string ToIVTradeString()
-        {
-            var secondsSinceMidnight = EndTime.TimeOfDay.TotalSeconds * 1_000;  // + 1 as it becomes bar closing time
-            return $"{secondsSinceMidnight},{UnderlyingMidPrice},{Price},{IV},{Delta}";
-        }
-    }
     /// <summary>
     /// Base tool for pulling data from a remote source and updating existing csv file.
     /// </summary>
@@ -129,19 +102,19 @@ namespace QuantConnect.ToolBox
 
                     // Quotes
 
-                    ConcurrentDictionary<Symbol, List<VolatilityBar>> IVQuotes = new();
+                    ConcurrentDictionary<Symbol, List<VolatilityQuoteBar>> IVQuotes = new();
                     foreach (var optionSymbol in optionSymbols)
                     {
                         var rateTSHandle = new Handle<YieldTermStructure>(new FlatForward(dateTime, riskFreeRateHandle, dayCounter));
                         var dividendTSHandle = new Handle<YieldTermStructure>(new FlatForward(dateTime, dividendYieldQuoteHandle, dayCounter));
                         var volatilityTSHandle = new Handle<BlackVolTermStructure>(new BlackConstantVol(calculationDate, calendar, 0, dayCounter));
 
-                        IVQuotes[optionSymbol] = new List<VolatilityBar>();
+                        IVQuotes[optionSymbol] = new List<VolatilityQuoteBar>();
                         spotQuote[optionSymbol] = new SimpleQuote(0);
                         spotQuoteHandle[optionSymbol] = new Handle<Quote>(spotQuote[optionSymbol]);
                         bsmProcesses[optionSymbol] = GetBsmProcess(spotQuoteHandle[optionSymbol], rateTSHandle, dividendTSHandle, volatilityTSHandle);
                         euOptions[optionSymbol] = CreateEuOption(optionSymbol, bsmProcesses[optionSymbol]);
-                    }                    
+                    }
 
                     Parallel.ForEach(optionSymbols, new ParallelOptions { MaxDegreeOfParallelism = nThreads }, optionSymbol =>
                     {
@@ -176,14 +149,14 @@ namespace QuantConnect.ToolBox
                             var bidIVbar = new Bar(bidIvClose, bidIvClose, bidIvClose, bidIvClose);
                             var askIVbar = new Bar(askIvClose, askIvClose, askIvClose, askIvClose);
 
-                            IVQuotes[optionSymbol].Add(new VolatilityBar(quoteBar.Time, optionSymbol,
+                            IVQuotes[optionSymbol].Add(new VolatilityQuoteBar(quoteBar.Time, optionSymbol,
                             bidIVbar, askIVbar,
                             quoteBar.Bid, quoteBar.Ask,
                             equityQuoteBar
-                            ));                      
+                            ));
                         });
                     });
-                    WriteIV(IVQuotes, dateTime, resolution);
+                    WriteIV(IVQuotes, dateTime, resolution, TickType.IV_Quote);
                     IVQuotes.Clear();
 
                     // Trades
@@ -213,7 +186,7 @@ namespace QuantConnect.ToolBox
                             IVTrades[optionSymbol].Add(new VolatilityTradeBar(tradeBar.Time, optionSymbol, spotMidClose, tradeBar.Close, ivClose));
                         });
                     });
-                    WriteIV(IVTrades, dateTime, resolution);
+                    WriteIV(IVTrades, dateTime, resolution, TickType.IV_Trade);
                     IVTrades.Clear();
 
                     bsmProcesses.Clear();
@@ -239,7 +212,8 @@ namespace QuantConnect.ToolBox
                         return enumerator.Current as QuoteBar;
                     }
                 }
-                return null;
+                Log.Error($"No underlying data found after {now} indicating missing data. Returning the last known bar.");
+                return enumerator.Current as QuoteBar;
             }
         }
 
@@ -290,14 +264,13 @@ namespace QuantConnect.ToolBox
             }            
         }
 
-        private static void WriteIV(ConcurrentDictionary<Symbol, List<VolatilityBar>> IVDct, DateTime date, Resolution resolution, string tick_type = "quote")
+        private static void WriteIV<T>(ConcurrentDictionary<Symbol, List<T>> IVDct, DateTime date, Resolution resolution, TickType tickType) where T: VolatilityBar
         {
             if (IVDct.IsEmpty) return;
 
             Symbol optionSymbol = IVDct.Keys.First();
             Symbol underlying = optionSymbol.Underlying;
-            var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, date, resolution, TickType.Quote).ToString();
-            filePath = filePath.Replace(tick_type, $"iv_{tick_type}");
+            var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, date, resolution, tickType).ToString();
             if (!File.Exists(filePath))
             {
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(filePath));
@@ -317,10 +290,10 @@ namespace QuantConnect.ToolBox
                 var csv = new StringBuilder();
                 foreach (var bar in bars)
                 {
-                    csv.AppendLine(bar.ToIVQuoteString());
+                    csv.AppendLine(bar.ToCSVString());
                 }
 
-                string entryName = $"{date:yyyyMMdd}_{underlying.Value}_{resolution}_iv_{tick_type}_american_{symbol.ID.OptionRight}_{Math.Round(symbol.ID.StrikePrice * 10000m)}_{symbol.ID.Date:yyyyMMdd}.csv".ToLowerInvariant();
+                string entryName = $"{date:yyyyMMdd}_{underlying.Value}_{resolution}_{tickType.TickTypeToLower()}_american_{symbol.ID.OptionRight}_{Math.Round(symbol.ID.StrikePrice * 10000m)}_{symbol.ID.Date:yyyyMMdd}.csv".ToLowerInvariant();
                 var entry = archives[filePath].GetEntry(entryName) ?? archives[filePath].CreateEntry(entryName);
                 var writer = new StreamWriter(entry.Open());
                 writer.WriteLine(csv);
@@ -328,49 +301,7 @@ namespace QuantConnect.ToolBox
                 writer.Close();
                 writer.Dispose();
             }
-            Log.Trace($"Saved IV Quote files for {underlying.Value} on {date}");
-            archives.DoForEach(kvp => kvp.Value.Dispose());
-        }
-
-        private static void WriteIV(ConcurrentDictionary<Symbol, List<VolatilityTradeBar>> IVDct, DateTime date, Resolution resolution, string tick_type = "trade")
-        {
-            if (IVDct.IsEmpty) return;
-
-            var dataDirectory = Config.Get("data-folder");
-            Symbol optionSymbol = IVDct.Keys.First();
-            Symbol underlying = optionSymbol.Underlying;
-            var filePath = LeanData.GenerateZipFilePath(dataDirectory, optionSymbol, date, resolution, TickType.Trade).ToString();
-            filePath = filePath.Replace(tick_type, $"iv_{tick_type}");
-            if (!File.Exists(filePath))
-            {
-                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(filePath));
-            }
-
-            Dictionary<string, ZipArchive> archives = new();
-            if (!archives.ContainsKey(filePath))
-            {
-                archives[filePath] = ZipFile.Open(filePath, ZipArchiveMode.Update);
-            }
-
-            foreach (var item in IVDct.Keys)
-            {
-                var symbol = item;
-                var bars = IVDct[item];
-
-                var csv = new StringBuilder();
-                foreach (var bar in bars)
-                {
-                    csv.AppendLine(bar.ToIVTradeString());       
-                }
-                string entryName = $"{date:yyyyMMdd}_{underlying.Value}_{resolution}_iv_{tick_type}_american_{symbol.ID.OptionRight}_{Math.Round(symbol.ID.StrikePrice * 10000m)}_{symbol.ID.Date:yyyyMMdd}.csv".ToLowerInvariant();
-                var entry = archives[filePath].GetEntry(entryName) ?? archives[filePath].CreateEntry(entryName);
-                var writer = new StreamWriter(entry.Open());
-                writer.WriteLine(csv);
-                writer.Flush();
-                writer.Close();
-                writer.Dispose();
-            }
-            Log.Trace($"Saved IV Trade files for {underlying.Value} on {date}");
+            Log.Trace($"Saved {tickType} files for {underlying.Value} on {date} at {filePath}");
             archives.DoForEach(kvp => kvp.Value.Dispose());
         }
     }

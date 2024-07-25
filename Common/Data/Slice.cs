@@ -616,7 +616,7 @@ namespace QuantConnect.Data
 
                     case MarketDataType.VolatilityBar:
                         symbolData.Type = SubscriptionType.Custom;
-                        symbolData.Custom = (VolatilityBar)datum;
+                        symbolData.Custom = (VolatilityQuoteBar)datum;
                         break;
 
                     default:

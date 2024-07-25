@@ -35,7 +35,6 @@ using QuantConnect.Data;
 using MathNet.Numerics.LinearAlgebra;
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using System.Collections.Concurrent;
-using QuantConnect.Data.Market;
 
 namespace QuantConnect.Algorithm.CSharp.Earnings
 {
@@ -65,7 +64,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             wsClient = new(this);            
             Log($"{Time} Connecting to ws://{CfgAlgo.WsHost}:{CfgAlgo.WsPort}/ws ...");
             wsClient.ConnectAsync($"ws://{CfgAlgo.WsHost}:{CfgAlgo.WsPort}/ws").Wait();
-            wsClient.StartHealthCheck().Wait();
 
             var utilityOrderFactory = new UtilityOrderFactory(typeof(UtilityOrderEarnings));
             InitializeAlgo(utilityOrderFactory);
@@ -106,7 +104,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                         ClearTargetPortfolios(equity.Symbol);
                         ClearTargetHoldings(equity.Symbol);
                     });
-                    Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), () => ReloadTargetPortfolioOnUnattainableFillIV(equity.Symbol));
+                    Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(3)), () => ReloadTargetPortfolioOnUnattainableFillIV(equity.Symbol));
                 }
             }
             wsClient.EventHandlerResponseTargetPortfolios += OnTargetPortfolios;
@@ -114,6 +112,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             wsClient.EventHandlerCmdCancelOID += OnCmdCancelOID;
             wsClient.EventHandlerResponseKalmanInit += OnResponseKalmanInit;
             wsClient.EventHandlerCmdCfgOverride += OnCmdCfgOverride;
+            wsClient.EventHandlerWSConnected += OnWSConnected;
         }
 
         public override void OnWarmupFinished()
@@ -209,6 +208,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         public void ReloadTargetPortfolioOnUnattainableFillIV(Symbol underlying)
         {
+            if (!IsMyMarketOpen(underlying)) return;
+            double tolerance = 0.01;
+
             foreach (var kvp in PresumedFillIV.Where(kvp => kvp.Key.Underlying.Symbol == underlying).ToDictionary())
             {
                 Option option = kvp.Key;
@@ -216,12 +218,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 double bidIV = IVBids[option.Symbol].IVBidAsk.IV;
                 double askIV = IVAsks[option.Symbol].IVBidAsk.IV;
                 bool isFetchingPf = FetchingTargetPortfolio.TryGetValue(option.Underlying.Symbol, out bool b) ? b : false;
-                if ((bidIV > fillIV || askIV < fillIV) && !isFetchingPf)
+                if ((bidIV > fillIV * (1 + tolerance) || askIV < fillIV * (1- tolerance)) && !isFetchingPf)
                 {
                     Log($"{Time} ReloadTargetPortfolioOnUnattainableFillIV: {option}, bidIV={bidIV}, askIV={askIV}, presumedFillIV={fillIV}. Refetching target portfolios.");
                     FetchTargetPortfolios(underlying);
+                    return;
                 }
-            }            
+            }
         }
 
         public override void OnData(Slice slice)
@@ -286,6 +289,29 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 }
             }         
         }
+        /// <summary>
+        /// 2 Assumptions: Cannot quote on both sides of the spread and only 1 ticket per Symbol.
+        /// </summary>
+        /// <param name="orderEvent"></param>
+        public void HandleSpreadBuffers(OrderEvent orderEvent)
+        {
+            OrderTicket ticket = orderEvent.Ticket;
+            Symbol symbol = ticket.Symbol;
+            if (symbol.SecurityType != SecurityType.Option) return;
+
+
+            OrderDirection direction = Num2Direction(ticket.Quantity);
+            var buffers = SpreadBuffers[direction];
+
+            // Instantiate if missing
+            if (!buffers.TryGetValue(symbol, out SpreadBuffer spreadBuffer))
+            {
+                spreadBuffer = new(this, (Option)Securities[symbol], direction);
+                buffers[symbol] = spreadBuffer;
+            }
+
+            spreadBuffer.Update(ticket);
+        }
 
         public void OnOrderEventDelayed(OrderEvent orderEvent)
         {
@@ -344,6 +370,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     RequestStressTestDs(Underlying(orderEvent.Symbol));
                 }
             }
+
+            HandleSpreadBuffers(orderEvent);
         }
 
         public void LogDifferenceTargetHoldingsOrderTickets()
@@ -588,7 +616,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Symbol underlying = Securities[resultStressTestDs.Underlying].Symbol;
             LastDeltaAcrossDs[underlying] = resultStressTestDs.DeltaTotalAcrossDs;
             string dsString = string.Join(",\n", resultStressTestDs.DsDnlv.OrderBy(kvp => kvp.Key).Select(kvp => $"{kvp.Key[..Math.Min(4, kvp.Key.Length)]}:{kvp.Value}"));
-            Log($"{Time} OnResultStressTestDs assumes worst fill scenario: {resultStressTestDs.Underlying} @ {resultStressTestDs.Ts}, DeltaTotalAcrossDs: {resultStressTestDs.DeltaTotalAcrossDs}, DeltaTotal: {resultStressTestDs.DeltaTotal}\n{dsString}");
+            Log($"{Time} OnResultStressTestDs assumes estimated fill scenario: {resultStressTestDs.Underlying} @ {resultStressTestDs.Ts}, DeltaTotalAcrossDs: {resultStressTestDs.DeltaTotalAcrossDs}, DeltaTotal: {resultStressTestDs.DeltaTotal}\n{dsString}");
         }
 
         public void OnCmdCancelOID(object sender, CmdCancelOID cmdCancelOID)
@@ -676,6 +704,15 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }            
         }
 
+        public void OnWSConnected(object sender, object obj)
+        {
+            if (!IsWarmingUp && !IsMyMarketOpen(symbolSubscribed))
+            {
+                Log($"{Time} OnWSConnected: Fetching target portfolios.");
+                FetchTargetPortfolios();
+            }
+        }
+
         public void RequestKalmanInit(Symbol underlying, DateTime expiry, OptionRight right)
         {
             DateTime start = SubtractBusinessDays(Time.Date, 1);
@@ -694,13 +731,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             if (!LiveMode)
             {
                 wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                _ = wsClient.SendMessageAsync(requestKalmanInit);
-                wsClient.semaphore.Wait();
-                wsClient.semaphore.Dispose();
+                wsClient.SendMessageAsync(requestKalmanInit);
+                Log($"{Time} RequestKalmanInit: BLOCKING THREAD until response received. Backtesting only");
+                wsClient.WaitThread();
             }
             else
             {
-                _ = wsClient.SendMessageAsync(requestKalmanInit);
+                wsClient.SendMessageAsync(requestKalmanInit);
             }
         }
         public void InitKalmanFilter(Option option)
@@ -829,7 +866,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             //}
 
             // Build request
-            int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
+            //int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
+            int request_n_contracts = RequestContractsHandlers.TryGetValue(underlying, out RequestContractsHandler handler) ? handler.GetContractsRequested() : 0;
             RequestTargetPortfolios requestTargetPortfolios = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
@@ -851,13 +889,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 if (!LiveMode)
                 {
                     wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                    _ = wsClient.SendMessageAsync(requestTargetPortfolios);
-                    wsClient.semaphore.Wait();
-                    wsClient.semaphore.Dispose();
+                    wsClient.SendMessageAsync(requestTargetPortfolios);
+                    Log($"{Time} RequestKalmanInit: BLOCKING THREAD until response received. Backtesting only");
+                    wsClient.WaitThread();
                 }
                 else
                 {
-                    _ = wsClient.SendMessageAsync(requestTargetPortfolios);
+                    wsClient.SendMessageAsync(requestTargetPortfolios);
                 }
             }
             else
@@ -872,7 +910,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             if (!PreparingEarningsRelease(underlying)) return;
 
             // Build request
-            int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
+            //int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
+            int request_n_contracts = RequestContractsHandlers.TryGetValue(underlying, out RequestContractsHandler handler) ? handler.GetContractsRequested() : 0;
             RequestTargetPortfolios requestTargetPortfolios = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
@@ -892,13 +931,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 if (!LiveMode)
                 {
                     wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                    _ = wsClient.SendMessageAsync(requestTargetPortfolios);
-                    wsClient.semaphore.Wait();
-                    wsClient.semaphore.Dispose();
+                    wsClient.SendMessageAsync(requestTargetPortfolios);
+                    wsClient.WaitThread();
                 }
                 else
                 {
-                    _ = wsClient.SendMessageAsync(requestTargetPortfolios);
+                    wsClient.SendMessageAsync(requestTargetPortfolios);
                 }
             }
             else
@@ -914,13 +952,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Cfg.Ticker.DoForEach(ticker => RequestStressTestDs(Securities[ticker].Symbol));
         }
 
-        public void ScheduleRegularRequestStressTestDs(TimeSpan startTime, TimeSpan endTime)
+        public void ScheduleRegularRequestStressTestDs(TimeSpan startTime, TimeSpan endTime, int intervalSeconds = 60)
         {
             TimeSpan currentTime = startTime;
             while (currentTime <= endTime)
             {
                 Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(currentTime), RequestStressTestDs);
-                currentTime = currentTime.Add(new TimeSpan(0, 1, 0));
+                currentTime = currentTime.Add(new TimeSpan(0, 0, intervalSeconds));
             }
         }
 
@@ -950,13 +988,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 if (!LiveMode)
                 {
                     wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                    _ = wsClient.SendMessageAsync(requestStressTestDs);
-                    wsClient.semaphore.Wait();
-                    wsClient.semaphore.Dispose();
+                    wsClient.SendMessageAsync(requestStressTestDs);
+                    wsClient.WaitThread();
                 }
                 else
                 {
-                    _ = wsClient.SendMessageAsync(requestStressTestDs);
+                    wsClient.SendMessageAsync(requestStressTestDs);
                 }
             }
             else
@@ -1004,6 +1041,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         public override void OnEndOfAlgorithm()
         {
             base.OnEndOfAlgorithm();
+            wsClient.StopHealthCheck();
             wsClient.Dispose();
         }
     }

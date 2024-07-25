@@ -20,12 +20,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (newBidAsk.Symbol.SecurityType == SecurityType.Option)
             {
+                IVBids[newBidAsk.Symbol].Update();
+                IVAsks[newBidAsk.Symbol].Update();
                 UpdateLimitPrice(newBidAsk.Symbol);
             }
             else if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)
             {
                 // LogOnEventNewBidAsk(newBidAsk);  // Because Backtest and LiveTrading differ significantly in price update logs.
-                var scopedTickets = orderTickets.Keys.Where(k => k.SecurityType == SecurityType.Option && k.Underlying == newBidAsk.Symbol && orderTickets[k].Count > 0).ToHashSet();  // ToHashSet(): ToList, avoid concurrent modification error
+                var scopedTickets = orderTickets.Keys.ToList().Where(k => k.SecurityType == SecurityType.Option && k.Underlying == newBidAsk.Symbol && orderTickets[k].Count > 0).ToHashSet();  // ToHashSet(): ToList, avoid concurrent modification error
                 scopedTickets.Add(newBidAsk.Symbol);
                 scopedTickets.DoForEach(s => UpdateLimitPrice(s));
             }

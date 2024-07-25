@@ -1,13 +1,9 @@
-using Accord.Statistics.Running;
-using Fasterflect;
-using MathNet.Numerics.LinearAlgebra.Factorization;
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Option;
 using System;
-using static QLNet.Callability;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 
@@ -15,47 +11,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations : QCAlgorithm
     {
-        /// <summary>
-        /// Sudden quote jumps, leading to price spread variation can mess up my discounting expressed in a factor*priceSpread. Therefore, taking min/max of IVSurface derived and market surface. IV surface can get too wide, tight too at times, pending fix.
-        /// </summary>
-        /// <param name="symbol"></param>
-        /// <returns></returns>
-        internal decimal PriceSpread(OptionContractWrap ocw)
-        {
-            decimal iVSurfaceSpread;
-            var option = ocw.Contract;
-            decimal marketQuoteSpread = option.AskPrice - option.BidPrice;
-
-            double? bidIV = IVSurfaceRelativeStrikeBid[option.Symbol.Underlying].IV(option.Symbol);
-            double? askIV = IVSurfaceRelativeStrikeAsk[option.Symbol.Underlying].IV(option.Symbol);
-
-            // bad nesting. refactor sometime
-            if (askIV == null)
-            {
-                Error($"PriceSpread: Unexpected askIV={askIV}. Defaulting to 0 ivSurfaceSpread.");
-                Log(Environment.StackTrace);
-                iVSurfaceSpread = 0;
-            }
-            else
-            {
-                decimal? iVSurfaceBidPrice = (bidIV ?? 0) == 0 ? IntrinsicValue(option) : (decimal?)ocw.AnalyticalIVToPrice((double)bidIV);
-                decimal? iVSurfaceAskPrice = (askIV ?? 0) == 0 ? IntrinsicValue(option) : (decimal?)ocw.AnalyticalIVToPrice((double)askIV);
-
-                if (iVSurfaceAskPrice == null || iVSurfaceBidPrice == null)
-                {
-                    Error($"PriceSpread: Unexpected null ivSurfacePrice: iVSurfaceBidPrice={iVSurfaceBidPrice}, iVSurfaceAskPrice ={iVSurfaceAskPrice}, bidIV={bidIV}, askIV={askIV}. Defaulting to 0 ivSurfaceSpread.\n{Environment.StackTrace}");
-                    iVSurfaceSpread = 0;
-                }
-                else
-                {
-                    iVSurfaceSpread = (decimal)iVSurfaceAskPrice - (decimal)iVSurfaceBidPrice;
-                }
-            }
-
-            // At the moment, preferring tight over wide spreads as it minimized chance of giving outsized discounts. However, to be revisited.
-            return Math.Min(marketQuoteSpread, iVSurfaceSpread);
-        }
-
         /// <summary>
         /// Override in respective Strategy.
         /// def D(uD1, uD0, b= .001):
@@ -106,7 +61,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (!KalmanFilters.TryGetValue((qr.Underlying, qr.Option.Expiry, qr.Option.Right), out KalmanFilter kf))
             {
-                Log($"GetQuote: No KalmanFilter found for {qr.Underlying}, {qr.Option.Expiry}, {qr.Option.Right}");
+                Log($"{Time} GetKalmanQuote(): {qr.Underlying} No KalmanFilter found for {qr.Underlying}, {qr.Option.Expiry}, {qr.Option.Right}");
+                return null;
+            }
+            if (!kf.IsReady())
+            {
+                Log($"{Time} GetKalmanQuote(): {qr.Underlying} KalmanFilter is not ready for {qr.Underlying}, {qr.Option.Expiry}, {qr.Option.Right}, #Updates={kf.NUpdated}");
                 return null;
             }
 
@@ -133,15 +93,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             IUtilityOrder utilityOrderCrossSpread;
             OptionContractWrap ocw = OptionContractWrap.E(this, qr.Option, Time.Date);
-            decimal priceSpread = PriceSpread(ocw);
             decimal marketPriceSpread = qr.Option.AskPrice - qr.Option.BidPrice;
-
-            if (!IVSurfaceRelativeStrikeBid.ContainsKey(qr.Underlying) || !IVSurfaceRelativeStrikeAsk.ContainsKey(qr.Underlying))
-            {
-                Error($"GetQuote: Missing IV indicator for {qr.Symbol}. Expected to have been filled in securityInitializer. Quoting 0.");
-                Log(Environment.StackTrace);
-                return new Quote<Option>(qr.Option, qr.Quantity, 0, 0, qr.UtilityOrder, null);
-            }
 
             // Since the signal, markets might have moved. Update the quote request's utility order.
             switch (qr.OrderDirection)
@@ -191,7 +143,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (SweepState[qr.Symbol][qr.OrderDirection].IsSweepScheduled())
             {
-                // Aggressive
+                // Aggressive. Problem: Sweepratio goes up, while order never matches that ratio because overriden further below...
+                // Further bad: It sweeps the price spread instead of IV. Impacted by others quoting aggressively quickly.
                 spreadDiscount = SpreadDiscountSweep(qr.UtilityOrder);
             }
             else
@@ -224,8 +177,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Log(Environment.StackTrace);
                 timeStartKfBeforeRelease = new TimeSpan(0, 23, 0, 0);
                 timeStartKfAfterRelease = new TimeSpan(0, 23, 0, 0);
-            }
-            
+            }            
 
             bool useKfBeforeRelease = 
                 isPreparingEarningsRelease
@@ -243,14 +195,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Not yet implemented:
                 //      Purpose of KalmanFilter is to quote more aggressively when opportunity is good. Comparing it to sweeper which will eventually get to KalmanFilter price.
                 //      Tricky because we'd want to sweep towards that more aggressive price and not waste money jumping to it.
+                // Implemented a generic sweeper. Would want to backtest if the defensive override with presumedModelPrice can be switched off without losing a lot of money.
 
                 decimal kfPrice = GetKalmanQuote(qr) ?? priceSpreadDiscounted;
 
-                // Defensive
+                // Aggressive Max Buy / Min Sell - protected by BufferIntraSpreadQuote.
+                // Aggressive Sweeper run in last hour on release day and fairly frequently the days after release.
                 price = qr.OrderDirection switch
                 {
-                    OrderDirection.Buy => Math.Min(kfPrice, priceSpreadDiscounted),
-                    OrderDirection.Sell => Math.Max(kfPrice, priceSpreadDiscounted),
+                    OrderDirection.Buy => Math.Max(kfPrice, priceSpreadDiscounted),
+                    OrderDirection.Sell => Math.Min(kfPrice, priceSpreadDiscounted),
                     _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
                 };
             }
@@ -262,7 +216,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Defensive: IV Model price override
             // Somewhat temporary and to be refactored. Limit the price to the presumedFillIV coming from the model - a discount dependent on the utility.
             // Essentially, both KalmanFilter price and this PresumedIV-utility based price must be good enough to offer competitive quotes.
-            if (Cfg.UseKalmanFilterBeforeEarningsRelease 
+            bool pricerOverridePricesWithPresumedIVFillDefensively = Cfg.PricerOverridePricesWithPresumedIVFillDefensively.TryGetValue(qr.Underlying.Value, out pricerOverridePricesWithPresumedIVFillDefensively) ? pricerOverridePricesWithPresumedIVFillDefensively : Cfg.PricerOverridePricesWithPresumedIVFillDefensively[CfgDefault];
+            if (pricerOverridePricesWithPresumedIVFillDefensively
+                && Cfg.UseKalmanFilterBeforeEarningsRelease 
                 && isPreparingEarningsRelease
                 && PresumedFillIV.ContainsKey(qr.Option)
                 )
@@ -299,6 +255,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
             };
 
+            // Shouldn't just go by ticket. Imagine it's cancelled and first new submission is crossing much of the spread. Would wanna buffer that too!
+            if (Cfg.BufferIntraSpreadQuotes && SpreadBuffers[qr.OrderDirection].TryGetValue(qr.Symbol, out SpreadBuffer sp))
+            {
+                price = sp.BufferIntraSpreadQuote(price);
+            }
+            else if (Cfg.BufferIntraSpreadQuotes)
+            {
+                Error($"GetQuote: BufferIntraSpreadQuotes is true, but no SpreadBuffer found for {qr.Symbol}. Expected to be instantiated in SecurityInitializer.");
+            }
+
             // For tight spreads, a tickSize difference of, e.g., 0.01 can make a signiicant difference in terms of IV spread. Therefore, the price is rounded defensively away from midPrice.
             decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection == OrderDirection.Sell);  // Can go against sweep
             double ivPrice = (double)ocw.IV(price, MidPrice(qr.Symbol.Underlying), 0.001);
@@ -320,7 +286,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal maxAcceptableSpreadRatio = spread <= 0 || utilPV == 0 ? sweepRatio : ToDecimal((utilPV / 2)) / (100 * spread);
 
             var res = Math.Min(sweepRatio, maxAcceptableSpreadRatio);
-            res = Math.Min(res, 1.001m);
+            decimal spreadDiscountSweepMinSpreadRatio = Cfg.SpreadDiscountSweepMinSpreadRatio.TryGetValue(utilityOrder.Underlying.Value, out spreadDiscountSweepMinSpreadRatio) ? spreadDiscountSweepMinSpreadRatio : Cfg.SpreadDiscountSweepMinSpreadRatio[CfgDefault];
+            res = Math.Min(res, spreadDiscountSweepMinSpreadRatio);
 
             Log($"{Time} SpreadDiscountSweep: {symbol} res={res} sweepRatio={sweepRatio}, maxAcceptableSpreadRatio={maxAcceptableSpreadRatio}, " +
                 $"spread={spread} utilPV={utilPV}, utilEquityPosition={utilityOrder.UtilityEquityPosition}. bid={bid}, ask={ask}");

@@ -263,7 +263,7 @@ namespace QuantConnect.Securities
             }
             else if (data.DataType == MarketDataType.VolatilityBar)
             {
-                var volatilityBar = data as VolatilityBar;
+                var volatilityBar = data as VolatilityQuoteBar;
                 if (volatilityBar != null)
                 {
                     LastQuoteBarUpdate = data.EndTime;

@@ -1,12 +1,9 @@
 {
-  "StartDate": "2024-06-25",
-  "EndDate": "2024-06-25",
-  "Ticker": [ "FDX" ],
+  "StartDate": "2024-04-15",
+  "EndDate": "2024-04-16",
+  "Ticker": [ "UNH" ],
   "WsHost": "localhost",
-  "WsPort": 8002,
-  "RequestTargetPfNContracts": {
-    "_": 20,
-  },
+  "WsPort": 8000,
   "EarningsEntryStartTime": {
     "_": [ 9, 40 ]
   }

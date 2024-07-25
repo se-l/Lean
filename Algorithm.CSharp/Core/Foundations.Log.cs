@@ -163,7 +163,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 { "Symbol", $"{_sym}" },
                 { "PriceUnderlying", $"{MidPrice(Underlying(_sym))}" },
-                { "ATM IV", $"{AtmIV(Underlying(_sym))}" },
             };
                 var d2 = PfRisk.ToDict(_sym).ToDictionary(x => x.Key, x => Math.Round(x.Value, 3).ToString());
                 tagLines.Add(Humanize(d1.Union(d2)));
@@ -202,8 +201,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public string LogPnL(Symbol symbol = null)
         {
-            var posPnlRealized = PositionsRealized.Values.SelectMany(l => l).Sum(p => p.PL);
-            var posPnLUnrealized = Positions.Values.Sum(p => p.PL);
+            var posPnlRealized = PositionsRealized.Values.ToList().SelectMany(l => l).Sum(p => p.PL);
+            var posPnLUnrealized = Positions.Values.ToList().Sum(p => p.PL);
             var d1 = new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },

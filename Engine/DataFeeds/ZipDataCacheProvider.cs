@@ -25,6 +25,7 @@ using QuantConnect.Interfaces;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using QuantConnect.Configuration;
+using static QuantConnect.Util.LeanData;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
@@ -177,6 +178,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     }
                 }
             }
+        }
+
+        public void Store(IEnumerable<FileMember> entries, bool overrideEntry = false)
+        {
+            //
         }
 
         /// <summary>

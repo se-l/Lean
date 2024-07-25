@@ -1,3 +1,4 @@
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using System;
 using System.Collections.Generic;
@@ -23,8 +24,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int ScopeContractMinDTE { get; set; }
         public int ScopeContractMaxDTE { get; set; }
         public int ScopeContractIsLiquidDays { get; set; }
-        public double ZMRiskAversion { get; set; }
-        public double ZMProportionalTransactionCost { get; set; }
         public Dictionary<string, DiscountParams> DiscountParams { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalLong { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
@@ -34,8 +33,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int WarmUpDays { get; set; }
         public bool LogOrderUpdates { get; set; }
         public bool SkipWarmUpSecurity { get; set; }
-        public Dictionary<string, double> MinZMOffset { get; set; }
-        public Dictionary<string, decimal> MaxZMOffset { get; set; }
         public int PutCallRatioWarmUpDays { get; set; }
         public Dictionary<string, List<TargetRisk>> PutCallRatioTargetRisks { get; set; }
         public Dictionary<string, double> EOD2SODATMIVJumpThreshold { get; set; }
@@ -85,10 +82,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, double> MaxDelta100BpUSDSignalQuantity { get; set; }
         public bool UseKalmanFilterAfterEarningsRelease { get; set; }
         public bool UseKalmanFilterBeforeEarningsRelease { get; set; }
+        public Dictionary<string, bool> PricerOverridePricesWithPresumedIVFillDefensively { get; set; }
         public Dictionary<string, string> TimeStartKfBeforeRelease { get; set; }
         public Dictionary<string, string> TimeStartKfAfterRelease { get; set; }
         public Dictionary<string, string> EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy { get; set; }
         public Dictionary<string, string> EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell { get; set; }
         public Dictionary<string, string> HedgeToAcrossDsAfterTime { get; set; }
+        public double BufferIntraSpreadRatioSpreadThreshold {  get; set; }
+        public int BufferIntraSpreadWaitingPeriodSeconds {  get; set; }
+        public bool BufferIntraSpreadQuotes {  get; set; }
+
+        public Dictionary<string, List<RequestContractsScheduleCfg>> RequestContractsSchedules;
+        public Dictionary<string, int> KalmanMinUpdatesToReady { get; set; }
+        public int MinutesBeforeMarketCloseHedgeDeltaFlat { get; set; }
+        public int MinutesAfterOpenMMWindowStarts { get; set; }
+        public int MinutesBeforeCloseMMWindowEnds { get; set; }
+        public int MinutesBeforeCloseHedgeToAcrossDs { get; set; }
+        public Dictionary<string, decimal> SpreadDiscountSweepMinSpreadRatio { get; set; }
+        public Dictionary<string, int> EquityHedgeMode { get; set; }
     }
 }

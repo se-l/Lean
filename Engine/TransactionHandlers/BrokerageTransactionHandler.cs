@@ -21,12 +21,12 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using QuantConnect.Brokerages;
 using QuantConnect.Brokerages.Backtesting;
+using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
 using QuantConnect.Orders.Fees;
-using QuantConnect.Scheduling;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using QuantConnect.Util;
@@ -191,6 +191,11 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             _brokerage.AccountChanged += (sender, account) =>
             {
                 HandleAccountChanged(account);
+            };
+
+            _brokerage.AccountHoldingsChanged += (sender, holdings) =>
+            {
+                HandleAccountHoldingsChanged(holdings);
             };
 
             _brokerage.MaintenanceMarginChanged += (sender, maintenanceMargin) =>
@@ -1482,6 +1487,38 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
             {
                 // override the current cash value so we're always guaranteed to be in sync with the brokerage's push updates
                 _algorithm.Portfolio.CashBook[account.CurrencySymbol].SetAmount(account.CashBalance);
+
+                // override all holdings because user could have traded manually via another user on the same account.
+
+            }
+        }
+
+        private bool GetOrAddUnrequestedSecurity(IAlgorithm algorithm, Symbol symbol, SecurityType securityType, out Security security)
+        {
+            return algorithm.GetOrAddUnrequestedSecurity(symbol, out security);
+        }
+
+        /// <summary>
+        /// Brokerages sends account holdings updates.
+        /// as truth
+        /// </summary>
+        private void HandleAccountHoldingsChanged(List<Holding> holdings)
+        {
+            var utcNow = DateTime.UtcNow;
+
+            foreach (var holding in holdings.OrderByDescending(x => x.Type))
+            {
+                if (!_algorithm.GetOrAddUnrequestedSecurity(holding.Symbol, out Security security))
+                {
+                    continue;
+                }
+
+                if (holding.Quantity != security.Holdings.Quantity)
+                {
+                    Log.Trace("BrokerageTransactionHandler.HandleAccountHoldingsChanged(): " + holding);
+
+                    security.Holdings.SetHoldings(holding.AveragePrice, holding.Quantity);
+                }
             }
         }
         /// <summary>

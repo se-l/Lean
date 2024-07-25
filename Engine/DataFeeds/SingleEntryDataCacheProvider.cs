@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -22,6 +22,7 @@ using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using System.Collections.Generic;
+using static QuantConnect.Util.LeanData;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
@@ -88,6 +89,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <param name="key">The source of the data, used as a key to retrieve data in the cache</param>
         /// <param name="data">The data to cache as a byte array</param>
         public void Store(string key, byte[] data)
+        {
+            //
+        }
+
+        public void Store(IEnumerable<FileMember> entries, bool overrideEntry = false)
         {
             //
         }

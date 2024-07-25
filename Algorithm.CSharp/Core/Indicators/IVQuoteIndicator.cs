@@ -51,27 +51,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             IVBidAsk = new IVQuote(Symbol, _algo.Time, 0, 0, 0);  // Default, in case referenced downstream before any successful update.
         }
 
-        public void Update(DateTime time, decimal quote, decimal midPriceUnderlying)
+        public void Update(DateTime time, decimal quote, decimal midPriceUnderlying, double? iv = null)
         {
             if (time <= Time || quote == 0) return;
-            double iv = IV;
-            if (HaveInputsChanged(quote, midPriceUnderlying, time.Date))
+            
+            if (HaveInputsChanged(quote, midPriceUnderlying, time.Date) && iv == null)
             {
                 iv = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
             }
-            if (iv == 0)
-            {
-                //_algo.Log($"{_algo.Time} IVQuoteIndicator.Update: IV=0 encountered for {Symbol} {time} P={quote}, arg S={midPriceUnderlying}, MidPrice S={_algo.MidPrice(Underlying)}. Ignoring, not updating indicator. Presumably stale / delayed / unsynced quotes.");
-                return;
-            }
-            else
-            {
-                IV = iv;                
-                Time = time;
-                Price = quote;
-                MidPriceUnderlying = midPriceUnderlying;
-                _samples += 1;
-            }
+            IV = iv ?? IV;                
+            Time = time;
+            Price = quote;
+            MidPriceUnderlying = midPriceUnderlying;
+            _samples += 1;
             
             IVBidAsk = new IVQuote(Symbol, Time, this.MidPriceUnderlying, Price, IV);
             Current = new IndicatorDataPoint(Time, (decimal)IVBidAsk.IV);
@@ -89,10 +81,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public void Update(IVQuote bar)
         {
-            Update(bar.Time, bar.Price, bar.UnderlyingMidPrice);
+            if (bar.Time <= Time) return;
+            Update(bar.Time, bar.Price, bar.UnderlyingMidPrice, bar.IV);
         }
         public void Update()
         {
+            if (_algo.Time <= Time) return;
+
             Update(
                 _algo.Time,
                 Side == QuoteSide.Bid ? Option.BidPrice : Option.AskPrice,

@@ -51,7 +51,8 @@ namespace QuantConnect.Algorithm.CSharp
             DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
             ManualOrderInstructionBySymbol = JsonConvert.DeserializeObject<ManualOrderInstruction[]>(File.ReadAllText("ManualOrderInstructions.json")).GroupBy(x => x.Symbol).ToDictionary(g => g.Key, g => g.First());
             EarningsBySymbol = EarningsAnnouncements.GroupBy(ea => ea.Symbol).ToDictionary(g => g.Key, g => g.ToArray());
-            mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - ScheduledEvent.SecurityEndOfDayDelta - TimeSpan.FromMinutes(5));  // 10mins before EOD market close events fire
+            
+            mmWindow = new MMWindow(new TimeSpan(9, 31, 00), new TimeSpan(16, 0, 0) - TimeSpan.FromMinutes(5));  // 10mins before EOD market close events fire
 
             securityInitializer = new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays);
             SetSecurityInitializer(securityInitializer);
@@ -116,13 +117,6 @@ namespace QuantConnect.Algorithm.CSharp
             OnWarmupFinishedCalled = true;  // bad. remove flag setting design
 
             //SetRunTimeError(new System.Exception("Account Snapped. Metrics logged and exported"));
-        }
-        public override void OnSecuritiesChanged(SecurityChanges changes)
-        {
-            changes.AddedSecurities.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
-            {
-                securityInitializer.RegisterIndicators((Option)sec);
-            });
         }
     }
 }

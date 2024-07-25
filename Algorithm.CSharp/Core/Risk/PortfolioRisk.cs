@@ -120,86 +120,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return RiskByUnderlying(symbol, riskMetric, null, positions => positions.Where(p => p.Symbol == symbol && p.Quantity != 0));
         }
-
-        public decimal RiskBandByUnderlying(Symbol symbol, Metric metric, double? volatility = null)
-        {
-            (decimal, decimal) tupZMBands = (0, 0);
-            Symbol underlying = Underlying(symbol);
-            var positions = _algo.Positions.Values.Where(p => p.UnderlyingSymbol == underlying && p.SecurityType == SecurityType.Option && p.Quantity != 0);
-            if (!positions.Any()) return 0;
-
-            if (new HashSet<Metric>() { Metric.BandZMLower, Metric.BandZMUpper }.Contains(metric))
-            {
-                tupZMBands = ZMBands2(positions);
-                //tupZMBands = ZMBands(underlying, positions, volatility);
-            };
-
-            return metric switch
-            {
-                Metric.ZMOffset => ZMOffset(underlying, positions, volatility),
-                Metric.BandZMLower => tupZMBands.Item1,
-                Metric.BandZMUpper => tupZMBands.Item2,
-                _ => throw new NotImplementedException(metric.ToString()),
-            };
-        }
-
-        public double DeltaZM(Position p, double? volatility = null)
-        {
-            return -p.Multiplier * (double)p.Quantity * p.DeltaZM(volatility);
-        }
-
-        public double DeltaZMOffset(Position p, double? volatility = null)
-        {
-            return p.Multiplier * (double)p.Quantity * p.DeltaZMOffset(volatility);
-            //double scaledQuantity = Math.Sign(p.Quantity) * Math.Pow((double)Math.Abs(p.Quantity), 0.5);
-            //return -p.Multiplier * scaledQuantity * p.DeltaZMOffset(volatility);
-        }
-
-        public decimal ZMOffset(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
-        {
-            decimal minOffset = (decimal)(_algo.Cfg.MinZMOffset.TryGetValue(underlying, out double _minOffset) ? _minOffset : _algo.Cfg.MinZMOffset[CfgDefault]);
-            decimal maxOffset = _algo.Cfg.MaxZMOffset.TryGetValue(underlying, out maxOffset) ? maxOffset : _algo.Cfg.MaxZMOffset[CfgDefault];
-            return Math.Min(Math.Max(ToDecimal(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), minOffset), maxOffset);
-        }
-
-        public (decimal, decimal) ZMBands2(IEnumerable<Position> positions)
-        {
-            double deltaZM = positions.Select(p => DeltaZM(p)).Sum();
-            double offsetZM = Math.Abs(positions.Select(p => DeltaZMOffset(p)).Sum());
-
-            // Debug why bands can be zero despite options postions open
-            if (deltaZM == 0 && offsetZM == 0)
-            {
-                if (positions.Count() > 0)
-                {
-                    _algo.Log($"ZM Bands are zero for {positions.Count()} positions with quantity {positions.Sum(p => p.Quantity)}. DeltaZMs: {positions.Select(p => DeltaZM(p)).ToList()}");
-                }
-            }
-            return (ToDecimal(deltaZM - offsetZM), ToDecimal(deltaZM + offsetZM));
-        }
-
-        public (decimal, decimal) ZMBands(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
-        {
-            //  Scaling Zakamulin bands with quanitity**0.5 as they become fairly large with many option positions...
-            //  Better made dependent on proportional transaction costs.
-            var quantity = positions.Sum(p => p.Quantity);
-
-            double deltaZM = positions.Select(p => DeltaZM(p, volatility)).Sum();
-            double offsetZM = Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum());
-            // For high quantities, offset goes towards +/- 1, not good. Hence using sqrt(deltaZM) as minimum.
-            double minOffset = (_algo.Cfg.MinZMOffset.TryGetValue(underlying, out minOffset) ? minOffset : _algo.Cfg.MinZMOffset[CfgDefault]);
-            offsetZM = Math.Min(Math.Max(offsetZM, Math.Pow(Math.Abs(deltaZM), 0.5)), minOffset);
-
-            // Debug why bands can be zero despite options postions open
-            if (deltaZM == 0 && offsetZM == 0)
-            {
-                if (positions.Count() > 0)
-                {
-                    _algo.Log($"ZM Bands are zero for {positions.Count()} positions with quantity {quantity}. DeltaZMs: {positions.Select(p => DeltaZM(p, volatility)).ToList()}");
-                }
-            }
-            return (ToDecimal(deltaZM - offsetZM), ToDecimal(deltaZM + offsetZM));
-        }
         
         public double AtmIVEWMA(Symbol symbol) => _algo.AtmIVEWMA(symbol);
 
@@ -317,25 +237,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             {
                 string gammaScalpingStatus = _algo.GammaScalpers.TryGetValue(underlying, out GammaScalper gs) ? gs.StatusShort() : "NoGammaScalper";
                 _algo.Log($"{_algo.Time} IsPortfolioDeltExceedingBand: totalDeltaHedgeThreshold={totalDeltaHedgeThreshold}, riskDSTotal={riskDeltaTotal}, MidUnderlying={_algo.MidPrice(underlying)}, gammaTotal={gammaTotal}, {gammaScalpingStatus}");
-                return true;
-            }
-            return false;
-        }
-
-        public bool IsUnderlyingDeltaExceedingBandZM(Symbol symbol)
-        {
-            if (_algo.IsWarmingUp) { return false; }
-
-            Symbol underlying = Underlying(symbol);
-
-            decimal riskDeltaEquityTotal = RiskByUnderlying(symbol, Metric.EquityDeltaTotal);
-            decimal lowerBand = RiskBandByUnderlying(symbol, Metric.BandZMLower);
-            decimal upperBand = RiskBandByUnderlying(symbol, Metric.BandZMUpper);
-            decimal bandSize = Math.Abs(upperBand - lowerBand);
-
-            if ((-riskDeltaEquityTotal > upperBand || -riskDeltaEquityTotal < lowerBand) && bandSize >= 15)
-            {
-                _algo.Log($"{_algo.Time} IsUnderlyingDeltaExceedingBandZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, -DeltaEquityTotal={-riskDeltaEquityTotal}.");
                 return true;
             }
             return false;
