@@ -68,7 +68,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public virtual double UtlityVegaMispricedIVUntilExpiry { get => _utlityVegaMispricedIVUntilExpiry ??= GetUtlityVegaMispricedIVUntilExpiry(); }
 
         protected double? _intradayVolatilityRisk;
-        public virtual double IntradayVolatilityRisk { get => _intradayVolatilityRisk ??= GetIntradayVolatilityRisk(); }
+        //public virtual double IntradayVolatilityRisk { get => _intradayVolatilityRisk ??= GetIntradayVolatilityRisk(); }
 
         protected double? _utilityInventory;
         public virtual double UtilityInventory { get => _utilityInventory ??= GetUtilityInventory(); }
@@ -280,11 +280,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             return -(double)transactionCost(Quantity) - transactionHedgeCost((double)deltaOrder);
         }
-
-        protected DateTime EventDate => _algo.EventDate(Underlying);
-        protected DateTime? _expiryEventImpacted;
-        protected DateTime ExpiryEventImpacted => _expiryEventImpacted ??= _algo.ExpiryEventImpacted(Symbol);
-
+        
         /// <summary>
         /// 0.5 gamma * dS**2 == theta * dT for delta hedged option.
         /// Gain: Given realized vola, estimate distribution of dS before trailing_stop(vola) kicks in. Calibrate numerically and BT.
@@ -397,20 +393,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             return OrderDirection == OrderDirection.Buy && (_option.Symbol.ID.Date - _algo.Time.Date).Days <= 5 ? -(double)(Quantity * Multiplier) : 0;
         }
 
-        /// <summary>
-        /// Sell AM, Buy PM.
-        /// </summary>
-        protected double GetIntradayVolatilityRisk()
-        {
-            if (_intradayVolatilityRisk != null) return (double)_intradayVolatilityRisk;
+        ///// <summary>
+        ///// Sell AM, Buy PM.
+        ///// </summary>
+        //protected double GetIntradayVolatilityRisk()
+        //{
+        //    if (_intradayVolatilityRisk != null) return (double)_intradayVolatilityRisk;
 
-            if (_algo.IntradayIVDirectionIndicators[_option.Underlying.Symbol].Direction().Length > 1) return 0;
+        //    if (_algo.IntradayIVDirectionIndicators[_option.Underlying.Symbol].Direction().Length > 1) return 0;
 
-            double iv = IVPrice;
-            double intraDayIVSlope = _algo.IntradayIVDirectionIndicators[_option.Underlying.Symbol].IntraDayIVSlope;
-            double fractionOfDayRemaining = 1 - _algo.IntradayIVDirectionIndicators[_option.Underlying.Symbol].FractionOfDay(_algo.Time);
-            return OCW.Vega(iv) * intraDayIVSlope * fractionOfDayRemaining * (double)(Quantity * _option.ContractMultiplier);
-        }
+        //    double iv = IVPrice;
+        //    double intraDayIVSlope = _algo.IntradayIVDirectionIndicators[_option.Underlying.Symbol].IntraDayIVSlope;
+        //    double fractionOfDayRemaining = 1 - _algo.IntradayIVDirectionIndicators[_option.Underlying.Symbol].FractionOfDay(_algo.Time);
+        //    return OCW.Vega(iv) * intraDayIVSlope * fractionOfDayRemaining * (double)(Quantity * _option.ContractMultiplier);
+        //}
 
         /// <summary>
         /// Spread Discount will be applied reducing this.
@@ -486,7 +482,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             double midIV = _algo.MidIV(Symbol);            
             if (midIV == 0) { return 0; }
-            double midIVEwma = _algo.MidIVEWMA(Symbol);
+            double midIVEwma = _algo.MidIVSSVI(Symbol);
             // Favors selling skewed wings.
             double fv = (midIVEwma - midIV) * OCW.Vega(midIV) * (double)(Quantity * _option.ContractMultiplier);
             return (double)_algo.DiscountedValue((decimal)fv, 1.0/365.0);  // Expecting intraday reversion to expected IV levels

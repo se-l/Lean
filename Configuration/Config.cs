@@ -241,10 +241,22 @@ namespace QuantConnect.Configuration
         /// <returns>Converted value of the config setting.</returns>
         public static T GetValue<T>(string key, T defaultValue = default(T))
         {
+            JToken token;
+
             // special case environment requests
             if (key == "environment" && typeof (T) == typeof (string)) return (T) (object) GetEnvironment();
 
-            var token = GetToken(Settings.Value, key);
+            string systemEnvValue = Environment.GetEnvironmentVariable(key);
+            if (!string.IsNullOrEmpty(systemEnvValue))
+            {
+                Log.Trace(Invariant($"Config.GetValue(): Environment variable found. {key}: {systemEnvValue}"));
+                token = JToken.Parse(systemEnvValue);
+            }
+            else
+            {
+                token = GetToken(Settings.Value, key);
+            }
+            
             if (token == null)
             {
                 var defaultValueString = defaultValue is IConvertible
@@ -346,11 +358,17 @@ namespace QuantConnect.Configuration
         /// <summary>
         /// Write the contents of the serialized configuration back to the disk.
         /// </summary>
-        public static void Write()
+        public static void Write(string targetPath = null)
         {
             if (!Settings.IsValueCreated) return;
             var serialized = JsonConvert.SerializeObject(Settings.Value, Formatting.Indented);
-            File.WriteAllText(ConfigurationFileName, serialized);
+
+            var taget = ConfigurationFileName;
+            if (!string.IsNullOrEmpty(targetPath))
+            {
+                taget = Path.Combine(targetPath, ConfigurationFileName);
+            }
+            File.WriteAllText(taget, serialized);
         }
 
         /// <summary>

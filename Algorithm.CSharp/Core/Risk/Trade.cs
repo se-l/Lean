@@ -4,6 +4,7 @@ using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Option;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Securities.Equity;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -54,6 +55,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public SecurityType SecurityType => Security.Type;
         private Security _securityUnderlying;
         public Security SecurityUnderlying { get => _securityUnderlying ??= _algo.Securities[UnderlyingSymbol]; }
+        public Equity Equity => (Equity)_algo.Securities[UnderlyingSymbol];
         public int Multiplier { get => SecurityType == SecurityType.Option ? 100 : 1; }
         public decimal Spread0 { get => Ask0 - Bid0; }
         public decimal Bid0Underlying { get; internal set; } = 0;
@@ -69,8 +71,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     {
                         case SecurityType.Option:
                             OptionContractWrap ocw = OptionContractWrap.E(_algo, (Option)Security, Ts0.Date);
-                            ocw.SetIndependents(Mid0Underlying, Mid0, HistoricalVolatility);
-                            _greeks = new GreeksPlus(_algo, ocw).Snap();
+                            _greeks = new GreeksPlus(_algo, ocw).Snap(Mid0Underlying, Mid0, IVMid0);
                             break;
                         case SecurityType.Equity:
                             _greeks = new GreeksPlus(_algo, Security).Snap();
@@ -143,17 +144,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _ => 0
         };
         public string Tag { get; internal set; } = "";
-        public decimal SurfaceIVdSBid { get; internal set; } // not differentiating the options price here, but getting slope of strike skew.
-        public decimal SurfaceIVdSAsk { get; internal set; } // not differentiating the options price here, but getting slope of strike skew.
-        public decimal SurfaceIVdS
-        {
-            get
-            {
-                if (SurfaceIVdSBid == 0) { return SurfaceIVdSAsk; }
-                if (SurfaceIVdSAsk == 0) { return SurfaceIVdSBid; }
-                return (SurfaceIVdSBid + SurfaceIVdSAsk) / 2;
-            }
-        }
+        public decimal SurfaceIVdS { get; internal set; }
         public IUtilityOrder? UtilityOrder { get; internal set; }
         public Quote<Option>? Quote { get; internal set; }
 
@@ -309,8 +300,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             IVAsk0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
             IVPrice0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001) : 0;
             _ = Greeks;
-            SurfaceIVdSBid = ToDecimal(_algo.IVSurfaceRelativeStrikeBid[UnderlyingSymbol].IVdS(Symbol) ?? 0);
-            SurfaceIVdSAsk = ToDecimal(_algo.IVSurfaceRelativeStrikeAsk[UnderlyingSymbol].IVdS(Symbol) ?? 0);
+            SurfaceIVdS = ToDecimal(_algo.IVSurfaceSSVIMid[Equity].IVdS(Symbol) ?? 0);
         }
 
         private void SnapExpired()
@@ -320,8 +310,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             IVAsk0 = HistoricalVolatility;
             IVPrice0 = HistoricalVolatility;
             _ = Greeks;
-            SurfaceIVdSBid = (decimal)HistoricalVolatility;
-            SurfaceIVdSAsk = (decimal)HistoricalVolatility;
+            SurfaceIVdS = (decimal)HistoricalVolatility;
         }
     }
 }

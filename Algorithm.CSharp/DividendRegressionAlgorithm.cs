@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using System;
@@ -49,7 +50,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">TradeBars IDictionary object with your stock data</param>
-        public void OnData(TradeBars data)
+        public override void OnData(Slice data)
         {
             if (Portfolio.Invested) return;
             SetHoldings(_symbol, .5);
@@ -59,7 +60,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// Raises the data event.
         /// </summary>
         /// <param name="data">Data.</param>
-        public void OnData(Dividends data) // update this to Dividends dictionary
+        public override void OnDividends(Dividends data) // update this to Dividends dictionary
         {
             var dividend = data[_symbol];
             var holdings = Portfolio[_symbol];
@@ -115,30 +116,33 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new()
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "2.354%"},
             {"Drawdown", "28.200%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "120462.08"},
             {"Net Profit", "20.462%"},
-            {"Sharpe Ratio", "0.238"},
+            {"Sharpe Ratio", "-0.063"},
+            {"Sortino Ratio", "-0.078"},
             {"Probabilistic Sharpe Ratio", "0.462%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.004"},
+            {"Alpha", "-0.015"},
             {"Beta", "0.521"},
             {"Annual Standard Deviation", "0.083"},
             {"Annual Variance", "0.007"},
             {"Information Ratio", "-0.328"},
             {"Tracking Error", "0.076"},
-            {"Treynor Ratio", "0.038"},
+            {"Treynor Ratio", "-0.01"},
             {"Total Fees", "$2.56"},
             {"Estimated Strategy Capacity", "$24000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.02%"},
-            {"OrderListHash", "e60d1af5917a9a4d7b41197ce665b296"}
+            {"OrderListHash", "efe1c97f2ebdd14ee72b57b1b44a8f7a"}
         };
     }
 }

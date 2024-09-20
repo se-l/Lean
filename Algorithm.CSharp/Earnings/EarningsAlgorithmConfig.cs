@@ -9,6 +9,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public HashSet<string> Ticker { get; set; }
-        public string localhost { get; set; }
+        public string WsHost { get; set; }
+        public int WsPort { get; set; }
+        public Dictionary<string, List<int>> EarningsEntryStartTime { get; set; }
+
     }
 }

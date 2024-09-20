@@ -94,7 +94,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 403;
+        public long DataPoints => 405;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -106,30 +106,33 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "9"},
+            {"Total Orders", "9"},
             {"Average Win", "0.11%"},
             {"Average Loss", "-0.24%"},
             {"Compounding Annual Return", "28.358%"},
             {"Drawdown", "1.200%"},
             {"Expectancy", "-0.267"},
+            {"Start Equity", "100000"},
+            {"End Equity", "102119.68"},
             {"Net Profit", "2.120%"},
-            {"Sharpe Ratio", "3.329"},
+            {"Sharpe Ratio", "3.201"},
+            {"Sortino Ratio", "5.22"},
             {"Probabilistic Sharpe Ratio", "76.344%"},
             {"Loss Rate", "50%"},
             {"Win Rate", "50%"},
             {"Profit-Loss Ratio", "0.47"},
-            {"Alpha", "0.019"},
+            {"Alpha", "0.015"},
             {"Beta", "0.478"},
             {"Annual Standard Deviation", "0.058"},
             {"Annual Variance", "0.003"},
             {"Information Ratio", "-2.771"},
             {"Tracking Error", "0.063"},
-            {"Treynor Ratio", "0.408"},
+            {"Treynor Ratio", "0.392"},
             {"Total Fees", "$16.73"},
             {"Estimated Strategy Capacity", "$7000000.00"},
             {"Lowest Capacity Asset", "IBM R735QTJ8XC9X"},
             {"Portfolio Turnover", "14.45%"},
-            {"OrderListHash", "818346776a934bcaabb2752b31f8b092"}
+            {"OrderListHash", "2ad4096d1a84660aca48ce080141cd23"}
         };
     }
 }

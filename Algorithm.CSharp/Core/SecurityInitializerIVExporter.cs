@@ -66,11 +66,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 _algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, _algo);
                 _algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, _algo);
-                _algo.IVTrades[symbol] = new IVTrade(option, _algo);
+                //_algo.IVTrades[symbol] = new IVTrade(option, _algo);
                 // Window size must capture one day of entries. Second resolution ; 6.5*60*60 = 23400. Then it's reset at eod.
-                _algo.RollingIVBid[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
-                _algo.RollingIVAsk[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
-                _algo.RollingIVTrade[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
+                //_algo.RollingIVBid[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
+                //_algo.RollingIVAsk[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
+                //_algo.RollingIVTrade[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
             }
 
             if (security.Type == SecurityType.Equity)

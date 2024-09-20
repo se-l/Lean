@@ -117,13 +117,14 @@ namespace QuantConnect.Util
                 }
 
                 var result = new Dictionary<SecurityDatabaseKey, MarketHoursDatabase.Entry>(Entries.Count);
-                // we sort by security type so we process non options first
-                foreach (var entry in entries.OrderBy(kvp => kvp.Key.SecurityType.IsOption() ? 1 : 0))
+                // we sort so we process generic entries and non options first
+                foreach (var entry in entries.OrderBy(kvp => kvp.Key.Symbol != null ? 1 : 0).ThenBy(kvp => kvp.Key.SecurityType.IsOption() ? 1 : 0))
                 {
                     try
                     {
+                        result.TryGetValue(entry.Key.CreateCommonKey(), out var marketEntry);
                         var underlyingEntry = GetUnderlyingEntry(entry.Key, result);
-                        result[entry.Key] = entry.Value.Convert(underlyingEntry);
+                        result[entry.Key] = entry.Value.Convert(underlyingEntry, marketEntry);
                     }
                     catch (Exception err)
                     {
@@ -222,7 +223,7 @@ namespace QuantConnect.Util
             /// Holiday date strings
             /// </summary>
             [JsonProperty("holidays")]
-            public List<string> Holidays;
+            public List<string> Holidays = new();
 
             /// <summary>
             /// Early closes by date
@@ -262,7 +263,7 @@ namespace QuantConnect.Util
             /// Converts this json representation to the <see cref="MarketHoursDatabase.Entry"/> type
             /// </summary>
             /// <returns>A new instance of the <see cref="MarketHoursDatabase.Entry"/> class</returns>
-            public MarketHoursDatabase.Entry Convert(MarketHoursDatabase.Entry underlyingEntry)
+            public MarketHoursDatabase.Entry Convert(MarketHoursDatabase.Entry underlyingEntry, MarketHoursDatabase.Entry marketEntry)
             {
                 var hours = new Dictionary<DayOfWeek, LocalMarketHours>
                 {
@@ -295,6 +296,24 @@ namespace QuantConnect.Util
                     }
                 }
 
+                if(marketEntry != null)
+                {
+                    if (marketEntry.ExchangeHours.Holidays.Count > 0)
+                    {
+                        holidayDates.UnionWith(marketEntry.ExchangeHours.Holidays);
+                    }
+
+                    if (marketEntry.ExchangeHours.EarlyCloses.Count > 0 )
+                    {
+                        earlyCloses = MergeLateOpensAndEarlyCloses(marketEntry.ExchangeHours.EarlyCloses, earlyCloses);
+                    }
+
+                    if (marketEntry.ExchangeHours.LateOpens.Count > 0)
+                    {
+                        lateOpens = MergeLateOpensAndEarlyCloses(marketEntry.ExchangeHours.LateOpens, lateOpens);
+                    }
+                }
+
                 var exchangeHours = new SecurityExchangeHours(DateTimeZoneProviders.Tzdb[ExchangeTimeZone], holidayDates, hours, earlyCloses, lateOpens);
                 return new MarketHoursDatabase.Entry(DateTimeZoneProviders.Tzdb[DataTimeZone], exchangeHours);
             }
@@ -310,6 +329,23 @@ namespace QuantConnect.Util
                 {
                     segments = new List<MarketHoursSegment>();
                 }
+            }
+
+            /// <summary>
+            /// Merges the late opens or early closes from the common entry (with wildcards) with the specific entry
+            /// (e.g. Indices-usa-[*] with Indices-usa-VIX).
+            /// The specific entry takes precedence.
+            /// </summary>
+            private static Dictionary<DateTime, TimeSpan> MergeLateOpensAndEarlyCloses(IReadOnlyDictionary<DateTime, TimeSpan> common,
+                IReadOnlyDictionary<DateTime, TimeSpan> specific)
+            {
+                var result = common.ToDictionary();
+                foreach (var (key, value) in specific)
+                {
+                    result[key] = value;
+                }
+
+                return result;
             }
         }
     }

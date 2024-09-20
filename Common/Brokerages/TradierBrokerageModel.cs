@@ -18,6 +18,7 @@ using QuantConnect.Data.Market;
 using QuantConnect.Orders;
 using QuantConnect.Orders.Fees;
 using QuantConnect.Orders.Slippage;
+using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
 
@@ -35,9 +36,6 @@ namespace QuantConnect.Brokerages
             OrderType.StopMarket,
             OrderType.StopLimit
         };
-
-        private static readonly EquityExchange EquityExchange =
-            new EquityExchange(MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, null, SecurityType.Equity));
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DefaultBrokerageModel"/> class
@@ -77,6 +75,37 @@ namespace QuantConnect.Brokerages
             {
                 message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "NotSupported",
                     Messages.TradierBrokerageModel.UnsupportedSecurityType);
+
+                return false;
+            }
+
+            if (order.TimeInForce is not GoodTilCanceledTimeInForce && order.TimeInForce is not DayTimeInForce)
+            {
+                message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "NotSupported",
+                    Messages.TradierBrokerageModel.UnsupportedTimeInForceType);
+
+                return false;
+            }
+
+            if (security.Holdings.Quantity + order.Quantity < 0)
+            {
+                if (order.TimeInForce is GoodTilCanceledTimeInForce)
+                {
+                    message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "ShortOrderIsGtc", Messages.TradierBrokerageModel.ShortOrderIsGtc);
+
+                    return false;
+                }
+                else if (security.Price < 5)
+                {
+                    message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "SellShortOrderLastPriceBelow5", Messages.TradierBrokerageModel.SellShortOrderLastPriceBelow5);
+
+                    return false;
+                }
+            }
+
+            if (order.AbsoluteQuantity < 1 || order.AbsoluteQuantity > 10000000)
+            {
+                message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "IncorrectOrderQuantity", Messages.TradierBrokerageModel.IncorrectOrderQuantity);
 
                 return false;
             }
@@ -127,8 +156,6 @@ namespace QuantConnect.Brokerages
         /// <returns>True if the brokerage would be able to perform the execution, false otherwise</returns>
         public override bool CanExecuteOrder(Security security, Order order)
         {
-            EquityExchange.SetLocalDateTimeFrontier(security.Exchange.LocalTime);
-
             var cache = security.GetLastData();
             if (cache == null)
             {
@@ -136,7 +163,7 @@ namespace QuantConnect.Brokerages
             }
 
             // tradier doesn't support after hours trading
-            if (!EquityExchange.IsOpenDuringBar(cache.Time, cache.EndTime, false))
+            if (!security.Exchange.IsOpenDuringBar(cache.Time, cache.EndTime, false))
             {
                 return false;
             }
@@ -172,16 +199,5 @@ namespace QuantConnect.Brokerages
             // Trading stocks at Tradier Brokerage is free
             return new ConstantFeeModel(0m);
         }
-
-        /// <summary>
-        /// Gets a new slippage model that represents this brokerage's fill slippage behavior
-        /// </summary>
-        /// <param name="security">The security to get a slippage model for</param>
-        /// <returns>The new slippage model for this brokerage</returns>
-        public override ISlippageModel GetSlippageModel(Security security)
-        {
-            return new ConstantSlippageModel(0);
-        }
-
     }
 }

@@ -25,27 +25,75 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       byte[] descriptorData = global::System.Convert.FromBase64String(
           string.Concat(
             "CgxDb21tb24ucHJvdG8SJVF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJw",
-            "LkNvcmUuSU8iKwoHSG9sZGluZxIOCgZzeW1ib2wYASABKAkSEAoIcXVhbnRp",
-            "dHkYAiABKAUiJwoLT3B0aW9uUXVvdGUSCwoDYmlkGAEgASgCEgsKA2FzaxgC",
-            "IAEoAiKrAgoaTWFya2V0RGF0YVNuYXBCeVVuZGVybHlpbmcSCgoCdHMYASAB",
-            "KAkSEgoKdW5kZXJseWluZxgCIAEoCRIYChB1bmRlcmx5aW5nX3ByaWNlGAMg",
-            "ASgCEmoKDW9wdGlvbl9xdW90ZXMYBCADKAsyUy5RdWFudENvbm5lY3QuQWxn",
-            "b3JpdGhtLkNTaGFycC5Db3JlLklPLk1hcmtldERhdGFTbmFwQnlVbmRlcmx5",
-            "aW5nLk9wdGlvblF1b3Rlc0VudHJ5GmcKEU9wdGlvblF1b3Rlc0VudHJ5EgsK",
-            "A2tleRgBIAEoCRJBCgV2YWx1ZRgCIAEoCzIyLlF1YW50Q29ubmVjdC5BbGdv",
-            "cml0aG0uQ1NoYXJwLkNvcmUuSU8uT3B0aW9uUXVvdGU6AjgBQiiqAiVRdWFu",
-            "dENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPYgZwcm90bzM="));
+            "LkNvcmUuSU8idwoHSG9sZGluZxIOCgZzeW1ib2wYASABKAkSEAoIcXVhbnRp",
+            "dHkYAiABKAISSgoNc2VjdXJpdHlfdHlwZRgDIAEoDjIzLlF1YW50Q29ubmVj",
+            "dC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uU2VjdXJpdHlUeXBlIicKC09w",
+            "dGlvblF1b3RlEgsKA2JpZBgBIAEoAhILCgNhc2sYAiABKAIimAEKBVRyYWRl",
+            "EgoKAnRzGAEgASgJEg4KBnN5bWJvbBgCIAEoCRJKCg1zZWN1cml0eV90eXBl",
+            "GAMgASgOMjMuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5J",
+            "Ty5TZWN1cml0eVR5cGUSDQoFcHJpY2UYBCABKAISGAoQcHJpY2VfdW5kZXJs",
+            "eWluZxgFIAEoAiKjAQoFUXVvdGUSCgoCdHMYASABKAkSDgoGc3ltYm9sGAIg",
+            "ASgJEkoKDXNlY3VyaXR5X3R5cGUYAyABKA4yMy5RdWFudENvbm5lY3QuQWxn",
+            "b3JpdGhtLkNTaGFycC5Db3JlLklPLlNlY3VyaXR5VHlwZRILCgNiaWQYBCAB",
+            "KAISCwoDYXNrGAUgASgCEhgKEHByaWNlX3VuZGVybHlpbmcYBiABKAIiogEK",
+            "BlF1b3RlcxIOCgZzeW1ib2wYASABKAkSSgoNc2VjdXJpdHlfdHlwZRgCIAEo",
+            "DjIzLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uU2Vj",
+            "dXJpdHlUeXBlEjwKBnF1b3RlcxgDIAMoCzIsLlF1YW50Q29ubmVjdC5BbGdv",
+            "cml0aG0uQ1NoYXJwLkNvcmUuSU8uUXVvdGUiogEKBlRyYWRlcxIOCgZzeW1i",
+            "b2wYASABKAkSSgoNc2VjdXJpdHlfdHlwZRgCIAEoDjIzLlF1YW50Q29ubmVj",
+            "dC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uU2VjdXJpdHlUeXBlEjwKBnRy",
+            "YWRlcxgDIAMoCzIsLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNv",
+            "cmUuSU8uVHJhZGUivQMKEU1hcmtldERhdGFIaXN0b3J5EgoKAnRzGAEgASgJ",
+            "EhAKCHRzX3N0YXJ0GAIgASgJEg4KBnRzX2VuZBgDIAEoCRISCgp1bmRlcmx5",
+            "aW5nGAQgASgJElQKBnF1b3RlcxgFIAMoCzJELlF1YW50Q29ubmVjdC5BbGdv",
+            "cml0aG0uQ1NoYXJwLkNvcmUuSU8uTWFya2V0RGF0YUhpc3RvcnkuUXVvdGVz",
+            "RW50cnkSVAoGdHJhZGVzGAYgAygLMkQuUXVhbnRDb25uZWN0LkFsZ29yaXRo",
+            "bS5DU2hhcnAuQ29yZS5JTy5NYXJrZXREYXRhSGlzdG9yeS5UcmFkZXNFbnRy",
+            "eRpcCgtRdW90ZXNFbnRyeRILCgNrZXkYASABKAkSPAoFdmFsdWUYAiABKAsy",
+            "LS5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlF1b3Rl",
+            "czoCOAEaXAoLVHJhZGVzRW50cnkSCwoDa2V5GAEgASgJEjwKBXZhbHVlGAIg",
+            "ASgLMi0uUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5U",
+            "cmFkZXM6AjgBIqsCChpNYXJrZXREYXRhU25hcEJ5VW5kZXJseWluZxIKCgJ0",
+            "cxgBIAEoCRISCgp1bmRlcmx5aW5nGAIgASgJEhgKEHVuZGVybHlpbmdfcHJp",
+            "Y2UYAyABKAISagoNb3B0aW9uX3F1b3RlcxgEIAMoCzJTLlF1YW50Q29ubmVj",
+            "dC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uTWFya2V0RGF0YVNuYXBCeVVu",
+            "ZGVybHlpbmcuT3B0aW9uUXVvdGVzRW50cnkaZwoRT3B0aW9uUXVvdGVzRW50",
+            "cnkSCwoDa2V5GAEgASgJEkEKBXZhbHVlGAIgASgLMjIuUXVhbnRDb25uZWN0",
+            "LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5PcHRpb25RdW90ZToCOAEiHgoM",
+            "VmVjdG9yRG91YmxlEg4KBnZhbHVlcxgBIAMoASogCgtPcHRpb25SaWdodBII",
+            "CgRDQUxMEAASBwoDUFVUEAEqJgoMU2VjdXJpdHlUeXBlEgoKBkVRVUlUWRAA",
+            "EgoKBk9QVElPThABQiiqAiVRdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFy",
+            "cC5Db3JlLklPYgZwcm90bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
-          new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Holding), global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser, new[]{ "Symbol", "Quantity" }, null, null, null, null),
+          new pbr::GeneratedClrTypeInfo(new[] {typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType), }, null, new pbr::GeneratedClrTypeInfo[] {
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Holding), global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser, new[]{ "Symbol", "Quantity", "SecurityType" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote), global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuote.Parser, new[]{ "Bid", "Ask" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying), global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying.Parser, new[]{ "Ts", "Underlying", "UnderlyingPrice", "OptionQuotes" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, })
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Trade), global::QuantConnect.Algorithm.CSharp.Core.IO.Trade.Parser, new[]{ "Ts", "Symbol", "SecurityType", "Price", "PriceUnderlying" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Quote), global::QuantConnect.Algorithm.CSharp.Core.IO.Quote.Parser, new[]{ "Ts", "Symbol", "SecurityType", "Bid", "Ask", "PriceUnderlying" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Quotes), global::QuantConnect.Algorithm.CSharp.Core.IO.Quotes.Parser, new[]{ "Symbol", "SecurityType", "Quotes_" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Trades), global::QuantConnect.Algorithm.CSharp.Core.IO.Trades.Parser, new[]{ "Symbol", "SecurityType", "Trades_" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataHistory), global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataHistory.Parser, new[]{ "Ts", "TsStart", "TsEnd", "Underlying", "Quotes", "Trades" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, }),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying), global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying.Parser, new[]{ "Ts", "Underlying", "UnderlyingPrice", "OptionQuotes" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.VectorDouble), global::QuantConnect.Algorithm.CSharp.Core.IO.VectorDouble.Parser, new[]{ "Values" }, null, null, null, null)
           }));
     }
     #endregion
 
   }
+  #region Enums
+  public enum OptionRight {
+    [pbr::OriginalName("CALL")] Call = 0,
+    [pbr::OriginalName("PUT")] Put = 1,
+  }
+
+  public enum SecurityType {
+    [pbr::OriginalName("EQUITY")] Equity = 0,
+    [pbr::OriginalName("OPTION")] Option = 1,
+  }
+
+  #endregion
+
   #region Messages
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class Holding : pb::IMessage<Holding>
@@ -84,6 +132,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     public Holding(Holding other) : this() {
       symbol_ = other.symbol_;
       quantity_ = other.quantity_;
+      securityType_ = other.securityType_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -107,13 +156,25 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     /// <summary>Field number for the "quantity" field.</summary>
     public const int QuantityFieldNumber = 2;
-    private int quantity_;
+    private float quantity_;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public int Quantity {
+    public float Quantity {
       get { return quantity_; }
       set {
         quantity_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "security_type" field.</summary>
+    public const int SecurityTypeFieldNumber = 3;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType securityType_ = global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType SecurityType {
+      get { return securityType_; }
+      set {
+        securityType_ = value;
       }
     }
 
@@ -133,7 +194,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         return true;
       }
       if (Symbol != other.Symbol) return false;
-      if (Quantity != other.Quantity) return false;
+      if (!pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.Equals(Quantity, other.Quantity)) return false;
+      if (SecurityType != other.SecurityType) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -142,7 +204,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     public override int GetHashCode() {
       int hash = 1;
       if (Symbol.Length != 0) hash ^= Symbol.GetHashCode();
-      if (Quantity != 0) hash ^= Quantity.GetHashCode();
+      if (Quantity != 0F) hash ^= pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.GetHashCode(Quantity);
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) hash ^= SecurityType.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -165,9 +228,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(10);
         output.WriteString(Symbol);
       }
-      if (Quantity != 0) {
-        output.WriteRawTag(16);
-        output.WriteInt32(Quantity);
+      if (Quantity != 0F) {
+        output.WriteRawTag(21);
+        output.WriteFloat(Quantity);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(24);
+        output.WriteEnum((int) SecurityType);
       }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
@@ -183,9 +250,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(10);
         output.WriteString(Symbol);
       }
-      if (Quantity != 0) {
-        output.WriteRawTag(16);
-        output.WriteInt32(Quantity);
+      if (Quantity != 0F) {
+        output.WriteRawTag(21);
+        output.WriteFloat(Quantity);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(24);
+        output.WriteEnum((int) SecurityType);
       }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
@@ -200,8 +271,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Symbol.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(Symbol);
       }
-      if (Quantity != 0) {
-        size += 1 + pb::CodedOutputStream.ComputeInt32Size(Quantity);
+      if (Quantity != 0F) {
+        size += 1 + 4;
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) SecurityType);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -218,8 +292,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (other.Symbol.Length != 0) {
         Symbol = other.Symbol;
       }
-      if (other.Quantity != 0) {
+      if (other.Quantity != 0F) {
         Quantity = other.Quantity;
+      }
+      if (other.SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        SecurityType = other.SecurityType;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -240,8 +317,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             Symbol = input.ReadString();
             break;
           }
-          case 16: {
-            Quantity = input.ReadInt32();
+          case 21: {
+            Quantity = input.ReadFloat();
+            break;
+          }
+          case 24: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
             break;
           }
         }
@@ -263,8 +344,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             Symbol = input.ReadString();
             break;
           }
-          case 16: {
-            Quantity = input.ReadInt32();
+          case 21: {
+            Quantity = input.ReadFloat();
+            break;
+          }
+          case 24: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
             break;
           }
         }
@@ -502,6 +587,1578 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
   }
 
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class Trade : pb::IMessage<Trade>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<Trade> _parser = new pb::MessageParser<Trade>(() => new Trade());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<Trade> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[2]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Trade() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Trade(Trade other) : this() {
+      ts_ = other.ts_;
+      symbol_ = other.symbol_;
+      securityType_ = other.securityType_;
+      price_ = other.price_;
+      priceUnderlying_ = other.priceUnderlying_;
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Trade Clone() {
+      return new Trade(this);
+    }
+
+    /// <summary>Field number for the "ts" field.</summary>
+    public const int TsFieldNumber = 1;
+    private string ts_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Ts {
+      get { return ts_; }
+      set {
+        ts_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "symbol" field.</summary>
+    public const int SymbolFieldNumber = 2;
+    private string symbol_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Symbol {
+      get { return symbol_; }
+      set {
+        symbol_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "security_type" field.</summary>
+    public const int SecurityTypeFieldNumber = 3;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType securityType_ = global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType SecurityType {
+      get { return securityType_; }
+      set {
+        securityType_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "price" field.</summary>
+    public const int PriceFieldNumber = 4;
+    private float price_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public float Price {
+      get { return price_; }
+      set {
+        price_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "price_underlying" field.</summary>
+    public const int PriceUnderlyingFieldNumber = 5;
+    private float priceUnderlying_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public float PriceUnderlying {
+      get { return priceUnderlying_; }
+      set {
+        priceUnderlying_ = value;
+      }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as Trade);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(Trade other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (Ts != other.Ts) return false;
+      if (Symbol != other.Symbol) return false;
+      if (SecurityType != other.SecurityType) return false;
+      if (!pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.Equals(Price, other.Price)) return false;
+      if (!pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.Equals(PriceUnderlying, other.PriceUnderlying)) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (Ts.Length != 0) hash ^= Ts.GetHashCode();
+      if (Symbol.Length != 0) hash ^= Symbol.GetHashCode();
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) hash ^= SecurityType.GetHashCode();
+      if (Price != 0F) hash ^= pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.GetHashCode(Price);
+      if (PriceUnderlying != 0F) hash ^= pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.GetHashCode(PriceUnderlying);
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (Ts.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (Symbol.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(24);
+        output.WriteEnum((int) SecurityType);
+      }
+      if (Price != 0F) {
+        output.WriteRawTag(37);
+        output.WriteFloat(Price);
+      }
+      if (PriceUnderlying != 0F) {
+        output.WriteRawTag(45);
+        output.WriteFloat(PriceUnderlying);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (Ts.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (Symbol.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(24);
+        output.WriteEnum((int) SecurityType);
+      }
+      if (Price != 0F) {
+        output.WriteRawTag(37);
+        output.WriteFloat(Price);
+      }
+      if (PriceUnderlying != 0F) {
+        output.WriteRawTag(45);
+        output.WriteFloat(PriceUnderlying);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (Ts.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Ts);
+      }
+      if (Symbol.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) SecurityType);
+      }
+      if (Price != 0F) {
+        size += 1 + 4;
+      }
+      if (PriceUnderlying != 0F) {
+        size += 1 + 4;
+      }
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(Trade other) {
+      if (other == null) {
+        return;
+      }
+      if (other.Ts.Length != 0) {
+        Ts = other.Ts;
+      }
+      if (other.Symbol.Length != 0) {
+        Symbol = other.Symbol;
+      }
+      if (other.SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        SecurityType = other.SecurityType;
+      }
+      if (other.Price != 0F) {
+        Price = other.Price;
+      }
+      if (other.PriceUnderlying != 0F) {
+        PriceUnderlying = other.PriceUnderlying;
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
+            Symbol = input.ReadString();
+            break;
+          }
+          case 24: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
+            break;
+          }
+          case 37: {
+            Price = input.ReadFloat();
+            break;
+          }
+          case 45: {
+            PriceUnderlying = input.ReadFloat();
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
+            Symbol = input.ReadString();
+            break;
+          }
+          case 24: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
+            break;
+          }
+          case 37: {
+            Price = input.ReadFloat();
+            break;
+          }
+          case 45: {
+            PriceUnderlying = input.ReadFloat();
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class Quote : pb::IMessage<Quote>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<Quote> _parser = new pb::MessageParser<Quote>(() => new Quote());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<Quote> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[3]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Quote() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Quote(Quote other) : this() {
+      ts_ = other.ts_;
+      symbol_ = other.symbol_;
+      securityType_ = other.securityType_;
+      bid_ = other.bid_;
+      ask_ = other.ask_;
+      priceUnderlying_ = other.priceUnderlying_;
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Quote Clone() {
+      return new Quote(this);
+    }
+
+    /// <summary>Field number for the "ts" field.</summary>
+    public const int TsFieldNumber = 1;
+    private string ts_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Ts {
+      get { return ts_; }
+      set {
+        ts_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "symbol" field.</summary>
+    public const int SymbolFieldNumber = 2;
+    private string symbol_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Symbol {
+      get { return symbol_; }
+      set {
+        symbol_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "security_type" field.</summary>
+    public const int SecurityTypeFieldNumber = 3;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType securityType_ = global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType SecurityType {
+      get { return securityType_; }
+      set {
+        securityType_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "bid" field.</summary>
+    public const int BidFieldNumber = 4;
+    private float bid_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public float Bid {
+      get { return bid_; }
+      set {
+        bid_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "ask" field.</summary>
+    public const int AskFieldNumber = 5;
+    private float ask_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public float Ask {
+      get { return ask_; }
+      set {
+        ask_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "price_underlying" field.</summary>
+    public const int PriceUnderlyingFieldNumber = 6;
+    private float priceUnderlying_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public float PriceUnderlying {
+      get { return priceUnderlying_; }
+      set {
+        priceUnderlying_ = value;
+      }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as Quote);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(Quote other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (Ts != other.Ts) return false;
+      if (Symbol != other.Symbol) return false;
+      if (SecurityType != other.SecurityType) return false;
+      if (!pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.Equals(Bid, other.Bid)) return false;
+      if (!pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.Equals(Ask, other.Ask)) return false;
+      if (!pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.Equals(PriceUnderlying, other.PriceUnderlying)) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (Ts.Length != 0) hash ^= Ts.GetHashCode();
+      if (Symbol.Length != 0) hash ^= Symbol.GetHashCode();
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) hash ^= SecurityType.GetHashCode();
+      if (Bid != 0F) hash ^= pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.GetHashCode(Bid);
+      if (Ask != 0F) hash ^= pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.GetHashCode(Ask);
+      if (PriceUnderlying != 0F) hash ^= pbc::ProtobufEqualityComparers.BitwiseSingleEqualityComparer.GetHashCode(PriceUnderlying);
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (Ts.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (Symbol.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(24);
+        output.WriteEnum((int) SecurityType);
+      }
+      if (Bid != 0F) {
+        output.WriteRawTag(37);
+        output.WriteFloat(Bid);
+      }
+      if (Ask != 0F) {
+        output.WriteRawTag(45);
+        output.WriteFloat(Ask);
+      }
+      if (PriceUnderlying != 0F) {
+        output.WriteRawTag(53);
+        output.WriteFloat(PriceUnderlying);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (Ts.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (Symbol.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(24);
+        output.WriteEnum((int) SecurityType);
+      }
+      if (Bid != 0F) {
+        output.WriteRawTag(37);
+        output.WriteFloat(Bid);
+      }
+      if (Ask != 0F) {
+        output.WriteRawTag(45);
+        output.WriteFloat(Ask);
+      }
+      if (PriceUnderlying != 0F) {
+        output.WriteRawTag(53);
+        output.WriteFloat(PriceUnderlying);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (Ts.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Ts);
+      }
+      if (Symbol.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) SecurityType);
+      }
+      if (Bid != 0F) {
+        size += 1 + 4;
+      }
+      if (Ask != 0F) {
+        size += 1 + 4;
+      }
+      if (PriceUnderlying != 0F) {
+        size += 1 + 4;
+      }
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(Quote other) {
+      if (other == null) {
+        return;
+      }
+      if (other.Ts.Length != 0) {
+        Ts = other.Ts;
+      }
+      if (other.Symbol.Length != 0) {
+        Symbol = other.Symbol;
+      }
+      if (other.SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        SecurityType = other.SecurityType;
+      }
+      if (other.Bid != 0F) {
+        Bid = other.Bid;
+      }
+      if (other.Ask != 0F) {
+        Ask = other.Ask;
+      }
+      if (other.PriceUnderlying != 0F) {
+        PriceUnderlying = other.PriceUnderlying;
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
+            Symbol = input.ReadString();
+            break;
+          }
+          case 24: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
+            break;
+          }
+          case 37: {
+            Bid = input.ReadFloat();
+            break;
+          }
+          case 45: {
+            Ask = input.ReadFloat();
+            break;
+          }
+          case 53: {
+            PriceUnderlying = input.ReadFloat();
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
+            Symbol = input.ReadString();
+            break;
+          }
+          case 24: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
+            break;
+          }
+          case 37: {
+            Bid = input.ReadFloat();
+            break;
+          }
+          case 45: {
+            Ask = input.ReadFloat();
+            break;
+          }
+          case 53: {
+            PriceUnderlying = input.ReadFloat();
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class Quotes : pb::IMessage<Quotes>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<Quotes> _parser = new pb::MessageParser<Quotes>(() => new Quotes());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<Quotes> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[4]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Quotes() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Quotes(Quotes other) : this() {
+      symbol_ = other.symbol_;
+      securityType_ = other.securityType_;
+      quotes_ = other.quotes_.Clone();
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Quotes Clone() {
+      return new Quotes(this);
+    }
+
+    /// <summary>Field number for the "symbol" field.</summary>
+    public const int SymbolFieldNumber = 1;
+    private string symbol_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Symbol {
+      get { return symbol_; }
+      set {
+        symbol_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "security_type" field.</summary>
+    public const int SecurityTypeFieldNumber = 2;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType securityType_ = global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType SecurityType {
+      get { return securityType_; }
+      set {
+        securityType_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "quotes" field.</summary>
+    public const int Quotes_FieldNumber = 3;
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.Quote> _repeated_quotes_codec
+        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.Quote.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Quote> quotes_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Quote>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Quote> Quotes_ {
+      get { return quotes_; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as Quotes);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(Quotes other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (Symbol != other.Symbol) return false;
+      if (SecurityType != other.SecurityType) return false;
+      if(!quotes_.Equals(other.quotes_)) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (Symbol.Length != 0) hash ^= Symbol.GetHashCode();
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) hash ^= SecurityType.GetHashCode();
+      hash ^= quotes_.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (Symbol.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(16);
+        output.WriteEnum((int) SecurityType);
+      }
+      quotes_.WriteTo(output, _repeated_quotes_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (Symbol.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(16);
+        output.WriteEnum((int) SecurityType);
+      }
+      quotes_.WriteTo(ref output, _repeated_quotes_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (Symbol.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) SecurityType);
+      }
+      size += quotes_.CalculateSize(_repeated_quotes_codec);
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(Quotes other) {
+      if (other == null) {
+        return;
+      }
+      if (other.Symbol.Length != 0) {
+        Symbol = other.Symbol;
+      }
+      if (other.SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        SecurityType = other.SecurityType;
+      }
+      quotes_.Add(other.quotes_);
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            Symbol = input.ReadString();
+            break;
+          }
+          case 16: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
+            break;
+          }
+          case 26: {
+            quotes_.AddEntriesFrom(input, _repeated_quotes_codec);
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            Symbol = input.ReadString();
+            break;
+          }
+          case 16: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
+            break;
+          }
+          case 26: {
+            quotes_.AddEntriesFrom(ref input, _repeated_quotes_codec);
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class Trades : pb::IMessage<Trades>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<Trades> _parser = new pb::MessageParser<Trades>(() => new Trades());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<Trades> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[5]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Trades() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Trades(Trades other) : this() {
+      symbol_ = other.symbol_;
+      securityType_ = other.securityType_;
+      trades_ = other.trades_.Clone();
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public Trades Clone() {
+      return new Trades(this);
+    }
+
+    /// <summary>Field number for the "symbol" field.</summary>
+    public const int SymbolFieldNumber = 1;
+    private string symbol_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Symbol {
+      get { return symbol_; }
+      set {
+        symbol_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "security_type" field.</summary>
+    public const int SecurityTypeFieldNumber = 2;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType securityType_ = global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType SecurityType {
+      get { return securityType_; }
+      set {
+        securityType_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "trades" field.</summary>
+    public const int Trades_FieldNumber = 3;
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.Trade> _repeated_trades_codec
+        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.Trade.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Trade> trades_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Trade>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Trade> Trades_ {
+      get { return trades_; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as Trades);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(Trades other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (Symbol != other.Symbol) return false;
+      if (SecurityType != other.SecurityType) return false;
+      if(!trades_.Equals(other.trades_)) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (Symbol.Length != 0) hash ^= Symbol.GetHashCode();
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) hash ^= SecurityType.GetHashCode();
+      hash ^= trades_.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (Symbol.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(16);
+        output.WriteEnum((int) SecurityType);
+      }
+      trades_.WriteTo(output, _repeated_trades_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (Symbol.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        output.WriteRawTag(16);
+        output.WriteEnum((int) SecurityType);
+      }
+      trades_.WriteTo(ref output, _repeated_trades_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (Symbol.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Symbol);
+      }
+      if (SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) SecurityType);
+      }
+      size += trades_.CalculateSize(_repeated_trades_codec);
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(Trades other) {
+      if (other == null) {
+        return;
+      }
+      if (other.Symbol.Length != 0) {
+        Symbol = other.Symbol;
+      }
+      if (other.SecurityType != global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType.Equity) {
+        SecurityType = other.SecurityType;
+      }
+      trades_.Add(other.trades_);
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            Symbol = input.ReadString();
+            break;
+          }
+          case 16: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
+            break;
+          }
+          case 26: {
+            trades_.AddEntriesFrom(input, _repeated_trades_codec);
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            Symbol = input.ReadString();
+            break;
+          }
+          case 16: {
+            SecurityType = (global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityType) input.ReadEnum();
+            break;
+          }
+          case 26: {
+            trades_.AddEntriesFrom(ref input, _repeated_trades_codec);
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class MarketDataHistory : pb::IMessage<MarketDataHistory>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<MarketDataHistory> _parser = new pb::MessageParser<MarketDataHistory>(() => new MarketDataHistory());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<MarketDataHistory> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[6]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public MarketDataHistory() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public MarketDataHistory(MarketDataHistory other) : this() {
+      ts_ = other.ts_;
+      tsStart_ = other.tsStart_;
+      tsEnd_ = other.tsEnd_;
+      underlying_ = other.underlying_;
+      quotes_ = other.quotes_.Clone();
+      trades_ = other.trades_.Clone();
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public MarketDataHistory Clone() {
+      return new MarketDataHistory(this);
+    }
+
+    /// <summary>Field number for the "ts" field.</summary>
+    public const int TsFieldNumber = 1;
+    private string ts_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Ts {
+      get { return ts_; }
+      set {
+        ts_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "ts_start" field.</summary>
+    public const int TsStartFieldNumber = 2;
+    private string tsStart_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string TsStart {
+      get { return tsStart_; }
+      set {
+        tsStart_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "ts_end" field.</summary>
+    public const int TsEndFieldNumber = 3;
+    private string tsEnd_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string TsEnd {
+      get { return tsEnd_; }
+      set {
+        tsEnd_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "underlying" field.</summary>
+    public const int UnderlyingFieldNumber = 4;
+    private string underlying_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Underlying {
+      get { return underlying_; }
+      set {
+        underlying_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "quotes" field.</summary>
+    public const int QuotesFieldNumber = 5;
+    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Quotes>.Codec _map_quotes_codec
+        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Quotes>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.Quotes.Parser), 42);
+    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Quotes> quotes_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Quotes>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Quotes> Quotes {
+      get { return quotes_; }
+    }
+
+    /// <summary>Field number for the "trades" field.</summary>
+    public const int TradesFieldNumber = 6;
+    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Trades>.Codec _map_trades_codec
+        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Trades>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.Trades.Parser), 50);
+    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Trades> trades_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Trades>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Trades> Trades {
+      get { return trades_; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as MarketDataHistory);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(MarketDataHistory other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (Ts != other.Ts) return false;
+      if (TsStart != other.TsStart) return false;
+      if (TsEnd != other.TsEnd) return false;
+      if (Underlying != other.Underlying) return false;
+      if (!Quotes.Equals(other.Quotes)) return false;
+      if (!Trades.Equals(other.Trades)) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (Ts.Length != 0) hash ^= Ts.GetHashCode();
+      if (TsStart.Length != 0) hash ^= TsStart.GetHashCode();
+      if (TsEnd.Length != 0) hash ^= TsEnd.GetHashCode();
+      if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
+      hash ^= Quotes.GetHashCode();
+      hash ^= Trades.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (Ts.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (TsStart.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(TsStart);
+      }
+      if (TsEnd.Length != 0) {
+        output.WriteRawTag(26);
+        output.WriteString(TsEnd);
+      }
+      if (Underlying.Length != 0) {
+        output.WriteRawTag(34);
+        output.WriteString(Underlying);
+      }
+      quotes_.WriteTo(output, _map_quotes_codec);
+      trades_.WriteTo(output, _map_trades_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (Ts.Length != 0) {
+        output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (TsStart.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(TsStart);
+      }
+      if (TsEnd.Length != 0) {
+        output.WriteRawTag(26);
+        output.WriteString(TsEnd);
+      }
+      if (Underlying.Length != 0) {
+        output.WriteRawTag(34);
+        output.WriteString(Underlying);
+      }
+      quotes_.WriteTo(ref output, _map_quotes_codec);
+      trades_.WriteTo(ref output, _map_trades_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (Ts.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Ts);
+      }
+      if (TsStart.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(TsStart);
+      }
+      if (TsEnd.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(TsEnd);
+      }
+      if (Underlying.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Underlying);
+      }
+      size += quotes_.CalculateSize(_map_quotes_codec);
+      size += trades_.CalculateSize(_map_trades_codec);
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(MarketDataHistory other) {
+      if (other == null) {
+        return;
+      }
+      if (other.Ts.Length != 0) {
+        Ts = other.Ts;
+      }
+      if (other.TsStart.Length != 0) {
+        TsStart = other.TsStart;
+      }
+      if (other.TsEnd.Length != 0) {
+        TsEnd = other.TsEnd;
+      }
+      if (other.Underlying.Length != 0) {
+        Underlying = other.Underlying;
+      }
+      quotes_.MergeFrom(other.quotes_);
+      trades_.MergeFrom(other.trades_);
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
+            TsStart = input.ReadString();
+            break;
+          }
+          case 26: {
+            TsEnd = input.ReadString();
+            break;
+          }
+          case 34: {
+            Underlying = input.ReadString();
+            break;
+          }
+          case 42: {
+            quotes_.AddEntriesFrom(input, _map_quotes_codec);
+            break;
+          }
+          case 50: {
+            trades_.AddEntriesFrom(input, _map_trades_codec);
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
+            TsStart = input.ReadString();
+            break;
+          }
+          case 26: {
+            TsEnd = input.ReadString();
+            break;
+          }
+          case 34: {
+            Underlying = input.ReadString();
+            break;
+          }
+          case 42: {
+            quotes_.AddEntriesFrom(ref input, _map_quotes_codec);
+            break;
+          }
+          case 50: {
+            trades_.AddEntriesFrom(ref input, _map_trades_codec);
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class MarketDataSnapByUnderlying : pb::IMessage<MarketDataSnapByUnderlying>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -516,7 +2173,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[2]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[7]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -782,6 +2439,187 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           }
           case 34: {
             optionQuotes_.AddEntriesFrom(ref input, _map_optionQuotes_codec);
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class VectorDouble : pb::IMessage<VectorDouble>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<VectorDouble> _parser = new pb::MessageParser<VectorDouble>(() => new VectorDouble());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<VectorDouble> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[8]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public VectorDouble() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public VectorDouble(VectorDouble other) : this() {
+      values_ = other.values_.Clone();
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public VectorDouble Clone() {
+      return new VectorDouble(this);
+    }
+
+    /// <summary>Field number for the "values" field.</summary>
+    public const int ValuesFieldNumber = 1;
+    private static readonly pb::FieldCodec<double> _repeated_values_codec
+        = pb::FieldCodec.ForDouble(10);
+    private readonly pbc::RepeatedField<double> values_ = new pbc::RepeatedField<double>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<double> Values {
+      get { return values_; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as VectorDouble);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(VectorDouble other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if(!values_.Equals(other.values_)) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      hash ^= values_.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      values_.WriteTo(output, _repeated_values_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      values_.WriteTo(ref output, _repeated_values_codec);
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      size += values_.CalculateSize(_repeated_values_codec);
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(VectorDouble other) {
+      if (other == null) {
+        return;
+      }
+      values_.Add(other.values_);
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 10:
+          case 9: {
+            values_.AddEntriesFrom(input, _repeated_values_codec);
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+        switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 10:
+          case 9: {
+            values_.AddEntriesFrom(ref input, _repeated_values_codec);
             break;
           }
         }

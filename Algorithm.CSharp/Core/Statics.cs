@@ -10,14 +10,24 @@ using System.Text;
 using System.IO;
 using QuantConnect.Securities;
 using Accord.Statistics;
+using QuantConnect.Algorithm.CSharp.Core.IO;
+using MathNet.Numerics.LinearAlgebra;
+using Accord.Math;
+using QuantConnect.Algorithm.CSharp.Core.Indicators;
+using System.Globalization;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
     public static class Statics
     {
-        public const string CfgDefault = "_";
+        public const string CfgDefault = AlgoConfig.CfgDefault;
         public const string VolatilityBar = "VolatilityBar";
-
+        public const string DtFmtISO = "yyyy-MM-dd";
+        public const string DatetTmeFmtProto = "yyyy-MM-ddTHH:mm:ss";
+        public static DateTime Trim(this DateTime date, long ticks)
+        {
+            return new DateTime(date.Ticks - (date.Ticks % ticks), date.Kind);
+        }
         public enum Regime
         {
             BuyEvent,
@@ -29,9 +39,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             FwdRealizedVolatility,
             HistoricalVolatility,
             ImpliedVolatility,
-            Zakamulin,
-            ImpliedVolatilityAtm,
-            ImpliedVolatilityEWMA,
+            ImpliedVolatilitySSVI,
         }
 
         public static Dictionary<int, HedgingMode> HedgingModeMap { get; } = new()
@@ -39,9 +47,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             { 0, HedgingMode.FwdRealizedVolatility },
             { 1, HedgingMode.HistoricalVolatility },
             { 2, HedgingMode.ImpliedVolatility },
-            { 3, HedgingMode.Zakamulin },
-            { 4, HedgingMode.ImpliedVolatilityAtm },
-            { 5, HedgingMode.ImpliedVolatilityEWMA },
+            { 3, HedgingMode.ImpliedVolatilitySSVI },
         };
 
         public static HashSet<Type> PrimitiveTypes = new()
@@ -157,11 +163,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Delta, // Unit free sensitivity
             DeltaTotal,
             DeltaImpliedTotal,
-            DeltaImpliedAtmTotal,
-            DeltaImpliedEWMATotal,
+            DeltaImpliedSSVITotal,
 
             Delta100BpUSDTotal,
-            DeltaImplied100BpUSDTotal,
             Delta500BpUSDTotal,           
             
             EquityDeltaTotal,
@@ -170,11 +174,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             Gamma,
             GammaTotal,
-            GammaImpliedTotal,
             Gamma100BpUSDTotal,
-            GammaImplied100BpUSDTotal,
             Gamma500BpUSDTotal,
-            GammaImplied500BpUSDTotal,
             Speed,  // DGammaDSpotUnderlying
 
             ThetaTotal,
@@ -194,11 +195,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             DeltaIVdS100BpUSDTotal,
 
             BsmIVdSTotal,
-
-            // Bands
-            ZMOffset,
-            BandZMLower,
-            BandZMUpper,
 
             Events,
             Absolute,
@@ -376,9 +372,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 SecurityType.Option => symbol.ID.Underlying.Symbol,
                 SecurityType.Equity => symbol,
+                _ => throw new NotImplementedException(),  // this is throwing
+            };
+        }
+
+        public static Core.IO.SecurityType SecurityType2SecurityTypePb(SecurityType securityType)
+        {
+            return securityType switch
+            {
+                SecurityType.Equity => Core.IO.SecurityType.Equity,
+                SecurityType.Option => Core.IO.SecurityType.Option,
                 _ => throw new NotImplementedException(),
             };
         }
+
         public static string ValueFromPropSequence<T>(T obj, string[] propSequence)
         {
             object val = null;
@@ -581,6 +588,37 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public static QuantLib.Date DateQl(DateTime date)
         {
             return new QuantLib.Date(date.Day, (QuantLib.Month)date.Month, date.Year);
+        }
+
+        public static double ToTenor(DateTime date, DateTime calcDate)
+        {
+            return (double)((date - calcDate).Days + 1) / 365;
+        }
+        public static SSVIParams[] IVSSSVIParamsToPb(Symbol underlying, Dictionary<(DateTime, OptionRight), SSVIParamsRecord> input)
+        {
+            List<SSVIParams> ssviParams = new();
+            foreach (var p in input)
+            {
+                SSVIParams p_pb = new()
+                {
+                    Underlying = underlying,
+                    Right = p.Key.Item2 == OptionRight.Call ? Core.IO.OptionRight.Call : Core.IO.OptionRight.Put,
+                    TenorDt = p.Key.Item1.ToString(DtFmtISO, CultureInfo.InvariantCulture),
+                    ModelParams = new SSVIModelParams() { Theta = p.Value.Theta, Rho = p.Value.Rho, Psi = p.Value.Psi },
+                };
+                ssviParams.Add(p_pb);
+            }
+            return ssviParams.ToArray();
+        }
+
+        public static OptionRight RightPb2Right(IO.OptionRight right)
+        {
+            return right switch
+            {
+                Core.IO.OptionRight.Call => OptionRight.Call,
+                Core.IO.OptionRight.Put => OptionRight.Put,
+                _ => throw new NotImplementedException(),
+            };
         }
     }
 }

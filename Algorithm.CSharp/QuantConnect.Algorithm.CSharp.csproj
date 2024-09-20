@@ -35,15 +35,15 @@
     <DebugType>portable</DebugType>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.26.1" />
-    <PackageReference Include="QuantConnect.pythonnet" Version="2.0.18" />
+    <PackageReference Include="Google.Protobuf" Version="3.27.1" />
+    <PackageReference Include="QuantConnect.pythonnet" Version="2.0.38" />
     <PackageReference Include="Accord" Version="3.6.0" />
     <PackageReference Include="Accord.Fuzzy" Version="3.6.0" />
     <PackageReference Include="Accord.MachineLearning" Version="3.6.0" />
     <PackageReference Include="Accord.Math" Version="3.6.0" />
     <PackageReference Include="Accord.Statistics" Version="3.6.0" />
     <PackageReference Include="DynamicInterop" Version="0.9.1" />
-    <PackageReference Include="MathNet.Numerics" Version="4.15.0" />
+    <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
     <PackageReference Include="NodaTime" Version="3.0.5" />
     <PackageReference Include="QuantLib" Version="1.33.0" />
@@ -71,5 +71,8 @@
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestTargetPortfolios.proto&quot;" />
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\Websocket.proto&quot;" />
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\StressTestDs.proto&quot;" />
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\Command.proto&quot;" />
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestKalmanInit.proto&quot;" />
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestSSVICalibration.proto&quot;" />
   </Target>
 </Project>

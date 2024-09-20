@@ -32,21 +32,44 @@ namespace QuantConnect.Securities
         // Fields used in relative strikes filter
         private List<decimal> _uniqueStrikes;
         private bool _refreshUniqueStrikes;
+        private DateTime _lastExchangeDate;
+        private readonly decimal _underlyingScaleFactor = 1;
 
         /// <summary>
-        /// Constructs OptionFilterUniverse
+        /// The underlying price data
         /// </summary>
-        public OptionFilterUniverse()
+        protected BaseData UnderlyingInternal { get; set; }
+
+        /// <summary>
+        /// The underlying price data
+        /// </summary>
+        public BaseData Underlying
         {
+            get
+            {
+                return UnderlyingInternal;
+            }
         }
 
         /// <summary>
         /// Constructs OptionFilterUniverse
         /// </summary>
-        public OptionFilterUniverse(IEnumerable<Symbol> allSymbols, BaseData underlying)
-            : base(allSymbols, underlying)
+        /// <param name="option">The canonical option chain security</param>
+        public OptionFilterUniverse(Option.Option option)
         {
+            _underlyingScaleFactor = option.SymbolProperties.StrikeMultiplier;
+        }
+
+        /// <summary>
+        /// Constructs OptionFilterUniverse
+        /// </summary>
+        /// <remarks>Used for testing only</remarks>
+        public OptionFilterUniverse(IEnumerable<Symbol> allSymbols, BaseData underlying, decimal underlyingScaleFactor = 1)
+            : base(allSymbols, underlying.EndTime)
+        {
+            UnderlyingInternal = underlying;
             _refreshUniqueStrikes = true;
+            _underlyingScaleFactor = underlyingScaleFactor;
         }
 
         /// <summary>
@@ -54,11 +77,14 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <param name="allSymbols">All the options contract symbols</param>
         /// <param name="underlying">The current underlying last data point</param>
-        /// <param name="exchangeDateChange">True if the exchange data has chanced since the last call or construction</param>
-        public void Refresh(IEnumerable<Symbol> allSymbols, BaseData underlying, bool exchangeDateChange = true)
+        /// <param name="localTime">The current local time</param>
+        public void Refresh(IEnumerable<Symbol> allSymbols, BaseData underlying, DateTime localTime)
         {
-            base.Refresh(allSymbols, underlying);
-            _refreshUniqueStrikes = exchangeDateChange;
+            base.Refresh(allSymbols, localTime);
+
+            UnderlyingInternal = underlying;
+            _refreshUniqueStrikes = _lastExchangeDate != localTime.Date;
+            _lastExchangeDate = localTime.Date;
         }
 
         /// <summary>
@@ -93,7 +119,7 @@ namespace QuantConnect.Securities
 
             if (_refreshUniqueStrikes || _uniqueStrikes == null)
             {
-                // each day we need to recompute the unique strikes list
+                // Each day we need to recompute the unique strikes list.
                 _uniqueStrikes = AllSymbols.Select(x => x.ID.StrikePrice)
                     .Distinct()
                     .OrderBy(strikePrice => strikePrice)
@@ -101,12 +127,14 @@ namespace QuantConnect.Securities
                 _refreshUniqueStrikes = false;
             }
 
-            // new universe is dynamic
-            IsDynamicInternal = true;
-
             // find the current price in the list of strikes
+            // When computing the strike prices we need to take into account
+            // that some option's strike prices are based on a fraction of
+            // the underlying. Thus we need to scale the underlying internal
+            // price so that we can find it among the strike prices
+            // using BinarySearch() method(as it is used below)
             var exactPriceFound = true;
-            var index = _uniqueStrikes.BinarySearch(UnderlyingInternal.Price);
+            var index = _uniqueStrikes.BinarySearch(UnderlyingInternal.Price / _underlyingScaleFactor);
 
             // Return value of BinarySearch (from MSDN):
             // The zero-based index of item in the sorted List<T>, if item is found;
@@ -212,7 +240,6 @@ namespace QuantConnect.Securities
         public static OptionFilterUniverse Where(this OptionFilterUniverse universe, Func<Symbol, bool> predicate)
         {
             universe.AllSymbols = universe.AllSymbols.Where(predicate).ToList();
-            universe.IsDynamicInternal = true;
             return universe;
         }
 
@@ -225,7 +252,6 @@ namespace QuantConnect.Securities
         public static OptionFilterUniverse Select(this OptionFilterUniverse universe, Func<Symbol, Symbol> mapFunc)
         {
             universe.AllSymbols = universe.AllSymbols.Select(mapFunc).ToList();
-            universe.IsDynamicInternal = true;
             return universe;
         }
 
@@ -238,7 +264,6 @@ namespace QuantConnect.Securities
         public static OptionFilterUniverse SelectMany(this OptionFilterUniverse universe, Func<Symbol, IEnumerable<Symbol>> mapFunc)
         {
             universe.AllSymbols = universe.AllSymbols.SelectMany(mapFunc).ToList();
-            universe.IsDynamicInternal = true;
             return universe;
         }
 
@@ -251,7 +276,6 @@ namespace QuantConnect.Securities
         public static OptionFilterUniverse WhereContains(this OptionFilterUniverse universe, List<Symbol> filterList)
         {
             universe.AllSymbols = universe.AllSymbols.Where(filterList.Contains).ToList();
-            universe.IsDynamicInternal = true;
             return universe;
         }
     }

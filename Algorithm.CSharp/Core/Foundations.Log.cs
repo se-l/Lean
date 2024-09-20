@@ -4,6 +4,7 @@ using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
+using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Option;
 using System;
 using System.Collections.Generic;
@@ -113,6 +114,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             string order_direction_nm = e.Direction.ToString();
             string security_type_nm = security.Type.ToString();
             Symbol underlying = e.Symbol.SecurityType == SecurityType.Option ? ((Option)Securities[e.Symbol]).Underlying.Symbol : e.Symbol;
+            Equity equity = (Equity)Securities[underlying];
             string symbol = e.Symbol.ToString();
             Order order = Transactions.GetOrderById(e.OrderId);
 
@@ -138,8 +140,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "IVPrice", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(e.Status == OrderStatus.Filled ? e.FillPrice : e.LimitPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
                 { "IVBid", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(Securities[e.Symbol].BidPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
                 { "IVAsk", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(Securities[e.Symbol].AskPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
-                { "IVBidEWMA", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeBid[underlying].IV(symbol).ToString() : "" },
-                { "IVAskEWMA", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceRelativeStrikeAsk[underlying].IV(symbol).ToString() : "" },
+                { "IVMidSSVI", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceSSVIMid[equity].IV((Option)Securities[symbol]).ToString() : "" },
+                //{ "IVBidSSVI", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceSSVIBid[equity].IV((Option)Securities[symbol]).ToString() : "" },
+                //{ "IVAskSSVI", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceSSVIAsk[equity].IV((Option)Securities[symbol]).ToString() : "" },
             });
             Log(tag);
 
@@ -163,7 +166,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 { "Symbol", $"{_sym}" },
                 { "PriceUnderlying", $"{MidPrice(Underlying(_sym))}" },
-                { "ATM IV", $"{AtmIV(Underlying(_sym))}" },
             };
                 var d2 = PfRisk.ToDict(_sym).ToDictionary(x => x.Key, x => Math.Round(x.Value, 3).ToString());
                 tagLines.Add(Humanize(d1.Union(d2)));
@@ -202,8 +204,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public string LogPnL(Symbol symbol = null)
         {
-            var posPnlRealized = PositionsRealized.Values.SelectMany(l => l).Sum(p => p.PL);
-            var posPnLUnrealized = Positions.Values.Sum(p => p.PL);
+            var posPnlRealized = PositionsRealized.Values.ToList().SelectMany(l => l).Sum(p => p.PL);
+            var posPnLUnrealized = Positions.Values.ToList().Sum(p => p.PL);
             var d1 = new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },

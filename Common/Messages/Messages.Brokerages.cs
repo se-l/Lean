@@ -22,6 +22,7 @@ using QuantConnect.Orders;
 
 using static QuantConnect.StringExtensions;
 using System.Collections.Generic;
+using QuantConnect.Orders.TimeInForces;
 
 namespace QuantConnect
 {
@@ -63,6 +64,12 @@ namespace QuantConnect
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static string InvalidOrderSize(Securities.Security security, decimal quantity, decimal price)
+            {
+                return Invariant($@"The minimum order size (in quote currency) for {security.Symbol.Value} is {security.SymbolProperties.MinimumOrderSize}. Order size was {quantity * price}.");
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static string UnsupportedOrderType(IBrokerageModel brokerageModel, Orders.Order order, IEnumerable<OrderType> supportedOrderTypes)
             {
                 return Invariant($"The {brokerageModel.GetType().Name} does not support {order.Type} order type. Only supports [{string.Join(',', supportedOrderTypes)}]");
@@ -91,9 +98,9 @@ namespace QuantConnect
         }
 
         /// <summary>
-        /// Provides user-facing messages for the <see cref="Brokerages.AtreyuBrokerageModel"/> class and its consumers or related classes
+        /// Provides user-facing messages for the <see cref="Brokerages.AxosClearingBrokerageModel"/> class and its consumers or related classes
         /// </summary>
-        public static class AtreyuBrokerageModel
+        public static class AxosBrokerageModel
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static string NonIntegerOrderQuantity(Orders.Order order)
@@ -232,12 +239,12 @@ namespace QuantConnect
         }
 
         /// <summary>
-        /// Provides user-facing messages for the <see cref="Brokerages.GDAXBrokerageModel"/> class and its consumers or related classes
+        /// Provides user-facing messages for the <see cref="Brokerages.CoinbaseBrokerageModel"/> class and its consumers or related classes
         /// </summary>
-        public static class GDAXBrokerageModel
+        public static class CoinbaseBrokerageModel
         {
-            public static string UnsupportedAccountType = "The GDAX brokerage does not currently support Margin trading.";
-
+            public static string UnsupportedAccountType = "The Coinbase brokerage does not currently support Margin trading.";
+            
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static string StopMarketOrdersNoLongerSupported(DateTime stopMarketOrderSupportEndDate)
             {
@@ -272,12 +279,20 @@ namespace QuantConnect
         {
             public static string UnsupportedSecurityType = "This model only supports equities and options.";
 
+            public static string UnsupportedTimeInForceType = $"This model only supports orders with the following time in force types: {typeof(DayTimeInForce)} and {typeof(GoodTilCanceledTimeInForce)}";
+
             public static string ExtendedMarketHoursTradingNotSupported =
                 "Tradier does not support extended market hours trading. Your order will be processed at market open.";
 
             public static string OrderQuantityUpdateNotSupported = "Tradier does not support updating order quantities.";
 
             public static string OpenOrdersCancelOnReverseSplitSymbols = "Tradier Brokerage cancels open orders on reverse split symbols";
+
+            public static string ShortOrderIsGtc = "You cannot place short stock orders with GTC, only day orders are allowed";
+
+            public static string SellShortOrderLastPriceBelow5 = "Sell Short order cannot be placed for stock priced below $5";
+
+            public static string IncorrectOrderQuantity = "Quantity should be between 1 and 10,000,000";
         }
 
         /// <summary>

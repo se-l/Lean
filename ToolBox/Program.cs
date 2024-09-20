@@ -16,21 +16,11 @@ using QuantConnect.Configuration;
 using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.ToolBox.AlgoSeekFuturesConverter;
-using QuantConnect.ToolBox.AlphaVantageDownloader;
 using QuantConnect.ToolBox.CoarseUniverseGenerator;
-using QuantConnect.ToolBox.CoinApiDataConverter;
-using QuantConnect.ToolBox.CryptoiqDownloader;
-using QuantConnect.ToolBox.DukascopyDownloader;
-using QuantConnect.ToolBox.IEX;
 using QuantConnect.ToolBox.IQFeedDownloader;
-using QuantConnect.ToolBox.IVolatilityEquityConverter;
 using QuantConnect.ToolBox.KaikoDataConverter;
-using QuantConnect.ToolBox.KrakenDownloader;
-using QuantConnect.ToolBox.NseMarketDataConverter;
 using QuantConnect.ToolBox.Polygon;
-using QuantConnect.ToolBox.QuantQuoteConverter;
 using QuantConnect.ToolBox.RandomDataGenerator;
-using QuantConnect.ToolBox.YahooDownloader;
 using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
@@ -64,7 +54,7 @@ namespace QuantConnect.ToolBox
                 = Composer.Instance.GetExportedValueByTypeName<IMapFileProvider>(Config.Get("map-file-provider", "LocalDiskMapFileProvider"));
             var factorFileProvider
                 = Composer.Instance.GetExportedValueByTypeName<IFactorFileProvider>(Config.Get("factor-file-provider", "LocalDiskFactorFileProvider"));
-            
+
             mapFileProvider.Initialize(dataProvider);
             factorFileProvider.Initialize(mapFileProvider, dataProvider);
 
@@ -81,18 +71,6 @@ namespace QuantConnect.ToolBox
                 var apiKey = optionsObject.ContainsKey("api-key") ? optionsObject["api-key"].ToString() : "";
                 switch (targetApp)
                 {
-                    case "cdl":
-                    case "cryptoiqdownloader":
-                        CryptoiqDownloaderProgram.CryptoiqDownloader(tickers, GetParameterOrExit(optionsObject, "exchange"), fromDate, toDate);
-                        break;
-                    case "ddl":
-                    case "dukascopydownloader":
-                        DukascopyDownloaderProgram.DukascopyDownloader(tickers, resolution, fromDate, toDate);
-                        break;
-                    case "iexdl":
-                    case "iexdownloader":
-                        IEXDownloaderProgram.IEXDownloader(tickers, resolution, fromDate, toDate);
-                        break;
                     case "iqfdl":
                     case "iqfeeddownloader":
                         var securityType = optionsObject.ContainsKey("security-type") ? optionsObject["security-type"].ToString() : "";
@@ -100,19 +78,12 @@ namespace QuantConnect.ToolBox
                         IList<string> resolutions = optionsObject.ContainsKey("resolutions") ? ToolboxArgumentParser.GetResolutions(optionsObject) : new List<string>();
                         IQFeedDownloaderProgram.IQFeedDownloader(tickers, resolutions, fromDate, toDate, tickTypes, securityType);
                         break;
-                    case "kdl":
-                    case "krakendownloader":
-                        KrakenDownloaderProgram.KrakenDownloader(tickers, resolution, fromDate, toDate);
-                        break;
-                    case "qbdl":
-                    case "ydl":
-                    case "yahoodownloader":
-                        YahooDownloaderProgram.YahooDownloader(tickers, resolution, fromDate, toDate);
-                        break;
                     case "pdl":
                     case "polygondownloader":
                         tickTypes = optionsObject.ContainsKey("tick-types") ? ToolboxArgumentParser.GetTickTypes(optionsObject) : new List<string>() { "Trade", "Quote" };
-                        string skipExisting = optionsObject.TryGetValue("skip-existing", out var skipExistingObject) ? skipExistingObject.ToString() : "Y";
+                        bool skipFilled = optionsObject.ContainsKey("skip-filled") ? true : false;
+                        bool skipEmpty = optionsObject.ContainsKey("skip-empty") ? true : false;
+                        DateTime? skipModifiedSince = optionsObject.ContainsKey("skip-modified-since") ? Parse.DateTimeExact((string)optionsObject["skip-modified-since"], "yyyy-MM-dd") : null;
                         int nClients = int.Parse(optionsObject.TryGetValue("n-clients", out var nClientsObject) ? nClientsObject.ToString() : "16");
                         PolygonDownloaderProgram.PolygonDownloader(
                             tickers,
@@ -123,22 +94,14 @@ namespace QuantConnect.ToolBox
                             toDate,
                             apiKey,
                             tickTypes,
-                            skipExisting,
+                            skipFilled,
+                            skipEmpty,
+                            skipModifiedSince,
                             nClients);
                         break;
                     case "ive":
                         int nThreads = int.Parse(optionsObject.TryGetValue("n-clients", out var nThreadsObject) ? nThreadsObject.ToString() : "16");
-                        new VolatilityExporter().Run(tickers, fromDate, toDate, nThreads: nThreads);
-                        break;
-                    case "avdl":
-                    case "alphavantagedownloader":
-                        AlphaVantageDownloaderProgram.AlphaVantageDownloader(
-                            tickers,
-                            resolution,
-                            fromDate,
-                            toDate,
-                            GetParameterOrExit(optionsObject, "api-key")
-                        );
+                        new VolatilityExporter().Run(tickers, fromDate, toDate, nThreads: nThreads, skipExisting: true);
                         break;
 
                     default:
@@ -146,7 +109,7 @@ namespace QuantConnect.ToolBox
                         break;
                 }
             }
-            else     
+            else
             {
                 switch (targetApp)
                 {
@@ -154,38 +117,11 @@ namespace QuantConnect.ToolBox
                     case "algoseekfuturesconverter":
                         AlgoSeekFuturesProgram.AlgoSeekFuturesConverter(GetParameterOrExit(optionsObject, "date"));
                         break;
-                    case "ivec":
-                    case "ivolatilityequityconverter":
-                        IVolatilityEquityConverterProgram.IVolatilityEquityConverter(GetParameterOrExit(optionsObject, "source-dir"),
-                                                                                     GetParameterOrExit(optionsObject, "source-meta-dir"),
-                                                                                     GetParameterOrExit(optionsObject, "destination-dir"),
-                                                                                     GetParameterOrExit(optionsObject, "resolution"));
-                        break;
                     case "kdc":
                     case "kaikodataconverter":
                         KaikoDataConverterProgram.KaikoDataConverter(GetParameterOrExit(optionsObject, "source-dir"),
                                                                      GetParameterOrExit(optionsObject, "date"),
                                                                      GetParameterOrDefault(optionsObject, "exchange", string.Empty));
-                        break;
-                    case "cadc":
-                    case "coinapidataconverter":
-                        CoinApiDataConverterProgram.CoinApiDataProgram(
-                            GetParameterOrExit(optionsObject, "date"),
-                            GetParameterOrExit(optionsObject, "source-dir"),
-                            GetParameterOrExit(optionsObject, "destination-dir"),
-                            GetParameterOrDefault(optionsObject, "market", null),
-                            GetParameterOrDefault(optionsObject, "security-type", null));
-                        break;
-                    case "nmdc":
-                    case "nsemarketdataconverter":
-                        NseMarketDataConverterProgram.NseMarketDataConverter(GetParameterOrExit(optionsObject, "source-dir"),
-                                                                             GetParameterOrExit(optionsObject, "destination-dir"));
-                        break;
-                    case "qqc":
-                    case "quantquoteconverter":
-                        QuantQuoteConverterProgram.QuantQuoteConverter(GetParameterOrExit(optionsObject, "destination-dir"),
-                                                                       GetParameterOrExit(optionsObject, "source-dir"),
-                                                                       GetParameterOrExit(optionsObject, "resolution"));
                         break;
                     case "cug":
                     case "coarseuniversegenerator":
@@ -197,7 +133,7 @@ namespace QuantConnect.ToolBox
                         RandomDataGeneratorProgram.RandomDataGenerator(
                             GetParameterOrExit(optionsObject, "start"),
                             GetParameterOrExit(optionsObject, "end"),
-                            GetParameterOrExit(optionsObject, "symbol-count"),
+                            GetParameterOrDefault(optionsObject, "symbol-count", null),
                             GetParameterOrDefault(optionsObject, "market", null),
                             GetParameterOrDefault(optionsObject, "security-type", "Equity"),
                             GetParameterOrDefault(optionsObject, "resolution", "Minute"),

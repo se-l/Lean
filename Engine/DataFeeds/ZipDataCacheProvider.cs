@@ -24,6 +24,8 @@ using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using QuantConnect.Configuration;
+using static QuantConnect.Util.LeanData;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
@@ -47,10 +49,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <summary>
         /// Constructor that sets the <see cref="IDataProvider"/> used to retrieve data
         /// </summary>
-        public ZipDataCacheProvider(IDataProvider dataProvider, bool isDataEphemeral = true, double cacheTimer = 10)
+        public ZipDataCacheProvider(IDataProvider dataProvider, bool isDataEphemeral = true, double cacheTimer = double.NaN)
         {
             IsDataEphemeral = isDataEphemeral;
-            _cacheSeconds = cacheTimer;
+            _cacheSeconds = double.IsNaN(cacheTimer) ? Config.GetDouble("zip-data-cache-provider", 10) : cacheTimer;
             _dataProvider = dataProvider;
             _cacheCleaner = new Timer(state => CleanCache(), null, TimeSpan.FromSeconds(_cacheSeconds), Timeout.InfiniteTimeSpan);
         }
@@ -121,6 +123,22 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         }
 
         /// <summary>
+        /// Gets the compressed size of the entry in the zip file in bytes
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
+        /// <exception cref="System.ArgumentException"></exception>
+        public long Size(string key)
+        {
+            throw new NotImplementedException();
+        }
+
+        public DateTime? LastModified(string key)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
         /// Store the data in the cache.
         /// </summary>
         /// <param name="key">The source of the data, used as a key to retrieve data in the cache</param>
@@ -176,6 +194,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     }
                 }
             }
+        }
+
+        public void Store(IEnumerable<FileMember> entries, bool overrideEntry = false)
+        {
+            //
         }
 
         /// <summary>

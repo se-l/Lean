@@ -50,12 +50,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             {
                 Metric.DeltaTotal => positions.Sum(p => p.DeltaTotal(volatility)),
                 Metric.DeltaImpliedTotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIV(p.Symbol))),
-                Metric.DeltaImpliedAtmTotal => positions.Sum(p => p.DeltaImpliedTotal(AtmIVEWMA(symbol))),
-                Metric.DeltaImpliedEWMATotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIVEWMA(symbol))),
+                Metric.DeltaImpliedSSVITotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIVSSVI(symbol))),
 
                 Metric.DeltaXBpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(dX ?? 0)),
                 Metric.Delta100BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(100)),
-                Metric.DeltaImplied100BpUSDTotal => positions.Sum(p => p.DeltaImpliedXBpUSDTotal(AtmIVEWMA(symbol), 100)),
                 Metric.Delta500BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(500)),
                 Metric.EquityDeltaTotal => positions.Where(p => p.SecurityType == SecurityType.Equity).Sum(p => p.DeltaTotal()),
                 Metric.EquityDPriceMidTotal => positions.Where(p => p.SecurityType == SecurityType.Equity).Sum(p => p.DPMidTotal),
@@ -63,13 +61,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
                 Metric.Gamma => (decimal)positions.Sum(p => p.Gamma(volatility)),
                 Metric.GammaTotal => positions.Sum(p => p.GammaTotal(volatility)),
-                Metric.GammaImpliedTotal => (decimal)positions.Sum(p => p.GammaImplied(AtmIVEWMA(symbol))),
                 Metric.GammaXBpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(dX ?? 0)),
                 Metric.Gamma100BpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(100)),
-                Metric.GammaImplied100BpUSDTotal => positions.Sum(p => p.GammaImpliedXBpUSDTotal(100, AtmIVEWMA(symbol))),
                 Metric.Gamma500BpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(500)),
                 Metric.SpeedXBpUSDTotal => positions.Sum(p => p.SpeedXBpUSDTotal(dX ?? 0)),
-                Metric.GammaImplied500BpUSDTotal => positions.Sum(p => p.GammaImpliedXBpUSDTotal(500, AtmIVEWMA(symbol))),
                 Metric.Vega => (decimal)positions.Sum(p => p.Vega()),
                 Metric.VegaTotal => positions.Sum(p => p.VegaTotal()),
                 Metric.VegaXBpUSDTotal => positions.Sum(p => p.VegaXBpUSDTotal(dX ?? 0)),
@@ -120,88 +115,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return RiskByUnderlying(symbol, riskMetric, null, positions => positions.Where(p => p.Symbol == symbol && p.Quantity != 0));
         }
-
-        public decimal RiskBandByUnderlying(Symbol symbol, Metric metric, double? volatility = null)
-        {
-            (decimal, decimal) tupZMBands = (0, 0);
-            Symbol underlying = Underlying(symbol);
-            var positions = _algo.Positions.Values.Where(p => p.UnderlyingSymbol == underlying && p.SecurityType == SecurityType.Option && p.Quantity != 0);
-            if (!positions.Any()) return 0;
-
-            if (new HashSet<Metric>() { Metric.BandZMLower, Metric.BandZMUpper }.Contains(metric))
-            {
-                tupZMBands = ZMBands2(positions);
-                //tupZMBands = ZMBands(underlying, positions, volatility);
-            };
-
-            return metric switch
-            {
-                Metric.ZMOffset => ZMOffset(underlying, positions, volatility),
-                Metric.BandZMLower => tupZMBands.Item1,
-                Metric.BandZMUpper => tupZMBands.Item2,
-                _ => throw new NotImplementedException(metric.ToString()),
-            };
-        }
-
-        public double DeltaZM(Position p, double? volatility = null)
-        {
-            return -p.Multiplier * (double)p.Quantity * p.DeltaZM(volatility);
-        }
-
-        public double DeltaZMOffset(Position p, double? volatility = null)
-        {
-            return p.Multiplier * (double)p.Quantity * p.DeltaZMOffset(volatility);
-            //double scaledQuantity = Math.Sign(p.Quantity) * Math.Pow((double)Math.Abs(p.Quantity), 0.5);
-            //return -p.Multiplier * scaledQuantity * p.DeltaZMOffset(volatility);
-        }
-
-        public decimal ZMOffset(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
-        {
-            decimal minOffset = (decimal)(_algo.Cfg.MinZMOffset.TryGetValue(underlying, out double _minOffset) ? _minOffset : _algo.Cfg.MinZMOffset[CfgDefault]);
-            decimal maxOffset = _algo.Cfg.MaxZMOffset.TryGetValue(underlying, out maxOffset) ? maxOffset : _algo.Cfg.MaxZMOffset[CfgDefault];
-            return Math.Min(Math.Max(ToDecimal(Math.Abs(Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum()))), minOffset), maxOffset);
-        }
-
-        public (decimal, decimal) ZMBands2(IEnumerable<Position> positions)
-        {
-            double deltaZM = positions.Select(p => DeltaZM(p)).Sum();
-            double offsetZM = Math.Abs(positions.Select(p => DeltaZMOffset(p)).Sum());
-
-            // Debug why bands can be zero despite options postions open
-            if (deltaZM == 0 && offsetZM == 0)
-            {
-                if (positions.Count() > 0)
-                {
-                    _algo.Log($"ZM Bands are zero for {positions.Count()} positions with quantity {positions.Sum(p => p.Quantity)}. DeltaZMs: {positions.Select(p => DeltaZM(p)).ToList()}");
-                }
-            }
-            return (ToDecimal(deltaZM - offsetZM), ToDecimal(deltaZM + offsetZM));
-        }
-
-        public (decimal, decimal) ZMBands(Symbol underlying, IEnumerable<Position> positions, double? volatility = null)
-        {
-            //  Scaling Zakamulin bands with quanitity**0.5 as they become fairly large with many option positions...
-            //  Better made dependent on proportional transaction costs.
-            var quantity = positions.Sum(p => p.Quantity);
-
-            double deltaZM = positions.Select(p => DeltaZM(p, volatility)).Sum();
-            double offsetZM = Math.Abs(positions.Select(p => DeltaZMOffset(p, volatility)).Sum());
-            // For high quantities, offset goes towards +/- 1, not good. Hence using sqrt(deltaZM) as minimum.
-            double minOffset = (_algo.Cfg.MinZMOffset.TryGetValue(underlying, out minOffset) ? minOffset : _algo.Cfg.MinZMOffset[CfgDefault]);
-            offsetZM = Math.Min(Math.Max(offsetZM, Math.Pow(Math.Abs(deltaZM), 0.5)), minOffset);
-
-            // Debug why bands can be zero despite options postions open
-            if (deltaZM == 0 && offsetZM == 0)
-            {
-                if (positions.Count() > 0)
-                {
-                    _algo.Log($"ZM Bands are zero for {positions.Count()} positions with quantity {quantity}. DeltaZMs: {positions.Select(p => DeltaZM(p, volatility)).ToList()}");
-                }
-            }
-            return (ToDecimal(deltaZM - offsetZM), ToDecimal(deltaZM + offsetZM));
-        }
-        
-        public double AtmIVEWMA(Symbol symbol) => _algo.AtmIVEWMA(symbol);
 
         public decimal RiskIfFilled(Symbol symbol, decimal quantity, Metric riskMetric, double? volatility = null)
         {
@@ -274,8 +187,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 {
                     foreach (var t in tickets.ToList().Where(t => !_algo.orderCanceledOrPending.Contains(t.Status) && t?.CancelRequest == null && t.Quantity * riskDelta > 0))
                     {
-                        string tag = $"{_algo.Time} CancelDeltaIncreasingEquityTickets. Cancelling ticket {t.OrderId} for {t.Symbol} with quantity {t.Quantity} because riskDelta={riskDelta}.";
-                        _algo.Log(tag);
+                        string tag = $"CancelDeltaIncreasingEquityTickets: Cancelling ticket {t.OrderId} for {t.Symbol} with quantity {t.Quantity} because riskDelta={riskDelta}.";
                         _algo.Cancel(t, tag);
                     }
                 }
@@ -283,6 +195,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public bool CheckHandleDeltaRiskExceedingBand(Symbol symbol)
         {
+            if (_algo.IsWarmingUp || !_algo.IsMyMarketOpen(symbol)) return false;
+
             Symbol underlying = Underlying(symbol);
 
             var riskDeltaTotal = _algo.DeltaMV(symbol);
@@ -316,25 +230,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             {
                 string gammaScalpingStatus = _algo.GammaScalpers.TryGetValue(underlying, out GammaScalper gs) ? gs.StatusShort() : "NoGammaScalper";
                 _algo.Log($"{_algo.Time} IsPortfolioDeltExceedingBand: totalDeltaHedgeThreshold={totalDeltaHedgeThreshold}, riskDSTotal={riskDeltaTotal}, MidUnderlying={_algo.MidPrice(underlying)}, gammaTotal={gammaTotal}, {gammaScalpingStatus}");
-                return true;
-            }
-            return false;
-        }
-
-        public bool IsUnderlyingDeltaExceedingBandZM(Symbol symbol)
-        {
-            if (_algo.IsWarmingUp) { return false; }
-
-            Symbol underlying = Underlying(symbol);
-
-            decimal riskDeltaEquityTotal = RiskByUnderlying(symbol, Metric.EquityDeltaTotal);
-            decimal lowerBand = RiskBandByUnderlying(symbol, Metric.BandZMLower);
-            decimal upperBand = RiskBandByUnderlying(symbol, Metric.BandZMUpper);
-            decimal bandSize = Math.Abs(upperBand - lowerBand);
-
-            if ((-riskDeltaEquityTotal > upperBand || -riskDeltaEquityTotal < lowerBand) && bandSize >= 15)
-            {
-                _algo.Log($"{_algo.Time} IsUnderlyingDeltaExceedingBandZM. ZMLowerBand={lowerBand}, ZMUpperBand={upperBand}, -DeltaEquityTotal={-riskDeltaEquityTotal}.");
                 return true;
             }
             return false;

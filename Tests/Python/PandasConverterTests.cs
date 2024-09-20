@@ -33,6 +33,7 @@ using QuantConnect.Tests.ToolBox;
 using QuantConnect.ToolBox;
 using QuantConnect.Util;
 using QuantConnect.Indicators;
+using QuantConnect.Statistics;
 
 namespace QuantConnect.Tests.Python
 {
@@ -1080,7 +1081,7 @@ def Test(dataFrame, symbol):
 import pandas as pd
 def Test(df, other, symbol):
     df = pd.concat([df, other])
-    df = df.groupby(level=0).mean()
+    df = df.groupby(level=0).mean(numeric_only=True)
     data = df.lastprice.loc[{index}]
     if data is 0:
         raise Exception('Data is zero')").GetAttr("Test");
@@ -1152,9 +1153,6 @@ def Test(dataFrame, symbol):
         [TestCase("items", "'SPY'", true)]
         [TestCase("items", "symbol")]
         [TestCase("items", "str(symbol.ID)")]
-        [TestCase("iteritems", "'SPY'", true)]
-        [TestCase("iteritems", "symbol")]
-        [TestCase("iteritems", "str(symbol.ID)")]
         public void BackwardsCompatibilityDataFrame_items(string method, string index, bool cache = false)
         {
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
@@ -1341,6 +1339,85 @@ def Test(dataFrame, symbol):
             }
         }
 
+        [TestCase("*symbols", true)]
+        [TestCase("*[str(symbol.ID) for symbol in symbols]", true)]
+        [TestCase("'AAPL', 'GOOG'", true)]
+        [TestCase("*symbols", false)]
+        [TestCase("*[str(symbol.ID) for symbol in symbols]", false)]
+        [TestCase("'AAPL', 'GOOG'", false)]
+        public void BackwardsCompatibilityDataFrame_loc_slicers(string index, bool cache)
+        {
+            if (cache)
+            {
+                SymbolCache.Set("SPY", Symbols.SPY);
+                SymbolCache.Set("AAPL", Symbols.AAPL);
+                SymbolCache.Set("GOOG", Symbols.GOOG);
+            }
+
+            using (Py.GIL())
+            {
+                dynamic testModule = PyModule.FromString("testModule",
+                    $@"
+def sortDataFrameIndex(dataFrame):
+    dataFrame.sort_index(ascending=True, inplace=True)
+
+def indexDataFrameBySymbols(dataFrame, symbols):
+    # MultiIndex slicing requires the index to be lexsorted
+    sortDataFrameIndex(dataFrame)
+    return dataFrame.loc[(slice({index}), slice(None)), :]
+
+def indexDataFrameBySymbol(dataFrame, symbol):
+    sortDataFrameIndex(dataFrame)
+    return dataFrame.loc[(symbol, slice(None)), :]
+");
+                dynamic indexDataFrameBySymbols = testModule.GetAttr("indexDataFrameBySymbols");
+                dynamic indexDataFrameBySymbol = testModule.GetAttr("indexDataFrameBySymbol");
+
+                var symbols = new List<Symbol> { Symbols.SPY, Symbols.AAPL, Symbols.GOOG };
+                var dataFrame = GetTestDataFrame(symbols);
+
+                var looupkSymbols = new List<Symbol> { Symbols.AAPL, Symbols.GOOG };
+                dynamic indexedDataFrame = null;
+                Assert.DoesNotThrow(() => indexedDataFrame = indexDataFrameBySymbols(dataFrame, looupkSymbols));
+                Assert.IsNotNull(indexedDataFrame);
+
+                dynamic aaplDataFrame = null;
+                Assert.DoesNotThrow(() => aaplDataFrame = indexDataFrameBySymbol(indexedDataFrame, Symbols.AAPL));
+                Assert.IsNotNull(aaplDataFrame);
+
+                dynamic googDataFrame = null;
+                Assert.DoesNotThrow(() => googDataFrame = indexDataFrameBySymbol(indexedDataFrame, Symbols.GOOG));
+                Assert.IsNotNull(googDataFrame);
+
+                // SPY entries should not be present in the indexed data frame since it was not part of the lookup symbols
+                dynamic spyDataFrame = null;
+                Assert.Throws<PythonException>(() => spyDataFrame = indexDataFrameBySymbol(indexedDataFrame, Symbols.SPY));
+                Assert.IsNull(spyDataFrame);
+            }
+        }
+
+        [TestCase("2013-10-07 04:00:00", true)]
+        [TestCase("2013-10-07 04:00:00", false)]
+        public void BackwardsCompatibilityDataFrame_loc_slicers_none(string index, bool cache)
+        {
+            if (cache)
+            {
+                SymbolCache.Set("SPY", Symbols.SPY);
+                SymbolCache.Set("AAPL", Symbols.AAPL);
+            }
+
+            using (Py.GIL())
+            {
+                dynamic test = PyModule.FromString("testModule",
+                    $@"
+def Test(dataFrame):
+    return dataFrame.loc[(slice(None), '{index}'), 'lastprice']").GetAttr("Test");
+
+                var symbols = new List<Symbol> { Symbols.SPY, Symbols.AAPL };
+                Assert.DoesNotThrow(() => test(GetTestDataFrame(symbols)));
+            }
+        }
+
         [TestCase("'SPY'", true)]
         [TestCase("symbol")]
         [TestCase("str(symbol.ID)")]
@@ -1377,7 +1454,7 @@ def Test(dataFrame, symbol):
 import pandas as pd
 def Test(dataFrame, symbol):
     df = dataFrame.reset_index()
-    table = pd.pivot_table(df, index=['symbol', 'time'])
+    table = pd.pivot_table(df, index=['symbol', 'time'], aggfunc='first')
     data = table.lastprice.unstack(0)
     data = data[{index}]
     if data is 0:
@@ -1446,7 +1523,7 @@ def Test(dataFrame, symbol):
 import pandas as pd
 def Test(dataFrame, other, symbol):
     def mean_by_group(dataframe, level):
-        return dataframe.groupby(level=level).mean()
+        return dataframe.groupby(level=level).mean(numeric_only=True)
 
     df = pd.concat([dataFrame, other])
     data = df.pipe(mean_by_group, level=0)
@@ -1643,7 +1720,7 @@ def Test(dataFrame, symbol):
                 dynamic test = PyModule.FromString("testModule",
                     $@"
 def Test(dataFrame, symbol):
-    data = dataFrame.rolling(2).sum()
+    data = dataFrame.rolling(2).sum(numeric_only=True)
     data = data.lastprice.unstack(0)
     data = data[{index}]
     if data is 0:
@@ -1705,7 +1782,7 @@ def Test(dataFrame, symbol):
         [TestCase("'SPY'", true)]
         [TestCase("symbol")]
         [TestCase("str(symbol.ID)")]
-        public void BackwardsCompatibilityDataFrame_slice_shift(string index, bool cache = false)
+        public void BackwardsCompatibilityDataFrame_shift(string index, bool cache = false)
         {
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
 
@@ -1714,7 +1791,7 @@ def Test(dataFrame, symbol):
                 dynamic test = PyModule.FromString("testModule",
                     $@"
 def Test(dataFrame, symbol):
-    data = dataFrame.slice_shift().lastprice.unstack(0)
+    data = dataFrame.shift().lastprice.unstack(0)
     data = data[{index}]
     if data is 0:
         raise Exception('Data is zero')").GetAttr("Test");
@@ -1874,7 +1951,7 @@ def Test(dataFrame, symbol):
         [TestCase("'SPY'", true)]
         [TestCase("symbol")]
         [TestCase("str(symbol.ID)")]
-        public void BackwardsCompatibilityDataFrame_tshift(string index, bool cache = false)
+        public void BackwardsCompatibilityDataFrame_series_shift(string index, bool cache = false)
         {
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
 
@@ -1885,7 +1962,7 @@ def Test(dataFrame, symbol):
 from datetime import timedelta as d
 def Test(dataFrame, symbol):
     series = dataFrame.droplevel(0)
-    data = series.tshift(freq=d(1))").GetAttr("Test");
+    data = series.shift(freq=d(1))").GetAttr("Test");
 
                 Assert.DoesNotThrow(() => test(GetTestDataFrame(Symbols.SPY), Symbols.SPY));
             }
@@ -2591,26 +2668,6 @@ def Test(dataFrame, other, symbol):
         [TestCase("'SPY'", true)]
         [TestCase("symbol")]
         [TestCase("str(symbol.ID)")]
-        public void BackwardsCompatibilitySeries_pop(string index, bool cache = false)
-        {
-            if (cache) SymbolCache.Set("SPY", Symbols.SPY);
-
-            using (Py.GIL())
-            {
-                dynamic test = PyModule.FromString("testModule",
-                    $@"
-def Test(dataFrame, symbol):
-    data = dataFrame.lastprice.pop({index})
-    if data is 0:
-        raise Exception('Data is zero')").GetAttr("Test");
-
-                Assert.DoesNotThrow(() => test(GetTestDataFrame(Symbols.SPY), Symbols.SPY));
-            }
-        }
-
-        [TestCase("'SPY'", true)]
-        [TestCase("symbol")]
-        [TestCase("str(symbol.ID)")]
         public void BackwardsCompatibilitySeries_reindex_like(string index, bool cache = false)
         {
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
@@ -2793,7 +2850,7 @@ def Test(dataFrame, symbol):
         [TestCase("'SPY'", true)]
         [TestCase("symbol")]
         [TestCase("str(symbol.ID)")]
-        public void BackwardsCompatibilitySeries_slice_shift(string index, bool cache = false)
+        public void BackwardsCompatibilitySeries_shift(string index, bool cache = false)
         {
             if (cache) SymbolCache.Set("SPY", Symbols.SPY);
 
@@ -2803,7 +2860,7 @@ def Test(dataFrame, symbol):
                     $@"
 def Test(dataFrame, symbol):
     series = dataFrame.lastprice
-    data = series.slice_shift()
+    data = series.shift()
     data = data.loc[{index}]
     if data is 0:
         raise Exception('Data is zero')").GetAttr("Test");
@@ -2941,26 +2998,6 @@ def Test(dataFrame, symbol):
     data = data[{index}]
     if data is 0:
         raise Exception('Data is zero')").GetAttr("Test");
-
-                Assert.DoesNotThrow(() => test(GetTestDataFrame(Symbols.SPY), Symbols.SPY));
-            }
-        }
-
-        [TestCase("'SPY'", true)]
-        [TestCase("symbol")]
-        [TestCase("str(symbol.ID)")]
-        public void BackwardsCompatibilitySeries_tshift(string index, bool cache = false)
-        {
-            if (cache) SymbolCache.Set("SPY", Symbols.SPY);
-
-            using (Py.GIL())
-            {
-                dynamic test = PyModule.FromString("testModule",
-                    $@"
-from datetime import timedelta as d
-def Test(dataFrame, symbol):
-    series = dataFrame.lastprice.droplevel(0)
-    data = series.tshift(freq=d(1))").GetAttr("Test");
 
                 Assert.DoesNotThrow(() => test(GetTestDataFrame(Symbols.SPY), Symbols.SPY));
             }
@@ -3548,9 +3585,9 @@ def Test3():
                 dynamic test2 = tests.GetAttr("Test2");
                 dynamic test3 = tests.GetAttr("Test3");
 
-                Assert.Throws<ArgumentException>(() => test1());
-                Assert.Throws<ArgumentException>(() => test2());
-                Assert.Throws<ArgumentException>(() => test3());
+                Assert.That(() => test1(), Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<ArgumentException>());
+                Assert.That(() => test2(), Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<ArgumentException>());
+                Assert.That(() => test3(), Throws.InstanceOf<ClrBubbledException>().With.InnerException.InstanceOf<ArgumentException>());
             }
         }
 
@@ -3642,7 +3679,8 @@ def DataFrameIsEmpty():
 
             using (Py.GIL())
             {
-                Assert.AreEqual(expectedDataFrameString, dataFrame.to_string().As<string>());
+                Assert.AreEqual(expectedDataFrameString.Replace("\n", string.Empty).Replace("\r", string.Empty),
+                    dataFrame.to_string().As<string>().Replace("\n", string.Empty).Replace("\r", string.Empty));
             }
         }
 
@@ -3652,7 +3690,7 @@ def DataFrameIsEmpty():
             var parameter = new RegressionTests.AlgorithmStatisticsTestParameters(
                 "PandasDataFrameFromMultipleTickTypeTickHistoryRegressionAlgorithm",
                 new Dictionary<string, string> {
-                    {"Total Trades", "0"},
+                    {PerformanceMetrics.TotalOrders, "0"},
                     {"Average Win", "0%"},
                     {"Average Loss", "0%"},
                     {"Compounding Annual Return", "0%"},
@@ -3837,9 +3875,9 @@ $"                 2013-10-08   NASDAQ        2.0     200.0"
                             time
                         )
                     },
-$"                      askprice  asksize  bidprice  bidsize{Environment.NewLine}" +
-$"symbol    time                                            {Environment.NewLine}" +
-$"BTCUSD XJ 2013-10-08     120.0    150.0     110.0    100.0"
+$"                       askprice  asksize  bidprice  bidsize{Environment.NewLine}" +
+$"symbol     time                                            {Environment.NewLine}" +
+$"BTCUSD 2XR 2013-10-08     120.0    150.0     110.0    100.0"
                 ),
                 // Quote ticks with same timestamp
                 new TestCaseData(
@@ -3856,10 +3894,10 @@ $"BTCUSD XJ 2013-10-08     120.0    150.0     110.0    100.0"
                             time
                         )
                     },
-$"                      askprice  asksize  bidprice  bidsize{Environment.NewLine}" +
-$"symbol    time                                            {Environment.NewLine}" +
-$"BTCUSD XJ 2013-10-08     120.0    150.0     110.0    100.0{Environment.NewLine}" +
-$"          2013-10-08     220.0    250.0     210.0    200.0"
+$"                       askprice  asksize  bidprice  bidsize{Environment.NewLine}" +
+$"symbol     time                                            {Environment.NewLine}" +
+$"BTCUSD 2XR 2013-10-08     120.0    150.0     110.0    100.0{Environment.NewLine}" +
+$"           2013-10-08     220.0    250.0     210.0    200.0"
                 ),
                 // Open interest tick
                 new TestCaseData(
@@ -3972,9 +4010,9 @@ $"SPY R735QTJ8XC9X 2013-10-08 00:01:00  101.0  102.0  100.0  101.0    10.0"
                             time
                         )
                     },
-$"                               askclose  askhigh  asklow  askopen  asksize  bidclose  bidhigh  bidlow  bidopen  bidsize  close   high    low   open{Environment.NewLine}" +
-$"symbol    time                                                                                                                                     {Environment.NewLine}" +
-$"BTCUSD XJ 2013-10-08 00:01:00     110.0    112.0   105.0    110.0     98.0     101.0    102.0   100.0    101.0     99.0  105.5  107.0  102.5  105.5"
+$"                                askclose  askhigh  asklow  askopen  asksize  bidclose  bidhigh  bidlow  bidopen  bidsize  close   high    low   open{Environment.NewLine}" +
+$"symbol     time                                                                                                                                     {Environment.NewLine}" +
+$"BTCUSD 2XR 2013-10-08 00:01:00     110.0    112.0   105.0    110.0     98.0     101.0    102.0   100.0    101.0     99.0  105.5  107.0  102.5  105.5"
                 ),
                 // Trade and quote bars with different times
                 new TestCaseData(
@@ -3997,10 +4035,10 @@ $"BTCUSD XJ 2013-10-08 00:01:00     110.0    112.0   105.0    110.0     98.0    
                             },
                             time.AddMinutes(1))
                     },
-$"                               askclose  askhigh  asklow  askopen  asksize  bidclose  bidhigh  bidlow  bidopen  bidsize  close   high    low   open  volume{Environment.NewLine}" +
-$"symbol    time                                                                                                                                             {Environment.NewLine}" +
-$"BTCUSD XJ 2013-10-08 00:01:00       NaN      NaN     NaN      NaN      NaN       NaN      NaN     NaN      NaN      NaN  101.0  102.0  100.0  101.0    10.0{Environment.NewLine}" +
-$"          2013-10-08 00:02:01     110.0    112.0   105.0    110.0     98.0     101.0    102.0   100.0    101.0     99.0  105.5  107.0  102.5  105.5     NaN"
+$"                                askclose  askhigh  asklow  askopen  asksize  bidclose  bidhigh  bidlow  bidopen  bidsize  close   high    low   open  volume{Environment.NewLine}" +
+$"symbol     time                                                                                                                                             {Environment.NewLine}" +
+$"BTCUSD 2XR 2013-10-08 00:01:00       NaN      NaN     NaN      NaN      NaN       NaN      NaN     NaN      NaN      NaN  101.0  102.0  100.0  101.0    10.0{Environment.NewLine}" +
+$"           2013-10-08 00:02:01     110.0    112.0   105.0    110.0     98.0     101.0    102.0   100.0    101.0     99.0  105.5  107.0  102.5  105.5     NaN"
                 ),
             };
         }

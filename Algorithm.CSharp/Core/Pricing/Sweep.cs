@@ -15,7 +15,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             Start = start;
             End = end;
-            Duration = new TimeSpan(0, 0, (int)durationMinutes, 0);
+            Duration = new TimeSpan(0, 0, (int)Math.Max(durationMinutes, 1), 0);
         }
     }
     /// <summary>
@@ -57,20 +57,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _isSweeping = false;
 
             DateTime nextReleaseDate = _algo.NextReleaseDate(Underlying).Date;
+            DateTime prevReleaseDate = _algo.PreviouReleaseDate(Underlying).Date;
 
 
             List<List<double>> cfgSchedule = Direction switch
             {
                 OrderDirection.Buy => _algo.Cfg.SweepLongSchedule.TryGetValue(Underlying, out cfgSchedule) ? cfgSchedule : _algo.Cfg.SweepLongSchedule[CfgDefault],
-                OrderDirection.Sell => _algo.Cfg.SweepLongSchedule.TryGetValue(Underlying, out cfgSchedule) ? cfgSchedule : _algo.Cfg.SweepShortSchedule[CfgDefault],
+                OrderDirection.Sell => _algo.Cfg.SweepShortSchedule.TryGetValue(Underlying, out cfgSchedule) ? cfgSchedule : _algo.Cfg.SweepShortSchedule[CfgDefault],
                 _ => throw new ArgumentOutOfRangeException()
             };
 
             foreach (var schedule in cfgSchedule)
             {
-                DateTime date = nextReleaseDate.Date + TimeSpan.FromDays(schedule[0]);
-                DateTime start = date.Date + TimeSpan.FromHours(schedule[1]);
-                DateTime end = date.Date + TimeSpan.FromHours(schedule[2]);
+                int offset = (int)schedule[0];
+                DateTime date = offset <= 0 ? nextReleaseDate.Date : prevReleaseDate.Date;
+                date += TimeSpan.FromDays(offset);
+                DateTime start = date + TimeSpan.FromHours(schedule[1]);
+                DateTime end = date + TimeSpan.FromHours(schedule[2]);
                 schedules.Add(new SweepSchedule(start, end, schedule[3]));
             }
         }
@@ -103,7 +106,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _sweepStartTime = DateTime.MaxValue;
         }
 
-        private TimeSpan SweepDuration => schedules.Where(s => s.Start <= _algo.Time && _algo.Time <= s.End).FirstOrDefault()?.Duration ?? TimeSpan.Zero;
+        private TimeSpan SweepDuration => schedules.Where(s => s.Start <= _algo.Time && _algo.Time <= s.End).FirstOrDefault()?.Duration ?? TimeSpan.FromSeconds(1);
 
         public decimal SweetRatioByDuration => (decimal)((_algo.Time - _sweepStartTime).TotalSeconds / SweepDuration.TotalSeconds);
 

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -153,7 +153,7 @@ namespace QuantConnect.Lean.Engine.RealTime
             if (_sortingScheduledEventsRequired)
             {
                 _sortingScheduledEventsRequired = false;
-                _scheduledEventsSortedByTime = ScheduledEvents
+                _scheduledEventsSortedByTime = ScheduledEvents.ToDictionary()
                     // we order by next event time
                     .OrderBy(x => x.Key.NextEventUtcTime)
                     // then by unique id so that for scheduled events in the same time

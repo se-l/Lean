@@ -1,25 +1,24 @@
 {
-  "StartDate": "2024-11-14",
-  "EndDate": "2023-11-15",
-  //"StartDate": "2023-11-16",
-  //"EndDate": "2023-11-17",
-  "Ticker": [ "TGT" ],
+  "StartDate": "2024-06-24",
+  "EndDate": "2024-06-24",
+  "Ticker": [ "FDX" ],
   "LiquidateTicker": [],
   "SkipRunSignals": {
     "_": false
   },
   "ExecuteManualOrderInstructions": true,
-  "BacktestingHoldings": {},
-  "LogOrderUpdates": false,
+  "BacktestingHoldings": {
+  },
+  "LogOrderUpdates": true,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
-  "WarmUpDays": 2, // Reduce for debugging. Usually 2.
+  "WarmUpDays": 1, // Reduce for debugging. Usually 2.
   "VolatilityPeriodDays": 3,
 
   /// Scoping Contracts for data feed subscription
-  "ScopeContractStrikeOverUnderlyingMax": 1.25,
-  "ScopeContractStrikeOverUnderlyingMaxSignal": 1.15,
-  "ScopeContractStrikeOverUnderlyingMin": 0.75,
-  "ScopeContractStrikeOverUnderlyingMinSignal": 0.85,
+  "ScopeContractStrikeOverUnderlyingMax": 1.35,
+  "ScopeContractStrikeOverUnderlyingMaxSignal": 1.25,
+  "ScopeContractStrikeOverUnderlyingMin": 0.65,
+  "ScopeContractStrikeOverUnderlyingMinSignal": 0.75,
   "ScopeContractStrikeOverUnderlyingMargin": 0.05,
   "ScopeContractMoneynessITM": 1.05, // Replace with delta
   "ScopeContractMinDTE": 0,
@@ -27,21 +26,8 @@
   "ScopeContractIsLiquidDays": 5,
   ///
 
-  // Whole ZM pending deletion. Not in use.
-  "ZMRiskAversion": 0.01,
-  "ZMProportionalTransactionCost": 0.0001, // tc = n * S * lambda; lambda = tc / (n * S)
-  "MinZMOffset": {
-    "_": 20
-  },
-  "MaxZMOffset": {
-    "_": 50
-  },
-  //
-
   "IVSurfaceRelativeStrikeAlpha": {
-    "_": 0.05,
-    "HPE": 0.05,
-    "DELL": 0.09
+    "_": 0.05
   },
   "PutCallRatioWarmUpDays": 0,
   "PutCallRatioTargetRisks": {
@@ -69,8 +55,8 @@
   "DaysBeforeConsideringEarningsAnnouncement": {
     "_": 7
   },
-  "AtmIVIndicatorWindow": {
-    "_": 30
+  "IVSpreadIndicatorWindowSec": {
+    "_": 3600
   },
   "EarningsAnnouncementUtilityMinAtmIVElevation": {
     "_": 1.15
@@ -89,17 +75,16 @@
 
   /// Gamma scalping
   "GammaScalpingEnabled": {
-    "_": true
+    "_": false
   },
   "TrailingHedgePct": {
-    "_": 0.003,
-    "CSCO": 0.003,
-    "DELL": 0.004
+    "_": 0.006
   },
   ///
 
+  // Needs to depend on underlying price, delta, and jumps.
   "MaxOptionOrderQuantity": {
-    "_": 5
+    "_": 1
   },
   "TargetMaxEquityPositionUSD": {
     "_": 4000
@@ -115,17 +100,15 @@
 
   /// Hedging
   "HedgingMode": {
-    "_": 1 // 1-HV ; 2-IV ; 3-ZM(HV); 4-DeltaImpliedAtmTotal
+    "_": 3 // 1-HV ; 2-IV ; 3 - use SSVI surface for practitioner IV
   },
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
   "TotalDeltaHedgeThresholdIntercept": {
-    "_": 20,
-    "CSCO": 19
+    "_": 20
   },
   "TotalDeltaHedgeThresholdGammaFactor": {
-    "_": -0.3,
-    "CSCO": -0.3
+    "_": -1
   },
   "DeltaAdjustmentParameters": {
     "_": {
@@ -146,75 +129,6 @@
   "EquityShortingRate": 0.1,
   "DiscountRatePortfolioCAGR": 0.0435,
   "DiscountRateMarket": 0.0435, // https://www.bloomberg.com/markets/rates-bonds/government-bonds/us.  Needs to become a TS.
-  "DividendYield": { // https://www.google.com/search?q=dell+dividend+yield.  Needs to become a TS.
-    "_": 0.0,
-    "DELL": 0.0175,
-    "CSCO": 0.0299,
-    "HPE": 0.0327,
-    "ORCL": 0.014,
-    "PFE": 0.00622,
-    "AMAT": 0.0064,
-    "HSBC": 0.0505,
-    "PANW": 0.0,
-    "PSA": 0.0426,
-    "O": 0.0588,
-    "CSGP": 0.0,
-    "FANG": 0.0571,
-    "RIO": 0.0448,
-    "ADI": 0.0183,
-    "VRSK": 0.0056,
-    "EXC": 0.0412,
-    "NVDA": 0.0023,
-    "SPNS": 0.0169,
-    "MRNA": 0.0,
-    "WDAY": 0.0,
-    "SNOW": 0.0,
-    "CRM": 0.0,
-    "TJX": 0.0134,
-    "RY": 0.0417,
-    "BIDU": 0.0,
-    "MDB": 0.0,
-    "CRWD": 0.0,
-    "AVGO": 0.015,
-    "JD": 0.0269,
-    "TGT": 0.0283,
-    "ROST": 0.009,
-    "MRVL": 0.0031,
-    "ONON": 0.0,
-    "DLTR": 0.0,
-    "PATH": 0.0,
-    "ADBE": 0.0,
-    "ULTA": 0.0,
-    "DG": 0.0148,
-    "JBL": 0.0021,
-    "GBX": 0.022,
-    "WDFC": 0.0137,
-    "NEOG": 0.014,
-    "DAL": 0.0087,
-    "JPM": 0.0235,
-    "WFC": 0.0246,
-    "PGR": 0.0019,
-    "BLK": 0.026,
-    "C": 0.0352,
-    "STT": 0.0371,
-    "GS": 0.027,
-    "SCHW": 0.0142,
-    "ABT": 0.0202,
-    "ASML": 0.0067,
-    "PLD": 0.0323,
-    "TSM": 0.0144,
-    "NFLX": 0,
-    "ISRG": 0,
-    "ELV": 0.0131,
-    "ESLOY": 0.0165,
-    "MMC": 0.0143,
-    "PG": 0.0255,
-    "AXP": 0.0125,
-    "CDNS": 0.0,
-    "PEP": 0.0291,
-    "MRK": 0.024,
-    "TMUS": 0.016
-  },
 
   // To be implied from Heston if it were to fit market data well...
   "CorrelationSpotVolatility": {
@@ -231,7 +145,7 @@
     "_": 0.1
   },
   "MinUtility": {
-    "_": 30
+    "_": 10
   },
   "SlopeNeg": {
     "_": -0.005
@@ -246,7 +160,7 @@
     "_": 0.002
   },
   "MaxSpreadDiscount": {
-    "_": 1.0 //0.6
+    "_": 0.3
   },
   "DiscountParams": {
     "_-Absolute-discount-params": {
@@ -264,7 +178,7 @@
   "SweepLongSchedule": {
     "_": [
       // Before Release
-      [ 0, 10, 16, 60 ],
+      [ 0, 12, 16, 60 ],
 
       // After release
       [ 1, 14, 16, 60 ],
@@ -274,13 +188,87 @@
   "SweepShortSchedule": {
     "_": [
       // Before release
-      [ 0, 14, 16, 30 ],
+      [ 0, 15, 16, 30 ],
 
       // After release
-      [ 1, 9, 10, 15 ],
-      [ 1, 10, 11, 30 ],
+      [ 1, 9, 10, 30 ],
+      [ 1, 10, 11, 40 ],
+      [ 1, 11, 16, 60 ],
       [ 2, 9, 16, 60 ]
     ]
   },
-  "WS_PORT":  8001
+  "KalmanScopedMoneyness": {
+    "_": [ 0.8, 1.2 ]
+  },
+  "KalmanAlphaBid": {
+    "_": 0.95
+  },
+  "KalmanAlphaAsk": {
+    "_": 0.95
+  },
+  "PrepareEarningsPeriodDays": {
+    "_": 1
+  },
+  "BacktestingBrokerageLatency": 2,
+  "MinHistoryDaysUnderlyingForScoping": 7,
+  "MaxDelta100BpUSDSignalQuantity": {
+    "_": 150
+  },
+  "UseKalmanFilterAfterEarningsRelease": true,
+  "UseKalmanFilterBeforeEarningsRelease": true,
+  "PricerOverridePricesWithPresumedIVFillDefensively": { "_": true },
+  "TimeStartKfBeforeRelease": {
+    "_": "09:30"
+  },
+  "TimeStartKfAfterRelease": {
+    "_": "09:40"
+  },
+  "EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy": {
+    "_": "12:00"
+  },
+  "EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell": {
+    "_": "09:40"
+  },
+  "HedgeToAcrossDsAfterTime": {
+    "_": "15:45"
+  },
+  "BufferIntraSpreadRatioSpreadThreshold": 0.05,
+  "BufferIntraSpreadWaitingPeriodSeconds": 15,
+  "BufferIntraSpreadQuotes": true,
+  "RequestContractsSchedules": {
+    "_": [
+      {
+        "StartDaysOffset": 0,
+        "Start": "",
+        "EndDaysOffset": 0,
+        "End": "11:00",
+        "NRemaining": 3,
+        "Increment": 10
+      },
+      {
+        "StartDaysOffset": 0,
+        "Start": "11:00",
+        "EndDaysOffset": 0,
+        "End": "15:00",
+        "NRemaining": 2,
+        "Increment": 5
+      },
+      {
+        "StartDaysOffset": 0,
+        "Start": "15:00",
+        "EndDaysOffset": 0,
+        "End": "",
+        "NRemaining": 0,
+        "Increment": 0
+      }
+    ]
+  },
+  "KalmanMinUpdatesToReady": { "_": 15 },
+  "MinutesBeforeMarketCloseHedgeDeltaFlat": 2,
+  "MinutesAfterOpenMMWindowStarts": 1,
+  "MinutesBeforeCloseMMWindowEnds": 5,
+  "MinutesBeforeCloseHedgeToAcrossDs": 3,
+  "SpreadDiscountSweepMinSpreadRatio": { "_": 0.3 },
+  "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread 1-Mid ; 2-Passive earn spread
+  "IVSpreadSMAPeriod": { "_": 500 } // 0-Aggressive pay spread 1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
 }

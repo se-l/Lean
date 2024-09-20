@@ -14,13 +14,15 @@
 */
 
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using Newtonsoft.Json;
-using QuantConnect.Configuration;
+using QuantConnect.Util;
+using System.Diagnostics;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
+using QuantConnect.Lean.Engine;
+using System.Collections.Generic;
+using QuantConnect.Configuration;
 
 namespace QuantConnect.Report
 {
@@ -36,6 +38,9 @@ namespace QuantConnect.Report
             {
                 Config.MergeCommandLineArgumentsWithConfiguration(ReportArgumentParser.ParseArguments(args));
             }
+
+            // initialize required lean handlers
+            LeanEngineAlgorithmHandlers.FromConfiguration(Composer.Instance);
             var name = Config.Get("strategy-name");
             var description = Config.Get("strategy-description");
             var version = Config.Get("strategy-version");
@@ -43,6 +48,8 @@ namespace QuantConnect.Report
             var liveDataFile = Config.Get("live-data-source-file");
             var destination = Config.Get("report-destination");
             var reportFormat = Config.Get("report-format");
+            var cssOverrideFile = Config.Get("report-css-override-file", "css/report_override.css");
+            var htmlCustomFile = Config.Get("report-html-custom-file", "template.html");
 
             // Parse content from source files into result objects
             Log.Trace($"QuantConnect.Report.Main(): Parsing source files...{backtestDataFile}, {liveDataFile}");
@@ -66,9 +73,35 @@ namespace QuantConnect.Report
                 live = JsonConvert.DeserializeObject<LiveResult>(File.ReadAllText(liveDataFile), settings);
             }
 
+            string cssOverrideContent = null;
+            if (!string.IsNullOrEmpty(cssOverrideFile))
+            {
+                if (File.Exists(cssOverrideFile))
+                {
+                    cssOverrideContent = File.ReadAllText(cssOverrideFile);
+                }
+                else
+                {
+                    Log.Trace($"QuantConnect.Report.Main(): CSS override file {cssOverrideFile} was not found");
+                }
+            }
+
+            string htmlCustomContent = null;
+            if (!string.IsNullOrEmpty(htmlCustomFile))
+            {
+                if (File.Exists(htmlCustomFile))
+                {
+                    htmlCustomContent = File.ReadAllText(htmlCustomFile);
+                }
+                else
+                {
+                    Log.Trace($"QuantConnect.Report.Main(): HTML custom file {htmlCustomFile} was not found");
+                }
+            }
+
             //Create a new report
             Log.Trace("QuantConnect.Report.Main(): Instantiating report...");
-            var report = new Report(name, description, version, backtest, live);
+            var report = new Report(name, description, version, backtest, live, cssOverride: cssOverrideContent, htmlCustom: htmlCustomContent);
 
             // Generate the html content
             Log.Trace("QuantConnect.Report.Main(): Starting content compile...");
@@ -131,7 +164,7 @@ namespace QuantConnect.Report
 
             Log.Trace("QuantConnect.Report.Main(): Completed.");
 
-            if (!Console.IsInputRedirected)
+            if (!Console.IsInputRedirected && !Config.GetBool("close-automatically"))
             {
                 Console.ReadKey();
             }

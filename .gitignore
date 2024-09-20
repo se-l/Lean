@@ -1,3 +1,6 @@
+# OS Files
+.DS_Store
+
 # Object files
 *.o
 *.ko
@@ -278,7 +281,6 @@ Research/Notebooks
 #Docker result files
 Results/
 /Launcher/config.json
-/Launcher/config.json
 /ToolBox/Properties/launchSettings.json
 /Report/config.json
 /Launcher/Properties/Resources.Designer.cs
@@ -293,9 +295,9 @@ Results/
 #Data moved to ext drive
 Data/
 /launchSettings.json
-/Launcher/config.json
-docker-compose.yml
-!run.sh
-/Api.GRPC
-/AWS ECS files
+/data
 /dataLive
+/trade
+/.env
+/.envaws
+/Api.GRPC

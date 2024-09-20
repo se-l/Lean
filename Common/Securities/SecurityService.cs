@@ -15,6 +15,7 @@
 */
 
 using System;
+using System.Linq;
 using QuantConnect.Util;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
@@ -34,7 +35,9 @@ namespace QuantConnect.Securities
         private readonly ISecurityInitializerProvider _securityInitializerProvider;
         private readonly SecurityCacheProvider _cacheProvider;
         private readonly IPrimaryExchangeProvider _primaryExchangeProvider;
+        private readonly IAlgorithm _algorithm;
         private bool _isLiveMode;
+        private bool _modelsMismatchWarningSent;
 
         /// <summary>
         /// Creates a new instance of the SecurityService class
@@ -45,7 +48,8 @@ namespace QuantConnect.Securities
             ISecurityInitializerProvider securityInitializerProvider,
             IRegisteredSecurityDataTypesProvider registeredTypes,
             SecurityCacheProvider cacheProvider,
-            IPrimaryExchangeProvider primaryExchangeProvider=null)
+            IPrimaryExchangeProvider primaryExchangeProvider = null,
+            IAlgorithm algorithm = null)
         {
             _cashBook = cashBook;
             _registeredTypes = registeredTypes;
@@ -54,6 +58,7 @@ namespace QuantConnect.Securities
             _securityInitializerProvider = securityInitializerProvider;
             _cacheProvider = cacheProvider;
             _primaryExchangeProvider = primaryExchangeProvider;
+            _algorithm = algorithm;
         }
 
         /// <summary>
@@ -61,16 +66,22 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <remarks>Following the obsoletion of Security.Subscriptions,
         /// both overloads will be merged removing <see cref="SubscriptionDataConfig"/> arguments</remarks>
-        public Security CreateSecurity(Symbol symbol,
+        private Security CreateSecurity(Symbol symbol,
             List<SubscriptionDataConfig> subscriptionDataConfigList,
-            decimal leverage = 0,
-            bool addToSymbolCache = true,
-            Security underlying = null)
+            decimal leverage,
+            bool addToSymbolCache,
+            Security underlying,
+            bool initializeSecurity)
         {
             var configList = new SubscriptionDataConfigList(symbol);
             configList.AddRange(subscriptionDataConfigList);
 
-            var exchangeHours = _marketHoursDatabase.GetEntry(symbol.ID.Market, symbol, symbol.ID.SecurityType).ExchangeHours;
+            var dataTypes = Enumerable.Empty<Type>();
+            if(symbol.SecurityType == SecurityType.Base && SecurityIdentifier.TryGetCustomDataTypeInstance(symbol.ID.Symbol, out var type))
+            {
+                dataTypes = new[] { type };
+            }
+            var exchangeHours = _marketHoursDatabase.GetEntry(symbol, dataTypes).ExchangeHours;
 
             var defaultQuoteCurrency = _cashBook.AccountCurrency;
             if (symbol.ID.SecurityType == SecurityType.Forex)
@@ -180,15 +191,20 @@ namespace QuantConnect.Securities
 
             // if we're just creating this security and it only has an internal
             // feed, mark it as non-tradable since the user didn't request this data
-            if (!configList.IsInternalFeed)
+            if (security.IsTradable)
             {
-                security.IsTradable = true;
+                security.IsTradable = !configList.IsInternalFeed;
             }
 
             security.AddData(configList);
 
             // invoke the security initializer
-            _securityInitializerProvider.SecurityInitializer.Initialize(security);
+            if (initializeSecurity)
+            {
+                _securityInitializerProvider.SecurityInitializer.Initialize(security);
+            }
+
+            CheckCanonicalSecurityModels(security);
 
             // if leverage was specified then apply to security after the initializer has run, parameters of this
             // method take precedence over the intializer
@@ -213,9 +229,38 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <remarks>Following the obsoletion of Security.Subscriptions,
         /// both overloads will be merged removing <see cref="SubscriptionDataConfig"/> arguments</remarks>
+        public Security CreateSecurity(Symbol symbol,
+            List<SubscriptionDataConfig> subscriptionDataConfigList,
+            decimal leverage = 0,
+            bool addToSymbolCache = true,
+            Security underlying = null)
+        {
+            return CreateSecurity(symbol, subscriptionDataConfigList, leverage, addToSymbolCache, underlying, initializeSecurity: true);
+        }
+
+        /// <summary>
+        /// Creates a new security
+        /// </summary>
+        /// <remarks>Following the obsoletion of Security.Subscriptions,
+        /// both overloads will be merged removing <see cref="SubscriptionDataConfig"/> arguments</remarks>
         public Security CreateSecurity(Symbol symbol, SubscriptionDataConfig subscriptionDataConfig, decimal leverage = 0, bool addToSymbolCache = true, Security underlying = null)
         {
             return CreateSecurity(symbol, new List<SubscriptionDataConfig> { subscriptionDataConfig }, leverage, addToSymbolCache, underlying);
+        }
+
+        /// <summary>
+        /// Creates a new security
+        /// </summary>
+        /// <remarks>Following the obsoletion of Security.Subscriptions,
+        /// both overloads will be merged removing <see cref="SubscriptionDataConfig"/> arguments</remarks>
+        public Security CreateBenchmarkSecurity(Symbol symbol)
+        {
+            return CreateSecurity(symbol,
+                new List<SubscriptionDataConfig>(),
+                leverage: 1,
+                addToSymbolCache: false,
+                underlying: null,
+                initializeSecurity: false);
         }
 
         /// <summary>
@@ -225,6 +270,31 @@ namespace QuantConnect.Securities
         public void SetLiveMode(bool isLiveMode)
         {
             _isLiveMode = isLiveMode;
+        }
+
+        /// <summary>
+        /// Checks whether the created security has the same models as its canonical security (in case it has one)
+        /// and sends a one-time warning if it doesn't.
+        /// </summary>
+        private void CheckCanonicalSecurityModels(Security security)
+        {
+            if (!_modelsMismatchWarningSent &&
+                _algorithm != null &&
+                security.Symbol.HasCanonical() &&
+                _algorithm.Securities.TryGetValue(security.Symbol.Canonical, out var canonicalSecurity))
+            {
+                if (security.FillModel.GetType() != canonicalSecurity.FillModel.GetType() ||
+                    security.FeeModel.GetType() != canonicalSecurity.FeeModel.GetType() ||
+                    security.BuyingPowerModel.GetType() != canonicalSecurity.BuyingPowerModel.GetType() ||
+                    security.MarginInterestRateModel.GetType() != canonicalSecurity.MarginInterestRateModel.GetType() ||
+                    security.SlippageModel.GetType() != canonicalSecurity.SlippageModel.GetType() ||
+                    security.VolatilityModel.GetType() != canonicalSecurity.VolatilityModel.GetType() ||
+                    security.SettlementModel.GetType() != canonicalSecurity.SettlementModel.GetType())
+                {
+                    _modelsMismatchWarningSent = true;
+                    _algorithm.Debug($"Warning: Security {security.Symbol} its canonical security {security.Symbol.Canonical} have at least one model of different types (fill, fee, buying power, margin interest rate, slippage, volatility, settlement). To avoid this, consider using a security initializer to set the right models to each security type according to your algorithm's requirements.");
+                }
+            }
         }
     }
 }

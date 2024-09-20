@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Securities;
+using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Option;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
@@ -41,14 +42,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// <summary>
         /// Generates a position from a previous and applied a trade to it.
         /// </summary>
-        public Position(Position? position, Trade trade0, Foundations algo, Trade? trade1 = null)
+        public Position(Position? position, Trade trade0, Foundations algo, Trade? trade1 = null, decimal? totalQuantity = null)
         {
             _prevPosition = position;
             Trade0 = trade0;
             _algo = algo;
             Trade1 = trade1;
             Symbol = trade0.Symbol;
-            Quantity = (_prevPosition?.Quantity ?? 0) + trade0.Quantity;
+            Quantity = totalQuantity ?? (_prevPosition?.Quantity ?? 0) + trade0.Quantity;
         }
 
         /// <summary>
@@ -66,6 +67,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public Symbol Symbol { get; internal set; }
         private Security _securityUnderlying;
         public Security SecurityUnderlying { get => _securityUnderlying ??= _algo.Securities[UnderlyingSymbol]; }
+        public Equity Equity => (Equity)SecurityUnderlying;
         private Security _security;
         public Security Security { get => _security ??= _algo.Securities[Symbol]; }
         private Option? Option { get => SecurityType == SecurityType.Option ? (Option)Security : null; }
@@ -192,32 +194,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public double DeltaRealizedThetaContribution => Greeks1.Theta * DTDays;
 
-        public double DeltaZM(double? volatility = null)
-        {
-            switch (SecurityType)
-            {
-                case SecurityType.Equity:
-                    return 0;  // Because ZM is to create option bands. Wouldn't want equity to dilute required bands.
-                case SecurityType.Option:
-                    try
-                    {
-                        return GetGreeks1(volatility: volatility ?? (double)SecurityUnderlying.VolatilityModel.Volatility).DeltaZM((int)Quantity);
-                    }
-                    catch
-                    {
-                        _algo.Error($"DeltaZM: Failed to derive DeltaZM. Returning BSM Delta. Symbol: {Symbol} PriceUnderlying: {Mid1Underlying} HV: {IVMid1}");
-                        return Delta();
-                    }
-                default:
-                    throw new NotSupportedException();
-            }
-        }
-
-        public double DeltaZMOffset(double? volatility = null)
-        {
-            return GetGreeks1(volatility: volatility ?? (double)SecurityUnderlying.VolatilityModel.Volatility).DeltaZMOffset((int)Quantity);
-        }
-
         public decimal TaylorTerm()
         {
             // delta/gamma gamma is unitless sensitivity. No scaling here.
@@ -336,14 +312,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal BsmIVdS() => ToDecimal(GetGreeks1().IVdS);
 
         public decimal BsmIVdSTotal() => BsmIVdS() * Multiplier * Quantity;
-        public decimal SurfaceIVdSBid => Trade1?.SurfaceIVdSBid ?? ToDecimal(_algo.IVSurfaceRelativeStrikeBid[UnderlyingSymbol].IVdS(Symbol) ?? 0);
-        public decimal SurfaceIVdSAsk => Trade1?.SurfaceIVdSAsk ?? ToDecimal(_algo.IVSurfaceRelativeStrikeAsk[UnderlyingSymbol].IVdS(Symbol) ?? 0);
-        public decimal SurfaceIVdS { get {
-            if (SurfaceIVdSBid == 0) { return SurfaceIVdSAsk; }
-            if (SurfaceIVdSAsk == 0) { return SurfaceIVdSBid; }
-            return (SurfaceIVdSBid + SurfaceIVdSAsk) / 2;
-        }}
-        public decimal SurfacedIVdSTotal => SurfaceIVdSAsk * Multiplier * Quantity;
+        public decimal SurfaceIVdS => Trade1?.SurfaceIVdS ?? ToDecimal(_algo.IVSurfaceSSVIMid[Equity].IVdS(Symbol) ?? 0);
+        public decimal SurfacedIVdSTotal => SurfaceIVdS * Multiplier * Quantity;
         /// <summary>
         /// From Derman, The volatility smile. Chapter 22, Heston model minmize PL Variance.
         /// </summary>
@@ -429,7 +399,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal DeltaFillMid1 { get => P1 - Mid1; }
         public decimal DS { get => Mid1Underlying - Mid0Underlying; }
         public double DTDays { get => (Ts1 - Trade0.Ts0).TotalSeconds / 86400; }
-        public decimal DSPct { get => 100 * (Mid1Underlying / Mid0Underlying - 1); }
+        public decimal DSPct { get => Mid0Underlying != 0 ? 100 * (Mid1Underlying / Mid0Underlying - 1) : 0; }
         public decimal PL
         {
             get

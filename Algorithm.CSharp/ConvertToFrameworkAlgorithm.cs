@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using QuantConnect.Algorithm.Framework.Alphas;
+using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
 using QuantConnect.Interfaces;
@@ -57,8 +58,8 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
-        /// <param name="data">TradeBars IDictionary object with your stock data</param>
-        public void OnData(TradeBars data)
+        /// <param name="data">Slice object keyed by symbol containing the stock data</param>
+        public override void OnData(Slice data)
         {
             // wait for our indicator to be ready
             if (!_macd.IsReady) return;
@@ -107,7 +108,10 @@ namespace QuantConnect.Algorithm.CSharp
 
             // plot both lines
             Plot("MACD", _macd, _macd.Signal);
-            Plot(_symbol, "Open", data[_symbol].Open);
+            if (data.Bars.ContainsKey(_symbol))
+            {
+                Plot(_symbol, "Open", data[_symbol].Open);
+            }
             Plot(_symbol, _macd.Fast, _macd.Slow);
         }
 
@@ -136,30 +140,33 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "85"},
+            {"Total Orders", "85"},
             {"Average Win", "4.85%"},
             {"Average Loss", "-4.22%"},
-            {"Compounding Annual Return", "-3.124%"},
-            {"Drawdown", "53.000%"},
+            {"Compounding Annual Return", "-3.119%"},
+            {"Drawdown", "52.900%"},
             {"Expectancy", "-0.053"},
-            {"Net Profit", "-29.486%"},
-            {"Sharpe Ratio", "-0.072"},
+            {"Start Equity", "100000"},
+            {"End Equity", "70553.97"},
+            {"Net Profit", "-29.446%"},
+            {"Sharpe Ratio", "-0.223"},
+            {"Sortino Ratio", "-0.243"},
             {"Probabilistic Sharpe Ratio", "0.001%"},
             {"Loss Rate", "56%"},
             {"Win Rate", "44%"},
             {"Profit-Loss Ratio", "1.15"},
-            {"Alpha", "-0.004"},
+            {"Alpha", "-0.029"},
             {"Beta", "-0.095"},
             {"Annual Standard Deviation", "0.149"},
             {"Annual Variance", "0.022"},
             {"Information Ratio", "-0.34"},
             {"Tracking Error", "0.23"},
-            {"Treynor Ratio", "0.113"},
-            {"Total Fees", "$796.82"},
+            {"Treynor Ratio", "0.351"},
+            {"Total Fees", "$797.27"},
             {"Estimated Strategy Capacity", "$1200000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "4.23%"},
-            {"OrderListHash", "177fb7f308a252864365442a30dd9eeb"}
+            {"OrderListHash", "1291b6615d6301b487f409a5e0ea475d"}
         };
     }
 }

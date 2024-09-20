@@ -31,6 +31,9 @@ namespace QuantConnect.Data
     /// </summary>
     public class SubscriptionManager
     {
+        private readonly PriorityQueue<ConsolidatorWrapper, ConsolidatorScanPriority> _consolidatorsSortedByScanTime;
+        private readonly Dictionary<IDataConsolidator, ConsolidatorWrapper> _consolidators;
+        private readonly ITimeKeeper _timeKeeper;
         private IAlgorithmSubscriptionManager _subscriptionManager;
 
         /// <summary>
@@ -53,6 +56,16 @@ namespace QuantConnect.Data
         ///     Get the count of assets:
         /// </summary>
         public int Count => _subscriptionManager.SubscriptionManagerCount();
+
+        /// <summary>
+        /// Creates a new instance
+        /// </summary>
+        public SubscriptionManager(ITimeKeeper timeKeeper)
+        {
+            _consolidators = new();
+            _timeKeeper = timeKeeper;
+            _consolidatorsSortedByScanTime = new(1000);
+        }
 
         /// <summary>
         ///     Add Market Data Required (Overloaded method for backwards compatibility).
@@ -136,17 +149,17 @@ namespace QuantConnect.Data
         {
             return SubscriptionDataConfigService.Add(symbol, resolution, fillForward,
                 extendedMarketHours, isFilteredSubscription, isInternalFeed, isCustomData,
-                new List<Tuple<Type, TickType>> {new Tuple<Type, TickType>(dataType, tickType)},
+                new List<Tuple<Type, TickType>> { new Tuple<Type, TickType>(dataType, tickType) },
                 dataNormalizationMode).First();
         }
 
-
         /// <summary>
-        ///     Add a consolidator for the symbol
+        /// Add a consolidator for the symbol
         /// </summary>
         /// <param name="symbol">Symbol of the asset to consolidate</param>
         /// <param name="consolidator">The consolidator</param>
-        public void AddConsolidator(Symbol symbol, IDataConsolidator consolidator)
+        /// <param name="tickType">Desired tick type for the subscription</param>
+        public void AddConsolidator(Symbol symbol, IDataConsolidator consolidator, TickType? tickType = null)
         {
             // Find the right subscription and add the consolidator to it
             var subscriptions = Subscriptions.Where(x => x.Symbol == symbol).ToList();
@@ -161,16 +174,27 @@ namespace QuantConnect.Data
             foreach (var subscription in subscriptions)
             {
                 // we need to be able to pipe data directly from the data feed into the consolidator
-                if (IsSubscriptionValidForConsolidator(subscription, consolidator))
+                if (IsSubscriptionValidForConsolidator(subscription, consolidator, tickType))
                 {
                     subscription.Consolidators.Add(consolidator);
+
+                    var wrapper = _consolidators[consolidator] =
+                        new ConsolidatorWrapper(consolidator, subscription.Increment, _timeKeeper, _timeKeeper.GetLocalTimeKeeper(subscription.ExchangeTimeZone));
+
+                    _consolidatorsSortedByScanTime.Enqueue(wrapper, wrapper.Priority);
                     return;
                 }
             }
 
-            throw new ArgumentException("Type mismatch found between consolidator and symbol. " +
+            string tickTypeException = null;
+            if (tickType != null && !subscriptions.Where(x => x.TickType == tickType).Any())
+            {
+                tickTypeException = $"No subscription with the requested Tick Type {tickType} was found. Available Tick Types: {string.Join(", ", subscriptions.Select(x => x.TickType))}";
+            }
+
+            throw new ArgumentException(tickTypeException ?? ("Type mismatch found between consolidator and symbol. " +
                 $"Symbol: {symbol.Value} does not support input type: {consolidator.InputType.Name}. " +
-                $"Supported types: {string.Join(",", subscriptions.Select(x => x.Type.Name))}.");
+                $"Supported types: {string.Join(",", subscriptions.Select(x => x.Type.Name))}."));
         }
 
         /// <summary>
@@ -195,14 +219,70 @@ namespace QuantConnect.Data
         /// <param name="consolidator">The consolidator instance to be removed</param>
         public void RemoveConsolidator(Symbol symbol, IDataConsolidator consolidator)
         {
+            // let's try to get associated symbol, not required but nice to have
+            symbol ??= consolidator.Consolidated?.Symbol;
+            symbol ??= consolidator.WorkingData?.Symbol;
+
             // remove consolidator from each subscription
             foreach (var subscription in _subscriptionManager.GetSubscriptionDataConfigs(symbol))
             {
                 subscription.Consolidators.Remove(consolidator);
+
+                if (_consolidators.Remove(consolidator, out var consolidatorsToScan))
+                {
+                    consolidatorsToScan.Dispose();
+                }
             }
 
             // dispose of the consolidator to remove any remaining event handlers
             consolidator.DisposeSafely();
+        }
+
+        /// <summary>
+        /// Removes the specified python consolidator for the symbol
+        /// </summary>
+        /// <param name="symbol">The symbol the consolidator is receiving data from</param>
+        /// <param name="pyConsolidator">The python consolidator instance to be removed</param>
+        public void RemoveConsolidator(Symbol symbol, PyObject pyConsolidator)
+        {
+            if (!pyConsolidator.TryConvert(out IDataConsolidator consolidator))
+            {
+                consolidator = new DataConsolidatorPythonWrapper(pyConsolidator);
+            }
+
+            RemoveConsolidator(symbol, consolidator);
+        }
+
+        /// <summary>
+        /// Will trigger past consolidator scans
+        /// </summary>
+        /// <param name="newUtcTime">The new utc time</param>
+        /// <param name="algorithm">The algorithm instance</param>
+        public void ScanPastConsolidators(DateTime newUtcTime, IAlgorithm algorithm)
+        {
+            while (_consolidatorsSortedByScanTime.TryPeek(out _, out var priority) && priority.UtcScanTime < newUtcTime)
+            {
+                var consolidatorToScan = _consolidatorsSortedByScanTime.Dequeue();
+                if (consolidatorToScan.Disposed)
+                {
+                    // consolidator has been removed
+                    continue;
+                }
+
+                if (priority.UtcScanTime != algorithm.UtcTime)
+                {
+                    // only update the algorithm time once, it's not cheap because of TZ conversions
+                    algorithm.SetDateTime(priority.UtcScanTime);
+                }
+
+                if (consolidatorToScan.UtcScanTime <= priority.UtcScanTime)
+                {
+                    // only scan if we still need to
+                    consolidatorToScan.Scan();
+                }
+
+                _consolidatorsSortedByScanTime.Enqueue(consolidatorToScan, consolidatorToScan.Priority);
+            }
         }
 
         /// <summary>
@@ -264,17 +344,25 @@ namespace QuantConnect.Data
         /// </summary>
         /// <param name="subscription">The subscription configuration</param>
         /// <param name="consolidator">The consolidator</param>
+        /// <param name="desiredTickType">The desired tick type for the subscription. If not given is null.</param>
         /// <returns>true if the subscription is valid for the consolidator</returns>
-        public static bool IsSubscriptionValidForConsolidator(SubscriptionDataConfig subscription, IDataConsolidator consolidator)
+        public static bool IsSubscriptionValidForConsolidator(SubscriptionDataConfig subscription, IDataConsolidator consolidator, TickType? desiredTickType = null)
         {
             if (subscription.Type == typeof(Tick) &&
                 LeanData.IsCommonLeanDataType(consolidator.OutputType))
             {
-                var tickType = LeanData.GetCommonTickTypeForCommonDataTypes(
+                if (desiredTickType == null)
+                {
+                    var tickType = LeanData.GetCommonTickTypeForCommonDataTypes(
                     consolidator.OutputType,
                     subscription.Symbol.SecurityType);
 
-                return subscription.TickType == tickType;
+                    return subscription.TickType == tickType;
+                }
+                else if (subscription.TickType != desiredTickType)
+                {
+                    return false;
+                }
             }
 
             return consolidator.InputType.IsAssignableFrom(subscription.Type);

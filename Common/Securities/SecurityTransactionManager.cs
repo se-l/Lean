@@ -30,7 +30,13 @@ namespace QuantConnect.Securities
     /// </summary>
     public class SecurityTransactionManager : IOrderProvider
     {
-        private readonly Dictionary<DateTime, decimal> _transactionRecord;
+        private class TransactionRecordEntry
+        {
+            public decimal ProfitLoss;
+            public bool IsWin;
+        }
+
+        private readonly Dictionary<DateTime, TransactionRecordEntry> _transactionRecord;
         private readonly IAlgorithm _algorithm;
         private int _orderId;
         private int _groupOrderManagerId;
@@ -58,7 +64,7 @@ namespace QuantConnect.Securities
             _securities = security;
 
             //Internal storage for transaction records:
-            _transactionRecord = new Dictionary<DateTime, decimal>();
+            _transactionRecord = new Dictionary<DateTime, TransactionRecordEntry>();
         }
 
         /// <summary>
@@ -72,7 +78,63 @@ namespace QuantConnect.Securities
             {
                 lock (_transactionRecord)
                 {
-                    return new Dictionary<DateTime, decimal>(_transactionRecord);
+                    return _transactionRecord.ToDictionary(x => x.Key, x => x.Value.ProfitLoss);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the number or winning transactions
+        /// </summary>
+        public int WinCount
+        {
+            get
+            {
+                lock (_transactionRecord)
+                {
+                    return _transactionRecord.Values.Count(x => x.IsWin);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the number of losing transactions
+        /// </summary>
+        public int LossCount
+        {
+            get
+            {
+                lock (_transactionRecord)
+                {
+                    return _transactionRecord.Values.Count(x => !x.IsWin);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Trade record of profits and losses for each trade statistics calculations that are considered winning trades
+        /// </summary>
+        public Dictionary<DateTime, decimal> WinningTransactions
+        {
+            get
+            {
+                lock (_transactionRecord)
+                {
+                    return _transactionRecord.Where(x => x.Value.IsWin).ToDictionary(x => x.Key, x => x.Value.ProfitLoss);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Trade record of profits and losses for each trade statistics calculations that are considered losing trades
+        /// </summary>
+        public Dictionary<DateTime, decimal> LosingTransactions
+        {
+            get
+            {
+                lock (_transactionRecord)
+                {
+                    return _transactionRecord.Where(x => !x.Value.IsWin).ToDictionary(x => x.Key, x => x.Value.ProfitLoss);
                 }
             }
         }
@@ -505,7 +567,11 @@ namespace QuantConnect.Securities
         /// </remarks>
         /// <param name="time">Time of order processed </param>
         /// <param name="transactionProfitLoss">Profit Loss.</param>
-        public void AddTransactionRecord(DateTime time, decimal transactionProfitLoss)
+        /// <param name="isWin">
+        /// Whether the transaction is a win.
+        /// For options exercise, this might not depend only on the profit/loss value
+        /// </param>
+        public void AddTransactionRecord(DateTime time, decimal transactionProfitLoss, bool isWin)
         {
             lock (_transactionRecord)
             {
@@ -514,7 +580,7 @@ namespace QuantConnect.Securities
                 {
                     clone = clone.AddMilliseconds(1);
                 }
-                _transactionRecord.Add(clone, transactionProfitLoss);
+                _transactionRecord.Add(clone, new TransactionRecordEntry { ProfitLoss = transactionProfitLoss, IsWin = isWin });
             }
         }
 

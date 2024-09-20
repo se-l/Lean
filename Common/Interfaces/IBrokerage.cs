@@ -38,6 +38,14 @@ namespace QuantConnect.Interfaces
         event EventHandler<List<OrderEvent>> OrdersStatusChanged;
 
         /// <summary>
+        /// Event that fires each time an order is updated in the brokerage side
+        /// </summary>
+        /// <remarks>
+        /// These are not status changes but mainly price changes, like the stop price of a trailing stop order
+        /// </remarks>
+        event EventHandler<OrderUpdateEvent> OrderUpdated;
+
+        /// <summary>
         /// Event that fires each time a short option position is assigned
         /// </summary>
         event EventHandler<OrderEvent> OptionPositionAssigned;
@@ -62,6 +70,11 @@ namespace QuantConnect.Interfaces
         /// Event that fires each time a user's brokerage account is changed
         /// </summary>
         event EventHandler<AccountEvent> AccountChanged;
+
+        /// <summary>
+        /// Event that fires each time a user's brokerage account holdings are changed
+        /// </summary>
+        event EventHandler<List<Holding>> AccountHoldingsChanged;
 
         /// <summary>
         /// Event that fires each time a user's brokerage maintenance margin is changed

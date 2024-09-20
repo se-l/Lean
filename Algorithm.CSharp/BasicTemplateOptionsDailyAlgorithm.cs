@@ -69,7 +69,7 @@ namespace QuantConnect.Algorithm.CSharp
                     var contractsByExpiration = chain.Where(x => x.Expiry != Time.Date).OrderBy(x => x.Expiry);
                     var contract = contractsByExpiration.FirstOrDefault();
 
-                    if (contract != null && IsMarketOpen(contract.Symbol))
+                    if (contract != null)
                     {
                         // if found, trade it
                         MarketOrder(contract.Symbol, 1);
@@ -122,7 +122,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 39654;
+        public long DataPoints => 36834;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -134,14 +134,17 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "2"},
+            {"Total Orders", "2"},
             {"Average Win", "0%"},
             {"Average Loss", "-1.31%"},
             {"Compounding Annual Return", "-15.304%"},
             {"Drawdown", "1.300%"},
             {"Expectancy", "-1"},
+            {"Start Equity", "100000"},
+            {"End Equity", "98689"},
             {"Net Profit", "-1.311%"},
-            {"Sharpe Ratio", "-3.31"},
+            {"Sharpe Ratio", "-3.607"},
+            {"Sortino Ratio", "-1.188"},
             {"Probabilistic Sharpe Ratio", "0.035%"},
             {"Loss Rate", "100%"},
             {"Win Rate", "0%"},
@@ -154,10 +157,10 @@ namespace QuantConnect.Algorithm.CSharp
             {"Tracking Error", "0.034"},
             {"Treynor Ratio", "0"},
             {"Total Fees", "$1.00"},
-            {"Estimated Strategy Capacity", "$18000.00"},
+            {"Estimated Strategy Capacity", "$0"},
             {"Lowest Capacity Asset", "GOOCV W78ZFMML01JA|GOOCV VP83T1ZUHROL"},
             {"Portfolio Turnover", "0.05%"},
-            {"OrderListHash", "0b52bbe98ade8e3aab943e64fcf4abfe"}
+            {"OrderListHash", "e188868e048fab6b6a0481b4479e97f9"}
         };
     }
 }

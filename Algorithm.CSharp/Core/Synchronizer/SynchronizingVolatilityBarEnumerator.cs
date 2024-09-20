@@ -26,13 +26,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Synchronizer
     /// Represents an enumerator capable of synchronizing other base data enumerators in time.
     /// This assumes that all enumerators have data time stamped in the same time zone
     /// </summary>
-    public class SynchronizingVolatilityBarEnumerator : SynchronizingEnumeratorMine<VolatilityBar>
+    public class SynchronizingVolatilityBarEnumerator : SynchronizingEnumeratorMine<VolatilityQuoteBar>
     {
         /// <summary>
         /// Initializes a new instance of the <see cref="SynchronizingVolatilityBarEnumerator"/> class
         /// </summary>
         /// <param name="enumerators">The enumerators to be synchronized. NOTE: Assumes the same time zone for all data</param>
-        public SynchronizingVolatilityBarEnumerator(params IEnumerator<VolatilityBar>[] enumerators)
+        public SynchronizingVolatilityBarEnumerator(params IEnumerator<VolatilityQuoteBar>[] enumerators)
             : this((IEnumerable<IEnumerator>)enumerators)
         {
         }
@@ -41,14 +41,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Synchronizer
         /// Initializes a new instance of the <see cref="SynchronizingVolatilityBarEnumerator"/> class
         /// </summary>
         /// <param name="enumerators">The enumerators to be synchronized. NOTE: Assumes the same time zone for all data</param>
-        public SynchronizingVolatilityBarEnumerator(IEnumerable<IEnumerator> enumerators) : base((IEnumerable<IEnumerator<VolatilityBar>>)enumerators)
+        public SynchronizingVolatilityBarEnumerator(IEnumerable<IEnumerator> enumerators) : base((IEnumerable<IEnumerator<VolatilityQuoteBar>>)enumerators)
         {
         }
 
         /// <summary>
         /// Gets the Timestamp for the data
         /// </summary>
-        protected override DateTime GetInstanceTime(VolatilityBar instance)
+        protected override DateTime GetInstanceTime(VolatilityQuoteBar instance)
         {
             return instance.EndTime;
         }

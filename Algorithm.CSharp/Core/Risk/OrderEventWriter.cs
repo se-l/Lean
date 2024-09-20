@@ -9,6 +9,7 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using System.Globalization;
 using System.Linq;
 using System;
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -18,11 +19,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private bool _headerWritten;
         private List<string> _header = new() { "Ts", "TimeMS", "OrderId", "BrokerId", "OrderDirection", "OrderStatus", "SecurityType", "Underlying", "Symbol", "Quantity", "FillQuantity", 
             "LimitPrice", "FillPrice", "Fee", "PriceUnderlying", "BestBid", "BestAsk", "Delta2Mid", "OrderType", 
-            "SubmitRequest.Status", "SubmitRequest.Time", "SubmitRequest.TimeMS",
+            "SubmitRequest.Status", "SubmitRequestResponseErrorMessage", "SubmitRequest.Time", "SubmitRequest.TimeMS",
             "CancelRequest.Status", "CancelRequest.Time", "CancelRequest.TimeMS",
             "LastUpdateRequest.Status", "LastUpdateRequest.Time", "LastUpdateRequest.TimeMS",
             "Tag", "TimeOrderLastUpdated", "TimeOrderLastUpdatedMS",
-            "Exchange", "OcaGroup", "OcaType"
+            "Exchange", "OcaGroup", "OcaType", "SweepRatio"
         };
         public OrderEventWriter(Foundations algo, Equity equity)
         {
@@ -48,7 +49,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Symbol underlying = Underlying(symbol);
             Order? order = _algo.Transactions.GetOrderById(orderTicket.OrderId);  // If existing tickets, might not have an order, only ticket in cache
             string order_status_nm = orderTicket.Status.ToString();
-            string order_direction_nm = Num2Direction(orderTicket.Quantity).ToString();
+            OrderDirection orderDirection = Num2Direction(orderTicket.Quantity);
+            string order_direction_nm = orderDirection.ToString();
             string security_type_nm = security.Type.ToString();
             decimal midPrice = _algo.MidPrice(symbol);
             decimal priceUnderlying = security.Type == SecurityType.Option ? ((Option)security).Underlying.Price : security.Price;
@@ -57,6 +59,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             decimal delta2Mid = fillPrice != 0 ? (orderTicket.Quantity > 0 ? midPrice - fillPrice : fillPrice - midPrice) : (orderTicket.Quantity > 0 ? midPrice - limitPrice : limitPrice - midPrice);
             DateTime timeOrderLastUpdated = orderTicket.Time.ConvertFromUtc(_algo.TimeZone);
             long timeOrderLastUpdatedMs = timeOrderLastUpdated.Ticks / TimeSpan.TicksPerMillisecond;
+
+            Sweep? sweep = _algo.SweepState.ContainsKey(symbol) ? (_algo.SweepState[symbol].TryGetValue(orderDirection, out sweep) ? sweep : null) : null;
 
             var row = new StringBuilder();
 
@@ -83,6 +87,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 ("Delta2Mid", () => delta2Mid.ToString(CultureInfo.InvariantCulture) ),
                 ("OrderType", () => orderTicket.OrderType.ToString() ),
                 ("SubmitRequestStatus", () => orderTicket.SubmitRequest.Status.ToString() ),
+                ("SubmitRequestResponseErrorMessage", () => orderTicket.SubmitRequest?.Response?.ErrorMessage ?? "" ),
                 ("SubmitRequestTime", () => orderTicket.SubmitRequest.Time.ConvertFromUtc(_algo.TimeZone).ToString("yyyyMMdd HHmmss", CultureInfo.InvariantCulture) ),
                 ("SubmitRequestTimeMS", () => (orderTicket.SubmitRequest.Time.ConvertFromUtc(_algo.TimeZone).Ticks / TimeSpan.TicksPerMillisecond).ToString(CultureInfo.InvariantCulture) ),
                 ("CancelRequestStatus", () => orderTicket.CancelRequest?.Status.ToString(CultureInfo.InvariantCulture) ),
@@ -97,6 +102,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 ("Exchange", () => order?.Exchange?.ToString()),
                 ("OcaGroup", () => order?.OcaGroup),
                 ("OcaType", () => order?.OcaType.ToString(CultureInfo.InvariantCulture)),
+                ("SweepRatio", () => sweep == null ? "" : sweep.SweepRatio.ToString(CultureInfo.InvariantCulture)),
             };            
 
             foreach (var (col, func) in headerFunc)

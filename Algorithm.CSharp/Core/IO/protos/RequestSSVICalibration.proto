@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+import "Common.proto";
+
+package QuantConnect.Algorithm.CSharp.Core.IO;
+
+option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
+
+
+message SSVIModelParams {
+
+    double theta = 1;
+    double rho = 2;
+    double psi = 3;
+}
+
+message SSVIParams {
+
+    string underlying = 1;  
+    OptionRight right = 2;
+    string tenor_dt = 3;
+    SSVIModelParams model_params = 4;
+
+}
+
+message RequestSSVICalibration {
+
+    string ts = 1;
+    string underlying = 2;  
+    MarketDataHistory market_data_history = 3;
+}
+
+message ResponseSSVICalibration {
+
+  RequestSSVICalibration request = 1;
+  repeated SSVIParams params = 2;
+
+}

@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "Common.proto";
+import "RequestSSVICalibration.proto";
 
 package QuantConnect.Algorithm.CSharp.Core.IO;
 
@@ -12,9 +13,10 @@ message RequestStressTestDs {
 
   string underlying = 2;
   
-  repeated Holding holdings = 3;
+  map<string, Holding> holdings = 3;
   
   repeated MarketDataSnapByUnderlying market_data_snaps = 4; 
+  repeated SSVIParams params = 5;
 
 }
 
@@ -24,7 +26,7 @@ message ResultStressTestDs {
 
   string underlying = 2;
   
-  repeated Holding holdings = 3;
+  map<string, Holding> holdings = 3;
   
   map<string, double> ds_dnlv = 4;
 

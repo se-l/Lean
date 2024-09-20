@@ -19,6 +19,7 @@ using Python.Runtime;
 using QuantConnect.Data;
 using QuantConnect.Logging;
 using System.Collections.Generic;
+using QuantConnect.Data.Market;
 
 namespace QuantConnect.Securities
 {
@@ -90,7 +91,10 @@ namespace QuantConnect.Securities
 
                     if (!gotData)
                     {
-                        if (!security.Symbol.ID.Symbol.Contains("VolatilityBar"))
+                        if (security.SubscriptionDataConfig.Type != typeof(VolatilityQuoteBar) || security.SubscriptionDataConfig.Type != typeof(VolatilityTradeBar))
+                        {
+                        }
+                        else
                         {
                             Log.Trace("FuncSecuritySeeder.SeedSecurity(): " + Messages.FuncSecuritySeeder.UnableToSeedSecurity(security));
                         }

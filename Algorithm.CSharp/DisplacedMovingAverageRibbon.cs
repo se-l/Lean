@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
 using QuantConnect.Interfaces;
@@ -77,7 +78,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">TradeBars IDictionary object with your stock data</param>
-        public void OnData(TradeBars data)
+        public override void OnData(Slice data)
         {
             // wait for our entire ribbon to be ready
             if (!_ribbon.All(x => x.IsReady)) return;
@@ -176,30 +177,33 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "7"},
-            {"Average Win", "19.18%"},
+            {"Total Orders", "7"},
+            {"Average Win", "19.17%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "16.740%"},
+            {"Compounding Annual Return", "16.729%"},
             {"Drawdown", "12.400%"},
             {"Expectancy", "0"},
-            {"Net Profit", "153.224%"},
-            {"Sharpe Ratio", "1.116"},
-            {"Probabilistic Sharpe Ratio", "56.426%"},
+            {"Start Equity", "100000"},
+            {"End Equity", "253075.04"},
+            {"Net Profit", "153.075%"},
+            {"Sharpe Ratio", "1.05"},
+            {"Sortino Ratio", "1.078"},
+            {"Probabilistic Sharpe Ratio", "56.405%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.054"},
+            {"Alpha", "0.051"},
             {"Beta", "0.507"},
             {"Annual Standard Deviation", "0.107"},
             {"Annual Variance", "0.011"},
-            {"Information Ratio", "-0.082"},
+            {"Information Ratio", "-0.083"},
             {"Tracking Error", "0.105"},
-            {"Treynor Ratio", "0.235"},
-            {"Total Fees", "$49.43"},
+            {"Treynor Ratio", "0.221"},
+            {"Total Fees", "$49.40"},
             {"Estimated Strategy Capacity", "$740000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.32%"},
-            {"OrderListHash", "44481c3d7eeb5acd5e3bccfec501a132"}
+            {"OrderListHash", "62d1401e91275f777d0865a13906e7c8"}
         };
     }
 }

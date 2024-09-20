@@ -5,7 +5,6 @@ MAINTAINER Sebastian Lueneburg <sebastian.lueneburg@gmail.com>
 COPY ./ToolBox/bin/Release/ /repos/quantconnect/Lean/ToolBox/bin/Release/
 RUN rm -f /repos/quantconnect/Lean/ToolBox/bin/Release/log.txt
 
-COPY ./runToolbox.sh /run.sh
-RUN chmod +x run.sh
+WORKDIR /repos/quantconnect/Lean/ToolBox/bin/Release
 
-ENTRYPOINT [ "/run.sh" ]
+ENTRYPOINT [ "dotnet", "QuantConnect.ToolBox.dll" ]

@@ -80,30 +80,33 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "29.610%"},
             {"Drawdown", "0.600%"},
             {"Expectancy", "0"},
+            {"Start Equity", "100000"},
+            {"End Equity", "100281.67"},
             {"Net Profit", "0.282%"},
-            {"Sharpe Ratio", "9.471"},
+            {"Sharpe Ratio", "7.023"},
+            {"Sortino Ratio", "0"},
             {"Probabilistic Sharpe Ratio", "0%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.111"},
+            {"Alpha", "0.094"},
             {"Beta", "-0.016"},
             {"Annual Standard Deviation", "0.007"},
             {"Annual Variance", "0"},
             {"Information Ratio", "-6.047"},
             {"Tracking Error", "0.439"},
-            {"Treynor Ratio", "-4.22"},
+            {"Treynor Ratio", "-3.13"},
             {"Total Fees", "$2.21"},
             {"Estimated Strategy Capacity", "$180000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "24.86%"},
-            {"OrderListHash", "e5e9dbcce9cc65204d91b28c850c328b"}
+            {"OrderListHash", "c07a9cae88eb3f47309fbf18216bc3cf"}
         };
 
         public class ExampleCustomData : BaseData

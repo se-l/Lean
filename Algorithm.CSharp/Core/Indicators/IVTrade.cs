@@ -50,7 +50,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         }
         public void SetDelta(double? delta = null)
         {
-            Current.Delta = delta != null ? delta : OptionContractWrap.E(_algo, Option, Time.Date).Delta(_algo.IV(Option, Price));
+            Current.Delta = delta != null ? delta : OptionContractWrap.E(_algo, Option, Time.Date).Delta(_algo.IV(Option, Price), UnderlyingMidPrice);
         }
     }
 }

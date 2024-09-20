@@ -17,6 +17,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using static QuantConnect.Util.LeanData;
 
 namespace QuantConnect.Interfaces
 {
@@ -45,8 +46,24 @@ namespace QuantConnect.Interfaces
         void Store(string key, byte[] data);
 
         /// <summary>
+        /// Store multiple symbols before zipping them.
+        /// </summary>
+        /// <param name="entries"></param>
+        /// <param name="overrideEntry"></param>
+        void Store(IEnumerable<FileMember> entries, bool overrideEntry = false);
+
+        /// <summary>
         /// Returns a list of zip entries in a provided zip file
         /// </summary>
         List<string> GetZipEntries(string zipFile);
+        
+        /// <summary>
+        /// Gets the compressed size of a zipped file entry
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
+        long Size(string key);
+
+        DateTime? LastModified(string key);
     }
 }

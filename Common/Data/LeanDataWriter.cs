@@ -26,6 +26,7 @@ using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Configuration;
 using QuantConnect.Data.Auxiliary;
+
 namespace QuantConnect.Data
 {
     /// <summary>
@@ -34,7 +35,12 @@ namespace QuantConnect.Data
     public class LeanDataWriter
     {
         private static KeyStringSynchronizer _keySynchronizer = new();
-        private static readonly Lazy<IMapFileProvider> MapFileProvider = new(
+
+        /// <summary>
+        /// The map file provider instance to use
+        /// </summary>
+        /// <remarks>Public for testing</remarks>
+        public static Lazy<IMapFileProvider> MapFileProvider { get; set; } = new(
             Composer.Instance.GetExportedValueByTypeName<IMapFileProvider>(Config.Get("map-file-provider", "LocalDiskMapFileProvider"), forceTypeNameOnExisting: false)
         );
 
@@ -179,6 +185,74 @@ namespace QuantConnect.Data
             }
         }
 
+        public void Write(IEnumerable<IEnumerable<BaseData>> sources)
+        {
+            List<FileMemberTimedLine> entries = new();
+
+            foreach (var source in sources)
+            {
+                var lastTime = DateTime.MinValue;
+                var outputFile = string.Empty;
+                Symbol symbol = null;
+                var currentFileData = new List<TimedLine>();
+
+                Symbol mappedSymbol = null;                
+
+                foreach (var data in source)
+                {
+                    // Ensure the data is sorted as a safety check
+                    if (data.Time < lastTime) throw new Exception("The data must be pre-sorted from oldest to newest");
+
+                    mappedSymbol = symbol = data.Symbol;
+
+                    // Update our output file
+                    // Only do this on date change, because we know we don't have a any data zips smaller than a day, saves time
+                    if (data.Time.Date != lastTime.Date)
+                    {
+                        // mappedSymbol = GetMappedSymbol(data.Time, data.Symbol);
+                        // Get the latest file name, if it has changed, we have entered a new file, write our current data to file
+                        var latestOutputFile = GetZipOutputFileName(_dataDirectory, data.Time, mappedSymbol);
+                        var latestSymbol = mappedSymbol;
+                        if (outputFile.IsNullOrEmpty() || outputFile != latestOutputFile)
+                        {
+                            if (!currentFileData.IsNullOrEmpty())
+                            {
+                                // Launch a write task for the current file and data set
+                                var file = outputFile;
+                                var fileData = currentFileData;
+                                var fileSymbol = symbol;
+                                entries.Add(new FileMemberTimedLine(
+                                    _dataDirectory, symbol, currentFileData, _resolution, _tickType
+                                    ));
+                            }
+
+                            // Reset our dictionary and store new output file
+                            currentFileData = new List<TimedLine>();
+                            outputFile = latestOutputFile;
+                            symbol = latestSymbol;
+                        }
+                    }
+
+                    // Add data to our current dictionary
+                    var line = LeanData.GenerateLine(data, _securityType, _resolution);
+                    currentFileData.Add(new TimedLine(data.Time, line));
+
+                    // Update our time
+                    lastTime = data.Time;
+                }
+
+                // Finish off my processing the last file as well
+                if (!currentFileData.IsNullOrEmpty())
+                {
+                    entries.Add(new FileMemberTimedLine(
+                        _dataDirectory, symbol, currentFileData, _resolution, _tickType
+                        ));
+                }
+            }
+
+            WriteFiles(entries);
+        }
+
         /// <summary>
         /// Downloads historical data from the brokerage and saves it in LEAN format.
         /// </summary>
@@ -237,15 +311,20 @@ namespace QuantConnect.Data
                     _tickType
                 );
 
-                var history = brokerage.GetHistory(historyRequest)
+                var history = brokerage.GetHistory(historyRequest)?
                     .Select(
                         x =>
                         {
                             // Convert to date timezone before we write it
                             x.Time = x.Time.ConvertTo(exchangeHours.TimeZone, dataTimeZone);
                             return x;
-                        })
+                        })?
                     .ToList();
+
+                if (history == null)
+                {
+                    continue;
+                }
 
                 // Generate a writer for this data and write it
                 var writer = new LeanDataWriter(_resolution, symbol, _dataDirectory, _tickType);
@@ -287,9 +366,28 @@ namespace QuantConnect.Data
             return File.Exists(filePath) && EntryExists(filePath, entryName);
         }
 
+        public long FileEntrySize(DateTime date, Symbol symbol)
+        {
+            var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
+            var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+            return EntrySize(filePath, entryName);
+        }
+
         public bool EntryExists(string filePath, string entryName)
         {
             return File.Exists(filePath) && _keySynchronizer.Execute(filePath, () => _dataCacheProvider.GetZipEntries(filePath).Any(x => x == entryName));
+        }
+
+        public long EntrySize(string filePath, string entryName)
+        {
+            return _keySynchronizer.Execute(filePath, () => _dataCacheProvider.Size($"{filePath}#{entryName}"));
+        }
+
+        public DateTime? EntryLastModified(DateTime date, Symbol symbol)
+        {
+            var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
+            var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+            return _keySynchronizer.Execute(filePath, () => _dataCacheProvider.LastModified($"{filePath}#{entryName}"));
         }
 
         /// <summary>
@@ -305,6 +403,7 @@ namespace QuantConnect.Data
         /// a sorted dictionary of DateTimes and strings. </remarks>
         private void WriteFile(string filePath, List<TimedLine> data, Symbol symbol)
         {
+            filePath = FileExtension.ToNormalizedPath(filePath);
             if (data == null || data.Count == 0)
             {
                 return;
@@ -371,6 +470,86 @@ namespace QuantConnect.Data
             });
         }
 
+        private void WriteFiles(IEnumerable<FileMemberTimedLine> entries)
+        {
+            foreach (var group in entries.GroupBy(e => e.FilePath))
+            {
+                string filePath = FileExtension.ToNormalizedPath(group.Key);
+                List<LeanData.FileMember> entriesByte = new();
+
+                foreach (var fileMemberTL in group)
+                {
+                    Symbol symbol = fileMemberTL.Symbol;
+                    var data = fileMemberTL.Data;
+                    string entryName = fileMemberTL.EntryName;
+                    var date = fileMemberTL.Date;
+
+                    if (data == null || data.Count == 0)
+                    {
+                        return;
+                    }
+
+                    // because we read & write the same file we need to take a lock per file path so we don't read something that might get outdated
+                    // by someone writting to the same path at the same time
+                    _keySynchronizer.Execute(filePath, singleExecution: false, () =>
+                    {
+                        // Check disk once for this file ahead of time, reuse where possible
+                        var fileExists = File.Exists(filePath);
+
+                        // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
+                        if (!fileExists)
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                        }
+
+                        // Handle merging of files
+                        // Only merge on files with hour/daily resolution, that exist, and can be loaded
+                        string finalData = null;
+                        if (_writePolicy == WritePolicy.Append)
+                        {
+                            var streamWriter = new ZipStreamWriter(filePath, entryName);
+                            foreach (var tuple in data)
+                            {
+                                streamWriter.WriteLine(tuple.Line);
+                            }
+                            streamWriter.DisposeSafely();
+                        }
+                        else if (_writePolicy == WritePolicy.Merge && fileExists && TryLoadFile(filePath, entryName, date, out var rows))
+                        {
+                            // Preform merge on loaded rows
+                            foreach (var timedLine in data)
+                            {
+                                rows[timedLine.Time] = timedLine.Line;
+                            }
+
+                            // Final merged data product
+                            finalData = string.Join("\n", rows.Values);
+                        }
+                        else
+                        {
+                            // Otherwise just extract the data from the given list.
+                            finalData = string.Join("\n", data.Select(x => x.Line));
+                        }
+
+                        if (finalData != null)
+                        {
+                            var bytes = Encoding.UTF8.GetBytes(finalData);
+                            entriesByte.Add(new LeanData.FileMember($"{filePath}#{entryName}", bytes));
+                        }
+
+                        if (Log.DebuggingEnabled)
+                        {
+                            var from = data[0].Time.Date.ToString(DateFormat.EightCharacter, CultureInfo.InvariantCulture);
+                            var to = data[data.Count - 1].Time.Date.ToString(DateFormat.EightCharacter, CultureInfo.InvariantCulture);
+                            Log.Debug($"LeanDataWriter.Write({symbol.ID}): Appending: {filePath} @ {entryName} {from}->{to}");
+                        }
+                    });
+                }
+
+                _dataCacheProvider.Store(entriesByte);
+            }
+        }
+
         public void WriteEmptyFileIfNotExists(DateTime date, Symbol symbol)
         {
             var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
@@ -378,26 +557,65 @@ namespace QuantConnect.Data
             // Generate this csv entry name
             var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
 
-            // Check disk once for this file ahead of time, reuse where possible
-            var fileExists = File.Exists(filePath);
-
             // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
-            if (!fileExists)
+            if (!File.Exists(filePath))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath));
             }
 
-            _keySynchronizer.Execute(filePath, singleExecution: false, () =>
+            if (!EntryExists(filePath, entryName))
             {
-                // Handle merging of files
-                // Only merge on files with hour/daily resolution, that exist, and can be loaded
-                if (!fileExists || !EntryExists(filePath, entryName))
+                _keySynchronizer.Execute(filePath, singleExecution: false, () =>
                 {
                     var bytes = Encoding.UTF8.GetBytes("");
                     _dataCacheProvider.Store($"{filePath}#{entryName}", bytes);
+                    Log.Trace($"LeanDataWriter.Write({symbol.ID}): Create empty csv file: {filePath} @ {entryName}");                    
+                });
+            }
+        }
+
+        public void WriteEmptyFileIfNotExists(IEnumerable<DateTime> dates, Symbol symbol)
+        {
+            var writeTasks = new Queue<Task>();
+
+            foreach (DateTime date in dates)
+            {
+                var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
+
+                // Generate this csv entry name
+                var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+
+                // If our file doesn't exist its possible the directory doesn't exist, make sure at least the directory exists
+                if (!File.Exists(filePath))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
                 }
-                Log.Trace($"LeanDataWriter.Write({symbol.ID}): Create empty csv file: {filePath} @ {entryName}");
-            });
+
+                writeTasks.Enqueue(Task.Run(() =>
+                {
+                    WriteEmptyFileIfNotExists(filePath, entryName);
+                }));                
+            }
+
+            // Wait for all our write tasks to finish
+            while (writeTasks.Count > 0)
+            {
+                var task = writeTasks.Dequeue();
+                task.Wait();
+            }
+        }
+
+        private void WriteEmptyFileIfNotExists(string filePath, string entryName)
+        {
+            if (!EntryExists(filePath, entryName))
+            {
+                _keySynchronizer.Execute(filePath, singleExecution: false, () =>
+                {
+                    var bytes = Encoding.UTF8.GetBytes("");
+                    _dataCacheProvider.Store($"{filePath}#{entryName}", bytes);
+                    Log.Trace($"WriteEmptyFileIfNotExists.Write(): Create empty csv file: {filePath} @ {entryName}");
+                });
+            }
         }
 
         /// <summary>
@@ -444,6 +662,30 @@ namespace QuantConnect.Data
             {
                 Line = line;
                 Time = time;
+            }
+        }
+
+        private class FileMemberTimedLine
+        {
+            public Symbol Symbol;
+            public List<TimedLine> Data;
+            Resolution Resolution;
+            TickType TickType;
+
+            public DateTime Date;
+            public string FilePath;
+            public string EntryName;
+
+            public FileMemberTimedLine(string baseDirectory, Symbol symbol, List<TimedLine> data, Resolution resolution, TickType tickType)
+            {
+                Symbol = symbol;
+                Data = data;
+                Resolution = resolution;
+                TickType = tickType;
+
+                Date = data[0].Time;
+                FilePath = LeanData.GenerateZipFilePath(baseDirectory, symbol, Date, Resolution, TickType);
+                EntryName = LeanData.GenerateZipEntryName(symbol, Date, Resolution, TickType);
             }
         }
     }

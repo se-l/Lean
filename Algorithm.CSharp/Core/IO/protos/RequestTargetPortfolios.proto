@@ -2,44 +2,37 @@ syntax = "proto3";
 
 import "Common.proto";
 import "StressTestDs.proto";
+import "RequestSSVICalibration.proto";
 
 package QuantConnect.Algorithm.CSharp.Core.IO;
 
 option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
 
 message TargetPortfolio {
+
   string underlying = 1;
-
-  repeated Holding holdings = 2;
-
+  map<string, Holding> holdings = 2;
   double objective = 3;
-
   map<string, double> ivs = 4;
-
-  ResultStressTestDs result_stress_test_ds  = 5;
-
+  ResultStressTestDs result_stress_test_ds = 5;
 }
 
 message RequestTargetPortfolios {
 
   string ts = 1;
-
   string underlying = 2;
-  
-  repeated Holding holdings = 3;
-  
-  repeated MarketDataSnapByUnderlying market_data_snaps = 4; 
-
+  map<string, Holding> holdings = 3;  
+  repeated MarketDataSnapByUnderlying market_data_snaps = 4;
+  int32 n_contracts = 5;
+  repeated SSVIParams params = 6;
+  repeated string scoped_symbols = 7;
 }
 
 message ResponseTargetPortfolios {
 
   string ts = 1;
-
-  string underlying = 2;
-  
-  repeated TargetPortfolio target_portfolios = 3;
-  
+  string underlying = 2;  
+  repeated TargetPortfolio target_portfolios = 3;  
   bool is_last_transmission = 4;
-
 }
+

@@ -33,9 +33,11 @@ namespace QuantConnect.Algorithm.CSharp
     public class IndicatorSuiteAlgorithm : QCAlgorithm, IRegressionAlgorithmDefinition
     {
         private string _ticker = "SPY";
+        private string _ticker2 = "GOOG";
         private string _customTicker = "IBM";
 
         private Symbol _symbol;
+        private Symbol _symbol2;
         private Symbol _customSymbol;
 
         private Indicators _indicators;
@@ -61,6 +63,7 @@ namespace QuantConnect.Algorithm.CSharp
 
             //Add as many securities as you like. All the data will be passed into the event handler:
             _symbol = AddSecurity(SecurityType.Equity, _ticker, Resolution.Daily).Symbol;
+            _symbol2 = AddSecurity(SecurityType.Equity, _ticker2, Resolution.Daily).Symbol;
 
             //Add the Custom Data:
             _customSymbol = AddData<CustomData>(_customTicker, Resolution.Daily).Symbol;
@@ -79,7 +82,8 @@ namespace QuantConnect.Algorithm.CSharp
                 MOMP = MOMP(_symbol, 20, Resolution.Daily),
                 STD = STD(_symbol, 20, Resolution.Daily),
                 MIN = MIN(_symbol, 14, Resolution.Daily), // by default if the symbol is a tradebar type then it will be the min of the low property
-                MAX = MAX(_symbol, 14, Resolution.Daily)  // by default if the symbol is a tradebar type then it will be the max of the high property
+                MAX = MAX(_symbol, 14, Resolution.Daily),  // by default if the symbol is a tradebar type then it will be the max of the high property
+                B = B(_symbol, _symbol2, 14),
             };
 
             // Here we're going to define indicators using 'selector' functions. These 'selector' functions will define what data gets sent into the indicator
@@ -125,18 +129,10 @@ namespace QuantConnect.Algorithm.CSharp
         }
 
         /// <summary>
-        /// Custom data event handler:
-        /// </summary>
-        /// <param name="data">CustomData - dictionary Bars of custom data</param>
-        public void OnData(CustomData data)
-        {
-        }
-
-        /// <summary>
         /// OnData event is the primary entry point for your algorithm. Each new data point will be pumped in here.
         /// </summary>
         /// <param name="data">TradeBars IDictionary object with your stock data</param>
-        public void OnData(TradeBars data)
+        public override void OnData(Slice data)
         {
             if (!_indicators.BB.IsReady || !_indicators.RSI.IsReady) return;
 
@@ -204,6 +200,7 @@ namespace QuantConnect.Algorithm.CSharp
             public MovingAverageConvergenceDivergence MACD;
             public Minimum MIN;
             public Maximum MAX;
+            public Beta B;
         }
 
         /// <summary>
@@ -240,7 +237,7 @@ namespace QuantConnect.Algorithm.CSharp
         /// <summary>
         /// Data Points count of all timeslices of algorithm
         /// </summary>
-        public long DataPoints => 4537;
+        public long DataPoints => 4733;
 
         /// <summary>
         /// Data Points count of the algorithm history
@@ -252,14 +249,17 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "1"},
+            {"Total Orders", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
             {"Compounding Annual Return", "19.058%"},
             {"Drawdown", "7.300%"},
             {"Expectancy", "0"},
+            {"Start Equity", "25000"},
+            {"End Equity", "35437.00"},
             {"Net Profit", "41.748%"},
-            {"Sharpe Ratio", "1.448"},
+            {"Sharpe Ratio", "1.366"},
+            {"Sortino Ratio", "1.503"},
             {"Probabilistic Sharpe Ratio", "72.548%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
@@ -270,12 +270,12 @@ namespace QuantConnect.Algorithm.CSharp
             {"Annual Variance", "0.008"},
             {"Information Ratio", "-1.289"},
             {"Tracking Error", "0.018"},
-            {"Treynor Ratio", "0.138"},
+            {"Treynor Ratio", "0.13"},
             {"Total Fees", "$1.00"},
             {"Estimated Strategy Capacity", "$580000000.00"},
             {"Lowest Capacity Asset", "SPY R735QTJ8XC9X"},
             {"Portfolio Turnover", "0.14%"},
-            {"OrderListHash", "ee33b931de5b59dfa930cbcacdaa2c9b"}
+            {"OrderListHash", "9722ef0c832953df585b122a17f48fc7"}
         };
     }
 }

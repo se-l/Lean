@@ -40,6 +40,9 @@ namespace QuantConnect.Securities
         private bool _isTotalPortfolioValueValid;
         private object _totalPortfolioValueLock = new();
         private bool _setAccountCurrencyWasCalled;
+        private decimal _freePortfolioValue;
+        private SecurityPositionGroupModel _positions;
+        private IAlgorithmSettings _algorithmSettings;
 
         /// <summary>
         /// Local access to the securities collection for the portfolio summation.
@@ -54,12 +57,18 @@ namespace QuantConnect.Securities
         /// <summary>
         /// Local access to the position manager
         /// </summary>
-        internal PositionManager Positions;
-
-        /// <summary>
-        /// Current read only position groups collection
-        /// </summary>
-        public PositionGroupCollection PositionGroups => Positions.Groups;
+        public SecurityPositionGroupModel Positions
+        {
+            get
+            {
+                return _positions;
+            }
+            set
+            {
+                value?.Initialize(Securities);
+                _positions = value;
+            }
+        }
 
         /// <summary>
         /// Gets the cash book that keeps track of all currency holdings (only settled cash)
@@ -74,11 +83,12 @@ namespace QuantConnect.Securities
         /// <summary>
         /// Initialise security portfolio manager.
         /// </summary>
-        public SecurityPortfolioManager(SecurityManager securityManager, SecurityTransactionManager transactions, IOrderProperties defaultOrderProperties = null)
+        public SecurityPortfolioManager(SecurityManager securityManager, SecurityTransactionManager transactions, IAlgorithmSettings algorithmSettings, IOrderProperties defaultOrderProperties = null)
         {
             Securities = securityManager;
             Transactions = transactions;
-            Positions = new PositionManager(securityManager);
+            _algorithmSettings = algorithmSettings;
+            Positions = new SecurityPositionGroupModel();
             MarginCallModel = new DefaultMarginCallModel(this, defaultOrderProperties);
 
             CashBook = new CashBook();
@@ -377,7 +387,7 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
-        /// Alias for HoldStock. Check if we have and holdings.
+        /// Alias for HoldStock. Check if we have any holdings.
         /// </summary>
         /// <seealso cref="HoldStock"/>
         public bool Invested => HoldStock;
@@ -461,6 +471,30 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// Returns the adjusted total portfolio value removing the free amount
+        /// If the <see cref="IAlgorithmSettings.FreePortfolioValue"/> has not been set, the free amount will have a trailing behavior and be updated when requested
+        /// </summary>
+        public decimal TotalPortfolioValueLessFreeBuffer
+        {
+            get
+            {
+                if (_algorithmSettings.FreePortfolioValue.HasValue)
+                {
+                    // the user set it, we will respect the value set
+                    _freePortfolioValue = _algorithmSettings.FreePortfolioValue.Value;
+                }
+                else
+                {
+                    // keep the free portfolio value up to date every time we use it
+                    _freePortfolioValue = TotalPortfolioValue * _algorithmSettings.FreePortfolioValuePercentage;
+                }
+
+                return TotalPortfolioValue - _freePortfolioValue;
+
+            }
+        }
+
+        /// <summary>
         /// Will flag the current <see cref="TotalPortfolioValue"/> as invalid
         /// so it is recalculated when gotten
         /// </summary>
@@ -476,7 +510,7 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return Securities.Values.Sum(security => security.Holdings.TotalFees);
+                return Securities.Total.Sum(security => security.Holdings.TotalFees);
             }
         }
 
@@ -487,7 +521,7 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return Securities.Values.Sum(security => security.Holdings.Profit);
+                return Securities.Total.Sum(security => security.Holdings.Profit);
             }
         }
 
@@ -498,7 +532,7 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return Securities.Values.Sum(security => security.Holdings.NetProfit);
+                return Securities.Total.Sum(security => security.Holdings.NetProfit);
             }
         }
 
@@ -509,7 +543,7 @@ namespace QuantConnect.Securities
         {
             get
             {
-                return Securities.Values.Sum(security => security.Holdings.TotalSaleVolume);
+                return Securities.Total.Sum(security => security.Holdings.TotalSaleVolume);
             }
         }
 
@@ -568,12 +602,14 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
-        /// Sets the account currency cash symbol this algorithm is to manage.
+        /// Sets the account currency cash symbol this algorithm is to manage, as well
+        /// as the starting cash in this currency if given
         /// </summary>
         /// <remarks>Has to be called before calling <see cref="SetCash(decimal)"/>
         /// or adding any <see cref="Security"/></remarks>
         /// <param name="accountCurrency">The account currency cash symbol to set</param>
-        public void SetAccountCurrency(string accountCurrency)
+        /// <param name="startingCash">The account currency starting cash to set</param>
+        public void SetAccountCurrency(string accountCurrency, decimal? startingCash = null)
         {
             accountCurrency = accountCurrency.LazyToUpper();
 
@@ -609,6 +645,11 @@ namespace QuantConnect.Securities
             CashBook.AccountCurrency = accountCurrency;
 
             _baseCurrencyCash = CashBook[accountCurrency];
+
+            if (startingCash != null)
+            {
+                SetCash((decimal)startingCash);
+            }
         }
 
         /// <summary>
@@ -643,6 +684,7 @@ namespace QuantConnect.Securities
             }
         }
 
+        // TODO: Review and fix these comments: it doesn't return what it says it does.
         /// <summary>
         /// Gets the margin available for trading a specific symbol in a specific direction.
         /// </summary>
@@ -654,7 +696,16 @@ namespace QuantConnect.Securities
             var security = Securities[symbol];
 
             var positionGroup = Positions.GetOrCreateDefaultGroup(security);
-            var parameters = new PositionGroupBuyingPowerParameters(this, positionGroup, direction);
+            // Order direction in GetPositionGroupBuyingPower is regarding buying or selling the position group sent as parameter.
+            // Since we are passing the same position group as the one in the holdings, we need to invert the direction.
+            // Buying the means increasing the position group (in the same direction it is currently held) and selling means decreasing it.
+            var positionGroupOrderDirection = direction;
+            if (security.Holdings.IsShort)
+            {
+                positionGroupOrderDirection = direction == OrderDirection.Buy ? OrderDirection.Sell : OrderDirection.Buy;
+            }
+
+            var parameters = new PositionGroupBuyingPowerParameters(this, positionGroup, positionGroupOrderDirection);
             return positionGroup.BuyingPowerModel.GetPositionGroupBuyingPower(parameters);
         }
 
@@ -764,26 +815,9 @@ namespace QuantConnect.Securities
                 _baseCurrencyCash.AddAmount(leftOver * split.ReferencePrice * split.SplitFactor);
                 return;
             }
-            next.Value *= split.SplitFactor;
 
-            // make sure to modify open/high/low as well for tradebar data types
-            var tradeBar = next as TradeBar;
-            if (tradeBar != null)
-            {
-                tradeBar.Open *= split.SplitFactor;
-                tradeBar.High *= split.SplitFactor;
-                tradeBar.Low *= split.SplitFactor;
-            }
-
-            // make sure to modify bid/ask as well for tradebar data types
-            var tick = next as Tick;
-            if (tick != null)
-            {
-                tick.AskPrice *= split.SplitFactor;
-                tick.BidPrice *= split.SplitFactor;
-            }
-
-            security.SetMarketPrice(next);
+            security.ApplySplit(split);
+            // The data price should have been adjusted already
             _baseCurrencyCash.AddAmount(leftOver * next.Price);
 
             // security price updated
@@ -795,9 +829,13 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <param name="time">Time of order processed </param>
         /// <param name="transactionProfitLoss">Profit Loss.</param>
-        public void AddTransactionRecord(DateTime time, decimal transactionProfitLoss)
+        /// <param name="isWin">
+        /// Whether the transaction is a win.
+        /// For options exercise, this might not depend only on the profit/loss value
+        /// </param>
+        public void AddTransactionRecord(DateTime time, decimal transactionProfitLoss, bool isWin)
         {
-            Transactions.AddTransactionRecord(time, transactionProfitLoss);
+            Transactions.AddTransactionRecord(time, transactionProfitLoss, isWin);
         }
 
         /// <summary>
@@ -859,6 +897,41 @@ namespace QuantConnect.Securities
         public void SetMarginCallModel(PyObject pyObject)
         {
             SetMarginCallModel(new MarginCallModelPythonWrapper(pyObject));
+        }
+
+        /// <summary>
+        /// Will determine if the algorithms portfolio has enough buying power to fill the given orders
+        /// </summary>
+        /// <param name="orders">The orders to check</param>
+        /// <returns>True if the algorithm has enough buying power available</returns>
+        public HasSufficientBuyingPowerForOrderResult HasSufficientBuyingPowerForOrder(List<Order> orders)
+        {
+            if (Positions.TryCreatePositionGroup(orders, out var group))
+            {
+                return group.BuyingPowerModel.HasSufficientBuyingPowerForOrder(new HasSufficientPositionGroupBuyingPowerForOrderParameters(this, group, orders));
+            }
+
+            for (var i = 0; i < orders.Count; i++)
+            {
+                var order = orders[i];
+                var security = Securities[order.Symbol];
+                var result = security.BuyingPowerModel.HasSufficientBuyingPowerForOrder(this, security, order);
+                if (!result.IsSufficient)
+                {
+                    // if any fails, we fail all
+                    return result;
+                }
+            }
+            return new HasSufficientBuyingPowerForOrderResult(true);
+        }
+
+        /// <summary>
+        /// Will set the security position group model to use
+        /// </summary>
+        /// <param name="positionGroupModel">The position group model instance</param>
+        public void SetPositions(SecurityPositionGroupModel positionGroupModel)
+        {
+            Positions = positionGroupModel;
         }
     }
 }
