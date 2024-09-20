@@ -36,8 +36,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 _intradayIVSlopeTrendingRange = _algo.Cfg.IntradayIVSlopeTrendingRange[CfgDefault];
             }
 
-            _algo.IVSurfaceRelativeStrikeBid[underlying].EODATMEventHandler += (s, e) => { _T1EODATMIVBid = e.IV; SetT1EODATMIV(); };
-            _algo.IVSurfaceRelativeStrikeAsk[underlying].EODATMEventHandler += (s, e) => { _T1EODATMIVAsk = e.IV; SetT1EODATMIV(); };
+            //_algo.IVSurfaceSSVIBid[underlying].EODATMEventHandler += (s, e) => { _T1EODATMIVBid = e.IV; SetT1EODATMIV(); };
+            //_algo.IVSurfaceSSVIAsk[underlying].EODATMEventHandler += (s, e) => { _T1EODATMIVAsk = e.IV; SetT1EODATMIV(); };
         }
         public OrderDirection[] Direction() {
             bool SodGtEod = (T0SODATMIV - _T1EODATMIV) > _EOD2SODATMIVJumpThreshold;

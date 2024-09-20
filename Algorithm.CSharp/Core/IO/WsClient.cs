@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.WebSockets;
 using System.Threading;
@@ -10,12 +11,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 {
     public class WsClient : IDisposable
     {
+        //private readonly Dictionary<object, Action<object, EventArgs>> _eventHandlers;
+
         public event EventHandler<ResponseTargetPortfolios> EventHandlerResponseTargetPortfolios;
         public event EventHandler<ResultStressTestDs> EventHandlerResultStressTestDs;
         public event EventHandler<CmdFetchTargetPortfolio> EventHandlerCmdFetchTargetPortfolio;
         public event EventHandler<CmdCancelOID> EventHandlerCmdCancelOID;
         public event EventHandler<CmdCfgOverride> EventHandlerCmdCfgOverride;
         public event EventHandler<ResponseKalmanInit> EventHandlerResponseKalmanInit;
+        public event EventHandler<ResponseSSVICalibration> EventHandlerResponseSSVICalibration;
         public event EventHandler<object> EventHandlerWSConnected;
 
         private ClientWebSocket WS;
@@ -31,7 +35,28 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         public WsClient(Foundations algo)
         {
             _algo = algo;
+            //_eventHandlers = new();
         }
+
+        //public void RegisterEventHandler(object eventName, Action<object, EventArgs> handler)
+        //{
+        //    if (!_eventHandlers.ContainsKey(eventName))
+        //    {
+        //        _eventHandlers[eventName] = handler;
+        //    }
+        //    else
+        //    {
+        //        _eventHandlers[eventName] += handler;
+        //    }
+        //}
+
+        //public void OnEvent(object eventName, object sender, EventArgs e)
+        //{
+        //    if (_eventHandlers.TryGetValue(eventName, out var handler))
+        //    {
+        //        handler?.Invoke(sender, e);
+        //    }
+        //}
 
         public void SetSemaphore(SemaphoreSlim sp)
         {
@@ -255,36 +280,29 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             }
         }
 
-        public async void SendMessageAsync(RequestTargetPortfolios requestTargetPortfolios)
+        private Channel GetRequestTypeChannel<T>()
         {
-            _messageQueue.Enqueue(new Message()
+            return typeof(T) switch
             {
-                Channel = Channel.TargetPortfolio,
-                Id = Guid.NewGuid().ToString(),
-                Action = Action.Subscribe,
-                Payload = requestTargetPortfolios.ToByteString()
-            });
-        }
-        public async void SendMessageAsync(RequestKalmanInit requestKalmanInit)
-        {
-            _messageQueue.Enqueue(new Message()
-            {
-                Channel = Channel.KalmanInit,
-                Id = Guid.NewGuid().ToString(),
-                Action = Action.Subscribe,
-                Payload = requestKalmanInit.ToByteString()
-            });
+                _ when typeof(T) == typeof(RequestTargetPortfolios) => Channel.TargetPortfolio,
+                _ when typeof(T) == typeof(RequestKalmanInit) => Channel.KalmanInit,
+                _ when typeof(T) == typeof(RequestStressTestDs) => Channel.StressTestDs,
+                _ when typeof(T) == typeof(RequestSSVICalibration) => Channel.RequestSsviCalibration,
+                _ => throw new InvalidOperationException($"No channel mapping found for request type {typeof(T)}.")
+            };
         }
 
-        public async void SendMessageAsync(RequestStressTestDs requestStressTestDs)
+        public async Task SendMessageAsync<T>(T request) where T : IMessage<T>
         {
             _messageQueue.Enqueue(new Message()
             {
-                Channel = Channel.StressTestDs,
+                Channel = GetRequestTypeChannel<T>(),
                 Id = Guid.NewGuid().ToString(),
                 Action = Action.Subscribe,
-                Payload = requestStressTestDs.ToByteString()
+                Payload = request.ToByteString()
             });
+
+            await Task.CompletedTask;
         }
 
         public async void SubscribeToHeartbeat()
@@ -328,6 +346,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     break;
                 case Channel.KalmanInit:
                     HandleKalmanInit(message);
+                    break;
+                case Channel.RequestSsviCalibration:
+                    HandleSSVICalibration(message);
                     break;
                 default:
                     _algo.Error($"Unknown message channel: {message.Channel}");
@@ -378,8 +399,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         private void HandleKalmanInit(Message message)
         {
             ResponseKalmanInit responseKalmanInit = ResponseKalmanInit.Parser.ParseFrom(message.Payload);
+            ReleaseThread();
             EventHandlerResponseKalmanInit?.Invoke(this, responseKalmanInit);
-
+        }
+        private void HandleSSVICalibration(Message message)
+        {
+            ResponseSSVICalibration responseSSVICalibration = ResponseSSVICalibration.Parser.ParseFrom(message.Payload);
+            ReleaseThread();
+            EventHandlerResponseSSVICalibration?.Invoke(this, responseSSVICalibration);
         }
 
         public void StopHealthCheck()

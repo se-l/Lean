@@ -33,7 +33,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _writer.WriteLine(string.Join(",", CsvHeader(position)));
                 _headerWritten = true;
             }
-            _writer.Write(CsvRow(position));
+            //_writer.Write(CsvRow(position));
         }
     }
 }

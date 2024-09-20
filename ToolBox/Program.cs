@@ -81,7 +81,9 @@ namespace QuantConnect.ToolBox
                     case "pdl":
                     case "polygondownloader":
                         tickTypes = optionsObject.ContainsKey("tick-types") ? ToolboxArgumentParser.GetTickTypes(optionsObject) : new List<string>() { "Trade", "Quote" };
-                        string skipExisting = optionsObject.TryGetValue("skip-existing", out var skipExistingObject) ? skipExistingObject.ToString() : "Y";
+                        bool skipFilled = optionsObject.ContainsKey("skip-filled") ? true : false;
+                        bool skipEmpty = optionsObject.ContainsKey("skip-empty") ? true : false;
+                        DateTime? skipModifiedSince = optionsObject.ContainsKey("skip-modified-since") ? Parse.DateTimeExact((string)optionsObject["skip-modified-since"], "yyyy-MM-dd") : null;
                         int nClients = int.Parse(optionsObject.TryGetValue("n-clients", out var nClientsObject) ? nClientsObject.ToString() : "16");
                         PolygonDownloaderProgram.PolygonDownloader(
                             tickers,
@@ -92,12 +94,14 @@ namespace QuantConnect.ToolBox
                             toDate,
                             apiKey,
                             tickTypes,
-                            skipExisting,
+                            skipFilled,
+                            skipEmpty,
+                            skipModifiedSince,
                             nClients);
                         break;
                     case "ive":
                         int nThreads = int.Parse(optionsObject.TryGetValue("n-clients", out var nThreadsObject) ? nThreadsObject.ToString() : "16");
-                        new VolatilityExporter().Run(tickers, fromDate, toDate, nThreads: nThreads);
+                        new VolatilityExporter().Run(tickers, fromDate, toDate, nThreads: nThreads, skipExisting: true);
                         break;
 
                     default:

@@ -55,8 +55,8 @@
   "DaysBeforeConsideringEarningsAnnouncement": {
     "_": 7
   },
-  "AtmIVIndicatorWindow": {
-    "_": 30
+  "IVSpreadIndicatorWindowSec": {
+    "_": 3600
   },
   "EarningsAnnouncementUtilityMinAtmIVElevation": {
     "_": 1.15
@@ -100,7 +100,7 @@
 
   /// Hedging
   "HedgingMode": {
-    "_": 1 // 1-HV ; 2-IV ;
+    "_": 3 // 1-HV ; 2-IV ; 3 - use SSVI surface for practitioner IV
   },
   "RiskLimitEODDelta100BpUSDTotalLong": 5,
   "RiskLimitEODDelta100BpUSDTotalShort": -5,
@@ -270,4 +270,5 @@
   "MinutesBeforeCloseHedgeToAcrossDs": 3,
   "SpreadDiscountSweepMinSpreadRatio": { "_": 0.3 },
   "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread 1-Mid ; 2-Passive earn spread
+  "IVSpreadSMAPeriod": { "_": 500 } // 0-Aggressive pay spread 1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
 }

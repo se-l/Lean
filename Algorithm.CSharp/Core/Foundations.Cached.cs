@@ -26,7 +26,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Func<Symbol, decimal> TickSize;
         public Func<decimal> PositionsTotal;
         public Func<int> PositionsN;
-        public Func<Symbol, double, double> AtmIVCached;
+        public Func<Symbol, double> AtmIVCached;
         public Func<Symbol, bool> IsDeltaHedgeInProgress;
 
         public void AssignCachedFunctions()
@@ -41,21 +41,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
             TickSize = Cache(GetTickSize, (Symbol symbol) => symbol, maxKeys: 1);
             PositionsTotal = Cache(GetPositionsTotal, () => Time.Trim(TimeSpan.TicksPerSecond), maxKeys: 1);
             PositionsN = Cache(GetPositionsN, () => Time.Trim(TimeSpan.TicksPerSecond), maxKeys: 1);
-            AtmIVCached = Cache(GetAtmIV, (Symbol symbol, double defaultSpread) => (Time.Trim(TimeSpan.TicksPerSecond), symbol, defaultSpread));
+            AtmIVCached = Cache(GetAtmIV, (Symbol symbol) => (Time.Trim(TimeSpan.TicksPerSecond), symbol));
             IsDeltaHedgeInProgress = Cache(GetIsDeltaHedgeInProgress, (Symbol symbol) => (Time.Trim(TimeSpan.TicksPerSecond), symbol));
 
             IntrinsicValue = (Option option) => option.GetIntrinsicValue(MidPrice(option.Underlying.Symbol));
         }
-        public double AtmIV(Symbol symbol, double defaultSpread = 0.005) => AtmIVCached(symbol, defaultSpread);
+        public double AtmIV(Symbol symbol) => AtmIVCached(symbol);
         /// <summary>
         /// Ask IV strongly slopes up close to expiration (1-3 days), therefore rendering midIV not a good indicator. Would wanna use contracts expiring later. This will lead to a
         /// jump in AtmIV when referenced contracts are switched. How to make it smooth?
         /// </summary>
-        public double GetAtmIV(Symbol symbol, double defaultSpread = 0.005)
+        public double GetAtmIV(Symbol symbol)
         {
-            double bidIV = IVSurfaceRelativeStrikeBid.TryGetValue(Underlying(symbol), out IVSurfaceRelativeStrike bidSurface) ? bidSurface.AtmIv() : 0;
-            double askIV = IVSurfaceRelativeStrikeAsk.TryGetValue(Underlying(symbol), out IVSurfaceRelativeStrike askSurface) ? askSurface.AtmIv() : 0;
-            return InterpolateMidIVIfAnyZero(bidIV, askIV, defaultSpread);
+            return IVSurfaceSSVIMid.TryGetValue(ToEquity(Underlying(symbol)), out IIVSurface ivs) ? ivs.AtmIv() : 0;
         }
 
         private double GetBeta(Symbol index, Symbol asset, int periods, Resolution resolution = Resolution.Daily)
@@ -110,26 +108,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
-        /// Once exceeded, hedge as closely as possible to the desired hedge metric, for now that's delta.
-        /// </summary>
-        //private void GetHedgeWithIndex()
-        //{
-        //    //tex:
-        //    //Deriving quantity to hedge
-        //    //$$\Delta_I=\beta \frac{S_A}{S_I} \Delta_A$$
-
-        //    var ticker = spy;
-        //    var pfRisk = PortfolioRisk.E(this);
-        //    decimal netSpyDelta = pfRisk.DeltaSPY100BpUSD;
-        //    if ( netSpyDelta > HedgeBand.DeltaLongUSD || netSpyDelta < HedgeBand.DeltaShortUSD )
-        //    {
-        //        var quantity = -1 * Math.Round((netSpyDelta - HedgeBand.DeltaTargetUSD) / MidPrice(ticker), 0);
-        //        // Call cached HedgeWithIndex to avoid stack overflow with MarketOrder or immediately filled Limit Orders.
-        //        //LimitOrder(ticker, quantity, RoundTick(MidPrice(ticker), TickSize(ticker)));
-        //    }
-        //}
-
-        /// <summary>
         /// Adjust the target hedge risk by an amount corresponding to the put call ratio signal.
         /// </summary>
         /// <returns></returns>
@@ -146,11 +124,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
             }
             return 0;
-        }
-
-        public decimal Risk100BpRisk2USDDelta(Symbol symbol, decimal risk)
-        {
-            return risk * 100 / MidPrice(symbol);
         }
 
         /// <summary>

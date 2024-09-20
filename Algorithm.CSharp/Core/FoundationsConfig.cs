@@ -38,7 +38,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, double> EOD2SODATMIVJumpThreshold { get; set; }
         public Dictionary<string, double[]> IntradayIVSlopeTrendingRange { get; set; }
         public Dictionary<string, int> DaysBeforeConsideringEarningsAnnouncement { get; set; }
-        public Dictionary<string, int> AtmIVIndicatorWindow { get; set; }
+        public Dictionary<string, int> IVSpreadIndicatorWindowSec { get; set; }
         public Dictionary<string, double> EarningsAnnouncementUtilityMinAtmIVElevation { get; set; }
         public Dictionary<string, int> EarningsAnnouncementUtilityMinDTE { get; set; }
         public Dictionary<string, bool> GammaScalpingEnabled { get; set; }
@@ -100,5 +100,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int MinutesBeforeCloseHedgeToAcrossDs { get; set; }
         public Dictionary<string, decimal> SpreadDiscountSweepMinSpreadRatio { get; set; }
         public Dictionary<string, int> EquityHedgeMode { get; set; }
+        public Dictionary<string, int> IVSpreadSMAPeriod { get; set; }
     }
 }

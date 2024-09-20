@@ -79,7 +79,10 @@ namespace QuantConnect.Configuration
                 new CommandLineOption("dividend-every-quarter-percentage", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Sets the probability each equity generated will have a dividend event every quarter. Note that this is not the total probability for all symbols generated. Only used for Equity. Defaults to 30.0: Example: --dividend-every-quarter-percentage=15.0 ]"),
                 new CommandLineOption("option-price-engine", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Sets the stochastic process, and returns new pricing engine to run calculations for that option. Defaults to BaroneAdesiWhaleyApproximationEngine: Example: --option-price-engine=BaroneAdesiWhaleyApproximationEngine ]"),
                 new CommandLineOption("volatility-model-resolution", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Sets the volatility model period span. Defaults to Daily: Example: --volatility-model-resolution=Daily ]"),
-                new CommandLineOption("chain-symbol-count", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Sets the size of the option chain. Defaults to 1 put and 1 call: Example: --chain-symbol-count=2 ]")
+                new CommandLineOption("chain-symbol-count", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Sets the size of the option chain. Defaults to 1 put and 1 call: Example: --chain-symbol-count=2 ]"),
+                new CommandLineOption("skip-filled", CommandOptionType.NoValue, "[OPTIONAL for PolygonDatadownloader. Skips downloading again entries that contain no data ]"),
+                new CommandLineOption("skip-empty", CommandOptionType.NoValue, "[OPTIONAL for PolygonDatadownloader. Skips downloading entries that exist, but are empty ]"),
+                new CommandLineOption("skip-modified-since", CommandOptionType.SingleValue, "[OPTIONAL for PolygonDatadownloader. Skips downloading entries that have been modified since this date. Use isoformat ]")
             };
 
         /// <summary>
@@ -88,8 +91,21 @@ namespace QuantConnect.Configuration
         public static Dictionary<string, object> ParseArguments(string[] args)
         {
             var envOptions = Environment.GetEnvironmentVariables().Cast<System.Collections.DictionaryEntry>().ToDictionary(k => k.Key.ToString(), v => v.Value);
+
             // Build string args from environment variables. Only select those environment variables that match the options
-            string[] envArgs = envOptions.Where(kvp => Options.Any(o => o.Name == kvp.Key)).Select(kvp => $"--{kvp.Key}={kvp.Value}").ToArray();
+            List<string> envArgs = new();
+            foreach (var kvp in envOptions.Where(kvp => Options.Any(o => o.Name == kvp.Key)))
+            {
+                if (string.IsNullOrEmpty((string)kvp.Value)) {
+                    envArgs.Add($"--{kvp.Key}");
+                } 
+                else
+                {
+                    envArgs.Add($"--{kvp.Key}={kvp.Value}");
+                }
+            };
+            Log.Trace($"Environment variables: {string.Join(" ", envArgs)}");
+
             // Concatenate with environment variables to support passing options via Docker run
             return ApplicationParser.Parse(ApplicationName, ApplicationDescription, ApplicationHelpText, args.Concat(envArgs).ToArray(), Options);
         }

@@ -25,21 +25,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       byte[] descriptorData = global::System.Convert.FromBase64String(
           string.Concat(
             "ChdSZXF1ZXN0S2FsbWFuSW5pdC5wcm90bxIlUXVhbnRDb25uZWN0LkFsZ29y",
-            "aXRobS5DU2hhcnAuQ29yZS5JTxoMQ29tbW9uLnByb3RvItUBChFSZXF1ZXN0",
-            "S2FsbWFuSW5pdBIKCgJ0cxgBIAEoCRISCgp1bmRlcmx5aW5nGAIgASgJEg4K",
-            "BmV4cGlyeRgDIAEoCRJICgxvcHRpb25fcmlnaHQYBCABKA4yMi5RdWFudENv",
-            "bm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLk9wdGlvblJpZ2h0EhYK",
-            "DmRhdGVfZml0X3N0YXJ0GAUgASgJEhQKDGRhdGVfZml0X2VuZBgGIAEoCRIY",
-            "ChBzY29wZWRfbW9uZXluZXNzGAcgAygBIsEBChJSZXNwb25zZUthbG1hbklu",
-            "aXQSSQoHcmVxdWVzdBgBIAEoCzI4LlF1YW50Q29ubmVjdC5BbGdvcml0aG0u",
-            "Q1NoYXJwLkNvcmUuSU8uUmVxdWVzdEthbG1hbkluaXQSEgoKaW5pdF9zdGF0",
-            "ZRgCIAMoARJMCg9pbml0X2NvdmFyaWFuY2UYAyADKAsyMy5RdWFudENvbm5l",
-            "Y3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlZlY3RvckRvdWJsZUIoqgIl",
-            "UXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JT2IGcHJvdG8z"));
+            "aXRobS5DU2hhcnAuQ29yZS5JTxoMQ29tbW9uLnByb3RvGhxSZXF1ZXN0U1NW",
+            "SUNhbGlicmF0aW9uLnByb3RvImEKEVJlcXVlc3RLYWxtYW5Jbml0EhIKCnVu",
+            "ZGVybHlpbmcYASABKAkSFgoOZGF0ZV9maXRfc3RhcnQYAiABKAkSFAoMZGF0",
+            "ZV9maXRfZW5kGAMgASgJEgoKAnRzGAQgASgJIvQBChJSZXNwb25zZUthbG1h",
+            "bkluaXQSSQoHcmVxdWVzdBgBIAEoCzI4LlF1YW50Q29ubmVjdC5BbGdvcml0",
+            "aG0uQ1NoYXJwLkNvcmUuSU8uUmVxdWVzdEthbG1hbkluaXQSRQoKaW5pdF9z",
+            "dGF0ZRgCIAMoCzIxLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNv",
+            "cmUuSU8uU1NWSVBhcmFtcxJMCg9pbml0X2NvdmFyaWFuY2UYAyADKAsyMy5R",
+            "dWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlZlY3RvckRv",
+            "dWJsZUIoqgIlUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5J",
+            "T2IGcHJvdG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
-          new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, },
+          new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInit), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInit.Parser, new[]{ "Ts", "Underlying", "Expiry", "OptionRight", "DateFitStart", "DateFitEnd", "ScopedMoneyness" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInit), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInit.Parser, new[]{ "Underlying", "DateFitStart", "DateFitEnd", "Ts" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInit), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInit.Parser, new[]{ "Request", "InitState", "InitCovariance" }, null, null, null, null)
           }));
     }
@@ -82,13 +82,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public RequestKalmanInit(RequestKalmanInit other) : this() {
-      ts_ = other.ts_;
       underlying_ = other.underlying_;
-      expiry_ = other.expiry_;
-      optionRight_ = other.optionRight_;
       dateFitStart_ = other.dateFitStart_;
       dateFitEnd_ = other.dateFitEnd_;
-      scopedMoneyness_ = other.scopedMoneyness_.Clone();
+      ts_ = other.ts_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -98,20 +95,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       return new RequestKalmanInit(this);
     }
 
-    /// <summary>Field number for the "ts" field.</summary>
-    public const int TsFieldNumber = 1;
-    private string ts_ = "";
-    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
-    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public string Ts {
-      get { return ts_; }
-      set {
-        ts_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
-      }
-    }
-
     /// <summary>Field number for the "underlying" field.</summary>
-    public const int UnderlyingFieldNumber = 2;
+    public const int UnderlyingFieldNumber = 1;
     private string underlying_ = "";
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -122,32 +107,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
     }
 
-    /// <summary>Field number for the "expiry" field.</summary>
-    public const int ExpiryFieldNumber = 3;
-    private string expiry_ = "";
-    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
-    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public string Expiry {
-      get { return expiry_; }
-      set {
-        expiry_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
-      }
-    }
-
-    /// <summary>Field number for the "option_right" field.</summary>
-    public const int OptionRightFieldNumber = 4;
-    private global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight optionRight_ = global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight.Call;
-    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
-    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight OptionRight {
-      get { return optionRight_; }
-      set {
-        optionRight_ = value;
-      }
-    }
-
     /// <summary>Field number for the "date_fit_start" field.</summary>
-    public const int DateFitStartFieldNumber = 5;
+    public const int DateFitStartFieldNumber = 2;
     private string dateFitStart_ = "";
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -159,7 +120,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     }
 
     /// <summary>Field number for the "date_fit_end" field.</summary>
-    public const int DateFitEndFieldNumber = 6;
+    public const int DateFitEndFieldNumber = 3;
     private string dateFitEnd_ = "";
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -170,15 +131,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
     }
 
-    /// <summary>Field number for the "scoped_moneyness" field.</summary>
-    public const int ScopedMoneynessFieldNumber = 7;
-    private static readonly pb::FieldCodec<double> _repeated_scopedMoneyness_codec
-        = pb::FieldCodec.ForDouble(58);
-    private readonly pbc::RepeatedField<double> scopedMoneyness_ = new pbc::RepeatedField<double>();
+    /// <summary>Field number for the "ts" field.</summary>
+    public const int TsFieldNumber = 4;
+    private string ts_ = "";
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::RepeatedField<double> ScopedMoneyness {
-      get { return scopedMoneyness_; }
+    public string Ts {
+      get { return ts_; }
+      set {
+        ts_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -196,13 +158,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (ReferenceEquals(other, this)) {
         return true;
       }
-      if (Ts != other.Ts) return false;
       if (Underlying != other.Underlying) return false;
-      if (Expiry != other.Expiry) return false;
-      if (OptionRight != other.OptionRight) return false;
       if (DateFitStart != other.DateFitStart) return false;
       if (DateFitEnd != other.DateFitEnd) return false;
-      if(!scopedMoneyness_.Equals(other.scopedMoneyness_)) return false;
+      if (Ts != other.Ts) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -210,13 +169,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override int GetHashCode() {
       int hash = 1;
-      if (Ts.Length != 0) hash ^= Ts.GetHashCode();
       if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
-      if (Expiry.Length != 0) hash ^= Expiry.GetHashCode();
-      if (OptionRight != global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight.Call) hash ^= OptionRight.GetHashCode();
       if (DateFitStart.Length != 0) hash ^= DateFitStart.GetHashCode();
       if (DateFitEnd.Length != 0) hash ^= DateFitEnd.GetHashCode();
-      hash ^= scopedMoneyness_.GetHashCode();
+      if (Ts.Length != 0) hash ^= Ts.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -235,31 +191,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       output.WriteRawMessage(this);
     #else
-      if (Ts.Length != 0) {
-        output.WriteRawTag(10);
-        output.WriteString(Ts);
-      }
       if (Underlying.Length != 0) {
-        output.WriteRawTag(18);
+        output.WriteRawTag(10);
         output.WriteString(Underlying);
       }
-      if (Expiry.Length != 0) {
-        output.WriteRawTag(26);
-        output.WriteString(Expiry);
-      }
-      if (OptionRight != global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight.Call) {
-        output.WriteRawTag(32);
-        output.WriteEnum((int) OptionRight);
-      }
       if (DateFitStart.Length != 0) {
-        output.WriteRawTag(42);
+        output.WriteRawTag(18);
         output.WriteString(DateFitStart);
       }
       if (DateFitEnd.Length != 0) {
-        output.WriteRawTag(50);
+        output.WriteRawTag(26);
         output.WriteString(DateFitEnd);
       }
-      scopedMoneyness_.WriteTo(output, _repeated_scopedMoneyness_codec);
+      if (Ts.Length != 0) {
+        output.WriteRawTag(34);
+        output.WriteString(Ts);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -270,31 +217,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
-      if (Ts.Length != 0) {
-        output.WriteRawTag(10);
-        output.WriteString(Ts);
-      }
       if (Underlying.Length != 0) {
-        output.WriteRawTag(18);
+        output.WriteRawTag(10);
         output.WriteString(Underlying);
       }
-      if (Expiry.Length != 0) {
-        output.WriteRawTag(26);
-        output.WriteString(Expiry);
-      }
-      if (OptionRight != global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight.Call) {
-        output.WriteRawTag(32);
-        output.WriteEnum((int) OptionRight);
-      }
       if (DateFitStart.Length != 0) {
-        output.WriteRawTag(42);
+        output.WriteRawTag(18);
         output.WriteString(DateFitStart);
       }
       if (DateFitEnd.Length != 0) {
-        output.WriteRawTag(50);
+        output.WriteRawTag(26);
         output.WriteString(DateFitEnd);
       }
-      scopedMoneyness_.WriteTo(ref output, _repeated_scopedMoneyness_codec);
+      if (Ts.Length != 0) {
+        output.WriteRawTag(34);
+        output.WriteString(Ts);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -305,17 +243,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public int CalculateSize() {
       int size = 0;
-      if (Ts.Length != 0) {
-        size += 1 + pb::CodedOutputStream.ComputeStringSize(Ts);
-      }
       if (Underlying.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(Underlying);
-      }
-      if (Expiry.Length != 0) {
-        size += 1 + pb::CodedOutputStream.ComputeStringSize(Expiry);
-      }
-      if (OptionRight != global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight.Call) {
-        size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) OptionRight);
       }
       if (DateFitStart.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(DateFitStart);
@@ -323,7 +252,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (DateFitEnd.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(DateFitEnd);
       }
-      size += scopedMoneyness_.CalculateSize(_repeated_scopedMoneyness_codec);
+      if (Ts.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Ts);
+      }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -336,17 +267,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (other == null) {
         return;
       }
-      if (other.Ts.Length != 0) {
-        Ts = other.Ts;
-      }
       if (other.Underlying.Length != 0) {
         Underlying = other.Underlying;
-      }
-      if (other.Expiry.Length != 0) {
-        Expiry = other.Expiry;
-      }
-      if (other.OptionRight != global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight.Call) {
-        OptionRight = other.OptionRight;
       }
       if (other.DateFitStart.Length != 0) {
         DateFitStart = other.DateFitStart;
@@ -354,7 +276,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (other.DateFitEnd.Length != 0) {
         DateFitEnd = other.DateFitEnd;
       }
-      scopedMoneyness_.Add(other.scopedMoneyness_);
+      if (other.Ts.Length != 0) {
+        Ts = other.Ts;
+      }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -371,32 +295,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
           case 10: {
-            Ts = input.ReadString();
-            break;
-          }
-          case 18: {
             Underlying = input.ReadString();
             break;
           }
-          case 26: {
-            Expiry = input.ReadString();
-            break;
-          }
-          case 32: {
-            OptionRight = (global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight) input.ReadEnum();
-            break;
-          }
-          case 42: {
+          case 18: {
             DateFitStart = input.ReadString();
             break;
           }
-          case 50: {
+          case 26: {
             DateFitEnd = input.ReadString();
             break;
           }
-          case 58:
-          case 57: {
-            scopedMoneyness_.AddEntriesFrom(input, _repeated_scopedMoneyness_codec);
+          case 34: {
+            Ts = input.ReadString();
             break;
           }
         }
@@ -415,32 +326,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
           case 10: {
-            Ts = input.ReadString();
-            break;
-          }
-          case 18: {
             Underlying = input.ReadString();
             break;
           }
-          case 26: {
-            Expiry = input.ReadString();
-            break;
-          }
-          case 32: {
-            OptionRight = (global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRight) input.ReadEnum();
-            break;
-          }
-          case 42: {
+          case 18: {
             DateFitStart = input.ReadString();
             break;
           }
-          case 50: {
+          case 26: {
             DateFitEnd = input.ReadString();
             break;
           }
-          case 58:
-          case 57: {
-            scopedMoneyness_.AddEntriesFrom(ref input, _repeated_scopedMoneyness_codec);
+          case 34: {
+            Ts = input.ReadString();
             break;
           }
         }
@@ -511,12 +409,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     /// <summary>Field number for the "init_state" field.</summary>
     public const int InitStateFieldNumber = 2;
-    private static readonly pb::FieldCodec<double> _repeated_initState_codec
-        = pb::FieldCodec.ForDouble(18);
-    private readonly pbc::RepeatedField<double> initState_ = new pbc::RepeatedField<double>();
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams> _repeated_initState_codec
+        = pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams> initState_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::RepeatedField<double> InitState {
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams> InitState {
       get { return initState_; }
     }
 
@@ -656,8 +554,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             input.ReadMessage(Request);
             break;
           }
-          case 18:
-          case 17: {
+          case 18: {
             initState_.AddEntriesFrom(input, _repeated_initState_codec);
             break;
           }
@@ -687,8 +584,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             input.ReadMessage(Request);
             break;
           }
-          case 18:
-          case 17: {
+          case 18: {
             initState_.AddEntriesFrom(ref input, _repeated_initState_codec);
             break;
           }
