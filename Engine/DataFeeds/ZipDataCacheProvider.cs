@@ -123,6 +123,22 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         }
 
         /// <summary>
+        /// Gets the compressed size of the entry in the zip file in bytes
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
+        /// <exception cref="System.ArgumentException"></exception>
+        public long Size(string key)
+        {
+            throw new NotImplementedException();
+        }
+
+        public DateTime? LastModified(string key)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
         /// Store the data in the cache.
         /// </summary>
         /// <param name="key">The source of the data, used as a key to retrieve data in the cache</param>

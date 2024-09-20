@@ -22,6 +22,7 @@ using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using System.Collections.Generic;
 using static QuantConnect.Util.LeanData;
+using System;
 
 namespace QuantConnect.Data
 {
@@ -96,6 +97,89 @@ namespace QuantConnect.Data
                         entry.Extract(stream);
                         stream.Position = 0;
                         return stream;
+                    }
+                }
+                catch (ZipException exception)
+                {
+                    Log.Error("DiskDataCacheProvider.Fetch(): Corrupt file: " + key + " Error: " + exception);
+                    return null;
+                }
+            });
+        }
+
+        /// <summary>
+        /// Gets the compressed size of the entry in the zip file in bytes
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
+        /// <exception cref="System.ArgumentException"></exception>
+        public long Size(string key)
+        {
+            LeanData.ParseKey(key, out var filePath, out var entryName);
+
+            return _synchronizer.Execute(filePath, () =>
+            {
+                if (!File.Exists(filePath))
+                {
+                    return 0;
+                }
+
+                try
+                {
+                    using var zip = ZipFile.Read(filePath);
+                    
+                    if (entryName.IsNullOrEmpty())
+                    {
+                        // Return the first entry
+                        throw new ArgumentException("Entry name is required to get size of the entry");
+                    }
+                    else
+                    {
+                        // Attempt to find our specific entry
+                        if (!zip.ContainsEntry(entryName))
+                        {
+                            return 0;
+                        }
+
+                        return zip[entryName].CompressedSize;
+                    }
+                }
+                catch (ZipException exception)
+                {
+                    Log.Error("DiskDataCacheProvider.Fetch(): Corrupt file: " + key + " Error: " + exception);
+                    return 0;
+                }
+            });
+        }
+
+        public DateTime? LastModified(string key)
+        {
+            LeanData.ParseKey(key, out var filePath, out var entryName);
+
+            return _synchronizer.Execute(filePath, DateTime? () =>
+            {
+                if (!File.Exists(filePath))
+                {
+                    return null;
+                }
+
+                try
+                {
+                    using var zip = ZipFile.Read(filePath);
+
+                    if (entryName.IsNullOrEmpty())
+                    {
+                        return null;
+                    }
+                    else
+                    {
+                        // Attempt to find our specific entry
+                        if (!zip.ContainsEntry(entryName))
+                        {
+                            return null;
+                        }
+
+                        return zip[entryName].LastModified;
                     }
                 }
                 catch (ZipException exception)

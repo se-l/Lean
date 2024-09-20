@@ -13,6 +13,7 @@ enum Channel {
     CMD_CANCEL_OID = 6;
     KALMAN_INIT = 7;
     CMD_CFG_OVERRIDE = 8;
+    REQUEST_SSVI_CALIBRATION = 9;
 }
 
 enum Action {
@@ -23,11 +24,7 @@ enum Action {
 message Message {
 
   Channel channel = 1;
-
   string id = 2;
-
   Action action = 3;
-
   bytes payload = 4;
-
 }

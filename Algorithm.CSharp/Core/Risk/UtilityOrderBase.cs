@@ -482,7 +482,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             double midIV = _algo.MidIV(Symbol);            
             if (midIV == 0) { return 0; }
-            double midIVEwma = _algo.MidIVEWMA(Symbol);
+            double midIVEwma = _algo.MidIVSSVI(Symbol);
             // Favors selling skewed wings.
             double fv = (midIVEwma - midIV) * OCW.Vega(midIV) * (double)(Quantity * _option.ContractMultiplier);
             return (double)_algo.DiscountedValue((decimal)fv, 1.0/365.0);  // Expecting intraday reversion to expected IV levels

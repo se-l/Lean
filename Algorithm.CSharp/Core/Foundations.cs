@@ -24,7 +24,8 @@ using QuantConnect.Data.UniverseSelection;
 using Newtonsoft.Json;
 using QuantConnect.Algorithm.Framework.Selection;
 using QuantConnect.Scheduling;
-using static Python.Runtime.TypeSpec;
+using QuantConnect.Algorithm.CSharp.Core.IO;
+using QuantConnect.Indicators;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -50,16 +51,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public Dictionary<Symbol, IVQuoteIndicator> IVBids = new();
         public Dictionary<Symbol, IVQuoteIndicator> IVAsks = new();
-        public Dictionary<Symbol, IVSurfaceRelativeStrike> IVSurfaceRelativeStrikeBid = new();
-        public Dictionary<Symbol, IVSurfaceRelativeStrike> IVSurfaceRelativeStrikeAsk = new();
-        //public Dictionary<(Symbol, OptionRight), IVSurfaceAndreasenHuge> IVSurfaceAndreasenHuge = new();
+        public Dictionary<Equity, IIVSurface> IVSurfaceSSVIMid = new();
+        
         public Dictionary<int, IUtilityOrder> OrderTicket2UtilityOrder = new();
 
         // Begin Used by ImpliedVolaExporter - To be moved over there....
-        public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVBid = new();
-        public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVAsk = new();
-        public Dictionary<Symbol, IVTrade> IVTrades = new();
-        public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVTrade = new();
+        // public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVBid = new();
+        // public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVAsk = new();
+        // public Dictionary<Symbol, IVTrade> IVTrades = new();
+        // public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVTrade = new();
         public Dictionary<Symbol, PutCallRatioIndicator> PutCallRatios = new();
         public Dictionary<(Symbol, decimal), UnderlyingMovedX> UnderlyingMovedX = new();
         //public Dictionary<Symbol, ConsecutiveTicksTrend> ConsecutiveTicksTrend = new();
@@ -67,6 +67,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         //public Dictionary<Symbol, AtmIVIndicator> AtmIVIndicators = new();
         public Dictionary<Symbol, HashSet<Regime>> ActiveRegimes = new();
         public ConcurrentDictionary<Symbol, List<PositionSnap>> PositionSnaps = new();
+        public ConcurrentDictionary<Symbol, List<Quote>> MarketDataQuotes = new();
+        public ConcurrentDictionary<Symbol, List<Core.IO.Trade>> MarketDataTrades = new ();
         // End
 
         public RiskRecorder RiskRecorder;
@@ -121,11 +123,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public readonly ConcurrentDictionary<Symbol, double> MarginalWeightedDNLV = new();
         public ConcurrentDictionary<Symbol, ConcurrentDictionary<OrderDirection, Sweep>> SweepState = new();
         public Dictionary<OrderDirection, ConcurrentDictionary<Symbol, SpreadBuffer>> SpreadBuffers = new() { { OrderDirection.Buy, new() }, {  OrderDirection.Sell, new() } };
-        public Dictionary<(Symbol, DateTime, OptionRight), KalmanFilter> KalmanFilters = new();
+        public Dictionary<Equity, KalmanFilter<SSVIParamsDictionary>> KalmanFiltersSSVI = new();
+        public Dictionary<Equity, KalmanFilterSSVIWriter> KalmanFilterSSVIWriters = new();
         public ConcurrentDictionary<Option, double> PresumedFillIV = new();
         public Dictionary<Symbol, DateTime> CurrentMarketOpen = new();
         public Dictionary<Symbol, DateTime> NextMarketClose = new();
         public Dictionary<Symbol, RequestContractsHandler> RequestContractsHandlers = new();
+        public Dictionary<Symbol, SimpleMovingAverage> IVSpreadSMA = new();
 
         public DateTime TimeWarmupFinished = DateTime.MaxValue;
 
@@ -181,7 +185,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
                 UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (sender, e) => RunSignals(e);
                 UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (sender, e) => SnapPositions();
-                UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += RiskProfiles[equity.Symbol].OnDS;
+                //UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += RiskProfiles[equity.Symbol].OnDS;
             }
             SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
             // Needs refactoring to handle early closes and trading across days and reference an updated config.
@@ -209,9 +213,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed), OnMarketClose);  // just some logging & cache clearing
 
             // Logging events
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
-            //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportIVSurface);
+            //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
+            //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), ExportPutCallRatios);
 
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), SetTradingRegime);
@@ -228,11 +231,60 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Wiring up events
             NewBidAskEventHandler += OnNewBidAskEventUpdateLimitPrices;
             NewBidAskEventHandler += OnNewBidAskEventCheckRiskLimits;
+            NewBidAskEventHandler += AppendQuoteToMarketsDataSnap;
+            NewBidAskEventHandler += OnNewBidAskEventUpdateIVSpread;
+            
             RiskLimitExceededEventHandler += OnRiskLimitExceededEventHedge;
 
             // For backtesting purposes: Test risk profile moves or compare BT to Live
             SetBacktestingHoldings();
         }
+
+        public void OnNewBidAskEventUpdateIVSpread(object sender, NewBidAskEventArgs newBidAsk)
+        {
+            Symbol symbol = newBidAsk.Symbol;
+            if (symbol.SecurityType == SecurityType.Option)
+            {
+                double spread = IVAsks[symbol].IVBidAsk.IV - IVBids[symbol].IVBidAsk.IV;
+
+                if (!IVSpreadSMA.ContainsKey(symbol))
+                {
+                    int ivSpreadSMAPeriod = Cfg.IVSpreadSMAPeriod.TryGetValue(symbol, out int period) ? period : Cfg.IVSpreadSMAPeriod[CfgDefault];
+                    IVSpreadSMA[symbol] = new SimpleMovingAverage(ivSpreadSMAPeriod);
+                }
+                IVSpreadSMA[symbol].Update(new IndicatorDataPoint(Time, (decimal)spread));
+            }
+        }
+
+        public void AppendQuoteToMarketsDataSnap(object sender, NewBidAskEventArgs e)
+        {
+            Security security = Securities[e.Symbol];
+            Quote quote = new()
+            {
+                Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
+                Symbol = e.Symbol.Value,
+                SecurityType = SecurityType2SecurityTypePb(security.Type),
+                Bid = (float)security.BidPrice,
+                Ask = (float)security.AskPrice,
+                PriceUnderlying = (float)(security.Type == SecurityType.Option ? ((Option)security).Underlying.Price : 0),
+            };
+            MarketDataQuotes[e.Symbol].Add(quote);
+        }
+
+        public void AppendTradeToMarketsDataSnap(object sender, NewTradeEventArgs e)
+        {
+            Security security = Securities[e.Symbol];
+            IO.Trade trade = new()
+            {
+                Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
+                Symbol = e.Symbol.Value,
+                SecurityType = SecurityType2SecurityTypePb(security.Type),
+                Price = (float)security.Price,
+                PriceUnderlying = (float)(security.Type == SecurityType.Option ? ((Option)security).Underlying.Price : 0),
+            };
+            MarketDataTrades[e.Symbol].Add(trade);
+        }
+
         public DateTime GetCurrentMarketOpen(Symbol symbol)
         {            
             var security = Securities[symbol];
@@ -276,32 +328,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public override void OnData(Slice slice)
         {
-            foreach (Symbol symbol in slice.QuoteBars.Keys)
-            {
-                if (symbol.SecurityType == SecurityType.Equity)
-                {
-                    IVSurfaceRelativeStrikeBid[symbol].ScheduleUpdate();
-                    IVSurfaceRelativeStrikeAsk[symbol].ScheduleUpdate();
-                }
-            }
-
-            equities.DoForEach(underlying => IVSurfaceRelativeStrikeBid[underlying].ProcessUpdateFlag());
-            equities.DoForEach(underlying => IVSurfaceRelativeStrikeAsk[underlying].ProcessUpdateFlag());
-
-            // Update Option Kalman filters with trade data.
-            foreach (Symbol symbol in slice.Bars.Keys)
-            {
-                if (symbol.SecurityType == SecurityType.Option)
-                {
-                    if (KalmanFilters.TryGetValue((symbol.Underlying, symbol.ID.Date, symbol.ID.OptionRight), out KalmanFilter kalmanFilter))
-                    {
-                        Option option = (Option)Securities[symbol];
-                        double ivTrade = OptionContractWrap.E(this, option, Time.Date).IV(option.Close, MidPrice(option.Underlying.Symbol), 0.001);
-                        kalmanFilter.UpdateObservation(option, ivTrade);
-                    }
-                }
-            }
-
             if (IsWarmingUp) return;
 
             foreach (Symbol symbol in slice.QuoteBars.Keys)
@@ -312,6 +338,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
                 PriceCache[symbol] = Securities[symbol].Cache.Clone();
             }
+
+            foreach (Symbol symbol in slice.Bars.Keys)
+            {
+                AppendTradeToMarketsDataSnap(this, new NewTradeEventArgs(symbol));
+            }
+
             PfRisk.ResetCache();
 
             foreach (Symbol underlying in equities)
@@ -426,10 +458,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
                 
                 var historyUnderlying = HistoryWrap(symbolUnderlying, Cfg.MinHistoryDaysUnderlyingForScoping, Resolution.Daily).ToList();
-                if (historyUnderlying.Any())
+                bool optionInSSVIParams = OptionInSSVIParams(symbol);
+                if (historyUnderlying.Any() || optionInSSVIParams)
                 {
                     decimal lastClose = historyUnderlying.Last().Close;
-                    if (ContractScopedForSubscription(symbol, lastClose, Cfg.ScopeContractStrikeOverUnderlyingMargin))
+                    if (optionInSSVIParams || ContractScopedForSubscription(symbol, lastClose, Cfg.ScopeContractStrikeOverUnderlyingMargin))
                     {
                         var item = AddData<VolatilityQuoteBar>(symbol, resolution: Resolution.Second, fillForward: false);
                         item.IsTradable = false;
@@ -447,6 +480,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
             }
             return subscribedSymbols;
+        }
+
+        public bool OptionInSSVIParams(Symbol option)
+        {
+            Equity equity = (Equity)Securities[option.ID.Underlying.Symbol];
+            return KalmanFiltersSSVI.ContainsKey(equity) && KalmanFiltersSSVI[equity].GetSSVIParams().ContainsKey((option.ID.Date, option.ID.OptionRight));
         }
 
         public void UpdateUniverseSubscriptions()
@@ -468,25 +507,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (IsWarmingUp || Time.Date == endOfDay) { return; }
             SnapPositions();
             LogPortfolioHighLevel();
-            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
-            KalmanFilters.Values.DoForEach(kf => kf.WriteCsvRows());
+            //ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
             endOfDay = Time.Date;
         }
 
         public override void OnEndOfAlgorithm()
         {
             OnEndOfDay();
-            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
+            //ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
             //RiskRecorder.Dispose();
-            IVSurfaceRelativeStrikeBid.Values.DoForEach(s => s.Dispose());
-            IVSurfaceRelativeStrikeAsk.Values.DoForEach(s => s.Dispose());
+            IVSurfaceSSVIMid.Values.DoForEach(s => s.Dispose());
+            KalmanFilterSSVIWriters.Values.DoForEach(w => w.Dispose());
             RiskProfiles.Values.DoForEach(s => s.Dispose());
             UtilityWriters.Values.DoForEach(s => s.Dispose());
             OrderEventWriters.Values.DoForEach(s => s.Dispose());
             PutCallRatios.Values.DoForEach(s => s.Dispose());
             RealizedPositionWriter.Dispose();
-            KalmanFilters.Values.DoForEach(kf => kf.WriteCsvRows());
-            KalmanFilters.Values.DoForEach(kf => kf.Dispose());
         }
 
         public void OnMarketOpen()
@@ -551,7 +587,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public void ExportIVSurface()
         {
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
-            IVSurfaceRelativeStrikeBid.Values.Union(IVSurfaceRelativeStrikeAsk.Values).DoForEach(s => s.WriteCsvRows());
+
+            IVSurfaceSSVIMid.Values.DoForEach(s => s.WriteCsvRows());
+            //IVSurfaceSSVIBid.Values.Union(IVSurfaceSSVIAsk.Values).DoForEach(s => s.WriteCsvRows());
         }
         public void ExportPutCallRatios()
         {
@@ -573,8 +611,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void OnMarketClose()
         {
-            optionTicker.DoForEach(ticker => IVSurfaceRelativeStrikeBid[ticker].OnEODATM());
-            optionTicker.DoForEach(ticker => IVSurfaceRelativeStrikeAsk[ticker].OnEODATM());
+            //optionTicker.DoForEach(ticker => IVSurfaceSSVIBid[ticker].OnEODATM());
+            //optionTicker.DoForEach(ticker => IVSurfaceSSVIAsk[ticker].OnEODATM());
 
             Log($"{Time} OptionContractWrap.ClearCache: Removed {OptionContractWrap.ClearCache(Time - TimeSpan.FromDays(3))} instances."); ;
         }
@@ -637,25 +675,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return InterpolateMidIVIfAnyZero(bidIV, askIV, defaultSpread);
         }
 
-        //public double IVAH(Symbol symbol)
-        //{
-        //    if (symbol.SecurityType != SecurityType.Option) return 0;
-
-        //    IVSurfaceAndreasenHuge ivSurfaceAndreasenHuge = IVSurfaceAndreasenHuge[(Underlying(symbol), symbol.ID.OptionRight)];
-        //    return ivSurfaceAndreasenHuge.IV(symbol) ?? 0;
-        //}
-
-        public double MidIVEWMA(Symbol symbol, double defaultSpread = 0.005)
+        public double MidIVSSVI(Symbol symbol, double defaultSpread = 0.005)
         {
-            double bidIV = IVSurfaceRelativeStrikeBid[symbol.Underlying].IV(symbol) ?? 0;
-            double askIV = IVSurfaceRelativeStrikeAsk[symbol.Underlying].IV(symbol) ?? 0;
-            return InterpolateMidIVIfAnyZero(bidIV, askIV, defaultSpread);
+            if (symbol.SecurityType != SecurityType.Option) return 0;
+
+            Option option = (Option)Securities[symbol];
+            Equity equity = (Equity)option.Underlying;
+            return IVSurfaceSSVIMid[equity].IV(option);
         }
 
-        public double ForwardIV(Symbol symbol, double defaultSpread = 0.005)
-        {
-            return MidIVEWMA(symbol);
-        }
+
         public double InterpolateMidIVIfAnyZero(double bidIV, double askIV, double defaultSpread = 0.005)
         {
             if (bidIV == 0 && askIV == 0)
@@ -676,13 +705,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
-        public double AtmIVEWMA(Symbol symbol, double defaultSpread = 0.005)
+        public Equity ToEquity(Symbol underlying)
         {
-            return InterpolateMidIVIfAnyZero(
-                IVSurfaceRelativeStrikeBid[Underlying(symbol)].AtmIvEwma(),
-                IVSurfaceRelativeStrikeAsk[Underlying(symbol)].AtmIvEwma(), 
-                defaultSpread
-                );
+            return (Equity)Securities[underlying];
         }
 
         public void AlertLateOrderRequests()
@@ -1017,10 +1042,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public List<Signal> GetDesiredOrders(Symbol underlying)
         {
+            Equity equity = ToEquity(underlying);
+            if (!IVSurfaceSSVIMid.ContainsKey(equity))
+            {
+                Log($"{Time} GetDesiredOrders: {underlying} IVSurfaceSSVIMid not ready.");
+                return new();
+            }
             var scopedOptions = Securities.Values.Where(s => 
                 s.Type == SecurityType.Option && 
                 Underlying(s.Symbol) == underlying && 
-                ContractScopedForNewPosition(s)
+                ContractScopedForNewPosition(s) &&
+                IVSurfaceSSVIMid[equity].HasParams((Option)s)
             );
 
             List<Signal> signals = new();
@@ -1666,35 +1698,25 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public double HedgeVolatility(Symbol symbol)
         {
-            switch (GetHedgingMode(symbol))
+            return GetHedgingMode(symbol) switch
             {
-                case HedgingMode.FwdRealizedVolatility:
-                    return (double)Securities[Underlying(symbol)].VolatilityModel.Volatility;
-                case HedgingMode.HistoricalVolatility:
-                    return (double)Securities[Underlying(symbol)].VolatilityModel.Volatility;
-                case HedgingMode.ImpliedVolatility:
-                    return MidIV(symbol);
-                case HedgingMode.ImpliedVolatilityEWMA:
-                    return MidIVEWMA(symbol);
-                default:
-                    throw new NotImplementedException($"HedgingMode {GetHedgingMode(symbol)} not implemented");
-            }
+                HedgingMode.FwdRealizedVolatility => (double)Securities[Underlying(symbol)].VolatilityModel.Volatility,
+                HedgingMode.HistoricalVolatility => (double)Securities[Underlying(symbol)].VolatilityModel.Volatility,
+                HedgingMode.ImpliedVolatility => MidIV(symbol),
+                HedgingMode.ImpliedVolatilitySSVI => MidIVSSVI(symbol),
+                _ => throw new NotImplementedException($"HedgingMode {GetHedgingMode(symbol)} not implemented"),
+            };
         }
 
         public Metric HedgeMetric(Symbol symbol)
         {
-            switch (GetHedgingMode(symbol))
+            return GetHedgingMode(symbol) switch
             {
-                case HedgingMode.FwdRealizedVolatility:
-                case HedgingMode.HistoricalVolatility:
-                    return Metric.DeltaTotal;
-                case HedgingMode.ImpliedVolatility:
-                    return Metric.DeltaImpliedTotal;
-                case HedgingMode.ImpliedVolatilityEWMA:
-                    return Metric.DeltaImpliedEWMATotal;
-                default:
-                    return Metric.DeltaTotal;
-            }
+                HedgingMode.FwdRealizedVolatility or HedgingMode.HistoricalVolatility => Metric.DeltaTotal,
+                HedgingMode.ImpliedVolatility => Metric.DeltaImpliedTotal,
+                HedgingMode.ImpliedVolatilitySSVI => Metric.DeltaImpliedSSVITotal,
+                _ => Metric.DeltaTotal,
+            };
         }
 
         public Func<Symbol, double> FuncVolatility(VolatilityType volatilityType)
@@ -1855,20 +1877,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 absMaxLongPosRespectingQuantity = Math.Abs(absMaxLongPosRespectingDelta / deltaPerUnit);
             }
             return absMaxLongPosRespectingQuantity;
-        }
-
-        /// <summary>
-        /// The implied move for an earnings release date has a dte of 1. For a period of days where high movement is expected, need to refactor this. Not planned so far.
-        /// Stock impacting events also happen on weekdays, suggests 365 as denominator (theta calculating argument). But, stocks dont move on weekends...
-        /// </summary>
-        /// <param name="symbol"></param>
-        /// <returns></returns>
-        public double ImpliedMove(Symbol symbol)
-        {
-            int dte = 1;  // (IVSurfaceRelativeStrikeAsk[Underlying(symbol)].MinExpiry() - Time.Date).Days;
-            if (dte < 0) return 0;
-            double currentAtm = AtmIV(Underlying(symbol));
-            return (double)MidPrice(Underlying(symbol)) * currentAtm * Math.Sqrt(dte) / Math.Sqrt(256);
         }
 
         public decimal AbsMaxFeeMinimizingQuantity(Symbol symbol, OrderDirection orderDirection)

@@ -73,5 +73,6 @@
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\StressTestDs.proto&quot;" />
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\Command.proto&quot;" />
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestKalmanInit.proto&quot;" />
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestSSVICalibration.proto&quot;" />
   </Target>
 </Project>

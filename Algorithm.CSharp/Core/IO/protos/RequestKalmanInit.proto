@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "Common.proto";
+import "RequestSSVICalibration.proto";
 
 package QuantConnect.Algorithm.CSharp.Core.IO;
 
@@ -9,19 +10,16 @@ option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
 
 message RequestKalmanInit {
 
-  string ts = 1;
-  string underlying = 2;  
-  string expiry = 3;
-  OptionRight option_right = 4;  
-  string date_fit_start = 5;
-  string date_fit_end = 6;
-  repeated double scoped_moneyness = 7;
+  string underlying = 1;
+  string date_fit_start = 2;
+  string date_fit_end = 3;
+  string ts = 4;
 }
 
 message ResponseKalmanInit {
 
   RequestKalmanInit request = 1;  
-  repeated double init_state = 2;
+  repeated SSVIParams init_state = 2;
   repeated VectorDouble init_covariance = 3;
 
 }

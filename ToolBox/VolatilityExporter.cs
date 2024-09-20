@@ -51,7 +51,7 @@ namespace QuantConnect.ToolBox
         /// <summary>
         /// Update existing symbol properties database
         /// </summary>
-        public void Run(List<string> tickers, DateTime startDate, DateTime endDate, Resolution resolution = Resolution.Second, int nThreads = 16)
+        public void Run(List<string> tickers, DateTime startDate, DateTime endDate, Resolution resolution = Resolution.Second, int nThreads = 16, bool skipExisting = true)
         {
             Log.Trace($"Running VolatilityExporter... tickers={string.Join(",", tickers)}, startDate={startDate}, endDate={endDate}, resolution={resolution}, nThreads={nThreads}");
             Cfg = JsonConvert.DeserializeObject<FoundationsConfig>(File.ReadAllText("FoundationsConfig.json"));
@@ -105,6 +105,11 @@ namespace QuantConnect.ToolBox
                     ConcurrentDictionary<Symbol, List<VolatilityQuoteBar>> IVQuotes = new();
                     foreach (var optionSymbol in optionSymbols)
                     {
+                        var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, dateTime, resolution, TickType.IV_Quote).ToString();
+                        if (skipExisting && !File.Exists(filePath))
+                        {
+                            continue;
+                        }
                         var rateTSHandle = new Handle<YieldTermStructure>(new FlatForward(dateTime, riskFreeRateHandle, dayCounter));
                         var dividendTSHandle = new Handle<YieldTermStructure>(new FlatForward(dateTime, dividendYieldQuoteHandle, dayCounter));
                         var volatilityTSHandle = new Handle<BlackVolTermStructure>(new BlackConstantVol(calculationDate, calendar, 0, dayCounter));
@@ -118,6 +123,12 @@ namespace QuantConnect.ToolBox
 
                     Parallel.ForEach(optionSymbols, new ParallelOptions { MaxDegreeOfParallelism = nThreads }, optionSymbol =>
                     {
+                        var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, dateTime, resolution, TickType.IV_Quote).ToString();
+                        if (skipExisting && !File.Exists(filePath))
+                        {
+                            return;
+                        }
+
                         IEnumerator<BaseData> underlyingQuoteBarsEnumerator = leanDataReaderQuotes.AsEnumerable().GetEnumerator();
                         underlyingQuoteBarsEnumerator.MoveNext();  // Initialize the enumerator
 
@@ -163,11 +174,22 @@ namespace QuantConnect.ToolBox
                     ConcurrentDictionary<Symbol, List<VolatilityTradeBar>> IVTrades = new();
                     foreach (var optionSymbol in optionSymbols)
                     {
+                        var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, dateTime, resolution, TickType.IV_Trade).ToString();
+                        if (skipExisting && !File.Exists(filePath))
+                        {
+                            return;
+                        }
                         IVTrades[optionSymbol] = new List<VolatilityTradeBar>();
                     }
 
                     Parallel.ForEach(optionSymbols, new ParallelOptions { MaxDegreeOfParallelism = nThreads }, optionSymbol =>
                     {
+                        var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, dateTime, resolution, TickType.IV_Trade).ToString();
+                        if (skipExisting && !File.Exists(filePath))
+                        {
+                            return;
+                        }
+
                         IEnumerator<BaseData> underlyingQuoteBarsEnumerator = leanDataReaderQuotes.AsEnumerable().GetEnumerator();
                         underlyingQuoteBarsEnumerator.MoveNext();  // Initialize the enumerator
 

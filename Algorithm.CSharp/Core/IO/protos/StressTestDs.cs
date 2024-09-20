@@ -25,35 +25,43 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       byte[] descriptorData = global::System.Convert.FromBase64String(
           string.Concat(
             "ChJTdHJlc3NUZXN0RHMucHJvdG8SJVF1YW50Q29ubmVjdC5BbGdvcml0aG0u",
-            "Q1NoYXJwLkNvcmUuSU8aDENvbW1vbi5wcm90byLVAQoTUmVxdWVzdFN0cmVz",
-            "c1Rlc3REcxIKCgJ0cxgBIAEoCRISCgp1bmRlcmx5aW5nGAIgASgJEkAKCGhv",
-            "bGRpbmdzGAMgAygLMi4uUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAu",
-            "Q29yZS5JTy5Ib2xkaW5nElwKEW1hcmtldF9kYXRhX3NuYXBzGAQgAygLMkEu",
-            "UXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5NYXJrZXRE",
-            "YXRhU25hcEJ5VW5kZXJseWluZyKKBgoSUmVzdWx0U3RyZXNzVGVzdERzEgoK",
-            "AnRzGAEgASgJEhIKCnVuZGVybHlpbmcYAiABKAkSQAoIaG9sZGluZ3MYAyAD",
-            "KAsyLi5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLkhv",
-            "bGRpbmcSVgoHZHNfZG5sdhgEIAMoCzJFLlF1YW50Q29ubmVjdC5BbGdvcml0",
-            "aG0uQ1NoYXJwLkNvcmUuSU8uUmVzdWx0U3RyZXNzVGVzdERzLkRzRG5sdkVu",
-            "dHJ5EhMKC2RlbHRhX3RvdGFsGAUgASgBEh0KFWRlbHRhX3RvdGFsX2Fjcm9z",
-            "c19kcxgGIAEoARIVCg13ZWlnaHRlZF9kbmx2GAcgASgBEocBCiFtYXJnaW5h",
-            "bF93ZWlnaHRlZF9kbmx2X2J5X2hvbGRpbmcYCCADKAsyXC5RdWFudENvbm5l",
-            "Y3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlJlc3VsdFN0cmVzc1Rlc3RE",
-            "cy5NYXJnaW5hbFdlaWdodGVkRG5sdkJ5SG9sZGluZ0VudHJ5EhcKD3RvdGFs",
-            "X29iamVjdGl2ZRgJIAEoARKNAQokbWFyZ2luYWxfc2NhbGVkX29iamVjdGl2",
-            "ZV9ieV9ob2xkaW5nGAogAygLMl8uUXVhbnRDb25uZWN0LkFsZ29yaXRobS5D",
-            "U2hhcnAuQ29yZS5JTy5SZXN1bHRTdHJlc3NUZXN0RHMuTWFyZ2luYWxTY2Fs",
-            "ZWRPYmplY3RpdmVCeUhvbGRpbmdFbnRyeRotCgtEc0RubHZFbnRyeRILCgNr",
-            "ZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBGkQKIk1hcmdpbmFsV2VpZ2h0",
-            "ZWREbmx2QnlIb2xkaW5nRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIg",
-            "ASgBOgI4ARpHCiVNYXJnaW5hbFNjYWxlZE9iamVjdGl2ZUJ5SG9sZGluZ0Vu",
-            "dHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoAToCOAFCKKoCJVF1YW50",
-            "Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU9iBnByb3RvMw=="));
+            "Q1NoYXJwLkNvcmUuSU8aDENvbW1vbi5wcm90bxocUmVxdWVzdFNTVklDYWxp",
+            "YnJhdGlvbi5wcm90byKTAwoTUmVxdWVzdFN0cmVzc1Rlc3REcxIKCgJ0cxgB",
+            "IAEoCRISCgp1bmRlcmx5aW5nGAIgASgJEloKCGhvbGRpbmdzGAMgAygLMkgu",
+            "UXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5SZXF1ZXN0",
+            "U3RyZXNzVGVzdERzLkhvbGRpbmdzRW50cnkSXAoRbWFya2V0X2RhdGFfc25h",
+            "cHMYBCADKAsyQS5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3Jl",
+            "LklPLk1hcmtldERhdGFTbmFwQnlVbmRlcmx5aW5nEkEKBnBhcmFtcxgFIAMo",
+            "CzIxLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uU1NW",
+            "SVBhcmFtcxpfCg1Ib2xkaW5nc0VudHJ5EgsKA2tleRgBIAEoCRI9CgV2YWx1",
+            "ZRgCIAEoCzIuLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUu",
+            "SU8uSG9sZGluZzoCOAEihAcKElJlc3VsdFN0cmVzc1Rlc3REcxIKCgJ0cxgB",
+            "IAEoCRISCgp1bmRlcmx5aW5nGAIgASgJElkKCGhvbGRpbmdzGAMgAygLMkcu",
+            "UXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5SZXN1bHRT",
+            "dHJlc3NUZXN0RHMuSG9sZGluZ3NFbnRyeRJWCgdkc19kbmx2GAQgAygLMkUu",
+            "UXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5SZXN1bHRT",
+            "dHJlc3NUZXN0RHMuRHNEbmx2RW50cnkSEwoLZGVsdGFfdG90YWwYBSABKAES",
+            "HQoVZGVsdGFfdG90YWxfYWNyb3NzX2RzGAYgASgBEhUKDXdlaWdodGVkX2Ru",
+            "bHYYByABKAEShwEKIW1hcmdpbmFsX3dlaWdodGVkX2RubHZfYnlfaG9sZGlu",
+            "ZxgIIAMoCzJcLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUu",
+            "SU8uUmVzdWx0U3RyZXNzVGVzdERzLk1hcmdpbmFsV2VpZ2h0ZWREbmx2QnlI",
+            "b2xkaW5nRW50cnkSFwoPdG90YWxfb2JqZWN0aXZlGAkgASgBEo0BCiRtYXJn",
+            "aW5hbF9zY2FsZWRfb2JqZWN0aXZlX2J5X2hvbGRpbmcYCiADKAsyXy5RdWFu",
+            "dENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlJlc3VsdFN0cmVz",
+            "c1Rlc3REcy5NYXJnaW5hbFNjYWxlZE9iamVjdGl2ZUJ5SG9sZGluZ0VudHJ5",
+            "Gl8KDUhvbGRpbmdzRW50cnkSCwoDa2V5GAEgASgJEj0KBXZhbHVlGAIgASgL",
+            "Mi4uUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5Ib2xk",
+            "aW5nOgI4ARotCgtEc0RubHZFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUY",
+            "AiABKAE6AjgBGkQKIk1hcmdpbmFsV2VpZ2h0ZWREbmx2QnlIb2xkaW5nRW50",
+            "cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgBOgI4ARpHCiVNYXJnaW5h",
+            "bFNjYWxlZE9iamVjdGl2ZUJ5SG9sZGluZ0VudHJ5EgsKA2tleRgBIAEoCRIN",
+            "CgV2YWx1ZRgCIAEoAToCOAFCKKoCJVF1YW50Q29ubmVjdC5BbGdvcml0aG0u",
+            "Q1NoYXJwLkNvcmUuSU9iBnByb3RvMw=="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
-          new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, },
+          new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDs), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDs.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDs), global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDs.Parser, new[]{ "Ts", "Underlying", "Holdings", "DsDnlv", "DeltaTotal", "DeltaTotalAcrossDs", "WeightedDnlv", "MarginalWeightedDnlvByHolding", "TotalObjective", "MarginalScaledObjectiveByHolding" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, null, })
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDs), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDs.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps", "Params" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDs), global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDs.Parser, new[]{ "Ts", "Underlying", "Holdings", "DsDnlv", "DeltaTotal", "DeltaTotalAcrossDs", "WeightedDnlv", "MarginalWeightedDnlvByHolding", "TotalObjective", "MarginalScaledObjectiveByHolding" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, null, null, })
           }));
     }
     #endregion
@@ -99,6 +107,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       underlying_ = other.underlying_;
       holdings_ = other.holdings_.Clone();
       marketDataSnaps_ = other.marketDataSnaps_.Clone();
+      params_ = other.params_.Clone();
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -134,12 +143,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     /// <summary>Field number for the "holdings" field.</summary>
     public const int HoldingsFieldNumber = 3;
-    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> _repeated_holdings_codec
-        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser);
-    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> holdings_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>();
+    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec _map_holdings_codec
+        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser), 26);
+    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> holdings_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> Holdings {
+    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> Holdings {
       get { return holdings_; }
     }
 
@@ -152,6 +161,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying> MarketDataSnaps {
       get { return marketDataSnaps_; }
+    }
+
+    /// <summary>Field number for the "params" field.</summary>
+    public const int ParamsFieldNumber = 5;
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams> _repeated_params_codec
+        = pb::FieldCodec.ForMessage(42, global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams> params_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams>();
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams> Params {
+      get { return params_; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -171,8 +191,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       if (Ts != other.Ts) return false;
       if (Underlying != other.Underlying) return false;
-      if(!holdings_.Equals(other.holdings_)) return false;
+      if (!Holdings.Equals(other.Holdings)) return false;
       if(!marketDataSnaps_.Equals(other.marketDataSnaps_)) return false;
+      if(!params_.Equals(other.params_)) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -182,8 +203,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       int hash = 1;
       if (Ts.Length != 0) hash ^= Ts.GetHashCode();
       if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
-      hash ^= holdings_.GetHashCode();
+      hash ^= Holdings.GetHashCode();
       hash ^= marketDataSnaps_.GetHashCode();
+      hash ^= params_.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -210,8 +232,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(18);
         output.WriteString(Underlying);
       }
-      holdings_.WriteTo(output, _repeated_holdings_codec);
+      holdings_.WriteTo(output, _map_holdings_codec);
       marketDataSnaps_.WriteTo(output, _repeated_marketDataSnaps_codec);
+      params_.WriteTo(output, _repeated_params_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -230,8 +253,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(18);
         output.WriteString(Underlying);
       }
-      holdings_.WriteTo(ref output, _repeated_holdings_codec);
+      holdings_.WriteTo(ref output, _map_holdings_codec);
       marketDataSnaps_.WriteTo(ref output, _repeated_marketDataSnaps_codec);
+      params_.WriteTo(ref output, _repeated_params_codec);
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -248,8 +272,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Underlying.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(Underlying);
       }
-      size += holdings_.CalculateSize(_repeated_holdings_codec);
+      size += holdings_.CalculateSize(_map_holdings_codec);
       size += marketDataSnaps_.CalculateSize(_repeated_marketDataSnaps_codec);
+      size += params_.CalculateSize(_repeated_params_codec);
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -268,8 +293,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (other.Underlying.Length != 0) {
         Underlying = other.Underlying;
       }
-      holdings_.Add(other.holdings_);
+      holdings_.MergeFrom(other.holdings_);
       marketDataSnaps_.Add(other.marketDataSnaps_);
+      params_.Add(other.params_);
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -294,11 +320,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             break;
           }
           case 26: {
-            holdings_.AddEntriesFrom(input, _repeated_holdings_codec);
+            holdings_.AddEntriesFrom(input, _map_holdings_codec);
             break;
           }
           case 34: {
             marketDataSnaps_.AddEntriesFrom(input, _repeated_marketDataSnaps_codec);
+            break;
+          }
+          case 42: {
+            params_.AddEntriesFrom(input, _repeated_params_codec);
             break;
           }
         }
@@ -325,11 +355,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             break;
           }
           case 26: {
-            holdings_.AddEntriesFrom(ref input, _repeated_holdings_codec);
+            holdings_.AddEntriesFrom(ref input, _map_holdings_codec);
             break;
           }
           case 34: {
             marketDataSnaps_.AddEntriesFrom(ref input, _repeated_marketDataSnaps_codec);
+            break;
+          }
+          case 42: {
+            params_.AddEntriesFrom(ref input, _repeated_params_codec);
             break;
           }
         }
@@ -419,12 +453,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     /// <summary>Field number for the "holdings" field.</summary>
     public const int HoldingsFieldNumber = 3;
-    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> _repeated_holdings_codec
-        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser);
-    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> holdings_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>();
+    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec _map_holdings_codec
+        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser), 26);
+    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> holdings_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> Holdings {
+    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> Holdings {
       get { return holdings_; }
     }
 
@@ -526,7 +560,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       if (Ts != other.Ts) return false;
       if (Underlying != other.Underlying) return false;
-      if(!holdings_.Equals(other.holdings_)) return false;
+      if (!Holdings.Equals(other.Holdings)) return false;
       if (!DsDnlv.Equals(other.DsDnlv)) return false;
       if (!pbc::ProtobufEqualityComparers.BitwiseDoubleEqualityComparer.Equals(DeltaTotal, other.DeltaTotal)) return false;
       if (!pbc::ProtobufEqualityComparers.BitwiseDoubleEqualityComparer.Equals(DeltaTotalAcrossDs, other.DeltaTotalAcrossDs)) return false;
@@ -543,7 +577,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       int hash = 1;
       if (Ts.Length != 0) hash ^= Ts.GetHashCode();
       if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
-      hash ^= holdings_.GetHashCode();
+      hash ^= Holdings.GetHashCode();
       hash ^= DsDnlv.GetHashCode();
       if (DeltaTotal != 0D) hash ^= pbc::ProtobufEqualityComparers.BitwiseDoubleEqualityComparer.GetHashCode(DeltaTotal);
       if (DeltaTotalAcrossDs != 0D) hash ^= pbc::ProtobufEqualityComparers.BitwiseDoubleEqualityComparer.GetHashCode(DeltaTotalAcrossDs);
@@ -577,7 +611,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(18);
         output.WriteString(Underlying);
       }
-      holdings_.WriteTo(output, _repeated_holdings_codec);
+      holdings_.WriteTo(output, _map_holdings_codec);
       dsDnlv_.WriteTo(output, _map_dsDnlv_codec);
       if (DeltaTotal != 0D) {
         output.WriteRawTag(41);
@@ -615,7 +649,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(18);
         output.WriteString(Underlying);
       }
-      holdings_.WriteTo(ref output, _repeated_holdings_codec);
+      holdings_.WriteTo(ref output, _map_holdings_codec);
       dsDnlv_.WriteTo(ref output, _map_dsDnlv_codec);
       if (DeltaTotal != 0D) {
         output.WriteRawTag(41);
@@ -651,7 +685,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Underlying.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(Underlying);
       }
-      size += holdings_.CalculateSize(_repeated_holdings_codec);
+      size += holdings_.CalculateSize(_map_holdings_codec);
       size += dsDnlv_.CalculateSize(_map_dsDnlv_codec);
       if (DeltaTotal != 0D) {
         size += 1 + 8;
@@ -685,7 +719,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (other.Underlying.Length != 0) {
         Underlying = other.Underlying;
       }
-      holdings_.Add(other.holdings_);
+      holdings_.MergeFrom(other.holdings_);
       dsDnlv_.MergeFrom(other.dsDnlv_);
       if (other.DeltaTotal != 0D) {
         DeltaTotal = other.DeltaTotal;
@@ -725,7 +759,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             break;
           }
           case 26: {
-            holdings_.AddEntriesFrom(input, _repeated_holdings_codec);
+            holdings_.AddEntriesFrom(input, _map_holdings_codec);
             break;
           }
           case 34: {
@@ -780,7 +814,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             break;
           }
           case 26: {
-            holdings_.AddEntriesFrom(ref input, _repeated_holdings_codec);
+            holdings_.AddEntriesFrom(ref input, _map_holdings_codec);
             break;
           }
           case 34: {

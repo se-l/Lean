@@ -58,14 +58,16 @@ namespace QuantConnect.ToolBox.Polygon
         /// <summary>
         /// Primary entry point to the program. This program only supports SecurityType.Equity
         /// </summary>
-        public static void PolygonDownloader(IList<string> tickers, string securityTypeString, string market, string resolutionString, DateTime fromDate, DateTime toDate, string apiKey="", IList<string> tickTypeStrings = null, string skipExisting = "Y", int nClients=16)
+        public static void PolygonDownloader(IList<string> tickers, string securityTypeString, string market, string resolutionString, DateTime fromDate, DateTime toDate, string apiKey="",
+            IList<string> tickTypeStrings = null, bool skipFilled = true, bool skipEmpty=true, DateTime? skipModifiedSince = null, int nClients=16)
         {
             void WriteDataQueueToDisk(ConcurrentQueue<Tuple<Symbol, IEnumerable<BaseData>>> dataQueue, Symbol underlying, TickType tickType, DiskDataCacheProvider diskDataCacheProvider, LeanDataWriter writer, CancellationTokenSource downloadFinished, DateTime startDate, DateTime endDate, Resolution resolution)
             {
                 var dataDirectory = Config.Get("data-folder", "../../../Data");
                 var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
-                
-                Console.WriteLine($"PolygonDownloaderProgram.WriteDataQueueToDisk(): {underlying} {tickType} Starting...");
+
+                Log.Trace($"PolygonDownloaderProgram.WriteDataQueueToDisk(): {underlying} {tickType} Starting... " +
+                    $"skipFilled={skipFilled}, skipEmpty={skipEmpty}, skipModifiedSince={skipModifiedSince} ");
 
                 bool stopWriting = downloadFinished.Token.IsCancellationRequested;
                 try
@@ -251,8 +253,23 @@ namespace QuantConnect.ToolBox.Polygon
                     var writer = writers[request.TickType];  // new LeanDataWriter(resolution, request.Symbol, dataDirectory, request.TickType, _diskDataCacheProvider);
                     var tradeDates = TradeDates(market, marketHoursDatabase, request.Symbol, request.Start, request.End);
 
-                    if (skipExisting == "Y" && tradeDates.All(date => writer.FileEntryExists(date, request.Symbol)))
+                    if (skipFilled && skipEmpty && tradeDates.All(date => writer.FileEntryExists(date, request.Symbol))
+                        )
                     {
+                        Interlocked.Increment(ref completedRequests);
+                        return;
+                    }
+
+                    if (!skipEmpty && tradeDates.All(date => writer.FileEntrySize(date, request.Symbol) > 0))
+                    {
+                        Interlocked.Increment(ref completedRequests);
+                        return;
+                    }
+                    // For each trade date, check if the file has any entries. If not, reload and overwrite if any data came back, otherwise skip.
+                    else if (skipModifiedSince != null && tradeDates.All(date => (writer.EntryLastModified(date, request.Symbol) ?? DateTime.MinValue) >= skipModifiedSince)
+                    )
+                    {
+                        Interlocked.Increment(ref completedRequests);
                         return;
                     }
 
@@ -267,7 +284,7 @@ namespace QuantConnect.ToolBox.Polygon
                             x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);
                             return x;
                         }
-                        );
+                    );
 
                     var key = new Tuple<Symbol, TickType>(Underlying(request.Symbol), request.TickType);
                     dataQueues[key].Enqueue(new(request.Symbol, data.ToList()));

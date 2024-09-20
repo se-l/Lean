@@ -50,12 +50,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             {
                 Metric.DeltaTotal => positions.Sum(p => p.DeltaTotal(volatility)),
                 Metric.DeltaImpliedTotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIV(p.Symbol))),
-                Metric.DeltaImpliedAtmTotal => positions.Sum(p => p.DeltaImpliedTotal(AtmIVEWMA(symbol))),
-                Metric.DeltaImpliedEWMATotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIVEWMA(symbol))),
+                Metric.DeltaImpliedSSVITotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIVSSVI(symbol))),
 
                 Metric.DeltaXBpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(dX ?? 0)),
                 Metric.Delta100BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(100)),
-                Metric.DeltaImplied100BpUSDTotal => positions.Sum(p => p.DeltaImpliedXBpUSDTotal(AtmIVEWMA(symbol), 100)),
                 Metric.Delta500BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(500)),
                 Metric.EquityDeltaTotal => positions.Where(p => p.SecurityType == SecurityType.Equity).Sum(p => p.DeltaTotal()),
                 Metric.EquityDPriceMidTotal => positions.Where(p => p.SecurityType == SecurityType.Equity).Sum(p => p.DPMidTotal),
@@ -63,13 +61,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
                 Metric.Gamma => (decimal)positions.Sum(p => p.Gamma(volatility)),
                 Metric.GammaTotal => positions.Sum(p => p.GammaTotal(volatility)),
-                Metric.GammaImpliedTotal => (decimal)positions.Sum(p => p.GammaImplied(AtmIVEWMA(symbol))),
                 Metric.GammaXBpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(dX ?? 0)),
                 Metric.Gamma100BpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(100)),
-                Metric.GammaImplied100BpUSDTotal => positions.Sum(p => p.GammaImpliedXBpUSDTotal(100, AtmIVEWMA(symbol))),
                 Metric.Gamma500BpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(500)),
                 Metric.SpeedXBpUSDTotal => positions.Sum(p => p.SpeedXBpUSDTotal(dX ?? 0)),
-                Metric.GammaImplied500BpUSDTotal => positions.Sum(p => p.GammaImpliedXBpUSDTotal(500, AtmIVEWMA(symbol))),
                 Metric.Vega => (decimal)positions.Sum(p => p.Vega()),
                 Metric.VegaTotal => positions.Sum(p => p.VegaTotal()),
                 Metric.VegaXBpUSDTotal => positions.Sum(p => p.VegaXBpUSDTotal(dX ?? 0)),
@@ -120,8 +115,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             return RiskByUnderlying(symbol, riskMetric, null, positions => positions.Where(p => p.Symbol == symbol && p.Quantity != 0));
         }
-        
-        public double AtmIVEWMA(Symbol symbol) => _algo.AtmIVEWMA(symbol);
 
         public decimal RiskIfFilled(Symbol symbol, decimal quantity, Metric riskMetric, double? volatility = null)
         {

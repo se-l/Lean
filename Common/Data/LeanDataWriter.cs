@@ -366,9 +366,28 @@ namespace QuantConnect.Data
             return File.Exists(filePath) && EntryExists(filePath, entryName);
         }
 
+        public long FileEntrySize(DateTime date, Symbol symbol)
+        {
+            var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
+            var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+            return EntrySize(filePath, entryName);
+        }
+
         public bool EntryExists(string filePath, string entryName)
         {
             return File.Exists(filePath) && _keySynchronizer.Execute(filePath, () => _dataCacheProvider.GetZipEntries(filePath).Any(x => x == entryName));
+        }
+
+        public long EntrySize(string filePath, string entryName)
+        {
+            return _keySynchronizer.Execute(filePath, () => _dataCacheProvider.Size($"{filePath}#{entryName}"));
+        }
+
+        public DateTime? EntryLastModified(DateTime date, Symbol symbol)
+        {
+            var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
+            var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+            return _keySynchronizer.Execute(filePath, () => _dataCacheProvider.LastModified($"{filePath}#{entryName}"));
         }
 
         /// <summary>

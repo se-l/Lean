@@ -295,7 +295,6 @@ Results/
 #Data moved to ext drive
 Data/
 /launchSettings.json
-/AWS ECS files
 /data
 /dataLive
 /trade

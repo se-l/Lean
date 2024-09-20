@@ -96,7 +96,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             if (schedule != null && schedule.Increment > 0)
             {
                 CurrentNContractsRequested = ContractsRemaining() > schedule.NRemaining ? CurrentNContractsRequested : TotalAbsPosition + schedule.Increment;
-                _algo.Log($"{_algo.Time} RequestContractsHandler.UpdateCurrentNContractsRequested(): {Underlying.Symbol.Value} - Updated to {CurrentNContractsRequested} contracts");
+                // Temporarily
+                CurrentNContractsRequested = Math.Min(CurrentNContractsRequested, 20);
+                _algo.Log($"{_algo.Time} RequestContractsHandler.UpdateCurrentNContractsRequested(): {Underlying.Symbol.Value} - Updated to {CurrentNContractsRequested} contracts. Max: 20");
             }
         }
 
