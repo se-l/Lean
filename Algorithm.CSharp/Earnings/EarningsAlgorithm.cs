@@ -79,6 +79,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, minutesAfterOpen: 4), FetchTargetPortfolios);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, minutesAfterOpen: 4), SetTargetHoldingsFromTargetPortfolios);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, minutesBeforeClose: 30), FetchPfRiskScenarios);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), SetPricingStrategies);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), LogDifferenceTargetHoldingsOrderTickets);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), FetchTargetPortfolios);
             ScheduleRegularRequestStressTestDs(startTime: new TimeSpan(0, 15, 50, 0), endTime: new TimeSpan(0, 16, 10, 0));
@@ -86,10 +88,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             foreach (string ticker in ticker)
             {
                 var equity = Securities[ticker] as Equity;
+                UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (sender, e) => RequestSSVICalibration((Equity)Securities[e]);
 
                 // Schedules Events only if a earnings release is in preparation
                 var releaseDate = NextReleaseDate(equity.Symbol, StartDate);
-                if (PreparingEarningsRelease(equity.Symbol))
+                if (IsPreparingEarningsRelease(equity.Symbol))
                 {
                     UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent += (object sender, Symbol underlying) =>
                     {
@@ -97,7 +100,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                         RequestTargetPortfolios(underlying);
                     };
                     // UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent += SnapMarketData;
-                    UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (sender, e) => RequestSSVICalibration((Equity)Securities[e]);
 
                     Schedule.On(DateRules.On(releaseDate), TimeRules.At(new TimeSpan(0, 23, 0, 0)), () => {
                         Log($"{Time} Clearing MarginalWeightedDNLV, TargetPortfolios and TargetHoldings");
@@ -108,32 +110,28 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(3)), () => ReloadTargetPortfolioOnUnattainableFillIV(equity.Symbol));
                 }
             }
-            wsClient.EventHandlerResponseTargetPortfolios += OnResponseTargetPortfolios;
-            wsClient.EventHandlerResultStressTestDs += OnResultStressTestDs;
-            wsClient.EventHandlerCmdCancelOID += OnCmdCancelOID;
-            wsClient.EventHandlerResponseKalmanInit += OnResponseKalmanInit;
-            wsClient.EventHandlerCmdCfgOverride += OnCmdCfgOverride;
+
             wsClient.EventHandlerWSConnected += OnWSConnected;
-            wsClient.EventHandlerResponseSSVICalibration += OnResponseSSVICalibration;
+            wsClient.RegisterEventHandler<TargetPortfoliosEventArgs>(Core.IO.Channel.TargetPortfolio, OnResponseTargetPortfolios);
+            wsClient.RegisterEventHandler<ResultStressTestDsEventArgs>(Core.IO.Channel.StressTestDs, OnResultStressTestDs);
+            wsClient.RegisterEventHandler<ResponseKalmanInitEventArgs>(Core.IO.Channel.KalmanInit, OnResponseKalmanInit);
+            wsClient.RegisterEventHandler<CmdCfgOverrideEventArgs>(Core.IO.Channel.CmdCfgOverride, OnCmdCfgOverride);
+            wsClient.RegisterEventHandler<ResponseSSVICalibrationEventArgs>(Core.IO.Channel.RequestSsviCalibration, OnResponseSSVICalibration);
+            wsClient.RegisterEventHandler<ResponsePfRiskScenariosEventArgs>(Core.IO.Channel.RequestPfRiskScenarios, OnResponsePfRiskScenarios);
+
         }
 
         public override void OnWarmupFinished()
         {
             base.OnWarmupFinished();
-            Securities
-                .Where(kvp => kvp.Key.SecurityType == SecurityType.Equity)
-                .Select(kvp => kvp.Value)
-                .DoForEach(equity => RequestKalmanInit((Equity)equity));
+            equities.DoForEach(symbol => RequestKalmanInit(ToEquity(symbol)));
 
             Cfg.Ticker.DoForEach(ticker => SetTargetHoldingsToZeroAfterEarnings(Securities[ticker].Symbol));
-
-            // Needs refactoring to sending KalmanInit ...
-            // Cfg.Ticker.DoForEach(ticker => TestFetchTargetPortfolios(Securities[ticker].Symbol));
 
             // This is especially for algo restarts mid day. Wouldn't want TargetHoldings to be set to default 0, and closing positions meant to be held until earnings release.
             Cfg.Ticker
                 .Select(ticker => Securities[ticker].Symbol)
-                .Where(underlying => PreparingEarningsRelease(underlying))
+                .Where(underlying => IsPreparingEarningsRelease(underlying))
                 .DoForEach(underlying => RequestTargetPortfolios(underlying));
 
             Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(2)), FetchTargetPortfolios);
@@ -341,6 +339,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 // Urgent first. Cancel other tickets. Hedge delta.
                 CancelOcaGroup(orderEvent);
                 CancelOptionTicketsWithSameDeltaSign(orderEvent.Symbol);
+                RiskScenarioHandler.ClearScenarios(ToEquity(Underlying(orderEvent.Symbol)));
 
                 var trades = WrapToTrade(orderEvent);
                 ApplyToPosition(trades);
@@ -374,7 +373,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     RequestStressTestDs(Underlying(orderEvent.Symbol));
                 }
             }
-
             HandleSpreadBuffers(orderEvent);
         }
 
@@ -431,7 +429,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 return;
             }
             else if (
-                !PreparingEarningsRelease(underlying)
+                !IsPreparingEarningsRelease(underlying)
                 || !TargetPortfolios.ContainsKey(underlying)
                 )
             {
@@ -517,19 +515,24 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             TargetPortfolios.DoForEach(kvp => SetTargetHoldingsFromTargetPortfolios(kvp.Key));
         }
 
-        public void OnResponseTargetPortfolios(object sender, ResponseTargetPortfolios responseTargetPortfolios)
+        public void OnResponseTargetPortfolios(object sender, TargetPortfoliosEventArgs e)
         {
-            if (responseTargetPortfolios == null)
+            if (e.ResponseTargetPortfolios.IsLastTransmission)
             {
-                Log($"{Time} OnTargetPortfolios: responseTargetPortfolios is null. Ignoring.");
+                wsClient.ReleaseThread();
+            }
+
+            if (e.ResponseTargetPortfolios == null)
+            {
+                Log($"{Time} OnTargetPortfolios: ResponseTargetPortfolios is null. Ignoring.");
                 return;
             }
-            if (!IsMyMarketOpen(responseTargetPortfolios.Underlying)) return;  // Avoids Running Signals after warmup has finished and a test fetch is scheduled.
+            if (!IsMyMarketOpen(e.ResponseTargetPortfolios.Underlying)) return;  // Avoids Running Signals after warmup has finished and a test fetch is scheduled.
 
-            var targetPfs = TargetPortfoliosWithoutOppositeQuantities(responseTargetPortfolios.TargetPortfolios);
-            Log($"{Time} OnTargetPortfolios: {targetPfs.Count()} portfolios received. IsLastTransmission: {responseTargetPortfolios.IsLastTransmission}");
+            var targetPfs = TargetPortfoliosWithoutOppositeQuantities(e.ResponseTargetPortfolios.TargetPortfolios);
+            Log($"{Time} OnTargetPortfolios: {targetPfs.Count()} portfolios received. IsLastTransmission: {e.ResponseTargetPortfolios.IsLastTransmission}");
             if (!targetPfs.Any()) {
-                if (responseTargetPortfolios.IsLastTransmission && !ExecuteScheduledTargetPortfolioFetch)
+                if (e.ResponseTargetPortfolios.IsLastTransmission && !ExecuteScheduledTargetPortfolioFetch)
                 {
                     Log($"{Time} OnTargetPortfolios: Last transmission contained zero portfolios. Scheduling retry in 5min");
                     ExecuteScheduledTargetPortfolioFetch = true;
@@ -622,22 +625,23 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
         }
 
-        public void OnResultStressTestDs(object sender, ResultStressTestDs resultStressTestDs)
+        public void OnResultStressTestDs(object sender, ResultStressTestDsEventArgs e)
         {
-            if (resultStressTestDs == null)
+            wsClient.ReleaseThread();
+            if (e.ResultStressTestDs == null)
             {
                 Log($"{Time} OnResultStressTestDs: resultStressTestDs is null. Ignoring.");
                 return;
             }
-            if (!Securities.ContainsKey(resultStressTestDs.Underlying))
+            if (!Securities.ContainsKey(e.ResultStressTestDs.Underlying))
             {
-                Log($"{Time} OnResultStressTestDs: {resultStressTestDs.Underlying} not subscribed. Ignoring.");
+                Log($"{Time} OnResultStressTestDs: {e.ResultStressTestDs.Underlying} not subscribed. Ignoring.");
                 return;
             }
-            Symbol underlying = Securities[resultStressTestDs.Underlying].Symbol;
-            LastDeltaAcrossDs[underlying] = resultStressTestDs.DeltaTotalAcrossDs;
-            string dsString = string.Join(",\n", resultStressTestDs.DsDnlv.OrderBy(kvp => kvp.Key).Select(kvp => $"{kvp.Key[..Math.Min(4, kvp.Key.Length)]}:{kvp.Value}"));
-            Log($"{Time} OnResultStressTestDs assumes estimated fill scenario: {resultStressTestDs.Underlying} @ {resultStressTestDs.Ts}, DeltaTotalAcrossDs: {resultStressTestDs.DeltaTotalAcrossDs}, DeltaTotal: {resultStressTestDs.DeltaTotal}\n{dsString}");
+            Symbol underlying = Securities[e.ResultStressTestDs.Underlying].Symbol;
+            LastDeltaAcrossDs[underlying] = e.ResultStressTestDs.DeltaTotalAcrossDs;
+            string dsString = string.Join(",\n", e.ResultStressTestDs.DsDnlv.OrderBy(kvp => kvp.Key).Select(kvp => $"{kvp.Key[..Math.Min(4, kvp.Key.Length)]}:{kvp.Value}"));
+            Log($"{Time} OnResultStressTestDs assumes estimated fill scenario: {e.ResultStressTestDs.Underlying} @ {e.ResultStressTestDs.Ts}, DeltaTotalAcrossDs: {e.ResultStressTestDs.DeltaTotalAcrossDs}, DeltaTotal: {e.ResultStressTestDs.DeltaTotal}\n{dsString}");
         }
 
         public void OnCmdCancelOID(object sender, CmdCancelOID cmdCancelOID)
@@ -670,15 +674,16 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             };
         }
         
-        public void OnResponseKalmanInit(object sender, ResponseKalmanInit responseKalmanInit)
+        public void OnResponseKalmanInit(object sender, ResponseKalmanInitEventArgs e)
         {
-            Equity equity = (Equity)Securities[responseKalmanInit.Request.Underlying];
-            if (responseKalmanInit.InitState.Count > 0)
+            wsClient.ReleaseThread();
+            Equity equity = (Equity)Securities[e.ResponseKalmanInit.Request.Underlying];
+            if (e.ResponseKalmanInit.InitState.Count > 0)
             {
                 if (!KalmanFiltersSSVI.ContainsKey(equity))
                 {
-                    SSVIParamsDictionary ssviParamsDct = new(responseKalmanInit.InitState.ToArray());
-                    Matrix<double> init_covariance = Matrix<double>.Build.DenseOfRowArrays(responseKalmanInit.InitCovariance.Select(row => row.Values.ToArray()));
+                    SSVIParamsDictionary ssviParamsDct = new(e.ResponseKalmanInit.InitState.ToArray());
+                    Matrix<double> init_covariance = Matrix<double>.Build.DenseOfRowArrays(e.ResponseKalmanInit.InitCovariance.Select(row => row.Values.ToArray()));
 
                     var vecToSSVIParamsDictionary = VecToSSVIParamsDictionary(ssviParamsDct);
                     KalmanFiltersSSVI[equity] = new KalmanFilter<SSVIParamsDictionary>(this, equity, ssviParamsDct.ToVector(), init_covariance, vecToSSVIParamsDictionary);
@@ -687,6 +692,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     IVSurfaceSSVIMid[equity].SetModelParams(KalmanFiltersSSVI[equity].GetSSVIParams());
 
                     Log($"{Time} OnResponseKalmanInit: {equity} Kalman filter initialized.");
+
+                    // Don't call TestFetchTargetPortfolios directly because this function runs in the WS.ReceiveLoop. Wouldn't wanna block that thread.
+                    Schedule.On(DateRules.Today, TimeRules.At(Time.AddMinutes(1).TimeOfDay), () => TestFetchTargetPortfolios(equity.Symbol));
                 }
                 else
                 {
@@ -698,18 +706,18 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 Log($"{Time} OnResponseKalmanInit: {equity} No init state received. Ignoring.");
             }
         }
-        public void OnCmdCfgOverride(object sender, CmdCfgOverride cmdCfgOverride)
+        public void OnCmdCfgOverride(object sender, CmdCfgOverrideEventArgs e)
         {
             try
             {
-                string cfgName = cmdCfgOverride.CfgName;
+                string cfgName = e.CmdCfgOverride.CfgName;
                 Type type = this.GetType();
                 //object cfg = type.GetMember(cfgName, BindingFlags.NonPublic | BindingFlags.Instance)[0];
                 //this.GetPropertyValue("CfgAlgo", BindingFlags.NonPublic)
                 object cfg = cfgName == "CfgAlgo" ? CfgAlgo : Cfg;
 
-                string cfgKey = cmdCfgOverride.Key;
-                string cfgValue = cmdCfgOverride.Value;
+                string cfgKey = e.CmdCfgOverride.Key;
+                string cfgValue = e.CmdCfgOverride.Value;
 
                 var attr = cfg.GetType().GetProperty(cfgKey);
 
@@ -744,9 +752,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     Error($"{Time} OnCmdCfgOverride: {cfgName}.{cfgKey} not found. Ignoring.");
                 }
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                Error($"{Time} OnCmdCfgOverride: {e.Message}");
+                Error($"{Time} OnCmdCfgOverride: {ex.Message}");
             }            
         }
 
@@ -897,7 +905,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         {
             // ToDo: Need a new class. History of MarketDataSnaps every x% change + latest one when requested. history for skew calculation... 
 
-            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed) || !PreparingEarningsRelease(underlying) || !IsPastEarningsEntryStartTime(underlying)) return;
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed) || !IsPreparingEarningsRelease(underlying) || !IsPastEarningsEntryStartTime(underlying)) return;
 
             Equity equity = ToEquity(underlying);
 
@@ -933,7 +941,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 {
                     wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
                     _ = wsClient.SendMessageAsync(requestTargetPortfolios);
-                    Log($"{Time} RequestKalmanInit: BLOCKING THREAD until response received. Backtesting only");
+                    Log($"{Time} RequestTargetPortfolios: BLOCKING THREAD until response received. Backtesting only");
                     wsClient.WaitThread();
                 }
                 else
@@ -948,9 +956,52 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
         }
 
+        public void RequestPfRiskScenarios(Symbol underlying)
+        {
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed) || !IsPreparingEarningsRelease(underlying) || !IsPastEarningsEntryStartTime(underlying)) return;
+
+            Equity equity = ToEquity(underlying);
+
+            RequestPfRiskScenarios request = new()
+            {
+                Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
+                Underlying = underlying
+            };
+            request.Holdings.Add(PortfolioOptionHoldings(underlying));
+            HashSet<(DateTime, OptionRight)> scopedSlices = Securities.Values.Where(k => k.Type == SecurityType.Option && Underlying(k.Symbol) == underlying).Select(k => (Option)k).Select(o => (o.Expiry, o.Right)).ToHashSet();
+            request.Params.AddRange(IVSSSVIParamsToPb(underlying, KalmanFiltersSSVI[equity].GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
+            request.ScopedSymbols.AddRange(Securities.Keys.Where(k => k.SecurityType == SecurityType.Option && Underlying(k) == underlying).Select(k => k.Value));
+
+            var snap = GetMarketDataSnapByUnderlying(underlying);
+            if (IsValidMarketDataSnap(snap))
+            {
+                request.MarketDataSnaps.Add(snap);
+
+                // Send request - response is handled in WsClient.ResponseReceived -> EventHandlers
+                Log($"{Time} RequestPfRiskScenarios: {underlying}");
+
+                if (!LiveMode)
+                {
+                    wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
+                    _ = wsClient.SendMessageAsync(request);
+                    Log($"{Time} RequestPfRiskScenarios: BLOCKING THREAD until response received. Backtesting only");
+                    wsClient.WaitThread();
+                }
+                else
+                {
+                    _ = wsClient.SendMessageAsync(request);
+                }
+            }
+            else
+            {
+                Log($"{Time} RequestPfRiskScenarios: {underlying}. No valid snap found. Not fetching target portfolios. Scheduling next try in 1min");
+                Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(1)), () => RequestPfRiskScenarios(underlying));
+            }
+        }
+
         public void TestFetchTargetPortfolios(Symbol underlying)
         {
-            if (!PreparingEarningsRelease(underlying)) return;
+            if (!IsPreparingEarningsRelease(underlying)) return;
 
             // Build request
             //int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
@@ -963,13 +1014,20 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             };
             requestTargetPortfolios.Holdings.Add(PortfolioOptionHoldings(underlying));
 
+            Equity equity = ToEquity(underlying);
+            HashSet<(DateTime, OptionRight)> scopedSlices = Securities.Values.Where(k => k.Type == SecurityType.Option && Underlying(k.Symbol) == underlying).Select(k => (Option)k).Select(o => (o.Expiry, o.Right)).ToHashSet();
+            requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying, KalmanFiltersSSVI[equity].GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
+            requestTargetPortfolios.ScopedSymbols.AddRange(Securities.Keys.Where(k => k.SecurityType == SecurityType.Option && Underlying(k) == underlying).Select(k => k.Value));
+
+            var startTime = SubtractBusinessDays(Time, 1);
+
             var snap = GetMarketDataSnapByUnderlying(underlying, false);
             if (IsValidMarketDataSnap(snap))
             {
                 requestTargetPortfolios.MarketDataSnaps.Add(snap);
 
                 // Send request - response is handled in WsClient.ResponseReceived -> EventHandlers
-                Log($"{Time} TestFetchTargetPortfolios: {underlying}");
+                Log($"{Time} TestFetchTargetPortfolios: {underlying}.");
 
                 if (!LiveMode)
                 {
@@ -1007,7 +1065,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         public void RequestStressTestDs(Symbol underlying)
         {
-            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed) || !PreparingEarningsRelease(underlying)) return;
+            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed) || !IsPreparingEarningsRelease(underlying)) return;
 
             Log($"{Time} RequestStressTestDs: {underlying}");
 
@@ -1103,13 +1161,23 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
 
             Log($"{Time} RequestSSVICalibration: {underlying}");
+            MarketDataHistory history;
+            try
+            {
+                history = GetMarketDataHistory(underlying, SubtractBusinessDays(Time, 1), Time);
+            }
+            catch (Exception e)
+            {
+                Error($"{Time} RequestSSVICalibration: {underlying}. {e.Message}");
+                return;
+            }
 
             // Build request
             RequestSSVICalibration requestSSVICalibration = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Underlying = underlying.Symbol.Value,
-                MarketDataHistory = GetMarketDataHistory(underlying, SubtractBusinessDays(Time, 1), Time)
+                MarketDataHistory = history
             };
 
             if (!LiveMode)
@@ -1124,8 +1192,10 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
         }
 
-        public void OnResponseSSVICalibration(object source, ResponseSSVICalibration response)
+        public void OnResponseSSVICalibration(object source, ResponseSSVICalibrationEventArgs e)
         {
+            wsClient.ReleaseThread();
+
             lock (MarketDataQuotes)
             {
                 foreach (var key in MarketDataQuotes.Keys)
@@ -1143,11 +1213,18 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 }
             }
 
-            Equity underlying = (Equity)Securities[response.Request.Underlying];
+            Equity underlying = (Equity)Securities[e.ResponseSSVICalibration.Request.Underlying];
             SSVIParamsDictionary currentStateParams = KalmanFiltersSSVI[underlying].GetSSVIParams();
-            SSVIParamsDictionary responseParams = new(response.Params.ToArray());
+            SSVIParamsDictionary responseParams = new(e.ResponseSSVICalibration.Params.ToArray());
             KalmanFiltersSSVI[underlying].Update(currentStateParams.Update(responseParams).ToVector());
             Log($"{Time} OnResponseSSVICalibration: {underlying} Kalman state updated.");
+        }
+
+        public void OnResponsePfRiskScenarios(object source, ResponsePfRiskScenariosEventArgs e)
+        {
+            wsClient.ReleaseThread();
+            RiskScenarioHandler.SetScenarios(e.ResponsePfRiskScenarios.PfRiskScenarios.ToArray());  
+            Log($"{Time} OnResponsePfRiskScenarios: updated.");
         }
 
         public void ScheduledTargetPortfolioFetch()
@@ -1170,6 +1247,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             ExecuteScheduledTargetPortfolioFetch = false;
 
             Cfg.Ticker.DoForEach(ticker => RequestTargetPortfolios(Securities[ticker].Symbol));
+        }
+
+        public void FetchPfRiskScenarios()
+        {
+            Cfg.Ticker.DoForEach(ticker => RequestPfRiskScenarios(Securities[ticker].Symbol));
         }
 
         public void SetTargetHoldingsToZeroAfterEarnings(Symbol underlying)

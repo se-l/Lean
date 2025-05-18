@@ -89,9 +89,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             //dayCounter = new Business252(calendar); // extremely slow
             dayCounter = new Actual365Fixed();
             maturityDate = new Date(contract.Expiry.Day, contract.Expiry.Month, contract.Expiry.Year);
-            this.calculationDate = calculationDate;
+            this.calculationDate = Date.advance(calculationDate, -1, TimeUnit.Days);
             this.calculationDate = Date.Min(this.calculationDate, maturityDate);
-            Tenor = (maturityDate - this.calculationDate) / 365.0;
+            Tenor = ToTenor(contract.Expiry, calculationDate);
             settlementDate = this.calculationDate;
             strikePrice = (double)contract.StrikePrice;
             optionType = contract.Right == OptionRight.Call ? Option.Type.Call : Option.Type.Put;
@@ -120,7 +120,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             //dividendAmounts = new List<double>() { };
             Settings.setEvaluationDate(algo.Time.Date);
 
-            bsmProcess = GetBSMP(calculationDate, new Handle<Quote>(spotQuote), new Handle<Quote>(hvQuote), riskFreeRateQuoteHandle, dividendYieldQuoteHandle);            
+            bsmProcess = GetBSMP(this.calculationDate, new Handle<Quote>(spotQuote), new Handle<Quote>(hvQuote), riskFreeRateQuoteHandle, dividendYieldQuoteHandle);            
             amOption = SetEngine(new VanillaOption(payoff, amExercise), bsmProcess, optionPricingModel: OptionPricingModel.CoxRossRubinstein);
             euOption = SetEngine(new VanillaOption(payoff, euExercise), bsmProcess, optionPricingModel: OptionPricingModel.AnalyticEuropeanEngine);
             //bsProcess = GetBSP(calculationDate, new Handle<Quote>(spotQuote), hvQuoteHandle, riskFeeRateQuoteHandle);
@@ -241,9 +241,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public void SetEvaluationDateToCalcDate(Date? evaluationDate = null)
         {
             // There is considerable performance overhead on setEvaluationDate raising some event within QLNet, therefore only calling if necessary.
-            if (Settings.evaluationDate() != (evaluationDate ?? calculationDate))
+            Date adjustedDate = evaluationDate == null ? calculationDate : Date.advance(evaluationDate, -1, TimeUnit.Days);
+            if (Settings.evaluationDate() != adjustedDate)
             {
-                Settings.setEvaluationDate(evaluationDate ?? calculationDate);
+                Settings.setEvaluationDate(adjustedDate);
             }
         }
 
@@ -668,15 +669,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             return maturityDate - new Date(dt.Day, dt.Month, dt.Year);
             //return calendar.businessDaysBetween(new Date(dt.Day, dt.Month, dt.Year), maturityDate);
-        }
-        /// <summary>
-        /// Looks wrong. Review against paper. Stuck to ACTUAL Days calculation elsewhere as stock impacting events can also happen on weekends...
-        /// </summary>
-        /// <returns></returns>
-        public double TimeToMaturity()
-        {
-            return (maturityDate - calculationDate) / 252.0;
-            //return calendar.businessDaysBetween(calculationDate, maturityDate) / 252.0;
         }
         public double IVdS(double volatility)  // How much IV changes with underlying price. That's not a BSM greek, not differentiating with respect to option price.
         {

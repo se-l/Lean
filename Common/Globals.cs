@@ -94,7 +94,7 @@ namespace QuantConnect
             LiveMode = Config.GetBool("live-mode");
 
             AnalyticsFolder = Config.Get("analytics-folder", Config.Get("data-directory", "../../../trade/Analytics/"));
-            PathAnalytics = GetPathAnalytics();
+            _pathAnalytics = null;
             ResultsDestinationFolder = Config.Get("results-destination-folder", Directory.GetCurrentDirectory());
         }
 
@@ -126,20 +126,28 @@ namespace QuantConnect
 
             return result;
         }
-        public static string PathAnalytics { get; private set; }
-        public static string GetPathAnalytics()
-        {
-            // print whether this executes in Debug or Release mode
-            string mode = Config.Get("environment") == "backtesting" ? "" : "-" + Config.Get("ib-account");
-            string containerName = Environment.GetEnvironmentVariable("CONTAINER_NAME");
-            string folderSuffix = string.IsNullOrEmpty(containerName) ? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) : containerName;
-            string folderName = $"{DateTime.UtcNow.ToString("yyMMddHHmmss", CultureInfo.InvariantCulture)}-{Config.Get("algorithm-type-name")}-{folderSuffix}";
-            string path = Path.Combine(AnalyticsFolder, $"{Config.Get("environment")}{mode}/", folderName);
-            if (!Directory.Exists(path))
-            {
-                Directory.CreateDirectory(path);
+        private static string _pathAnalytics;
+
+        /// <summary>
+        /// Folder to save backtest specific analytics information.
+        /// </summary>
+        public static string PathAnalytics {
+            get {
+                if (string.IsNullOrEmpty(_pathAnalytics))
+                {
+                    // print whether this executes in Debug or Release mode
+                    string mode = Config.Get("environment") == "backtesting" ? "" : "-" + Config.Get("ib-account");
+                    string containerName = Environment.GetEnvironmentVariable("CONTAINER_NAME");
+                    string folderSuffix = string.IsNullOrEmpty(containerName) ? Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) : containerName;
+                    string folderName = $"{DateTime.UtcNow.ToString("yyMMddHHmmss", CultureInfo.InvariantCulture)}-{Config.Get("algorithm-type-name")}-{folderSuffix}";
+                    _pathAnalytics = Path.Combine(AnalyticsFolder, $"{Config.Get("environment")}{mode}/", folderName);
+                    if (!Directory.Exists(_pathAnalytics))
+                    {
+                        Directory.CreateDirectory(_pathAnalytics);
+                    }
+                }
+                return _pathAnalytics;
             }
-            return path;
         }
     }
 }

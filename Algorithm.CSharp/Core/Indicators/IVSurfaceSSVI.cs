@@ -119,7 +119,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         /// </summary>
         public double SsviTotalVariance(double k, SSVIParamsRecord p)
         {
-            return 0.5 * (p.Theta + p.Rho * p.Psi * k + Math.Sqrt(Math.Pow(p.Psi * k + p.Theta * p.Rho, 2) + Math.Pow(p.Theta, 2) * Math.Pow(1 - p.Rho, 2)));
+            return 0.5 * (p.Theta + p.Rho * p.Psi * k + Math.Sqrt(
+                    Math.Pow(p.Psi * k + p.Theta * p.Rho, 2) + 
+                    Math.Pow(p.Theta, 2) * (1 - Math.Pow(p.Rho, 2))
+                    )
+                );
         }
 
         public double? IVdS(Symbol symbol)
@@ -162,9 +166,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public void Dispose()
         {
-            _writer.Flush();
-            _writer.Close();
-            _writer.Dispose();
+            if (_writer != null)
+            {
+                _writer.Flush();
+                _writer.Close();
+                _writer.Dispose();
+            }
         }
     }
 }

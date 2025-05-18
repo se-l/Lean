@@ -63,7 +63,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var dailyVolume = _algo.History<TradeBar>(security.Symbol, _algo.Periods(Resolution.Daily, days: 7), Resolution.Daily, fillForward: false).Select(bar => bar.Volume);
                 decimal meanDailyVolume = dailyVolume.Any() ? dailyVolume.Average() : 0;
                 _algo.Log($"SecurityInitializer.Initialize FillModelVolumeWeighted: {symbol} MeanDailyVolume={meanDailyVolume}.");
-                security.SetFillModel(new FillModelVolumeWeighted(meanDailyVolume, 500, 4));
+                security.SetFillModel(new FillModelVolumeWeighted(meanDailyVolume, 100, 4));
             }
             else if(!_algo.LiveMode)
             {

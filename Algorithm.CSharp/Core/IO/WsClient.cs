@@ -9,17 +9,88 @@ using Google.Protobuf;
 
 namespace QuantConnect.Algorithm.CSharp.Core.IO
 {
-    public class WsClient : IDisposable
+    public class TargetPortfoliosEventArgs : EventArgs
     {
-        //private readonly Dictionary<object, Action<object, EventArgs>> _eventHandlers;
+        public TargetPortfoliosEventArgs(ResponseTargetPortfolios responseTargetPortfolios)
+        {
+            ResponseTargetPortfolios = responseTargetPortfolios;
+        }
 
-        public event EventHandler<ResponseTargetPortfolios> EventHandlerResponseTargetPortfolios;
-        public event EventHandler<ResultStressTestDs> EventHandlerResultStressTestDs;
-        public event EventHandler<CmdFetchTargetPortfolio> EventHandlerCmdFetchTargetPortfolio;
-        public event EventHandler<CmdCancelOID> EventHandlerCmdCancelOID;
-        public event EventHandler<CmdCfgOverride> EventHandlerCmdCfgOverride;
-        public event EventHandler<ResponseKalmanInit> EventHandlerResponseKalmanInit;
-        public event EventHandler<ResponseSSVICalibration> EventHandlerResponseSSVICalibration;
+        public ResponseTargetPortfolios ResponseTargetPortfolios { get; }
+    }
+
+    public class ResultStressTestDsEventArgs : EventArgs
+    {
+        public ResultStressTestDsEventArgs(ResultStressTestDs resultStressTestDs)
+        {
+            ResultStressTestDs = resultStressTestDs;
+        }
+
+        public ResultStressTestDs ResultStressTestDs { get; }
+    }
+
+    public class CmdFetchTargetPortfolioEventArgs : EventArgs
+    {
+        public CmdFetchTargetPortfolioEventArgs(CmdFetchTargetPortfolio cmdFetchTargetPortfolio)
+        {
+            CmdFetchTargetPortfolio = cmdFetchTargetPortfolio;
+        }
+
+        public CmdFetchTargetPortfolio CmdFetchTargetPortfolio { get; }
+    }
+
+    public class CmdCancelOIDEventArgs : EventArgs
+    {
+        public CmdCancelOIDEventArgs(CmdCancelOID cmdCancelOID)
+        {
+            CmdCancelOID = cmdCancelOID;
+        }
+
+        public CmdCancelOID CmdCancelOID { get; }
+    }
+
+    public class CmdCfgOverrideEventArgs : EventArgs
+    {
+        public CmdCfgOverrideEventArgs(CmdCfgOverride cmdCfgOverride)
+        {
+            CmdCfgOverride = cmdCfgOverride;
+        }
+
+        public CmdCfgOverride CmdCfgOverride { get; }
+    }
+
+    public class ResponseKalmanInitEventArgs : EventArgs
+    {
+        public ResponseKalmanInitEventArgs(ResponseKalmanInit responseKalmanInit)
+        {
+            ResponseKalmanInit = responseKalmanInit;
+        }
+
+        public ResponseKalmanInit ResponseKalmanInit { get; }
+    }
+
+    public class ResponseSSVICalibrationEventArgs : EventArgs
+    {
+        public ResponseSSVICalibrationEventArgs(ResponseSSVICalibration responseSSVICalibration)
+        {
+            ResponseSSVICalibration = responseSSVICalibration;
+        }
+
+        public ResponseSSVICalibration ResponseSSVICalibration { get; }
+    }
+
+    public class ResponsePfRiskScenariosEventArgs : EventArgs
+    {
+        public ResponsePfRiskScenariosEventArgs(ResponsePfRiskScenarios responsePfRiskScenarios)
+        {
+            ResponsePfRiskScenarios = responsePfRiskScenarios;
+        }
+
+        public ResponsePfRiskScenarios ResponsePfRiskScenarios { get; }
+    }
+
+    public class WsClient : IDisposable
+    {        
         public event EventHandler<object> EventHandlerWSConnected;
 
         private ClientWebSocket WS;
@@ -31,32 +102,31 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         private string url;
         private DateTime lastHeartbeat = DateTime.MaxValue;
         private ConcurrentQueue<Message> _messageQueue = new();
+        private readonly Dictionary<Channel, EventHandler<EventArgs>> _eventHandlers;
 
         public WsClient(Foundations algo)
         {
             _algo = algo;
-            //_eventHandlers = new();
+            _eventHandlers = new();
         }
 
-        //public void RegisterEventHandler(object eventName, Action<object, EventArgs> handler)
-        //{
-        //    if (!_eventHandlers.ContainsKey(eventName))
-        //    {
-        //        _eventHandlers[eventName] = handler;
-        //    }
-        //    else
-        //    {
-        //        _eventHandlers[eventName] += handler;
-        //    }
-        //}
-
-        //public void OnEvent(object eventName, object sender, EventArgs e)
-        //{
-        //    if (_eventHandlers.TryGetValue(eventName, out var handler))
-        //    {
-        //        handler?.Invoke(sender, e);
-        //    }
-        //}
+        public void RegisterEventHandler<T>(Channel channel, Action<object, T> handler) where T : EventArgs
+        {
+            if (!_eventHandlers.ContainsKey(channel))
+            {
+                _eventHandlers[channel] = null;
+            }
+            _eventHandlers[channel] += new EventHandler<EventArgs>((sender, e) => {
+                try
+                {
+                    handler(sender, (T)e);
+                }
+                catch (Exception ex)
+                {
+                    _algo.Error($"WsClient.{handler.Method.Name}(): Exception: {ex}");
+                }
+            });
+        }
 
         public void SetSemaphore(SemaphoreSlim sp)
         {
@@ -210,10 +280,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                             outputStream.Write(buffer, 0, receiveResult.Count);
                     }
                     while (!receiveResult.EndOfMessage);
-                    if (receiveResult.MessageType == WebSocketMessageType.Close) break;
+                    if (receiveResult.MessageType == WebSocketMessageType.Close)
+                        break;
                     outputStream.Position = 0;
                     
-                    ResponseReceived(outputStream);                    
+                    OnMessage(outputStream);                    
                 }
             }
             catch (TaskCanceledException e)
@@ -319,36 +390,40 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             _messageQueue.Enqueue(message);
         }
 
-        private void ResponseReceived(Stream inputStream)
+        private void OnMessage(Stream inputStream)
         {
             Message message = Message.Parser.ParseFrom(inputStream);
             inputStream.Dispose();
+            Channel channel = message.Channel;
 
-            switch (message.Channel)
+            switch (channel)
             {
                 case Channel.Hb:
                     HandleHeartbeat(message);
                     break;
                 case Channel.TargetPortfolio:
-                    HandleTargetPortfolios(message);
+                    _eventHandlers[channel]?.Invoke(this, new TargetPortfoliosEventArgs(ResponseTargetPortfolios.Parser.ParseFrom(message.Payload)));
                     break;
                 case Channel.StressTestDs:
-                    HandleStressTestDs(message);
+                    _eventHandlers[channel]?.Invoke(this, new ResultStressTestDsEventArgs(ResultStressTestDs.Parser.ParseFrom(message.Payload)));
                     break;
                 case Channel.CmdFetchTargetPortfolio:
-                    HandleCmdFetchTargetPortfolio(message);
+                    _eventHandlers[channel]?.Invoke(this, new CmdFetchTargetPortfolioEventArgs(CmdFetchTargetPortfolio.Parser.ParseFrom(message.Payload)));
                     break;
                 case Channel.CmdCancelOid:
-                    HandleCmdCancelOID(message);
+                    _eventHandlers[channel]?.Invoke(this, new CmdCancelOIDEventArgs(CmdCancelOID.Parser.ParseFrom(message.Payload)));
                     break;
                 case Channel.CmdCfgOverride:
-                    HandleCmdCfgOverride(message);
+                    _eventHandlers[channel]?.Invoke(this, new CmdCfgOverrideEventArgs(CmdCfgOverride.Parser.ParseFrom(message.Payload)));
                     break;
                 case Channel.KalmanInit:
-                    HandleKalmanInit(message);
+                    _eventHandlers[channel]?.Invoke(this, new ResponseKalmanInitEventArgs(ResponseKalmanInit.Parser.ParseFrom(message.Payload)));
                     break;
                 case Channel.RequestSsviCalibration:
-                    HandleSSVICalibration(message);
+                    _eventHandlers[channel]?.Invoke(this, new ResponseSSVICalibrationEventArgs(ResponseSSVICalibration.Parser.ParseFrom(message.Payload)));
+                    break;
+                case Channel.RequestPfRiskScenarios:
+                    _eventHandlers[channel]?.Invoke(this, new ResponsePfRiskScenariosEventArgs(ResponsePfRiskScenarios.Parser.ParseFrom(message.Payload)));
                     break;
                 default:
                     _algo.Error($"Unknown message channel: {message.Channel}");
@@ -359,54 +434,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         private void HandleHeartbeat(Message message)
         {
             lastHeartbeat = DateTime.Now;
-        }
-
-        private void HandleTargetPortfolios(Message message)
-        {
-            ResponseTargetPortfolios responseTargetPortfolios = ResponseTargetPortfolios.Parser.ParseFrom(message.Payload);
-            if (responseTargetPortfolios.IsLastTransmission)
-            {
-                ReleaseThread();
-            }
-            EventHandlerResponseTargetPortfolios?.Invoke(this, responseTargetPortfolios);
-        }
-
-        private void HandleStressTestDs(Message message)
-        {
-            ResultStressTestDs resultStressTestDs = ResultStressTestDs.Parser.ParseFrom(message.Payload);
-            ReleaseThread();
-            EventHandlerResultStressTestDs?.Invoke(this, resultStressTestDs);            
-        }
-
-        private void HandleCmdFetchTargetPortfolio(Message message)
-        {
-            CmdFetchTargetPortfolio cmdFetchTargetPortfolio = CmdFetchTargetPortfolio.Parser.ParseFrom(message.Payload);
-            EventHandlerCmdFetchTargetPortfolio?.Invoke(this, cmdFetchTargetPortfolio);
-        }
-
-        private void HandleCmdCancelOID(Message message)
-        {
-            CmdCancelOID cmdCancelOID = CmdCancelOID.Parser.ParseFrom(message.Payload);
-            EventHandlerCmdCancelOID?.Invoke(this, cmdCancelOID);
-        }
-        
-        private void HandleCmdCfgOverride(Message message)
-        {
-            CmdCfgOverride cmdCfgOverride = CmdCfgOverride.Parser.ParseFrom(message.Payload);
-            EventHandlerCmdCfgOverride?.Invoke(this, cmdCfgOverride);
-        }
-
-        private void HandleKalmanInit(Message message)
-        {
-            ResponseKalmanInit responseKalmanInit = ResponseKalmanInit.Parser.ParseFrom(message.Payload);
-            ReleaseThread();
-            EventHandlerResponseKalmanInit?.Invoke(this, responseKalmanInit);
-        }
-        private void HandleSSVICalibration(Message message)
-        {
-            ResponseSSVICalibration responseSSVICalibration = ResponseSSVICalibration.Parser.ParseFrom(message.Payload);
-            ReleaseThread();
-            EventHandlerResponseSSVICalibration?.Invoke(this, responseSSVICalibration);
+            // _algo.Log($"WsClient.HandleHeartbeat(): Received heartbeat: {lastHeartbeat}");
         }
 
         public void StopHealthCheck()

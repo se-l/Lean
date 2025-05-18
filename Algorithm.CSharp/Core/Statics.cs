@@ -91,7 +91,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             typeof(Symbol), typeof(Security), typeof(SecurityType), typeof(SecurityType?)
         };
         public static decimal BP = 1m / 10_000m;
-        public static OrderDirection Num2Direction(decimal num)
+
+        public static OrderDirection Num2Direction(float num)
         {
             if (num > 0)
             {
@@ -107,6 +108,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             throw new Exception("Unknown direction");
         }
+        public static OrderDirection Num2Direction(decimal num) => Num2Direction((float)num);
+
         public static Dictionary<int, OrderDirection> NUM2DIRECTION = new()
         {
                 { 1, OrderDirection.Buy },

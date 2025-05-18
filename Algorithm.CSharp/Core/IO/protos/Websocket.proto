@@ -14,6 +14,7 @@ enum Channel {
     KALMAN_INIT = 7;
     CMD_CFG_OVERRIDE = 8;
     REQUEST_SSVI_CALIBRATION = 9;
+    REQUEST_PF_RISK_SCENARIOS = 10;
 }
 
 enum Action {
