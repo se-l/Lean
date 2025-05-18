@@ -79,14 +79,14 @@ namespace QuantConnect.ToolBox
             foreach (string ticker in tickers)
             {
                 Symbol underlying = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
-                double dividendYield = DividendYield.TryGetValue(underlying, out dividendYield) ? dividendYield : DividendYield["_"];
+                double dividendYield = DividendYield.TryGetValue(ticker, out dividendYield) ? dividendYield : DividendYield["_"];
                 var dividendYieldQuote = new SimpleQuote(dividendYield);
                 var dividendYieldQuoteHandle = new Handle<Quote>(dividendYieldQuote);
 
                 //SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
                 foreach (DateTime dateTime in Time.EachTradeableDay(marketHoursDatabase.GetExchangeHours(Market.USA, ticker, SecurityType.Equity), startDate, endDate))
                 {
-                    Date calculationDate = new(dateTime.Day, dateTime.Month, dateTime.Year);
+                    Date calculationDate = Date.advance(new(dateTime.Day, dateTime.Month, dateTime.Year), -1, TimeUnit.Days);
                     SetEvaluationDateToCalcDate(calculationDate);
 
                     var marketHoursDbEntry = marketHoursDatabase.GetEntry(Market.USA, underlying, SecurityType.Equity);
@@ -106,7 +106,7 @@ namespace QuantConnect.ToolBox
                     foreach (var optionSymbol in optionSymbols)
                     {
                         var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, dateTime, resolution, TickType.IV_Quote).ToString();
-                        if (skipExisting && !File.Exists(filePath))
+                        if (skipExisting && File.Exists(filePath))
                         {
                             continue;
                         }
@@ -124,11 +124,12 @@ namespace QuantConnect.ToolBox
                     Parallel.ForEach(optionSymbols, new ParallelOptions { MaxDegreeOfParallelism = nThreads }, optionSymbol =>
                     {
                         var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, dateTime, resolution, TickType.IV_Quote).ToString();
-                        if (skipExisting && !File.Exists(filePath))
+                        if (skipExisting && File.Exists(filePath))
                         {
                             return;
                         }
 
+                        SetEvaluationDateToCalcDate(calculationDate);
                         IEnumerator<BaseData> underlyingQuoteBarsEnumerator = leanDataReaderQuotes.AsEnumerable().GetEnumerator();
                         underlyingQuoteBarsEnumerator.MoveNext();  // Initialize the enumerator
 
@@ -175,7 +176,7 @@ namespace QuantConnect.ToolBox
                     foreach (var optionSymbol in optionSymbols)
                     {
                         var filePath = LeanData.GenerateZipFilePath(Globals.DataFolder, optionSymbol, dateTime, resolution, TickType.IV_Trade).ToString();
-                        if (skipExisting && !File.Exists(filePath))
+                        if (skipExisting && File.Exists(filePath))
                         {
                             return;
                         }

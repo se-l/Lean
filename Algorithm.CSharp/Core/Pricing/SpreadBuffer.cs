@@ -100,12 +100,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             WorstIV = Direction == OrderDirection.Buy ? Math.Max(WorstIV, BidIV) : Math.Min(WorstIV, AskIV);
         }
 
+        public void SetWorstIVToMidIV()
+        {
+            WorstIV = (BidIV + AskIV) / 2;
+        }
+
         private double AskIV => OCW.IV(Option.AskPrice, Spot, OCW.Accuracy);
         private double BidIV => OCW.IV(Option.BidPrice, Spot, OCW.Accuracy);
         private double WorseIV => Direction switch
         {
-            OrderDirection.Buy => WorstIV + RatioSpreadTolerance * SpreadIV,
-            OrderDirection.Sell => WorstIV - RatioSpreadTolerance * SpreadIV,
+            OrderDirection.Buy => Math.Min(WorstIV + RatioSpreadTolerance * SpreadIV, (BidIV + AskIV) / 2),
+            OrderDirection.Sell => Math.Max(WorstIV - RatioSpreadTolerance * SpreadIV, (BidIV + AskIV) / 2),
             _ => throw new ArgumentException($"Unknown order direction {Direction}")
         };
         private double RatioSpreadTolerance => _algo.Cfg.BufferIntraSpreadRatioSpreadThreshold;
@@ -141,7 +146,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             decimal spot = _algo.MidPrice(Underlying(Option.Symbol));
             double priceIV = OCW.IV(price, Spot, OCW.Accuracy);
 
-            SetWorstIVToAtLeastNBBO();
+            //SetWorstIVToAtLeastNBBO();
+            SetWorstIVToMidIV();
 
             if (IsPriceIVCrossingTolerance(priceIV))
             {

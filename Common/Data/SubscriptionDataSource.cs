@@ -28,24 +28,30 @@ namespace QuantConnect.Data
         private readonly static IReadOnlyList<KeyValuePair<string, string>> _empty = new List<KeyValuePair<string, string>>();
 
         /// <summary>
+        /// Specifies whether the data source should be sorted.
+        /// <c>If False</c>, data will be returned in the original order, <c>else</c> it will be ordered by time.
+        /// </summary>
+        public bool Sort { get; set; }
+
+        /// <summary>
         /// Identifies where to get the subscription's data from
         /// </summary>
-        public readonly string Source;
+        public string Source { get; init; }
 
         /// <summary>
         /// Identifies the format of the data within the source
         /// </summary>
-        public readonly FileFormat Format;
+        public FileFormat Format { get; init; }
 
         /// <summary>
         /// Identifies the transport medium used to access the data, such as a local or remote file, or a polling rest API
         /// </summary>
-        public readonly SubscriptionTransportMedium TransportMedium;
+        public SubscriptionTransportMedium TransportMedium { get; init; }
 
         /// <summary>
         /// Gets the header values to be used in the web request.
         /// </summary>
-        public readonly IReadOnlyList<KeyValuePair<string, string>> Headers;
+        public IReadOnlyList<KeyValuePair<string, string>> Headers { get; init; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SubscriptionDataSource"/> class.
@@ -121,7 +127,7 @@ namespace QuantConnect.Data
             if (ReferenceEquals(null, obj)) return false;
             if (ReferenceEquals(this, obj)) return true;
             if (obj.GetType() != GetType()) return false;
-            return Equals((SubscriptionDataSource) obj);
+            return Equals((SubscriptionDataSource)obj);
         }
 
         /// <summary>
@@ -135,7 +141,7 @@ namespace QuantConnect.Data
         {
             unchecked
             {
-                return ((Source != null ? Source.GetHashCode() : 0)*397) ^ (int) TransportMedium;
+                return ((Source != null ? Source.GetHashCode() : 0) * 397) ^ (int)TransportMedium;
             }
         }
 

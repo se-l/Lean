@@ -1,7 +1,7 @@
 {
-  "StartDate": "2024-06-25",
-  "EndDate": "2024-06-26",
-  "Ticker": [ "FDX" ],
+  "StartDate": "2024-07-10",
+  "EndDate": "2024-07-12",
+  "Ticker": [ "DAL" ],
   "WsHost": "localhost",
   "WsPort": 8002,
   "EarningsEntryStartTime": {

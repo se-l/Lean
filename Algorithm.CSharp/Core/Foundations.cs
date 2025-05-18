@@ -26,6 +26,8 @@ using QuantConnect.Algorithm.Framework.Selection;
 using QuantConnect.Scheduling;
 using QuantConnect.Algorithm.CSharp.Core.IO;
 using QuantConnect.Indicators;
+using MathNet.Numerics.LinearAlgebra.Factorization;
+using QuantConnect.Algorithm.CSharp.Core.Utils;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -54,6 +56,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Equity, IIVSurface> IVSurfaceSSVIMid = new();
         
         public Dictionary<int, IUtilityOrder> OrderTicket2UtilityOrder = new();
+        public RiskScenerioHandler RiskScenarioHandler;
 
         // Begin Used by ImpliedVolaExporter - To be moved over there....
         // public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVBid = new();
@@ -110,6 +113,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public HashSet<OrderStatus> orderNewSubmittedUpdated = new() { OrderStatus.New, OrderStatus.Submitted, OrderStatus.UpdateSubmitted };
         public HashSet<SecurityType> securityTypeOptionEquity = new() { SecurityType.Equity, SecurityType.Option };
         public HashSet<OrderType> orderTypeMarketLimit = new() { OrderType.Market, OrderType.Limit };
+
+        public HashSet<MarketRegime> beforeEarnings = new() { MarketRegime.PreEarningsReleaseBeforeMarketClose, MarketRegime.PreEarningsRelease };
         public record MMWindow(TimeSpan Start, TimeSpan End);
         Func<Option, decimal> IntrinsicValue;
         public Dictionary<Symbol, DateTime> SignalsLastRun = new();
@@ -130,6 +135,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, DateTime> NextMarketClose = new();
         public Dictionary<Symbol, RequestContractsHandler> RequestContractsHandlers = new();
         public Dictionary<Symbol, SimpleMovingAverage> IVSpreadSMA = new();
+        public Dictionary<Symbol, IPricingStrategy> PricingStrategy = new();
+        
 
         public DateTime TimeWarmupFinished = DateTime.MaxValue;
 
@@ -160,9 +167,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             SetSecurityInitializer(securityInitializer);
 
             AssignCachedFunctions();
+            RiskScenarioHandler = new(this);
 
-            // Subscriptions
-            optionTicker = Cfg.Ticker;
+
+        // Subscriptions
+        optionTicker = Cfg.Ticker;
             ticker = optionTicker;
             symbolSubscribed = null;
             liquidateTicker = Cfg.LiquidateTicker;
@@ -176,13 +185,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 subscriptions++;
                 equities.Add(equity.Symbol);
 
-                if (optionTicker.Contains(ticker))
-                {
-                    var option = QuantConnect.Symbol.CreateCanonicalOption(equity.Symbol, Market.USA, $"?{equity.Symbol}");
-                    options.Add(option);
-                    var subscribedSymbols = AddOptionIfScoped(option);
-                    subscriptions += subscribedSymbols.Count;
-                }
+                //if (optionTicker.Contains(ticker))
+                //{
+                //    var option = QuantConnect.Symbol.CreateCanonicalOption(equity.Symbol, Market.USA, $"?{equity.Symbol}");
+                //    options.Add(option);
+                //    var subscribedSymbols = AddOptionIfScoped(option);
+                //    subscriptions += subscribedSymbols.Count;
+                //}
                 UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (sender, e) => RunSignals(e);
                 UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (sender, e) => SnapPositions();
                 //UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += RiskProfiles[equity.Symbol].OnDS;
@@ -213,7 +222,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed), OnMarketClose);  // just some logging & cache clearing
 
             // Logging events
-            //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
+            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
             //Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), ExportPutCallRatios);
 
@@ -996,45 +1005,56 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return cache.BidPrice != security.BidPrice ||
                 cache.AskPrice != security.AskPrice;
         }
-        public bool ContractScopedForNewPosition(Security security)
+
+        public bool OptionIsTradeable(Option o)
         {
-            var sec = security;
-            return sec.IsTradable && 
-                (
-                    (
+            return o.IsTradable && (
                     // to be review with Gamma hedging. Selling option at ultra-high, near-expiry IVs with great gamma hedge could be extra profitable.
-                    (sec.Symbol.ID.Date - Time.Date).Days > 1  //  Currently unable to handle the unpredictable underlying dynamics in between option epiration and ITM assignment.
-                    && !sec.Symbol.IsCanonical()
-                    && sec.BidPrice != 0
-                    && sec.AskPrice != 0
+                    (o.Symbol.ID.Date - Time.Date).Days > 1  //  Currently unable to handle the unpredictable underlying dynamics in between option epiration and ITM assignment.
+                    && !o.Symbol.IsCanonical()
+                    && o.BidPrice != 0
+                    && o.AskPrice != 0
 
                     // price is not stale. Bit inefficient here. May rather have an indicator somewhere.
-                    //&& PriceCache.ContainsKey(sec.Symbol)
-                    //&& PriceCache[sec.Symbol].GetData().EndTime > Time - TimeSpan.FromMinutes(5)
+                    //&& PriceCache.ContainsKey(o.Symbol)
+                    //&& PriceCache[o.Symbol].GetData().EndTime > Time - TimeSpan.FromMinutes(5)
 
-                    //&& IsLiquid(sec.Symbol, 5, Resolution.Daily)
-                    //&& sec.Symbol.ID.StrikePrice >= MidPrice(sec.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMinSignal)
-                    //&& sec.Symbol.ID.StrikePrice <= MidPrice(sec.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMaxSignal)
+                    //&& IsLiquid(o.Symbol, 5, Resolution.Daily)
+                    //&& o.Symbol.ID.StrikePrice >= MidPrice(o.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMinSignal)
+                    //&& o.Symbol.ID.StrikePrice <= MidPrice(o.Symbol.Underlying) * (Cfg.ScopeContractStrikeOverUnderlyingMaxSignal)
                     //&& (
-                    //    ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < Cfg.ScopeContractMoneynessITM * MidPrice(sec.Symbol.Underlying) || (
-                    //        orderTickets.ContainsKey(sec.Symbol) &&
-                    //        orderTickets[sec.Symbol].Count > 0 &&
-                    //        ((Option)sec).GetPayOff(MidPrice(sec.Symbol.Underlying)) < (Cfg.ScopeContractMoneynessITM + 0.05m) * MidPrice(sec.Symbol.Underlying)
+                    //    ((Option)o).GetPayOff(MidPrice(o.Symbol.Underlying)) < Cfg.ScopeContractMoneynessITM * MidPrice(o.Symbol.Underlying) || (
+                    //        orderTickets.ContainsKey(o.Symbol) &&
+                    //        orderTickets[o.Symbol].Count > 0 &&
+                    //        ((Option)o).GetPayOff(MidPrice(o.Symbol.Underlying)) < (Cfg.ScopeContractMoneynessITM + 0.05m) * MidPrice(o.Symbol.Underlying)
                     //    )
                     //)
-                    && !liquidateTicker.Contains(sec.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
-                    //&& IVSurfaceRelativeStrikeBid[Underlying(sec.Symbol)].IsReady(sec.Symbol)
-                    //&& IVSurfaceRelativeStrikeAsk[Underlying(sec.Symbol)].IsReady(sec.Symbol)
-                //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
-                )
+                    && !liquidateTicker.Contains(o.Symbol.Underlying.Value)  // No new orders, Function oppositeOrder & hedger handle slow liquidation at decent prices.
+                                                                               //&& IVSurfaceRelativeStrikeBid[Underlying(o.Symbol)].IsReady(o.Symbol)
+                                                                               //&& IVSurfaceRelativeStrikeAsk[Underlying(o.Symbol)].IsReady(o.Symbol)
+                                                                               //&& symbol.ID.StrikePrice > 0.05m != 0m;  // Beware of those 5 Cent options. Illiquid, but decent high-sigma underlying move protection.
+                );
+        }
+
+
+        public bool ContractScopedForNewPosition(Option o)
+        {
+            Equity equity = (Equity)o.Underlying;
+            Symbol underlying = equity.Symbol;
+
+            MarketRegime regime = GetMarketRegime(underlying);
+            if (regime == MarketRegime.NoTrade) return false;
+
+            return OptionIsTradeable(o)
                 ||
                 (
-                    !(sec.Symbol.ID.Date <= Time.Date)
-                    && Portfolio[sec.Symbol].Quantity != 0  // Need to exit eventually
+                    regime == MarketRegime.PostEarningsRelease &&
+                    !(o.Symbol.ID.Date <= Time.Date)
+                    && Portfolio[o.Symbol].Quantity != 0  // Need to exit eventually
                 )
-                || ManualOrderInstructionBySymbol.ContainsKey(sec.Symbol.Value)
-                || TargetHoldings.ContainsKey(sec.Symbol)
-            );
+                || ManualOrderInstructionBySymbol.ContainsKey(o.Symbol.Value)
+                || (beforeEarnings.Contains(regime) && TargetHoldings.ContainsKey(o.Symbol))
+                || (regime == MarketRegime.PreEarningsReleaseBeforeMarketClose && RiskScenarioHandler.TradeableOptions.ContainsKey(equity) && RiskScenarioHandler.TradeableOptions[equity].Contains(o));
         }
 
         /// <summary>
@@ -1048,11 +1068,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Log($"{Time} GetDesiredOrders: {underlying} IVSurfaceSSVIMid not ready.");
                 return new();
             }
-            var scopedOptions = Securities.Values.Where(s => 
-                s.Type == SecurityType.Option && 
-                Underlying(s.Symbol) == underlying && 
-                ContractScopedForNewPosition(s) &&
-                IVSurfaceSSVIMid[equity].HasParams((Option)s)
+            var scopedOptions = Securities.Values
+                .Where(s => s.Type == SecurityType.Option)
+                .Select(o => (Option)o)
+                .Where(o =>
+                    o.Underlying.Symbol == underlying && 
+                    ContractScopedForNewPosition(o) &&
+                    IVSurfaceSSVIMid[equity].HasParams(o)
             );
 
             List<Signal> signals = new();
@@ -1325,8 +1347,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 && symbol.ID.OptionStyle == OptionStyle.American
                 && symbol.ID.StrikePrice >= midPriceUnderlying * (Cfg.ScopeContractStrikeOverUnderlyingMin - margin)
                 && symbol.ID.StrikePrice <= midPriceUnderlying * (Cfg.ScopeContractStrikeOverUnderlyingMax + margin)
-                && IsLiquid(symbol, Cfg.ScopeContractIsLiquidDays, Resolution.Daily)
-                ) 
+                //When live need to start fetching data. Unlike during backtesting cannot just subscribe and fetch past data from disk.
+                //&& IsLiquid(symbol, Cfg.ScopeContractIsLiquidDays, Resolution.Daily)
+                )
                 || 
                 (Portfolio.ContainsKey(symbol) && Portfolio[symbol].Quantity != 0)
                 || ManualOrderInstructionBySymbol.ContainsKey(symbol.Value)
@@ -2123,24 +2146,43 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
+        public TimeSpan TimeToMarketClose(Symbol underlying)
+        {
+            DateTime nextMarketClose = NextMarketClose.TryGetValue(underlying, out nextMarketClose) ? nextMarketClose : GetNextMarketClose(underlying);
+            return nextMarketClose.TimeOfDay - Time.TimeOfDay;
+        }
+
+        
+
         /// <summary>
         /// Release date is referred to as last trading session before earnings release, so adding a day.
         /// </summary>
         /// <param name="underlying"></param>
         /// <param name="days"></param>
         /// <returns></returns>
-        public bool IsAfterEarningsRelease(Symbol underlying, int days = 1)
+        public bool IsAfterEarningsRelease(Symbol underlying, int days = 30)
         {
             DateTime prevReleaseDate = PreviouReleaseDate(underlying);
             return Time.Date > prevReleaseDate.Date && Time.Date <= (prevReleaseDate + TimeSpan.FromDays(days)).Date;
         }
 
-        public bool PreparingEarningsRelease(Symbol underlying)
+        public bool IsReleaseDate(Symbol underlying)
+        {
+            DateTime releaseDate = NextReleaseDate(underlying);
+            return Time.Date == releaseDate.Date;
+        }
+
+        public bool IsPreparingEarningsRelease(Symbol underlying)
         {
             DateTime releaseDate = NextReleaseDate(underlying);
             int prepDays = Cfg.PrepareEarningsPeriodDays.TryGetValue(underlying, out prepDays) ? prepDays : Cfg.PrepareEarningsPeriodDays[CfgDefault] - 1;
             prepDays = Math.Max(prepDays, 0);
             return Time.Date >= releaseDate - TimeSpan.FromDays(prepDays) && Time.Date <= releaseDate;
+        }
+        public bool IsReducingAbsEquityPosition(Symbol underlying)
+        {
+            TimeRange timeRange = AlgoConfig.GetTimeRange(AlgoConfig.GetEntry(Cfg.TimeRangeReduceAbsDeltaPosition, Underlying(underlying).Value));
+            return IsReleaseDate(underlying) && timeRange.Start <= Time.TimeOfDay && Time.TimeOfDay <= timeRange.End;
         }
         public decimal QuantityToTargetHolding(Symbol symbol)
         {

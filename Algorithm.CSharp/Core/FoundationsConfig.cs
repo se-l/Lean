@@ -71,6 +71,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, Dictionary<string, List<double>>> DeltaAdjustmentParameters { get; set; }
         public int LimitOrderUpdateBeforeMarketOrderConversion { get; set; }
         public decimal MaxSpreadForMarketOrderHedging { get; set; }
+        public Dictionary<string, double> SweepIVEODDuration { get; set; }
         public Dictionary<string, List<List<double>>> SweepLongSchedule { get; set; }
         public Dictionary<string, List<List<double>>> SweepShortSchedule { get; set; }
         public Dictionary<string, List<double>> KalmanScopedMoneyness { get; set; }
@@ -83,6 +84,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public bool UseKalmanFilterAfterEarningsRelease { get; set; }
         public bool UseKalmanFilterBeforeEarningsRelease { get; set; }
         public Dictionary<string, bool> PricerOverridePricesWithPresumedIVFillDefensively { get; set; }
+        public Dictionary<string, Dictionary<string, string>> TimeRangeReduceAbsDeltaPosition { get; set; }
         public Dictionary<string, string> TimeStartKfBeforeRelease { get; set; }
         public Dictionary<string, string> TimeStartKfAfterRelease { get; set; }
         public Dictionary<string, string> EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy { get; set; }
@@ -98,7 +100,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int MinutesAfterOpenMMWindowStarts { get; set; }
         public int MinutesBeforeCloseMMWindowEnds { get; set; }
         public int MinutesBeforeCloseHedgeToAcrossDs { get; set; }
+        public int MinutesBeforeCloseIsPreEarningsReleaseEOD { get; set; }
         public Dictionary<string, decimal> SpreadDiscountSweepMinSpreadRatio { get; set; }
+        public Dictionary<string, decimal> MaxDiscountTimeSpread { get; set; }
         public Dictionary<string, int> EquityHedgeMode { get; set; }
         public Dictionary<string, int> IVSpreadSMAPeriod { get; set; }
     }

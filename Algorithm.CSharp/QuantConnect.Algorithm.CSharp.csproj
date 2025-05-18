@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
@@ -74,5 +74,6 @@
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\Command.proto&quot;" />
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestKalmanInit.proto&quot;" />
     <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\RequestSSVICalibration.proto&quot;" />
+    <Exec Command="protoc -I=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; --csharp_out=&quot;..\Algorithm.CSharp\Core\IO\protos&quot; &quot;..\Algorithm.CSharp\Core\IO\protos\PfRiskScenarios.proto&quot;" />
   </Target>
 </Project>

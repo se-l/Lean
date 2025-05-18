@@ -1,7 +1,7 @@
 {
-  "StartDate": "2024-06-24",
-  "EndDate": "2024-06-24",
-  "Ticker": [ "FDX" ],
+  "StartDate": "2024-07-10",
+  "EndDate": "2024-07-11",
+  "Ticker": [ "DAL" ],
   "LiquidateTicker": [],
   "SkipRunSignals": {
     "_": false
@@ -210,24 +210,30 @@
     "_": 1
   },
   "BacktestingBrokerageLatency": 2,
-  "MinHistoryDaysUnderlyingForScoping": 7,
+  "MinHistoryDaysUnderlyingForScoping": 2,
   "MaxDelta100BpUSDSignalQuantity": {
     "_": 150
   },
   "UseKalmanFilterAfterEarningsRelease": true,
   "UseKalmanFilterBeforeEarningsRelease": true,
   "PricerOverridePricesWithPresumedIVFillDefensively": { "_": true },
+  "TimeRangeReduceAbsDeltaPosition": {
+    "_": {
+      "Start": "15:30",
+      "End": "23:59"
+    }
+  },
   "TimeStartKfBeforeRelease": {
     "_": "09:30"
   },
   "TimeStartKfAfterRelease": {
-    "_": "09:40"
+    "_": "09:30"
   },
   "EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy": {
-    "_": "12:00"
+    "_": "10:00"
   },
   "EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell": {
-    "_": "09:40"
+    "_": "10:00"
   },
   "HedgeToAcrossDsAfterTime": {
     "_": "15:45"
@@ -243,7 +249,8 @@
         "EndDaysOffset": 0,
         "End": "11:00",
         "NRemaining": 3,
-        "Increment": 10
+        "Increment": 10,
+        "NMaximum": 10
       },
       {
         "StartDaysOffset": 0,
@@ -251,7 +258,8 @@
         "EndDaysOffset": 0,
         "End": "15:00",
         "NRemaining": 2,
-        "Increment": 5
+        "Increment": 5,
+        "NMaximum": 10
       },
       {
         "StartDaysOffset": 0,
@@ -259,7 +267,8 @@
         "EndDaysOffset": 0,
         "End": "",
         "NRemaining": 0,
-        "Increment": 0
+        "Increment": 0,
+        "NMaximum": 10
       }
     ]
   },
@@ -268,7 +277,10 @@
   "MinutesAfterOpenMMWindowStarts": 1,
   "MinutesBeforeCloseMMWindowEnds": 5,
   "MinutesBeforeCloseHedgeToAcrossDs": 3,
+  "MinutesBeforeCloseIsPreEarningsReleaseEOD": 30,
+  "SweepIVEODDuration": { "_": 300 },
   "SpreadDiscountSweepMinSpreadRatio": { "_": 0.3 },
-  "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread 1-Mid ; 2-Passive earn spread
-  "IVSpreadSMAPeriod": { "_": 500 } // 0-Aggressive pay spread 1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
+  "MaxDiscountTimeSpread": { "_": 0.75 },
+  "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread;  1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
+  "IVSpreadSMAPeriod": { "_": 100 }
 }

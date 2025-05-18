@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Logging;
 using System.Globalization;
+using QuantConnect.Algorithm.CSharp.Core.Utils;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -97,14 +98,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }        
             return TimeSpan.ParseExact(timeString, "g", CultureInfo.InvariantCulture);
         }
+        public static TimeRange GetTimeRange(Dictionary<string, string> timeRange)
+        {
+            if (timeRange == null)
+            {
+                return new TimeRange(TimeSpan.Zero, TimeSpan.Zero);
+            }        
+            return new TimeRange(GetTimeSpan(timeRange["Start"]), GetTimeSpan(timeRange["End"]));
+        }
 
         public static T GetEntry<T>(Dictionary<string, T> dict, string key)
         {
-            if (dict.ContainsKey(key))
-            {
-                return dict[key];
-            }
-            return dict[CfgDefault];
+            return dict.TryGetValue(key, out T value) ? value : dict[CfgDefault];
+            //if (dict.ContainsKey(key))
+            //{
+            //    return dict[key];
+            //}
+            //return dict[CfgDefault];
         }
     }
 }

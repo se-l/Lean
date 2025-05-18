@@ -376,6 +376,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             }
 
             slice = new Slice(algorithmTime, allDataForAlgorithm, tradeBars ?? _emptyTradeBars, quoteBars ?? _emptyQuoteBars, ticks ?? _emptyTicks, optionChains ?? _emptyOptionChains, futuresChains ?? _emptyFuturesChains, splits ?? _emptySplits, dividends ?? _emptyDividends, delistings ?? _emptyDelistings, symbolChanges ?? _emptySymbolChangedEvents, marginInterestRates ?? _emptyMarginInterestRates, utcDateTime, allDataForAlgorithm.Count > 0);
+            if (!slice.HasData)
+            {
+                var a = 1;
+            }
 
             return new TimeSlice(utcDateTime, count, slice, data, security, consolidator, custom ?? _emptyCustom, changes, universeData);
         }
