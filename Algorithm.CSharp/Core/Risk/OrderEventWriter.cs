@@ -23,8 +23,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             "CancelRequest.Status", "CancelRequest.Time", "CancelRequest.TimeMS",
             "LastUpdateRequest.Status", "LastUpdateRequest.Time", "LastUpdateRequest.TimeMS",
             "Tag", "TimeOrderLastUpdated", "TimeOrderLastUpdatedMS",
-            "Exchange", "OcaGroup", "OcaType", "SweepRatio"
-        };
+            "Exchange", "OcaGroup", "OcaType", "Utility"
+    };
         public OrderEventWriter(Foundations algo, Equity equity)
         {
             _algo = algo;
@@ -60,7 +60,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             DateTime timeOrderLastUpdated = orderTicket.Time.ConvertFromUtc(_algo.TimeZone);
             long timeOrderLastUpdatedMs = timeOrderLastUpdated.Ticks / TimeSpan.TicksPerMillisecond;
 
-            Sweep? sweep = _algo.SweepState.ContainsKey(symbol) ? (_algo.SweepState[symbol].TryGetValue(orderDirection, out sweep) ? sweep : null) : null;
+            //Sweep? sweep = _algo.SweepState.ContainsKey(symbol) ? (_algo.SweepState[symbol].TryGetValue(orderDirection, out sweep) ? sweep : null) : null;
 
             var row = new StringBuilder();
 
@@ -102,7 +102,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 ("Exchange", () => order?.Exchange?.ToString()),
                 ("OcaGroup", () => order?.OcaGroup),
                 ("OcaType", () => order?.OcaType.ToString(CultureInfo.InvariantCulture)),
-                ("SweepRatio", () => sweep == null ? "" : sweep.SweepRatio.ToString(CultureInfo.InvariantCulture)),
+                //("SweepRatio", () => sweep == null ? "" : sweep.SweepRatio.ToString(CultureInfo.InvariantCulture)),
+                ("Utility", () => _algo.OrderTicket2UtilityOrder.TryGetValue(orderTicket.OrderId, out IUtilityOrder utilityOrder) ? utilityOrder.Utility.ToString(CultureInfo.InvariantCulture) : ""),
             };            
 
             foreach (var (col, func) in headerFunc)

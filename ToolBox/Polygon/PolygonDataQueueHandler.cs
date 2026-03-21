@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -47,7 +48,7 @@ namespace QuantConnect.ToolBox.Polygon
     /// </summary>
     public class PolygonDataQueueHandler : SynchronizingHistoryProvider, IDataQueueHandler
     {
-        private const string HistoryBaseUrl = "https://api.polygon.io";
+        private const string HistoryBaseUrl = "https://api.massive.com";
         private const int ResponseSizeLimitAggregateData = 50000;
         private const int ResponseSizeLimitEquities = 50000;
         private const int ResponseSizeLimitCurrencies = 10000;
@@ -71,7 +72,7 @@ namespace QuantConnect.ToolBox.Polygon
         private readonly SymbolPropertiesDatabase _symbolPropertiesDatabase = SymbolPropertiesDatabase.FromDataFolder();
 
         // exchange time zones by symbol
-        private readonly Dictionary<Symbol, DateTimeZone> _symbolExchangeTimeZones = new();
+        private readonly ConcurrentDictionary<Symbol, DateTimeZone> _symbolExchangeTimeZones = new();
 
         // map Polygon exchange -> Lean market
         // Crypto exchanges from: https://api.polygon.io/v1/meta/crypto-exchanges?apiKey=xxx
@@ -418,38 +419,24 @@ namespace QuantConnect.ToolBox.Polygon
 
         private IEnumerable<Tick> GetQuoteTicks(HistoryRequest request)
         {
-            switch (request.Symbol.SecurityType)
+            return request.Symbol.SecurityType switch
             {
-                case SecurityType.Option:
-                    return GetOptionQuoteTicks(request);
-
-                case SecurityType.Equity:
-                    return GetEquityQuoteTicks(request);
-
-                case SecurityType.Forex:
-                    return GetForexQuoteTicks(request);
-
-                default:
-                    return Enumerable.Empty<Tick>();
-            }
+                SecurityType.Option => GetOptionQuoteTicks(request),
+                SecurityType.Equity => GetEquityQuoteTicks(request),
+                SecurityType.Forex => GetForexQuoteTicks(request),
+                _ => Enumerable.Empty<Tick>()
+            };
         }
 
         private IEnumerable<Tick> GetTradeTicks(HistoryRequest request)
         {
-            switch (request.Symbol.SecurityType)
+            return request.Symbol.SecurityType switch
             {
-                case SecurityType.Option:
-                    return GetOptionTradeTicks(request);
-
-                case SecurityType.Equity:
-                    return GetEquityTradeTicks(request);
-
-                case SecurityType.Crypto:
-                    return GetCryptoTradeTicks(request);
-
-                default:
-                    return Enumerable.Empty<Tick>();
-            }
+                SecurityType.Option => GetOptionTradeTicks(request),
+                SecurityType.Equity => GetEquityTradeTicks(request),
+                SecurityType.Crypto => GetCryptoTradeTicks(request),
+                _ => Enumerable.Empty<Tick>()
+            };
         }
 
         private IEnumerable<Tick> GetForexQuoteTicks(HistoryRequest request)
@@ -466,8 +453,10 @@ namespace QuantConnect.ToolBox.Polygon
 
                 // If this is a very first iteration set offset exactly as request's start time.
                 // Otherwise use date start as an offset. (!) Make sure to cast to Int64.
-                var offset = currentDate == start.Date ? (long)Time.DateTimeToUnixTimeStampMilliseconds(start)
-                    : (long)Time.DateTimeToUnixTimeStampMilliseconds(currentDate);
+                // var offset = currentDate == start.Date ? (long)Time.DateTimeToUnixTimeStampMilliseconds(start)
+                //     : (long)Time.DateTimeToUnixTimeStampMilliseconds(currentDate);
+                var tsStart = Time.DateTimeToUnixTimeStampNanoseconds(start); 
+                var tsEnd = Time.DateTimeToUnixTimeStampNanoseconds(end);
 
                 var counter = 0;
                 long lastTickTimestamp = 0;
@@ -481,7 +470,7 @@ namespace QuantConnect.ToolBox.Polygon
                     Forex.DecomposeCurrencyPair(request.Symbol.Value, out baseCurrency, out quoteCurrency);
 
                     var url = $"{HistoryBaseUrl}/v1/historic/forex/{baseCurrency}/{quoteCurrency}/{currentDate:yyyy-MM-dd}?" +
-                              $"limit={ResponseSizeLimitCurrencies}&apiKey={_apiKey}&offset={offset}";
+                              $"limit={ResponseSizeLimitCurrencies}&apiKey={_apiKey}&timestamp.gte={tsStart}&timestamp.lt={tsEnd}";
 
                     (var response, var nextUrl) = ((ForexQuoteTickResponse[], string?))DownloadAndParseData(typeof(ForexQuoteTickResponse[]), url, "ticks");
                     while (nextUrl != null)
@@ -521,7 +510,7 @@ namespace QuantConnect.ToolBox.Polygon
                         lastTickTimestamp = row.Timestamp;
                     }
 
-                    offset = lastTickTimestamp;
+                    tsStart = lastTickTimestamp;
                     _dataPointCount += quoteTicksList.Count;
                 }
 
@@ -543,8 +532,10 @@ namespace QuantConnect.ToolBox.Polygon
                 Log.Debug(
                     $"GetCryptoTradeTicks(): Downloading ticks for the date {currentDate:yyyy-MM-dd}; symbol: {request.Symbol.ID.Symbol}");
 
-                var offset = currentDate == start.Date ? (long)Time.DateTimeToUnixTimeStampMilliseconds(start)
-                    : (long)Time.DateTimeToUnixTimeStampMilliseconds(currentDate);
+                // var offset = currentDate == start.Date ? (long)Time.DateTimeToUnixTimeStampMilliseconds(start)
+                //     : (long)Time.DateTimeToUnixTimeStampMilliseconds(currentDate);
+                var tsStart = Time.DateTimeToUnixTimeStampNanoseconds(start); 
+                var tsEnd = Time.DateTimeToUnixTimeStampNanoseconds(end);
 
                 var counter = 0;
                 long lastTickTimestamp = 0;
@@ -563,7 +554,7 @@ namespace QuantConnect.ToolBox.Polygon
                     Crypto.DecomposeCurrencyPair(request.Symbol, symbolProperties, out baseCurrency, out quoteCurrency);
 
                     var url = $"{HistoryBaseUrl}/v1/historic/crypto/{baseCurrency}/{quoteCurrency}/{currentDate:yyyy-MM-dd}?" +
-                              $"limit={ResponseSizeLimitCurrencies}&apiKey={_apiKey}&offset={offset}";
+                              $"limit={ResponseSizeLimitCurrencies}&apiKey={_apiKey}&timestamp.gte={tsStart}&timestamp.lt={tsEnd}";
 
                     (var response, var nextUrl) = ((CryptoTradeTickResponse[], string?))DownloadAndParseData(typeof(CryptoTradeTickResponse[]), url, "ticks");
                     while (nextUrl != null)
@@ -612,7 +603,7 @@ namespace QuantConnect.ToolBox.Polygon
                         lastTickTimestamp = row.Timestamp;
                     }
 
-                    offset = lastTickTimestamp;
+                    tsStart = lastTickTimestamp;
                     _dataPointCount += tradeTicksList.Count;
                 }
                 // Jump to the next iteration
@@ -623,79 +614,42 @@ namespace QuantConnect.ToolBox.Polygon
         private IEnumerable<Tick> GetOptionQuoteTicks(HistoryRequest request)
         {
             // https://api.polygon.io/v2/ticks/options/nbbo/SPY/2020-08-24?apiKey=
+            
+            var tsStart = Time.DateTimeToUnixTimeStampNanoseconds(request.StartTimeUtc); 
+            var tsEnd = Time.DateTimeToUnixTimeStampNanoseconds(request.EndTimeUtc);
+            
+            Log.Debug($"GetOptionQuoteTicks(): Downloading ticks {request.StartTimeUtc:u} to UTC {request.EndTimeUtc:u}; symbol: {request.Symbol.ID.Symbol}");
 
-            var start = request.StartTimeUtc;
-            var end = request.EndTimeUtc;
-            var currentDate = start.Date;
-
-            while (currentDate <= end.Date)
+            var url = $"{HistoryBaseUrl}/v3/quotes/{MapSymbolToPolygonTicker(request.Symbol)}?" +
+                      $"apiKey={_apiKey}&timestamp.gte={tsStart}&timestamp.lt={tsEnd}&order=asc&limit={ResponseSizeLimitEquities}";
+            (var response, var nextUrl) = ((OptionQuoteTickResponse[], string?))DownloadAndParseData(typeof(OptionQuoteTickResponse[]), url, "results");
+            while (nextUrl != null)
             {
-                Log.Debug($"GetOptionQuoteTicks(): Downloading ticks for the date {currentDate:yyyy-MM-dd}; symbol: {request.Symbol.ID.Symbol}");
-
-                // If this is a very first iteration set offset exactly as request's start time. Otherwise use date start as an offset.
-                var offset = currentDate == start.Date
-                    ? Time.DateTimeToUnixTimeStampNanoseconds(start)
-                    : Time.DateTimeToUnixTimeStampNanoseconds(currentDate);
-                var timestampEndDate = Time.DateTimeToUnixTimeStampNanoseconds(currentDate.AddDays(1));
-
-                var counter = 0;
-                long lastTickSipTimeStamp = 0;
-
-                while (true)
-                {
-                    counter++;
-
-                    var url = $"{HistoryBaseUrl}/v3/quotes/{MapSymbolToPolygonTicker(request.Symbol)}?" +
-                              $"apiKey={_apiKey}&timestamp.gt={offset}&timestamp.lt={timestampEndDate}&order=asc&limit={ResponseSizeLimitEquities}";
-                    (var response, var nextUrl) = ((OptionQuoteTickResponse[], string?))DownloadAndParseData(typeof(OptionQuoteTickResponse[]), url, "results");
-                    while (nextUrl != null)
-                    {
-                        (var responseNext, nextUrl) = ((OptionQuoteTickResponse[], string?))DownloadAndParseData(typeof(OptionQuoteTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
-                        response = response.Concat(responseNext).ToArray();
-                    }
-
-                    // The first results of the next page will coincide with last of the previous page
-                    // We distinguish the results by the timestamp, lets clear from repeating values
-                    var quoteTicksList = response?.Where(x => x.SipTimestamp != lastTickSipTimeStamp).ToList();
-
-                    // API will send at the end only such repeating ticks that coincide with last results of previous page
-                    // If there are no other ticks other than these then we break
-                    if (quoteTicksList.IsNullOrEmpty())
-                    {
-                        break;
-                    }
-
-                    Log.Debug($"GetOptionQuoteTicks(): Page # {counter}; " +
-                              $"first: {Time.UnixNanosecondTimeStampToDateTime(quoteTicksList.First().SipTimestamp)}; " +
-                              $"last: {Time.UnixNanosecondTimeStampToDateTime(quoteTicksList.Last().SipTimestamp)}");
-
-                    foreach (var row in quoteTicksList)
-                    {
-                        var utcTime = Time.UnixNanosecondTimeStampToDateTime(row.SipTimestamp);
-                        if (utcTime < start)
-                        {
-                            continue;
-                        }
-
-                        if (utcTime > end)
-                        {
-                            yield break;
-                        }
-
-                        var time = GetTickTime(request.Symbol, utcTime);
-                        yield return new Tick(time, request.Symbol, string.Empty, string.Empty, row.BidSize, row.BidPrice, row.AskSize, row.AskPrice);
-
-                        // Save the values before to jump to the next iteration
-                        lastTickSipTimeStamp = row.SipTimestamp;
-                    }
-
-                    offset = lastTickSipTimeStamp;
-                    _dataPointCount += quoteTicksList.Count;
-                }
-
-                // Jump to the next iteration
-                currentDate = currentDate.AddDays(1);
+                (var responseNext, nextUrl) = ((OptionQuoteTickResponse[], string?))DownloadAndParseData(typeof(OptionQuoteTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                response = response.Concat(responseNext).ToArray();
             }
+
+            // The first results of the next page will coincide with last of the previous page
+            // We distinguish the results by the timestamp, lets clear from repeating values
+            var quoteTicksList = response?.ToList() ?? new List<OptionQuoteTickResponse>();
+
+            if (quoteTicksList.Count == 0) yield break;
+
+            Log.Debug($"GetOptionQuoteTicks(): " +
+                      $"first: {Time.UnixNanosecondTimeStampToDateTime(quoteTicksList.First().SipTimestamp)}; " +
+                      $"last: {Time.UnixNanosecondTimeStampToDateTime(quoteTicksList.Last().SipTimestamp)}");
+
+            foreach (var row in quoteTicksList)
+            {
+                if (row.SipTimestamp < tsStart) continue;
+
+                if (row.SipTimestamp > tsEnd) yield break;
+
+                var utcTime = Time.UnixNanosecondTimeStampToDateTime(row.SipTimestamp);
+                var time = GetTickTime(request.Symbol, utcTime);
+                yield return new Tick(time, request.Symbol, string.Empty, string.Empty, row.BidSize, row.BidPrice, row.AskSize, row.AskPrice);
+            }
+            _dataPointCount += quoteTicksList.Count;
         }
 
         private static string MapSymbolToPolygonTicker(Symbol symbol)
@@ -716,236 +670,135 @@ namespace QuantConnect.ToolBox.Polygon
 
         private IEnumerable<Tick> GetEquityQuoteTicks(HistoryRequest request)
         {
-            // https://api.polygon.io/v2/ticks/stocks/nbbo/SPY/2020-08-24?apiKey=
+            // https://api.massive.com/v3/quotes/AAPL?order=asc&limit=10&sort=timestamp&apiKey=jA9LvJgpQILJxqPCz6X7mrz2QOUpcty8
 
-            var start = request.StartTimeUtc;
-            var end = request.EndTimeUtc;
-            var currentDate = start.Date;
+            long tsStart = Time.DateTimeToUnixTimeStampNanoseconds(request.StartTimeUtc); 
+            long tsEnd = Time.DateTimeToUnixTimeStampNanoseconds(request.EndTimeUtc);
+            
+            Log.Debug($"GetEquityQuoteTicks(): Downloading ticks from UTC {request.StartTimeUtc:u} to UTC {request.EndTimeUtc:u}; symbol: {request.Symbol.ID.Symbol}");
 
-            while (currentDate <= end.Date)
+            string url = $"{HistoryBaseUrl}/v3/quotes/{request.Symbol.Value}?" +
+                      $"order=asc&timestamp.gte={tsStart}&timestamp.lt={tsEnd}&limit={ResponseSizeLimitEquities}&apiKey={_apiKey}";
+            (var response, var nextUrl) = ((EquityQuoteTickResponse[], string?))DownloadAndParseData(typeof(EquityQuoteTickResponse[]), url, "results");
+            while (nextUrl != null)
             {
-                Log.Debug($"GetEquityQuoteTicks(): Downloading ticks for the date {currentDate:yyyy-MM-dd}; symbol: {request.Symbol.ID.Symbol}");
-
-                // If this is a very first iteration set offset exactly as request's start time. Otherwise use date start as an offset.
-                var offset = currentDate == start.Date
-                    ? Time.DateTimeToUnixTimeStampNanoseconds(start)
-                    : Time.DateTimeToUnixTimeStampNanoseconds(currentDate);
-
-                var counter = 0;
-                long lastTickSipTimeStamp = 0;
-
-                while (true)
-                {
-                    counter++;
-
-                    var url = $"{HistoryBaseUrl}/v2/ticks/stocks/nbbo/{request.Symbol.Value}/{currentDate.Date:yyyy-MM-dd}?" +
-                              $"apiKey={_apiKey}&timestamp={offset}&limit={ResponseSizeLimitEquities}";
-                    (var response, var nextUrl) = ((EquityQuoteTickResponse[], string?))DownloadAndParseData(typeof(EquityQuoteTickResponse[]), url, "results");
-                    while (nextUrl != null)
-                    {
-                        (var responseNext, nextUrl) = ((EquityQuoteTickResponse[], string?))DownloadAndParseData(typeof(EquityQuoteTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
-                        response = response.Concat(responseNext).ToArray();
-                    }
-
-                    // The first results of the next page will coincide with last of the previous page
-                    // We distinguish the results by the timestamp, lets clear from repeating values
-                    var quoteTicksList = response?.Where(x => x.SipTimestamp != lastTickSipTimeStamp).ToList();
-
-                    // API will send at the end only such repeating ticks that coincide with last results of previous page
-                    // If there are no other ticks other than these then we break
-                    if (quoteTicksList.IsNullOrEmpty())
-                    {
-                        break;
-                    }
-
-                    Log.Debug($"GetEquityQuoteTicks(): Page # {counter}; " +
-                              $"first: {Time.UnixNanosecondTimeStampToDateTime(quoteTicksList.First().SipTimestamp)}; " +
-                              $"last: {Time.UnixNanosecondTimeStampToDateTime(quoteTicksList.Last().SipTimestamp)}");
-
-                    foreach (var row in quoteTicksList)
-                    {
-                        var utcTime = Time.UnixNanosecondTimeStampToDateTime(row.SipTimestamp);
-                        if (utcTime < start)
-                        {
-                            continue;
-                        }
-
-                        if (utcTime > end)
-                        {
-                            yield break;
-                        }
-
-                        var time = GetTickTime(request.Symbol, utcTime);
-                        yield return new Tick(time, request.Symbol, string.Empty, string.Empty, row.BidSize, row.BidPrice, row.AskSize, row.AskPrice);
-
-                        // Save the values before to jump to the next iteration
-                        lastTickSipTimeStamp = row.SipTimestamp;
-                    }
-
-                    offset = lastTickSipTimeStamp;
-                    _dataPointCount += quoteTicksList.Count;
-                }
-
-                // Jump to the next iteration
-                currentDate = currentDate.AddDays(1);
+                (var responseNext, nextUrl) = ((EquityQuoteTickResponse[], string?))DownloadAndParseData(typeof(EquityQuoteTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                response = response.Concat(responseNext).ToArray();
             }
+
+            // The first results of the next page will coincide with last of the previous page
+            // We distinguish the results by the timestamp, lets clear from repeating values
+            var quoteTicksList = response?.ToList() ?? new List<EquityQuoteTickResponse>();
+
+            if (quoteTicksList.Count == 0)
+            {
+                yield break;
+            }
+
+            Log.Debug($"GetEquityQuoteTicks(): " +
+                      $"first: {Time.UnixNanosecondTimeStampToDateTime(quoteTicksList.First().SipTimestamp)}; " +
+                      $"last: {Time.UnixNanosecondTimeStampToDateTime(quoteTicksList.Last().SipTimestamp)}");
+
+            foreach (var row in quoteTicksList)
+            {;
+                if (row.SipTimestamp < tsStart) continue;
+
+                if (row.SipTimestamp > tsEnd) yield break;
+                
+                var utcTime = Time.UnixNanosecondTimeStampToDateTime(row.SipTimestamp);
+                var time = GetTickTime(request.Symbol, utcTime);
+                // Data model missing Bid Exchange, so skipping Ask Exchange for now also..
+                yield return new Tick(time, request.Symbol, string.Empty, string.Empty, row.BidSize, row.BidPrice, row.AskSize, row.AskPrice);
+            }
+            
+            _dataPointCount += quoteTicksList.Count;
         }
 
         private IEnumerable<Tick> GetEquityTradeTicks(HistoryRequest request)
         {
-            // https://api.polygon.io/v2/ticks/stocks/trades/SPY/2020-08-24?apiKey=
+            // https://api.massive.com/v3/trades/FDX?timestamp=2026-03-06&order=asc&limit=10&sort=timestamp&apiKey=
+            
+            long tsStart = Time.DateTimeToUnixTimeStampNanoseconds(request.StartTimeUtc); 
+            long tsEnd = Time.DateTimeToUnixTimeStampNanoseconds(request.EndTimeUtc); 
+            
+            Log.Debug($"GetEquityTradeTicks(): Downloading ticks from UTC {request.StartTimeUtc:s} to UTC {request.EndTimeUtc:s}; symbol: {request.Symbol.ID.Symbol}");
 
-            var start = request.StartTimeUtc;
-            var end = request.EndTimeUtc;
-            var currentDate = start.Date;
+            string url = $"{HistoryBaseUrl}/v3/trades/{request.Symbol.ID.Symbol}?" +
+                $"timestamp.gte={tsStart}&timestamp.lt={tsEnd}&order=asc&limit={ResponseSizeLimitEquities}&apiKey={_apiKey}";
 
-            while (currentDate <= end.Date)
+            (var response, var nextUrl) = ((EquityTradeTickResponse[], string?))DownloadAndParseData(typeof(EquityTradeTickResponse[]), url, "results");
+            while (nextUrl != null)
             {
-                Log.Debug($"GetEquityTradeTicks(): Downloading ticks for the date {currentDate:yyyy-MM-dd}; symbol: {request.Symbol.ID.Symbol}");
-
-                // If this is a very first iteration set offset exactly as request's start time. Otherwise use date start as an offset.
-                var offset = currentDate == start.Date
-                    ? Time.DateTimeToUnixTimeStampNanoseconds(start)
-                    : Time.DateTimeToUnixTimeStampNanoseconds(currentDate);
-
-                var counter = 0;
-                long lastTickSipTimeStamp = 0;
-
-                while (true)
-                {
-                    counter++;
-
-                    var url = $"{HistoryBaseUrl}/v2/ticks/stocks/trades/{request.Symbol.ID.Symbol}/{currentDate:yyyy-MM-dd}?" +
-                              $"apiKey={_apiKey}&timestamp={offset}&limit={ResponseSizeLimitEquities}";
-
-                    (var response, var nextUrl) = ((EquityTradeTickResponse[], string?))DownloadAndParseData(typeof(EquityTradeTickResponse[]), url, "results");
-                    while (nextUrl != null)
-                    {
-                        (var responseNext, nextUrl) = ((EquityTradeTickResponse[], string?))DownloadAndParseData(typeof(EquityTradeTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
-                        response = response.Concat(responseNext).ToArray();
-                    }
-
-                    // The first results of the next page will coincide with last of the previous page
-                    // We distinguish the results by the timestamp, lets clear from repeating values
-                    var tradeTicksList = response?.Where(x => x.SipTimestamp != lastTickSipTimeStamp).ToList();
-
-                    // API will send at the end only such repeating ticks that coincide with last results of previous page
-                    // If there are no other ticks other than these then we break
-                    if (tradeTicksList.IsNullOrEmpty())
-                    {
-                        break;
-                    }
-
-                    Log.Debug($"GetEquityTradeTicks(): Page # {counter}; " +
-                              $"first: {Time.UnixNanosecondTimeStampToDateTime(tradeTicksList.First().SipTimestamp)}; " +
-                              $"last: {Time.UnixNanosecondTimeStampToDateTime(tradeTicksList.Last().SipTimestamp)}");
-
-                    foreach (var row in tradeTicksList)
-                    {
-                        var utcTime = Time.UnixNanosecondTimeStampToDateTime(row.SipTimestamp);
-                        if (utcTime < start)
-                        {
-                            continue;
-                        }
-
-                        if (utcTime > end)
-                        {
-                            yield break;
-                        }
-
-                        var time = GetTickTime(request.Symbol, utcTime);
-                        yield return new Tick(time, request.Symbol, string.Empty, string.Empty, row.Size, row.Price);
-
-                        // Save the values before to jump to the next iteration
-                        lastTickSipTimeStamp = row.SipTimestamp;
-                    }
-
-                    offset = lastTickSipTimeStamp;
-                    _dataPointCount += tradeTicksList.Count;
-                }
-
-                // Jump to the next iteration
-                currentDate = currentDate.AddDays(1);
+                (var responseNext, nextUrl) =
+                    ((EquityTradeTickResponse[], string?))DownloadAndParseData(typeof(EquityTradeTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                response = response.Concat(responseNext).ToArray();
             }
+
+            // The first results of the next page will coincide with last of the previous page
+            // We distinguish the results by the timestamp, lets clear from repeating values
+            var tradeTicksList = response?.ToList() ?? new List<EquityTradeTickResponse>();
+
+            if (tradeTicksList.Count == 0)
+            {
+                yield break;
+            }
+
+            Log.Debug($"GetEquityTradeTicks():; " +
+                $"first: {Time.UnixNanosecondTimeStampToDateTime(tradeTicksList.First().SipTimestamp)}; " +
+                $"last: {Time.UnixNanosecondTimeStampToDateTime(tradeTicksList.Last().SipTimestamp)}");
+
+            foreach (var row in tradeTicksList)
+            {
+                if (row.SipTimestamp < tsStart) continue;
+
+                if (row.SipTimestamp > tsEnd) yield break;
+
+                var utcTime = Time.UnixNanosecondTimeStampToDateTime(row.SipTimestamp);
+                var time = GetTickTime(request.Symbol, utcTime);
+                yield return new Tick(time, request.Symbol, string.Empty, string.Empty, row.Size, row.Price);
+            }
+
+            _dataPointCount += tradeTicksList.Count;
         }
 
         private IEnumerable<Tick> GetOptionTradeTicks(HistoryRequest request)
         {
             // https://api.polygon.io/v3/trades/O:TSLA210903C00700000?apiKey=
+            
+            long tsStart = Time.DateTimeToUnixTimeStampNanoseconds(request.StartTimeUtc); 
+            long tsEnd = Time.DateTimeToUnixTimeStampNanoseconds(request.EndTimeUtc);
+            
+            Log.Debug($"GetOptionTradeTicks(): Downloading ticks from UTC {request.StartTimeUtc:u} to UTC {request.EndTimeUtc:u}; symbol: {request.Symbol.ID.Symbol}");
 
-            var start = request.StartTimeUtc;
-            var end = request.EndTimeUtc;
-            var currentDate = start.Date;
+            string url = $"{HistoryBaseUrl}/v3/trades/{MapSymbolToPolygonTicker(request.Symbol)}?" +
+                      $"apiKey={_apiKey}&timestamp.gte={tsStart}&timestamp.lt={tsEnd}&order=asc&limit={ResponseSizeLimitEquities}";
 
-            while (currentDate <= end.Date)
+            (var response, var nextUrl) = ((OptionTradeTickResponse[], string?))DownloadAndParseData(typeof(OptionTradeTickResponse[]), url, "results");
+            while (nextUrl != null)
             {
-                Log.Debug($"GetOptionTradeTicks(): Downloading ticks for the date {currentDate:yyyy-MM-dd}; symbol: {request.Symbol.ID.Symbol}");
-
-                // If this is a very first iteration set offset exactly as request's start time. Otherwise use date start as an offset.
-                var offset = currentDate == start.Date
-                    ? Time.DateTimeToUnixTimeStampNanoseconds(start)
-                    : Time.DateTimeToUnixTimeStampNanoseconds(currentDate);
-                var timestampEndDate = Time.DateTimeToUnixTimeStampNanoseconds(currentDate.AddDays(1));
-
-                var counter = 0;
-                long lastTickSipTimeStamp = 0;
-
-                while (true)
-                {
-                    counter++;
-
-                    var url = $"{HistoryBaseUrl}/v3/trades/{MapSymbolToPolygonTicker(request.Symbol)}?" +
-                              $"apiKey={_apiKey}&timestamp.gt={offset}&timestamp.lt={timestampEndDate}&order=asc&limit={ResponseSizeLimitEquities}";
-
-                    (var response, var nextUrl) = ((OptionTradeTickResponse[], string?))DownloadAndParseData(typeof(OptionTradeTickResponse[]), url, "results");
-                    while (nextUrl != null)
-                    {
-                        (var responseNext, nextUrl) = ((OptionTradeTickResponse[], string?))DownloadAndParseData(typeof(OptionTradeTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
-                        response = response.Concat(responseNext).ToArray();
-                    }
-
-                    // The first results of the next page will coincide with last of the previous page
-                    // We distinguish the results by the timestamp, lets clear from repeating values
-                    var tradeTicksList = response?.Where(x => x.SipTimestamp != lastTickSipTimeStamp).ToList();
-
-                    // API will send at the end only such repeating ticks that coincide with last results of previous page
-                    // If there are no other ticks other than these then we break
-                    if (tradeTicksList.IsNullOrEmpty())
-                    {
-                        break;
-                    }
-
-                    Log.Debug($"GetOptionTradeTicks(): Page # {counter}; " +
-                              $"first: {Time.UnixNanosecondTimeStampToDateTime(tradeTicksList.First().SipTimestamp)}; " +
-                              $"last: {Time.UnixNanosecondTimeStampToDateTime(tradeTicksList.Last().SipTimestamp)}");
-
-                    foreach (var row in tradeTicksList)
-                    {
-                        var utcTime = Time.UnixNanosecondTimeStampToDateTime(row.SipTimestamp);
-                        if (utcTime < start)
-                        {
-                            continue;
-                        }
-
-                        if (utcTime > end)
-                        {
-                            yield break;
-                        }
-
-                        var time = GetTickTime(request.Symbol, utcTime);
-                        yield return new Tick(time, request.Symbol, string.Empty, string.Empty, row.Size, row.Price);
-
-                        // Save the values before to jump to the next iteration
-                        lastTickSipTimeStamp = row.SipTimestamp;
-                    }
-
-                    offset = lastTickSipTimeStamp;
-                    _dataPointCount += tradeTicksList.Count;
-                }
-
-                // Jump to the next iteration
-                currentDate = currentDate.AddDays(1);
+                (var responseNext, nextUrl) = ((OptionTradeTickResponse[], string?))DownloadAndParseData(typeof(OptionTradeTickResponse[]), nextUrl + $"&apiKey={_apiKey}", "results");
+                response = response.Concat(responseNext).ToArray();
             }
+            
+            var tradeTicksList = response?.ToList() ?? new List<OptionTradeTickResponse>();
+
+            if (tradeTicksList.Count == 0) yield break;
+
+            Log.Debug($"GetOptionTradeTicks(): " +
+                      $"first: {Time.UnixNanosecondTimeStampToDateTime(tradeTicksList.First().SipTimestamp)}; " +
+                      $"last: {Time.UnixNanosecondTimeStampToDateTime(tradeTicksList.Last().SipTimestamp)}");
+
+            foreach (var row in tradeTicksList)
+            {
+                if (row.SipTimestamp < tsStart) continue;
+
+                if (row.SipTimestamp > tsEnd) yield break;
+
+                var utcTime = Time.UnixNanosecondTimeStampToDateTime(row.SipTimestamp);
+                var time = GetTickTime(request.Symbol, utcTime);
+                yield return new Tick(time, request.Symbol, string.Empty, row.Exchange.ToString(CultureInfo.InvariantCulture), row.Size, row.Price);
+            }
+            _dataPointCount += tradeTicksList.Count;
         }
 
         public IEnumerable<Symbol> GetOptionContracts(Symbol symbol, DateTime asOf)
@@ -960,7 +813,7 @@ namespace QuantConnect.ToolBox.Polygon
 
             Log.Debug($"GetOptionContracts(): Fetching contracts for symbol: {symbol} as of date {asOf:yyyy-MM-dd};");
 
-            var url = $"{HistoryBaseUrl}/v3/reference/options/contracts?" +
+            string url = $"{HistoryBaseUrl}/v3/reference/options/contracts?" +
                               $"underlying_ticker={symbol.Value}&as_of={asOf.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&apiKey={_apiKey}&limit={ResponseSizeLimitOptionContracts}";
 
             (var response, var nextUrl) = ((OptionContractResponse[], string?))DownloadAndParseData(typeof(OptionContractResponse[]), url, "results");
@@ -1314,21 +1167,16 @@ namespace QuantConnect.ToolBox.Polygon
 
         private DateTime GetTickTime(Symbol symbol, DateTime utcTime)
         {
-            if (!_symbolExchangeTimeZones.TryGetValue(symbol, out var exchangeTimeZone))
+            var exchangeTimeZone = _symbolExchangeTimeZones.GetOrAdd(symbol, s =>
             {
-                // read the exchange time zone from market-hours-database
-                if (_marketHoursDatabase.TryGetEntry(symbol.ID.Market, symbol, symbol.SecurityType, out var entry))
+                if (_marketHoursDatabase.TryGetEntry(s.ID.Market, s, s.SecurityType, out var entry))
                 {
-                    exchangeTimeZone = entry.ExchangeHours.TimeZone;
-                }
-                // If there is no entry for the given Symbol, default to New York
-                else
-                {
-                    exchangeTimeZone = TimeZones.NewYork;
+                    return entry.ExchangeHours.TimeZone;
                 }
 
-                _symbolExchangeTimeZones.Add(symbol, exchangeTimeZone);
-            }
+                // If there is no entry for the given Symbol, default to New York
+                return TimeZones.NewYork;
+            });
 
             return utcTime.ConvertFromUtc(exchangeTimeZone);
         }

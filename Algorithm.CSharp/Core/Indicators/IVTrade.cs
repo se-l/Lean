@@ -48,9 +48,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             IV = OptionContractWrap.E(_algo, Option, Time.Date).IV(Price, UnderlyingMidPrice, 0.001);
             Current = new IVQuote(Symbol, Time, UnderlyingMidPrice, Price, IV);
         }
-        public void SetDelta(double? delta = null)
-        {
-            Current.Delta = delta != null ? delta : OptionContractWrap.E(_algo, Option, Time.Date).Delta(_algo.IV(Option, Price), UnderlyingMidPrice);
-        }
+        // public void SetDelta(double? delta = null)
+        // {
+        //     Current.Delta = delta != null ? delta : OptionContractWrap.E(_algo, Option, Time.Date).Delta(_algo.IV(Option, Price), UnderlyingMidPrice);
+        // }
     }
 }

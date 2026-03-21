@@ -58,7 +58,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             if (_algo.IsWarmingUp) return 0;
 
-            return OCW.IV(NBBO, Spot, OCW.Accuracy);
+            return OCW.IV(NBBO, Spot, OptionContractWrap.Accuracy);
         }
         public Symbol Symbol => Option.Symbol;
         /// Issue here. Date from ticket is potentially in UTC.
@@ -105,8 +105,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             WorstIV = (BidIV + AskIV) / 2;
         }
 
-        private double AskIV => OCW.IV(Option.AskPrice, Spot, OCW.Accuracy);
-        private double BidIV => OCW.IV(Option.BidPrice, Spot, OCW.Accuracy);
+        private double AskIV => OCW.IV(Option.AskPrice, Spot, OptionContractWrap.Accuracy);
+        private double BidIV => OCW.IV(Option.BidPrice, Spot, OptionContractWrap.Accuracy);
         private double WorseIV => Direction switch
         {
             OrderDirection.Buy => Math.Min(WorstIV + RatioSpreadTolerance * SpreadIV, (BidIV + AskIV) / 2),
@@ -144,7 +144,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public decimal BufferIntraSpreadQuote(decimal price)
         {   
             decimal spot = _algo.MidPrice(Underlying(Option.Symbol));
-            double priceIV = OCW.IV(price, Spot, OCW.Accuracy);
+            double priceIV = OCW.IV(price, Spot, OptionContractWrap.Accuracy);
 
             //SetWorstIVToAtLeastNBBO();
             SetWorstIVToMidIV();

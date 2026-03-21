@@ -50,8 +50,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     if (_algo.IsEventNewQuote(symbol))
                     {
-                        _algo.IVBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
-                        _algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                        _algo.IvBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                        _algo.IvAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
                     }
                 };
             }
@@ -64,8 +64,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // No need for particular option contract's volatility.
                 security.VolatilityModel = VolatilityModel.Null;
 
-                _algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, _algo);
-                _algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, _algo);
+                _algo.IvBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, _algo);
+                _algo.IvAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, _algo);
                 //_algo.IVTrades[symbol] = new IVTrade(option, _algo);
                 // Window size must capture one day of entries. Second resolution ; 6.5*60*60 = 23400. Then it's reset at eod.
                 //_algo.RollingIVBid[symbol] = new RollingIVIndicator<IVQuote>(100_000, symbol);
@@ -96,8 +96,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             _algo.Log($"{_algo.Time} SecurityInitializer.RegisterIndicators: {option.Symbol}");
             Symbol symbol = option.Symbol;
-            _algo.RegisterIndicator(symbol, _algo.IVBids[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVBids[symbol].Selector);
-            _algo.RegisterIndicator(symbol, _algo.IVAsks[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IVAsks[symbol].Selector);
+            _algo.RegisterIndicator(symbol, _algo.IvBids[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IvBids[symbol].Selector);
+            _algo.RegisterIndicator(symbol, _algo.IvAsks[symbol], _algo.QuoteBarConsolidators[symbol], _algo.IvAsks[symbol].Selector);
         }
     }
 }

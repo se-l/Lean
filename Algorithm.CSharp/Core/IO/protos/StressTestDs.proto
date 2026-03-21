@@ -36,7 +36,7 @@ message ResultStressTestDs {
 
   double weighted_dnlv = 7;
 
-  map<string, double> marginal_weighted_dnlv_by_holding = 8;
+  map<string, double> marginal_utility_by_holding = 8;
 
   double total_objective = 9;
 

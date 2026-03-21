@@ -47,8 +47,6 @@ namespace QuantConnect.Algorithm.CSharp
             Cfg.OverrideWithEnvironmentVariables<FoundationsConfig>();
 
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText(Path.Combine(Globals.DataFolder, "symbol-properties", "EarningsAnnouncements.json")));
-            DividendYield = JsonConvert.DeserializeObject<Dictionary<string, double>>(File.ReadAllText(Path.Combine(Globals.DataFolder, "symbol-properties", "DividendYields.json")));
-            DividendSchedule = JsonConvert.DeserializeObject<Dictionary<string, DividendMine[]>>(File.ReadAllText("DividendSchedule.json"));
             ManualOrderInstructionBySymbol = JsonConvert.DeserializeObject<ManualOrderInstruction[]>(File.ReadAllText("ManualOrderInstructions.json")).GroupBy(x => x.Symbol).ToDictionary(g => g.Key, g => g.First());
             EarningsBySymbol = EarningsAnnouncements.GroupBy(ea => ea.Symbol).ToDictionary(g => g.Key, g => g.ToArray());
             
@@ -111,8 +109,6 @@ namespace QuantConnect.Algorithm.CSharp
             LogPositions();
             LogOrderTickets();
             LogToDisk();
-
-            ExportToCsv(Position.AllLifeCycles(this), Path.Combine(Globals.PathAnalytics, "PositionLifeCycle.csv"));
 
             OnWarmupFinishedCalled = true;  // bad. remove flag setting design
 

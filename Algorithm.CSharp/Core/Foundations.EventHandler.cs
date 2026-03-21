@@ -2,6 +2,7 @@ using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Util;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
@@ -10,6 +11,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations : QCAlgorithm
     {
+        public event EventHandler<MarketRegimesChangeEventArgs> MarketRegimesChangeEventHandler;
         public event EventHandler<NewBidAskEventArgs> NewBidAskEventHandler;
         public event EventHandler<RiskLimitExceededEventArgs> RiskLimitExceededEventHandler;
         public event EventHandler<TradeEventArgs> TradeEventHandler;
@@ -20,8 +22,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (newBidAsk.Symbol.SecurityType == SecurityType.Option)
             {
-                IVBids[newBidAsk.Symbol].Update();
-                IVAsks[newBidAsk.Symbol].Update();
+                IvBids[newBidAsk.Symbol].Update();
+                IvAsks[newBidAsk.Symbol].Update();
                 UpdateLimitPrice(newBidAsk.Symbol);
             }
             else if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)
@@ -37,6 +39,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)
             {
                 PfRisk.CheckHandleDeltaRiskExceedingBand(newBidAsk.Symbol);
+            }
+        }
+        public void OnMarketRegimesChange(object? sender, MarketRegimesChangeEventArgs e)
+        {
+            Log($"{Time} SetActiveRegimes: Switched to {string.Join(", ", e?.MarketRegimes ?? new HashSet<MarketRegime> ())}");
+            if (e.MarketRegimes.Contains(MarketRegime.PreEarningsReleaseBeforeMarketClose))
+            {
+                ClearTargetPortfolios(e.Symbol);
+                ClearTargetHoldings(e.Symbol);
+                CancelOrdersNotAlignedWithTargetPortfolio();
             }
         }
 

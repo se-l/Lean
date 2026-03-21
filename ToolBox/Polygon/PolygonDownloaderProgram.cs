@@ -84,11 +84,8 @@ namespace QuantConnect.ToolBox.Polygon
                             {
                                 Symbol symbol = tup.Item1;
                                 IEnumerable<BaseData> data = tup.Item2;
-                                if (data.Any())
-                                {
-                                    dataList.Add(data);
-                                }                                
-                                
+                                if (data.Any()) dataList.Add(data);
+
                                 tradeDates = new HashSet<DateTime>(tradeDates.Union(TradeDates(market, marketHoursDatabase, symbol, startDate, endDate)));
                                 processedSymbols.Add(symbol);
                             }
@@ -135,10 +132,7 @@ namespace QuantConnect.ToolBox.Polygon
             try
             {
                 // Set API Key. Presumably already in Config.
-                if (apiKey != "")
-                {
-                    Config.Set("polygon-api-key", apiKey);
-                }
+                if (apiKey != "") Config.Set("polygon-api-key", apiKey);
 
                 // Load settings from command line
                 var resolution = (Resolution)Enum.Parse(typeof(Resolution), resolutionString);
@@ -162,16 +156,14 @@ namespace QuantConnect.ToolBox.Polygon
 
                 // Load settings from config.json
                 var dataDirectory = Config.Get("data-folder", "../../../Data");
-                DateTime startDate = fromDate.ConvertToUtc(TimeZones.NewYork);
-                DateTime endDate = toDate.ConvertToUtc(TimeZones.NewYork);  // midnight in command prompt in HK turns into midight +4 hours EST.
 
                 var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
 
                 // Create an instance of the downloader
                 using var downloader = new PolygonDataDownloader();
                 IEnumerable<Symbol> symbols = tickers.Select(x => Symbol.Create(x, securityType, market));
-
-                var tradeDates = TradeDates(market, marketHoursDatabase, symbols.First(), startDate, endDate);
+                
+                var tradeDates = TradeDates(market, marketHoursDatabase, symbols.First(), fromDate, toDate);
                 Dictionary<Symbol, IEnumerable<DateTime>> symbolDates = new();  // Dont request options for dates where option was not issued yet
 
                 IEnumerable<Request> requests;
@@ -203,22 +195,26 @@ namespace QuantConnect.ToolBox.Polygon
                     requests = symbolDates.SelectMany(kvp => tickTypes.Select(tickType => new Request
                     {
                         Symbol = kvp.Key,
-                        Start = kvp.Value.Min().Add(startDate.TimeOfDay),
-                        End = kvp.Value.Max().Add(endDate.TimeOfDay),
+                        Start = kvp.Value.Min(),
+                        End = kvp.Value.Max(),
                         Resolution = resolution,
                         TickType = tickType
                     })).ToList();
                 }    
                 else
                 {
-                    requests = symbols.SelectMany(symbol => tickTypes.Select(tickType => new Request
-                    {
-                        Symbol = symbol,
-                        Start = startDate,
-                        End = endDate,
-                        Resolution = resolution,
-                        TickType = tickType
-                    })).ToList();
+                    // Same like for options, send daily requests, not over whole timeframe.
+                    requests = symbols.SelectMany(symbol =>
+                            TradeDates(market, marketHoursDatabase, symbol, fromDate, toDate)
+                                .SelectMany(date => tickTypes.Select(tickType => new Request
+                                {
+                                    Symbol = symbol,
+                                    Start = date,
+                                    End = date,
+                                    Resolution = resolution,
+                                    TickType = tickType
+                                })))
+                        .ToList();
                 }
 
                 int completedRequests = 0;
@@ -243,7 +239,7 @@ namespace QuantConnect.ToolBox.Polygon
                     if (!dataQueues.ContainsKey(key))
                     {
                         dataQueues.Add(key, new ConcurrentQueue<Tuple<Symbol, IEnumerable<BaseData>>>());
-                        Action action = () => WriteDataQueueToDisk(dataQueues[key], underlying, request.TickType, _diskDataCacheProvider, writers[request.TickType], DownloadFinished, startDate, endDate, resolution);
+                        Action action = () => WriteDataQueueToDisk(dataQueues[key], underlying, request.TickType, _diskDataCacheProvider, writers[request.TickType], DownloadFinished, fromDate, toDate, resolution);
                         tasksWriteToDisk.Add(Task.Factory.StartNew(action, CTS.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default));
                     }
                 }
@@ -253,14 +249,14 @@ namespace QuantConnect.ToolBox.Polygon
                     var writer = writers[request.TickType];  // new LeanDataWriter(resolution, request.Symbol, dataDirectory, request.TickType, _diskDataCacheProvider);
                     var tradeDates = TradeDates(market, marketHoursDatabase, request.Symbol, request.Start, request.End);
 
-                    if (skipFilled && skipEmpty && tradeDates.All(date => writer.FileEntryExists(date, request.Symbol))
+                    if (skipFilled && tradeDates.All(date => writer.FileEntryExists(date, request.Symbol))
                         )
                     {
                         Interlocked.Increment(ref completedRequests);
                         return;
                     }
 
-                    if (!skipEmpty && tradeDates.All(date => writer.FileEntrySize(date, request.Symbol) > 0))
+                    if (skipEmpty && tradeDates.All(date => writer.FileEntrySize(date, request.Symbol) == 0))
                     {
                         Interlocked.Increment(ref completedRequests);
                         return;
@@ -278,7 +274,9 @@ namespace QuantConnect.ToolBox.Polygon
                     var dataTimeZone = marketHoursDatabase.GetDataTimeZone(market, request.Symbol, securityType);                    
 
                     // Download the data
-                    var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, request.Start, request.End, request.TickType))
+                    var startUtc = request.Start.Date.Add(TimeSpan.FromHours(-4)).ConvertToUtc(exchangeTimeZone);
+                    var endUtc = request.Start.Date.Add(TimeSpan.FromHours(20)).ConvertToUtc(exchangeTimeZone);
+                    var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, startUtc, endUtc, request.TickType))
                         .Select(x =>
                         {
                             x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);

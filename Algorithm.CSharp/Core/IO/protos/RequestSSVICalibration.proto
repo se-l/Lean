@@ -16,11 +16,17 @@ message SSVIModelParams {
 
 message SSVIParams {
 
+    string underlying = 1;
+    string tenor_dt = 2;
+    SSVIModelParams model_params = 3;
+}
+
+message SSVIParamsByRight {
+
     string underlying = 1;  
     OptionRight right = 2;
     string tenor_dt = 3;
     SSVIModelParams model_params = 4;
-
 }
 
 message RequestSSVICalibration {

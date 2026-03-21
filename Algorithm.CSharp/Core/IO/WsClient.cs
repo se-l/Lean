@@ -359,6 +359,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 _ when typeof(T) == typeof(RequestKalmanInit) => Channel.KalmanInit,
                 _ when typeof(T) == typeof(RequestStressTestDs) => Channel.StressTestDs,
                 _ when typeof(T) == typeof(RequestSSVICalibration) => Channel.RequestSsviCalibration,
+                _ when typeof(T) == typeof(RequestPfRiskScenarios) => Channel.RequestPfRiskScenarios,
                 _ => throw new InvalidOperationException($"No channel mapping found for request type {typeof(T)}.")
             };
         }

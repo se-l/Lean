@@ -50,7 +50,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             {
                 Metric.DeltaTotal => positions.Sum(p => p.DeltaTotal(volatility)),
                 Metric.DeltaImpliedTotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIV(p.Symbol))),
-                Metric.DeltaImpliedSSVITotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIVSSVI(symbol))),
+                Metric.DeltaImpliedSSVITotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIVSsvi(symbol))),
 
                 Metric.DeltaXBpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(dX ?? 0)),
                 Metric.Delta100BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(100)),

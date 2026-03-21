@@ -12,7 +12,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (_writer == null)
             {
-                _algo.Log("sadfds");
                 _algo.Log($"{this.GetType().BaseType.Name}.Write(): _writer is null.");
                 return;
             }

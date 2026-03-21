@@ -19,32 +19,32 @@ namespace QuantConnect.ToolBox.Polygon.History
 {
     public class EquityTradeTickResponse
     {
-        [JsonProperty("c")]
+        [JsonProperty("conditions")]
         public int[] Conditions { get; set; }
 
-        [JsonProperty("i")]
+        [JsonProperty("id")]
         public string Id { get; set; }
 
-        [JsonProperty("q")]
+        [JsonProperty("sequence_number")]
         public long SequenceNumber { get; set; }
 
-        [JsonProperty("s")]
+        [JsonProperty("decimal_size")]
         public decimal Size { get; set; }
 
-        [JsonProperty("p")]
+        [JsonProperty("price")]
         public decimal Price { get; set; }
 
-        [JsonProperty("x")]
+        [JsonProperty("tape")]
         public int Exchange { get; set; }
 
-        [JsonProperty("t")]
+        [JsonProperty("sip_timestamp")]
         public long SipTimestamp { get; set; }
 
-        [JsonProperty("y")]
+        [JsonProperty("participant_timestamp")]
         public long ExchangeTimestamp { get; set; }
 
-        [JsonProperty("f")]
-        public long TrfTimestamp { get; set; }
+        // [JsonProperty("f")]
+        // public long TrfTimestamp { get; set; }
 
         public override int GetHashCode()
         {
