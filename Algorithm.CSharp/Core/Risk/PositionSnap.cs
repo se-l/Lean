@@ -89,15 +89,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (SecurityType == SecurityType.Option)
             {
                 var ocw = OptionContractWrap.E(_algo, (Option)Security, Ts0.Date);
-                IVBid0 = ocw.IV(Bid0, Mid0Underlying, ocw.Accuracy);
-                IVAsk0 = ocw.IV(Ask0, Mid0Underlying, ocw.Accuracy);
+                IVBid0 = ocw.IV(Bid0, Mid0Underlying, OptionContractWrap.Accuracy);
+                IVAsk0 = ocw.IV(Ask0, Mid0Underlying, OptionContractWrap.Accuracy);
             }
             else
             {
                 IVBid0 = IVAsk0 = 0;
             }            
             _ = Greeks;
-            SurfaceIVdS = (decimal)(_algo.IVSurfaceSSVIMid[Equity].IVdS(Symbol) ?? 0);
+            SurfaceIVdS = (decimal)(_algo.IvSurfaceSsviMid[Equity].IVdS(Symbol) ?? 0);
         }
     }
 }

@@ -1,20 +1,21 @@
+using Accord.Math;
+using Accord.Statistics;
+using MathNet.Numerics.LinearAlgebra;
+using MathNet.Numerics.Statistics;
+using QuantConnect.Algorithm.CSharp.Core.Indicators;
+using QuantConnect.Algorithm.CSharp.Core.IO;
+using QuantConnect.Data.Market;
+using QuantConnect.Orders;
+using QuantConnect.Securities;
+using QuantConnect.Securities.Option;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using MathNet.Numerics.Statistics;
+using System.Globalization;
+using System.IO;
 using System.Linq;
-using QuantConnect.Orders;
-using QuantConnect.Data.Market;
 using System.Reflection;
 using System.Text;
-using System.IO;
-using QuantConnect.Securities;
-using Accord.Statistics;
-using QuantConnect.Algorithm.CSharp.Core.IO;
-using MathNet.Numerics.LinearAlgebra;
-using Accord.Math;
-using QuantConnect.Algorithm.CSharp.Core.Indicators;
-using System.Globalization;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -28,10 +29,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             return new DateTime(date.Ticks - (date.Ticks % ticks), date.Kind);
         }
-        public enum Regime
+
+        public enum MarketRegime
         {
+            PreEarningsRelease,
+            PreEarningsReleaseBeforeMarketClose,
+            PostEarningsRelease,
+
+            // To be reviewed whether necessary
             BuyEvent,
-            SellEventCalendarHedge,
+            SellEventCalendarHedge
         }
 
         public enum HedgingMode
@@ -277,7 +284,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public static PropertyInfo[] GetProperties<T>(T obj) 
         {
-            // typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);  Didnt work for GreeksPlus & PLExplain
+            // typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);  Didnt work for GreeksPlus & PnLExplain
             if (obj is QCAlgorithm)
             {
                 return new PropertyInfo[0];
@@ -378,6 +385,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _ => throw new NotImplementedException(),  // this is throwing
             };
         }
+
+        public static Symbol Underlying(Option option) => option.Underlying.Symbol;
 
         public static Core.IO.SecurityType SecurityType2SecurityTypePb(SecurityType securityType)
         {
@@ -593,11 +602,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return new QuantLib.Date(date.Day, (QuantLib.Month)date.Month, date.Year);
         }
 
+        /// <summary>
+        /// Presuming able to send exercise notice at about 17:30 on exercise day.
+        /// If calculation_dt is a date only, presume it's 9:30 market open time.
+        /// </summary>
+        /// <param name="date"></param>
+        /// <param name="calcDate"></param>
+        /// <returns></returns>
         public static double ToTenor(DateTime date, DateTime calcDate)
         {
-            return (double)((date - calcDate).Days + 1) / 365;
+            var end = date.Date.AddHours(17.5);
+            var begin = calcDate.TimeOfDay.TotalSeconds == 0 ? calcDate.Date.AddHours(9.5) : calcDate;
+            return (end - begin).TotalDays / 365;
         }
-        public static SSVIParams[] IVSSSVIParamsToPb(Symbol underlying, Dictionary<(DateTime, OptionRight), SSVIParamsRecord> input)
+        public static SSVIParams[] IVSSSVIParamsToPb(Symbol underlying, Dictionary<DateTime, SSVIParamsRecord> input)
         {
             List<SSVIParams> ssviParams = new();
             foreach (var p in input)
@@ -605,8 +623,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 SSVIParams p_pb = new()
                 {
                     Underlying = underlying,
-                    Right = p.Key.Item2 == OptionRight.Call ? Core.IO.OptionRight.Call : Core.IO.OptionRight.Put,
-                    TenorDt = p.Key.Item1.ToString(DtFmtISO, CultureInfo.InvariantCulture),
+                    TenorDt = p.Key.ToString(DtFmtISO, CultureInfo.InvariantCulture),
                     ModelParams = new SSVIModelParams() { Theta = p.Value.Theta, Rho = p.Value.Rho, Psi = p.Value.Psi },
                 };
                 ssviParams.Add(p_pb);
@@ -622,6 +639,31 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Core.IO.OptionRight.Put => OptionRight.Put,
                 _ => throw new NotImplementedException(),
             };
+        }
+        public class SweepScheduleCfg
+        {
+            public string MarketRegime;
+            public string Start;
+            public string End;
+            public string Duration;
+            public string Direction;
+        }
+        public class SweepSchedule
+        {
+            public MarketRegime MarketRegime;
+            public TimeSpan Start;
+            public TimeSpan End;
+            public TimeSpan Duration;
+            public OrderDirection Direction;
+
+            public SweepSchedule(SweepScheduleCfg cfg)
+            {
+                MarketRegime = Enum.Parse<MarketRegime>(cfg.MarketRegime);
+                Start = AlgoConfig.GetTimeSpan(cfg.Start);
+                End = AlgoConfig.GetTimeSpan(cfg.End);
+                Duration = AlgoConfig.GetTimeSpan(cfg.Duration);
+                Direction = Enum.Parse<OrderDirection>(cfg.Direction);
+            }
         }
     }
 }

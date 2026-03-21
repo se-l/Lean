@@ -1,3 +1,4 @@
+using NodaTime;
 using QuantConnect.Orders;
 using System;
 using QuantConnect.Securities;
@@ -42,9 +43,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
 
             if (random.NextDouble() < pFill)
             {
-                Logging.Log.Trace($"UTC {fill.UtcTime} FillModelVolumeWeighted: Filled quantity={quantity}, symbol={order.Symbol}, " +
-                    $"bid={asset.BidPrice}, fillPrice={limitPrice}, ask={asset.AskPrice}, spreadCrossedPc={spreadCrossedPc},  " +
-                    $"pFill={pFill}, pFillSpread={pFillSpread}, MeanDailyVolume ={MeanDailyVolume}");
+                DateTime localTime = fill.UtcTime.ConvertTo(DateTimeZone.Utc, asset.Exchange.TimeZone);
+                Logging.Log.Trace($"{localTime} FillModelVolumeWeighted: Filled quantity={quantity}, symbol={order.Symbol}, " +
+                    $"bid={asset.BidPrice}, fillPrice={limitPrice}, ask={asset.AskPrice}, spreadCrossedPc={spreadCrossedPc:0.00},  " +
+                    $"pFill={pFill:0.00}, pFillSpread={pFillSpread:0.00}, MeanDailyVolume ={MeanDailyVolume:0.0}");
 
                 fill.Status = OrderStatus.Filled;
                 fill.FillPrice = limitPrice;

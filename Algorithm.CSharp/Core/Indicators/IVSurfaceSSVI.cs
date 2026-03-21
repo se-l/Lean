@@ -62,12 +62,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public bool HasParams(DateTime tenor, OptionRight right)
         {
-            return ModelParams.ContainsKey((tenor, right));
+            return ModelParams.ContainsKey(tenor);
         }
 
         public bool HasParams(Option option)
         {
-            return ModelParams.ContainsKey((option.Expiry, option.Right));
+            return ModelParams.ContainsKey(option.Expiry);
         }
 
         public double IV(Option option)
@@ -81,7 +81,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             if (!IsCalibrated) throw new InvalidOperationException($"IVSurface is not calibrated: Underlying={Underlying}");
             if (!HasParams(tenor, right)) throw new InvalidOperationException($"IVSurface does not have parameters for this tenor={tenor}, right={right}, Underlying={Underlying}");
 
-            SSVIParamsRecord mParams = ModelParams[(tenor, right)];
+            SSVIParamsRecord mParams = ModelParams[tenor];
             return SsviIV(k, mParams, ToTenor(tenor, calcDate));
         }
 
@@ -98,7 +98,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public double AtmIv()
         {
             // Use tenor from params keys that is at least 7 days away
-            DateTime tenor = ModelParams.Keys.Where(k => k.Item1 > _algo.Time.Date.AddDays(7)).Min(k => k.Item1);
+            DateTime tenor = ModelParams.Keys.Where(k => k > _algo.Time.Date.AddDays(7)).Min(k => k);
             return (IV(0, tenor, OptionRight.Call, _algo.Time.Date) + IV(0, tenor, OptionRight.Put, _algo.Time.Date)) / 2;
 
         }

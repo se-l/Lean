@@ -117,8 +117,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     if (_algo.IsEventNewQuote(symbol))  // Can refactor this to event driven. Then IVBids/Asks subscribe to EventNewQuote. Saves costly consolidator logic
                     {
-                        _algo.IVBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
-                        _algo.IVAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                        _algo.IvBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
+                        _algo.IvAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
                     }
                 };
                 _algo.MarketDataQuotes[security.Symbol] = new();
@@ -169,13 +169,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.MarketDataQuotes[security.Symbol] = new();
                 _algo.MarketDataTrades[security.Symbol] = new();
 
-                _algo.IVBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, _algo);
-                _algo.IVAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, _algo);
+                _algo.IvBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, _algo);
+                _algo.IvAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, _algo);
                 int ivSpreadSMAPeriod = _algo.Cfg.IVSpreadSMAPeriod.TryGetValue(symbol, out int period) ? period : _algo.Cfg.IVSpreadSMAPeriod[CfgDefault];
                 _algo.IVSpreadSMA[symbol] = new SimpleMovingAverage(ivSpreadSMAPeriod);
 
                 //_algo.IVBids[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceSSVIBid[option.Symbol.Underlying].ScheduleUpdate();
-                //_algo.IVAsks[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceSSVIAsk[option.Symbol.Underlying].ScheduleUpdate();
+                //_algo.IvAsks[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceSSVIAsk[option.Symbol.Underlying].ScheduleUpdate();
 
                 foreach (OrderDirection direction in new[] { OrderDirection.Buy, OrderDirection.Sell })
                 {
@@ -184,15 +184,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 //_algo.PutCallRatios[option.Symbol] = new PutCallRatioIndicator(option, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
             }
 
-            var equityOptions = new HashSet<SecurityType>() { SecurityType.Option, SecurityType.Equity };
-            if (equityOptions.Contains(security.Type) && !symbol.ID.Symbol.Contains("VolatilityBar"))
-            {
-                _algo.SweepState[symbol] = new();
-                foreach (var direction in new[] { OrderDirection.Buy, OrderDirection.Sell })
-                {
-                    _algo.SweepState[symbol][direction] = new Sweep(_algo, symbol, direction);
-                }
-            }
+            //var equityOptions = new HashSet<SecurityType>() { SecurityType.Option, SecurityType.Equity };
+            //if (equityOptions.Contains(security.Type) && !symbol.ID.Symbol.Contains("VolatilityBar"))
+            //{
+            //    _algo.SweepState[symbol] = new();
+            //    foreach (var direction in new[] { OrderDirection.Buy, OrderDirection.Sell })
+            //    {
+            //        _algo.SweepState[symbol][direction] = new Sweep(_algo, symbol, direction);
+            //    }
+            //}
 
             if (security.Resolution == Resolution.Tick)
             {
@@ -204,9 +204,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         private void InitializeIVSurfaces(Equity underlying)
         {
-            if (!_algo.IVSurfaceSSVIMid.ContainsKey(underlying))
+            if (!_algo.IvSurfaceSsviMid.ContainsKey(underlying))
             {
-                _algo.IVSurfaceSSVIMid[underlying] = new IVSurfaceSSVI(_algo, underlying, null, false);
+                _algo.IvSurfaceSsviMid[underlying] = new IVSurfaceSSVI(_algo, underlying, null, false);
             }
         }
         public DateTime HistoryRequestEndDate(Security security)
@@ -283,8 +283,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         ask = new IVQuote(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceAsk.Close, (double)volBar.Ask.Close);
 
 
-                        _algo.IVBids[symbol].Update(bid);
-                        _algo.IVAsks[symbol].Update(ask);
+                        _algo.IvBids[symbol].Update(bid);
+                        _algo.IvAsks[symbol].Update(ask);
                         _algo.IVSpreadSMA[symbol].Update(new IndicatorDataPoint(volBar.Time, (decimal)(ask.IV - bid.IV)));
                         samples++;
                     }

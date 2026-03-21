@@ -140,7 +140,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 SnapExpired();
                 return this;
             }
-
             _iV = volatility ?? IV;
             _hV = HV;
             _nPV = NPV;

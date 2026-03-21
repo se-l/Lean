@@ -15,7 +15,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             IVPrice = IV(_price);
             Time = _algo.Time;
             OrderDirection = Num2Direction(Quantity);
-            _regimes = _algo.ActiveRegimes.TryGetValue(Underlying, out _regimes) ? _regimes : new HashSet<Regime>();
 
             // Calling Utility to snap the risk => cached for future use.
             _ = Utility;

@@ -140,7 +140,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "IVPrice", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(e.Status == OrderStatus.Filled ? e.FillPrice : e.LimitPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
                 { "IVBid", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(Securities[e.Symbol].BidPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
                 { "IVAsk", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(Securities[e.Symbol].AskPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
-                { "IVMidSSVI", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceSSVIMid[equity].IV((Option)Securities[symbol]).ToString() : "" },
+                { "IVMidSSVI", e.Symbol.SecurityType == SecurityType.Option ? IvSurfaceSsviMid[equity].IV((Option)Securities[symbol]).ToString() : "" },
                 //{ "IVBidSSVI", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceSSVIBid[equity].IV((Option)Securities[symbol]).ToString() : "" },
                 //{ "IVAskSSVI", e.Symbol.SecurityType == SecurityType.Option ? IVSurfaceSSVIAsk[equity].IV((Option)Securities[symbol]).ToString() : "" },
             });
@@ -204,8 +204,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public string LogPnL(Symbol symbol = null)
         {
-            var posPnlRealized = PositionsRealized.Values.ToList().SelectMany(l => l).Sum(p => p.PL);
-            var posPnLUnrealized = Positions.Values.ToList().Sum(p => p.PL);
+            var posPnlRealized = PositionsRealized.Values.ToList().SelectMany(l => l).Sum(p => p.PnL);
+            var posPnLUnrealized = Positions.Values.ToList().Sum(p => p.PnL);
             var d1 = new Dictionary<string, string>
             {
                 { "ts", Time.ToString() },

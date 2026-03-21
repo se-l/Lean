@@ -19,37 +19,37 @@ namespace QuantConnect.ToolBox.Polygon.History
 {
     public class EquityQuoteTickResponse
     {
-        [JsonProperty("c")]
+        [JsonProperty("conditions")]
         public int[] Conditions { get; set; }
 
-        [JsonProperty("q")]
+        [JsonProperty("sequence_number")]
         public long SequenceNumber { get; set; }
 
-        [JsonProperty("p")]
+        [JsonProperty("bid_price")]
         public decimal BidPrice { get; set; }
 
-        [JsonProperty("P")]
+        [JsonProperty("ask_price")]
         public decimal AskPrice { get; set; }
 
-        [JsonProperty("s")]
+        [JsonProperty("bid_size")]
         public decimal BidSize { get; set; }
 
-        [JsonProperty("S")]
+        [JsonProperty("ask_size")]
         public decimal AskSize { get; set; }
 
-        [JsonProperty("x")]
+        [JsonProperty("bid_exchange")]
         public int BidExchange { get; set; }
 
-        [JsonProperty("X")]
+        [JsonProperty("ask_exchange")]
         public int AskExchange { get; set; }
 
-        [JsonProperty("t")]
+        [JsonProperty("sip_timestamp")]
         public long SipTimestamp { get; set; }
 
-        [JsonProperty("y")]
+        [JsonProperty("participant_timestamp")]
         public long ExchangeTimestamp { get; set; }
 
-        [JsonProperty("f")]
-        public long TrfTimestamp { get; set; }
+        // [JsonProperty("f")]
+        // public long TrfTimestamp { get; set; }
     }
 }

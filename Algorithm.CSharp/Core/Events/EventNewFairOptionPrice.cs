@@ -2,8 +2,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Events
 {
     public class EventNewFairOptionPrice
     {
-        public Symbol Symbol;
-        public decimal Price;
+        public Symbol Symbol { get; }
+        public decimal Price { get; }
 
         public EventNewFairOptionPrice(Symbol symbol, decimal price)
         {

@@ -300,7 +300,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             IVAsk0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
             IVPrice0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001) : 0;
             _ = Greeks;
-            SurfaceIVdS = ToDecimal(_algo.IVSurfaceSSVIMid[Equity].IVdS(Symbol) ?? 0);
+            SurfaceIVdS = ToDecimal(_algo.IvSurfaceSsviMid[Equity].IVdS(Symbol) ?? 0);
         }
 
         private void SnapExpired()

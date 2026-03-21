@@ -1,7 +1,32 @@
 using QLNet;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using Actual365Fixed = QLNet.Actual365Fixed;
+using AmericanExercise = QLNet.AmericanExercise;
+using AnalyticEuropeanEngine = QLNet.AnalyticEuropeanEngine;
+using BlackConstantVol = QLNet.BlackConstantVol;
+using BlackScholesMertonProcess = QLNet.BlackScholesMertonProcess;
+using BlackScholesProcess = QLNet.BlackScholesProcess;
+using BlackVolTermStructure = QLNet.BlackVolTermStructure;
+using Calendar = QLNet.Calendar;
+using Date = QLNet.Date;
+using DayCounter = QLNet.DayCounter;
+using DividendVanillaOption = QLNet.DividendVanillaOption;
+using EuropeanExercise = QLNet.EuropeanExercise;
+using FdBlackScholesVanillaEngine = QLNet.FdBlackScholesVanillaEngine;
+using FlatForward = QLNet.FlatForward;
+using OneAssetOption = QLNet.OneAssetOption;
+using Option = QLNet.Option;
+using PlainVanillaPayoff = QLNet.PlainVanillaPayoff;
+using Quote = QLNet.Quote;
+using Settings = QLNet.Settings;
+using SimpleQuote = QLNet.SimpleQuote;
+using TimeUnit = QLNet.TimeUnit;
+using UnitedStates = QLNet.UnitedStates;
+using VanillaOption = QLNet.VanillaOption;
+using YieldTermStructure = QLNet.YieldTermStructure;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 {
@@ -18,44 +43,46 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// </summary>
         ///
         public Securities.Option.Option Contract { get; }
-        public Symbol UnderlyingSymbol { get; }
+
+        private Symbol UnderlyingSymbol { get; }
         public Func<decimal?, decimal?, double, double> IV { get; internal set; }
-        public Func<double, double, double> DeltaCached { get; internal set; }
-        public Func<double, double, double> GammaCached { get; internal set; }
-        public Func<double, double, double> VegaCached { get; internal set; }
+        private Func<double, double, double> DeltaCached { get; set; }
+        private Func<double, double, double> GammaCached { get; set; }
+
+        private Func<double, double, double> VegaCached { get; set; }
         //public Func<SimpleQuote, double, double> VegaCached;
-        public decimal NetYield { get; internal set; }
-        public double Tenor { get; internal set; }
-        public readonly int Multiplier = 100;
-        public readonly double Accuracy = 0.001;
+        private double Tenor { get; set; }
+        private const int Multiplier = 100;
+        public const double Accuracy = 0.001;
 
         private readonly Foundations _algo;
         private static readonly Dictionary<(Symbol, DateTime), OptionContractWrap> instances = new();
 
         private readonly DayCounter dayCounter;
         private readonly Calendar calendar;        
-        private readonly Date calculationDate;
+        private readonly DateTime calculationDate;
         private readonly Date settlementDate;
         private readonly Date maturityDate;
         private readonly double strikePrice;
         private readonly Option.Type optionType;
         private SimpleQuote spotQuote;
         private readonly SimpleQuote riskFreeRateQuote;
-        private readonly Handle<Quote> riskFreeRateQuoteHandle;
         private readonly SimpleQuote dividendYieldQuote;
         private readonly Handle<Quote> dividendYieldQuoteHandle;
         private SimpleQuote hvQuote;
-        //private Handle<Quote> hvQuoteHandle;
+        private Handle<Quote> hvQuoteHandle;
         private readonly PlainVanillaPayoff payoff;
         private readonly AmericanExercise amExercise;
         private readonly EuropeanExercise euExercise;
-        private readonly VanillaOption amOption;
-        private readonly VanillaOption euOption;
+        // private readonly VanillaOption amOption;
+        // private readonly VanillaOption euOption;
+        private readonly DividendVanillaOption amOption;
+        private readonly DividendVanillaOption euOption;
         private readonly BlackScholesMertonProcess bsmProcess;
         
-        //private BlackScholesProcess bsProcess;
-        //private List<Date> dividendExDates;
-        //private List<double> dividendAmounts;
+        private BlackScholesProcess bsProcess;
+        private List<Date> dividendExDates;
+        private List<double> dividendAmounts;
 
         //private static Func<DateTime, Securities.Option.Option, (Symbol, DateTime)> genCacheKey = (date, contract) => (contract.Symbol, date);
 
@@ -82,56 +109,60 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             IV = Cache<(decimal, decimal, double), decimal?, decimal?, double, double>(GetIVEngine, GenCacheKeyIV);  // Using fast Analytical BSM for IV
             DeltaCached = Cache((double hvQuote, double spotQuote) => amOption.delta(), (double hvQuote, double spotQuote) => (hvQuote, spotQuote));
             GammaCached = Cache((double hvQuote, double spotQuote) => amOption.gamma(), (double hvQuote, double spotQuote) => (hvQuote, spotQuote));
-            VegaCached = Cache((double hvQuote, double spotQuote) => euOption.vega(), (double hvQuote, double spotQuote) => (hvQuote, spotQuote));
+            VegaCached = Cache((double hvQuote, double spotQuote) => amOption.vega(), (double hvQuote, double spotQuote) => (hvQuote, spotQuote));
             //VegaCached = Cache((SimpleQuote hvQuote, double spotQuote) => FiniteDifferenceApprox(hvQuote, amOption, 0.01, Derive.NPV), (SimpleQuote hvQuote, double spotQuote) => (hvQuote.value(), spotQuote));
 
             calendar = new UnitedStates(UnitedStates.Market.NYSE);
-            //dayCounter = new Business252(calendar); // extremely slow
             dayCounter = new Actual365Fixed();
             maturityDate = new Date(contract.Expiry.Day, contract.Expiry.Month, contract.Expiry.Year);
-            this.calculationDate = Date.advance(calculationDate, -1, TimeUnit.Days);
-            this.calculationDate = Date.Min(this.calculationDate, maturityDate);
-            Tenor = ToTenor(contract.Expiry, calculationDate);
+            this.calculationDate = calculationDate.TimeOfDay.TotalSeconds == 0 ? calculationDate.Date.AddHours(9.5) : calculationDate;
+            Tenor = ToTenor(contract.Expiry, this.calculationDate);
             settlementDate = this.calculationDate;
             strikePrice = (double)contract.StrikePrice;
             optionType = contract.Right == OptionRight.Call ? Option.Type.Call : Option.Type.Put;
 
             SetSpotQuotePriceUnderlying();
             SetHistoricalVolatility();
-            //hvQuoteHandle = new Handle<Quote>(hvQuote);
-
-            riskFreeRateQuote = new SimpleQuote((double)_algo.Cfg.DiscountRateMarket);
-            riskFreeRateQuoteHandle = new Handle<Quote>(riskFreeRateQuote);
-
-            double dividendYield = _algo.DividendYield.TryGetValue(UnderlyingSymbol.Value, out dividendYield) ? dividendYield : _algo.DividendYield[CfgDefault];
-            dividendYieldQuote = new SimpleQuote(dividendYield);
-            dividendYieldQuoteHandle = new Handle<Quote>(dividendYieldQuote);
-            NetYield = _algo.Cfg.DiscountRateMarket - (decimal)dividendYield;
+            hvQuoteHandle = new Handle<Quote>(hvQuote);
+            
+            riskFreeRateQuote = new SimpleQuote(0);
 
             payoff = new PlainVanillaPayoff(optionType, strikePrice);
             amExercise = new AmericanExercise(settlementDate, maturityDate);
             euExercise = new EuropeanExercise(maturityDate);
-
-            //dividendExDates = new List<Date>() { { new Date(13, 12, 2022) }, { new Date(16, 3, 2023) }, { new Date(14, 6, 2023) }, maturityDate };
-            //dividendAmounts = new List<double>() { { 0.12 }, { 0.12 }, { 0.12 }, { 0.0 } };
-            //dividendExDates = new List<Date>() { { new Date(13, 12, 2022) }, { calculationDate }, maturityDate, { new Date(16, 3, 2024) } };
-            //dividendAmounts = new List<double>() { { 0.1 }, { 0.1 }, { 0.1 }, { 0.1 } };
-            //dividendExDates = new List<Date>() { };
-            //dividendAmounts = new List<double>() { };
+            
+            var dividends = new DividendManager().GetDividends(UnderlyingSymbol, calculationDate).
+                Where(d => d.ExDate <= maturityDate.ToDateTime()).OrderBy(d => d.ExDate);
+            // var dividends = new DividendManager().GetDividends(UnderlyingSymbol, this.calculationDate).Where(d => false);
+            dividendExDates = dividends.
+                Select(d => new Date(d.ExDate.Day, d.ExDate.Month, d.ExDate.Year)).
+                ToList();
+            dividendAmounts = dividends.Select(d => (double)d.Amount).ToList();
+            
             Settings.setEvaluationDate(algo.Time.Date);
 
-            bsmProcess = GetBSMP(this.calculationDate, new Handle<Quote>(spotQuote), new Handle<Quote>(hvQuote), riskFreeRateQuoteHandle, dividendYieldQuoteHandle);            
-            amOption = SetEngine(new VanillaOption(payoff, amExercise), bsmProcess, optionPricingModel: OptionPricingModel.CoxRossRubinstein);
-            euOption = SetEngine(new VanillaOption(payoff, euExercise), bsmProcess, optionPricingModel: OptionPricingModel.AnalyticEuropeanEngine);
-            //bsProcess = GetBSP(calculationDate, new Handle<Quote>(spotQuote), hvQuoteHandle, riskFeeRateQuoteHandle);
-            //amOption = SetEngine(new DividendVanillaOption(payoff, amExercise, dividendExDates, dividendAmounts), bsProcess, optionPricingModel: OptionPricingModel.FdBlackScholesVanillaEngine);
-            //euOption = SetEngine(new DividendVanillaOption(payoff, euExercise, dividendExDates, dividendAmounts), bsProcess, optionPricingModel: OptionPricingModel.FdBlackScholesVanillaEngine);
+            // bsmProcess = GetBSMP(this.calculationDate, new Handle<Quote>(spotQuote), new Handle<Quote>(hvQuote), riskFreeRateQuoteHandle, dividendYieldQuoteHandle);            
+            // amOption = SetEngine(new VanillaOption(payoff, amExercise), bsmProcess, optionPricingModel: OptionPricingModel.CoxRossRubinstein);
+            // euOption = SetEngine(new VanillaOption(payoff, euExercise), bsmProcess, optionPricingModel: OptionPricingModel.AnalyticEuropeanEngine);
+            bsProcess = GetBSP(this.calculationDate, new Handle<Quote>(spotQuote), hvQuoteHandle);
+            
+            amOption = SetEngine(new DividendVanillaOption(payoff, amExercise, dividendExDates, dividendAmounts), bsProcess, optionPricingModel: OptionPricingModel.FdBlackScholesVanillaEngine
+            );
+            // euOption = SetEngine(new DividendVanillaOption(payoff, euExercise, dividendExDates, dividendAmounts), bsProcess, optionPricingModel: OptionPricingModel.FdBlackScholesVanillaEngine);
         }
 
         public static OptionContractWrap E(Foundations algo, Securities.Option.Option contract, DateTime calculationDate)
         {
-            DateTime _calculationDate = calculationDate == contract.Expiry ? calculationDate - new TimeSpan(1, 0, 0, 0) : calculationDate;
-            (Symbol, DateTime) singletonKey = (contract.Symbol, _calculationDate);
+            DateTime _calculationDate;
+            if (calculationDate.TimeOfDay != TimeSpan.Zero)
+            {
+                _calculationDate = calculationDate.Date.Add(new TimeSpan(0, 9, 30, 0));
+            }
+            else
+            {
+                _calculationDate = calculationDate;
+            }
+            (Symbol, DateTime) singletonKey = (contract.Symbol, _calculationDate.Date);
             if (!instances.ContainsKey(singletonKey))
             {
                 if (_calculationDate != calculationDate)
@@ -216,27 +247,27 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             //algo.Log($"{algo.Time} {Contract.Symbol} HV: {algo.Securities[UnderlyingSymbol].VolatilityModel.Volatility}");
         }
 
-        public double? AnalyticalIVToPrice(double volatility, decimal? spotPrice = null)
-        {
-            SetEvaluationDateToCalcDate();
-            if (volatility == 0 || volatility == null)
-            {
-                _algo.Error($"OptionContractWrap.AnalyticalIVToPrice: Invalid argument volatility={volatility}. Returning null.");
-                return null;
-            }
-            SetSpotQuotePriceUnderlying(spotPrice);
-            SetHistoricalVolatility(volatility);
-            try
-            {
-                return euOption.NPV();
-            }
-            catch (Exception e)
-            {
-                _algo.Error($"AnalyticalIVToPrice: Unable to derive Fair price {e}. Likely due to low hvQuote. hvQuote={hvQuote.value()}, spotQuote={spotQuote.value()}. Args: volatility={volatility}, spotPrice={spotPrice}.");
-                _algo.Log(Environment.StackTrace);
-                return null;
-            }
-        }
+        // public double? AnalyticalIVToPrice(double volatility, decimal? spotPrice = null)
+        // {
+        //     SetEvaluationDateToCalcDate();
+        //     if (volatility == 0 || volatility == null)
+        //     {
+        //         _algo.Error($"OptionContractWrap.AnalyticalIVToPrice: Invalid argument volatility={volatility}. Returning null.");
+        //         return null;
+        //     }
+        //     SetSpotQuotePriceUnderlying(spotPrice);
+        //     SetHistoricalVolatility(volatility);
+        //     try
+        //     {
+        //         return euOption.NPV();
+        //     }
+        //     catch (Exception e)
+        //     {
+        //         _algo.Error($"AnalyticalIVToPrice: Unable to derive Fair price {e}. Likely due to low hvQuote. hvQuote={hvQuote.value()}, spotQuote={spotQuote.value()}. Args: volatility={volatility}, spotPrice={spotPrice}.");
+        //         _algo.Log(Environment.StackTrace);
+        //         return null;
+        //     }
+        // }
 
         public void SetEvaluationDateToCalcDate(Date? evaluationDate = null)
         {
@@ -257,7 +288,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             try
             {
-                return euOption.impliedVolatility(_spotPriceContract, bsmProcess, accuracy: accuracy);
+                if (Contract.Style == OptionStyle.American)
+                {
+                    return amOption.impliedVolatility(_spotPriceContract, bsProcess, accuracy: accuracy, maxEvaluations: 400);
+                }
+                return euOption.impliedVolatility(_spotPriceContract, bsProcess, accuracy: accuracy, maxEvaluations: 400);
             }
             catch (Exception e)
             {
@@ -278,14 +313,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public double? GetIVNewtonRaphson(decimal? spotPriceContract = null, decimal? spotPriceUnderlying = null, double accuracy = 0.001)
         {
-            int maxIterations = 200;
+            const int maxIterations = 200;
             double _spotPriceContract = (double)(spotPriceContract ?? _algo.MidPrice(Contract.Symbol));
             double spotUnderlyingQuote0 = spotQuote.value();
             double hvQuote0 = hvQuote.value();
             spotQuote.setValue((double)(spotPriceUnderlying ?? _algo.MidPrice(Contract.Underlying.Symbol)));
 
-            double initialGuess = 0.3; // Initial guess for the implied volatility
-            double epsilon = accuracy;
+            const double initialGuess = 0.3; // Initial guess for the implied volatility
             double currentGuess = initialGuess;
             int iteration = 0;
 
@@ -299,7 +333,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
                     double difference = optionPrice - _spotPriceContract;
 
-                    if (Math.Abs(difference) < epsilon)
+                    if (Math.Abs(difference) < accuracy)
                     {
                         return currentGuess;
                     }
@@ -460,7 +494,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             try
             {
-                theta = hvQuote.value() == 0 ? 0 : euOption.thetaPerDay();  // Different by 0.1 % from FD approach only. Likely much faster though. thetaPerDay() returns neg. values.
+                theta = hvQuote.value() == 0 ? 0 : amOption.thetaPerDay();  // Different by 0.1 % from FD approach only. Likely much faster though. thetaPerDay() returns neg. values.
             }
             catch (Exception e)
             {
@@ -479,7 +513,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             try
             {
-                thetaTillExpiry = hvQuote.value() == 0 ? 0 : euOption.theta();
+                thetaTillExpiry = hvQuote.value() == 0 ? 0 : amOption.theta();
             }
             catch (Exception e)
             {
@@ -615,7 +649,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double hv0 = hvQuote.value();
             SetSanityCheckVol(volatility);
 
-            var greek = FiniteDifferenceApprox(hvQuote, euOption, 0.01, Derive.vega, d1perturbance: hvQuote);
+            var greek = FiniteDifferenceApprox(hvQuote, amOption, 0.01, Derive.vega, d1perturbance: hvQuote);
 
             SetHistoricalVolatility(hv0);
             return greek;
@@ -658,7 +692,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// </summary>
         public int DaysToExpiration()
         {
-            return maturityDate - calculationDate;
+            return (maturityDate - (Date)calculationDate.Date);
             //return calendar.businessDaysBetween(calculationDate, maturityDate);
         }
 
@@ -689,14 +723,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return new BlackScholesMertonProcess(spotQuote, dividendYield, flatTs, flatVolTs);
         }
 
-        public BlackScholesProcess GetBSP(Date calculationDate, Handle<Quote> spotQuote, Handle<Quote> hvQuote, Handle<Quote> rfQuote)
+        public BlackScholesProcess GetBSP(Date calculationDate, Handle<Quote> spotQuote, Handle<Quote> hvQuote)
         {
-            var flatTs = new Handle<YieldTermStructure>(new FlatForward(calculationDate, rfQuote, dayCounter));
+            // var yieldTermStructure = new Handle<YieldTermStructure>(new FlatForward(calculationDate, 0, dayCounter));
+            var yieldTermStructure = YieldCurve.Instance.GetYieldTermStructure(_algo.Time, _algo.Time, dayCounter);
             var flatVolTs = new Handle<BlackVolTermStructure>(new BlackConstantVol(calculationDate, calendar, hvQuote, dayCounter));
-            return new BlackScholesProcess(spotQuote, flatTs, flatVolTs);
+            return new BlackScholesProcess(spotQuote, yieldTermStructure, flatVolTs);
         }
 
-        public VanillaOption SetEngine(VanillaOption option, BlackScholesMertonProcess bsmProcess, int steps = 100, OptionPricingModel optionPricingModel = OptionPricingModel.CoxRossRubinstein)
+        public VanillaOption SetEngine(VanillaOption option, BlackScholesMertonProcess bsmProcess, int steps = 200, OptionPricingModel optionPricingModel = OptionPricingModel.CoxRossRubinstein)
         {
             OneAssetOption.Engine engine = optionPricingModel switch
             {
@@ -713,18 +748,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return option;
         }
 
-        internal static DividendVanillaOption SetEngine(DividendVanillaOption option, BlackScholesProcess bsProcess, int steps = 100, OptionPricingModel optionPricingModel = OptionPricingModel.FdBlackScholesVanillaEngine)
+        internal static DividendVanillaOption SetEngine(DividendVanillaOption option, BlackScholesProcess bsProcess, int steps = 200, OptionPricingModel optionPricingModel = OptionPricingModel.FdBlackScholesVanillaEngine)
         {
-            DividendVanillaOption.Engine engine = optionPricingModel switch
+            if (optionPricingModel == OptionPricingModel.FdBlackScholesVanillaEngine)
             {
-                OptionPricingModel.FdBlackScholesVanillaEngine => new FdBlackScholesVanillaEngine(bsProcess, null),
-                _ => throw new ArgumentException("OptionPricingModel not supported"),
-            };
-            option.setPricingEngine(engine);
+                option.setPricingEngine(new FdBlackScholesVanillaEngine(bsProcess, 200,200));
+            }
+            else if (optionPricingModel == OptionPricingModel.CoxRossRubinstein)
+            {
+                option.setPricingEngine(new BinomialVanillaEngine<CoxRossRubinstein>(bsProcess, steps));
+            }
+            
             return option;
         }
         
-        internal double FDApprox2ndDerivative(SimpleQuote quote, VanillaOption option, double d_pct = 0.01, string derive = "NPV")
+        internal double FDApprox2ndDerivative(SimpleQuote quote, DividendVanillaOption option, double d_pct = 0.01, string derive = "NPV")
         {
             // f''(x) ≈ (f(x+h) -2f(x) + f(x-h)) / (h**2); h: step size;
             SetEvaluationDateToCalcDate();
@@ -755,7 +793,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
-        internal double? NPV(VanillaOption option)
+        internal double? NPV(DividendVanillaOption option)
         {
             try
             {
@@ -768,7 +806,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
 
-        internal double? Invoke(VanillaOption option, Derive invoke=Derive.NPV)
+        internal double? Invoke(DividendVanillaOption option, Derive invoke=Derive.NPV)
         {
             try
             {
@@ -808,7 +846,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         }
             
 
-        internal double FiniteDifferenceApprox(SimpleQuote quote, VanillaOption option, double d_pct = 0.01, Derive derive = Derive.NPV, SimpleQuote d1perturbance = null, Method method = Method.central)
+        internal double FiniteDifferenceApprox(SimpleQuote quote, DividendVanillaOption option, double d_pct = 0.01, Derive derive = Derive.NPV, SimpleQuote d1perturbance = null, Method method = Method.central)
         {
             // f'(x) ≈ (f(x+h) - f(x-h)) / (2h); h: step size;
             double result;
@@ -889,7 +927,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             {
                 var values = new List<double>();
 
-                if (calculationDate > maturityDate)
+                if ((Date)calculationDate.Date > maturityDate)
                 {
                     _algo.Log($"Option {Contract} matured. Find a way to avoid running calculations on this. Returns Greek value: 0.");
                     return 0;
@@ -916,7 +954,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                         Derive.NPV => ocw1.NPV(),
                         _ => throw new NotImplementedException($"{_algo.Time} OptionContractWrap.FiniteDifferenceApproxTime: Symbol={Contract.Symbol}, Settings.evaluationDate()={Settings.evaluationDate()}, calculationDate={calculationDate}, derive={derive}, nDays={nDays}, method={method}"),
                     });
-            }
+                }
                 SetEvaluationDateToCalcDate();
                 SetHistoricalVolatility(hv);
                 return (values[values.Count - 1] - values[0]) / nDays;
@@ -935,7 +973,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public double MoneynessFwd()
         {
-            return (double)(Contract.StrikePrice / _algo.MidPrice(UnderlyingSymbol)) * Math.Exp((double)NetYield * Tenor);
+            throw new NotImplementedException();
+            // return (double)(Contract.StrikePrice / _algo.MidPrice(UnderlyingSymbol)) * Math.Exp((need compounded curve and dividends) * Tenor);
         }
 
         public double MoneynessFwdLn()

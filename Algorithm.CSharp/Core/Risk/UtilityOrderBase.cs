@@ -9,6 +9,7 @@ using QuantConnect.Securities;
 using Fasterflect;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Util;
+using static QuantConnect.Algorithm.CSharp.Core.Foundations;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
@@ -22,21 +23,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
     /// </summary>
     public abstract class UtilityOrderBase : IUtilityOrder
     {
-        // Constructor
         protected Foundations _algo;
         protected Option _option;
         protected decimal? _price;
         public decimal Quantity { get; internal set; }
         public double IVPrice { get; internal set; }
-        public Symbol Symbol { get => _option.Symbol; }
-        protected Security _securityUnderlying;
+        public Symbol Symbol => _option.Symbol;
+        public Holding Holding => new(Symbol, Math.Sign(Quantity));
+        private Security _securityUnderlying;
         protected Security SecurityUnderlying => _securityUnderlying ??= _algo.Securities[Underlying];
-        public Symbol Underlying { get => Underlying(Symbol); }
+        public Symbol Underlying => Underlying(Symbol);
         public DateTime Time { get; internal set; }
         public OrderDirection OrderDirection { get; internal set; }
-        protected decimal Multiplier { get => _option.ContractMultiplier; }
+        protected decimal Multiplier => _option.ContractMultiplier;
         //public double Utility { get => UtilityProfit + UtilityRisk; }
-        protected HashSet<Regime> _regimes;
 
         /// <summary>
         /// Vega / IV0 -> IV1: Skew, Term Structure, Level. EWMA each bin and connecting lead to an EWMA Surface. Assumption: IV returns to that, hence below util. How soon it returns, unclear.
@@ -45,16 +45,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// 
         /// </summary>
         public abstract double Utility { get;  }
-        public virtual double UtilityPV { get => 0; }
+        public virtual double UtilityPV => 0;
 
         //public virtual double UtilityProfit { get => 0; }
         //public virtual double UtilityRisk { get => 0; }
-        protected HashSet<string> _utilitiesToLog = new() {
-            "UtilityManualOrderInstructions", "UtlityVegaMispricedIVUntilExpiry", "UtilityTheta", "UtilityInventory", "UtilityRiskExpiry",
-            "UtilityCapitalCostPerDay", "UtilityEquityPosition", 
-            "UtilityGamma", "UtilityDontSellBodyBuyWings",
-            "UtilityDontLongLowDelta", "UtilityMargin",
-            "UtilityVannaRisk", "UtilityTransactionCosts" // Currently not in Utility
+        protected virtual HashSet<string> _utilitiesToLog =>
+            new HashSet<string>
+            {
+                "UtilityManualOrderInstructions", "UtlityVegaMispricedIVUntilExpiry", "UtilityTheta",
+                "UtilityInventory", "UtilityRiskExpiry",
+                "UtilityCapitalCostPerDay", "UtilityEquityPosition",
+                "UtilityGamma", "UtilityDontSellBodyBuyWings",
+                "UtilityDontLongLowDelta", "UtilityMargin",
+                "UtilityVannaRisk", "UtilityTransactionCosts" // Currently not in Utility
             };
 
         protected double? _utilityProfitSpread;
@@ -83,6 +86,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public virtual double UtilityCapitalCostPerDay { get => _utitlityCapitalCostPerDay ??= GetUtilityCapitalCostPerDay(); }
         protected double? _utilityEquityPosition;
         public virtual double UtilityEquityPosition { get => _utilityEquityPosition ??= GetUtilityEquityPosition(); }
+
+        protected double? _utilityRiskScenario;
+        public virtual double UtilityRiskScenario { get => _utilityRiskScenario ??= GetUtilityRiskScenario(); }
+
         protected double? _utitlityTransactionCosts;
         public virtual double UtilityTransactionCosts { get => _utitlityTransactionCosts ??= GetUtilityTransactionCosts(); }
         protected double? _utilityDontSellBodyBuyWings;
@@ -111,8 +118,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         protected double GetUtilityExpiringNetDelta()
         {
             double util;
-            double b = 0.05;
-            double c = 0.001;
+            const double b = 0.05;
+            const double c = 0.001;
             Tuple<double, double> thresholds = new(-150, 150);
 
             var expiries = _algo.Positions.Values.Where(p => p.UnderlyingSymbol == Underlying && p.Quantity != 0 && p.SecurityType == SecurityType.Option).Select(p => p.Symbol.ID.Date).Where(dt => (dt - _algo.Time.Date).Days < 7);
@@ -126,7 +133,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 return 0;
             }
             double dte = (nextExpiry - _algo.Time).Days;
-            double dte_damping = Math.Max(0, 1 - dte * (3/7));
+            double dteDamping = Math.Max(0, 1 - dte * (3/7));
 
             var filter = new Func<IEnumerable<Position>, IEnumerable<Position>>(positions => positions.Where(p => p.UnderlyingSymbol == Underlying && p.Quantity != 0 && p.SecurityType == SecurityType.Option && p.Symbol.ID.Date == nextExpiry));
             double orderDelta = OCW.Delta(IV(_price)) * (double)Quantity * 100;
@@ -148,7 +155,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 double deltaPfUtil = pfUtil1 - pfUtil0;
                 util = -deltaPfUtil;
             }
-            return util * dte_damping;
+            return util * dteDamping;
         }
 
         /// <summary>
@@ -169,6 +176,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     -quantity * SecurityUnderlying.Price * _algo.Cfg.DiscountRateMarket / 365 : 
                      quantity * SecurityUnderlying.Price * _algo.Cfg.EquityShortingRate / 365;
         }
+
+        protected HashSet<MarketRegime> MarketRegimes => _algo.ActiveRegimes.TryGetValue(_algo.ToEquity(Underlying), out var regimes) ? regimes : new HashSet<MarketRegime>();
 
         /// <summary>
         /// Reducing OptionsOnlyDelta is good. Util up! Delta exposure costs hedings transaction cost and bound capital. Needs Expontential profile.
@@ -225,6 +234,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
             return util;
         }
+        protected virtual double GetUtilityRiskScenario()
+        {
+            if (MarketRegimes.Contains(MarketRegime.PreEarningsReleaseBeforeMarketClose))
+            {
+                return _algo.RiskScenarioHandler.GetEquiUtility(_option, OrderDirection) ?? -2000;
+            }
+            return 0;            
+        }
+
         /// <summary>
         /// Essentially an overall stress risk provile util. Stressing dS by +/- 15%. Becoming hugely influencial once algo excceeds a used margin threshold.
         /// </summary>
@@ -290,12 +308,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         protected double GetUtilityGamma()
         {
             double riskReductionIncentive;
-            double b = 0.05;
-            double c = 0.003;
+            const double b = 0.05;
+            const double c = 0.003;
             Tuple<double, double> gammaTargetZeroRange = new (-75, 75);
 
-            HashSet<Regime> regimes = _algo.ActiveRegimes.TryGetValue(Underlying, out regimes) ? regimes : new HashSet<Regime>();
-            bool wantPosGamma = regimes.Contains(Regime.SellEventCalendarHedge);
+            HashSet<MarketRegime> regimes = _algo.ActiveRegimes.TryGetValue(_algo.ToEquity(Underlying), out regimes) ? regimes : new();
+            bool wantPosGamma = regimes.Contains(MarketRegime.SellEventCalendarHedge);
 
             // neg gamma: risky; pos gamma: scalping gains (not a risk, hence not fitting here)
             // Changed, treating also as risk, because hedging error too large at the moment. gamma scalping didnt quite turn into profts.
@@ -345,7 +363,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 return -50;
             }
             else if (
-                (delta < 0.7 || delta > 0.3) && Quantity < 0  // Selling Bodys
+                delta is < 0.7 or > 0.3 && Quantity < 0  // Selling Bodys
             )
             {
                 return -50;
@@ -385,7 +403,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
 
         /// <summary>
-        /// Dont buy stuff about to expire. But that should be quantified. A risk is underlying moving after market close.
+        /// Don't buy stuff about to expire. But that should be quantified. A risk is underlying moving after market close.
         /// To be fined. THere's a util on theta
         /// </summary>
         protected double GetUtilityRiskExpiry()
@@ -470,7 +488,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
 
         /// <summary>
-        /// Ignoring moving S, hence ignoring skew.surface ATM IV is slightly decreasing over lifetime. Skew closer to maturity will get steeper.
+        /// Ignoring moving S, hence ignoring skew. surface ATM IV is slightly decreasing over lifetime. Skew closer to maturity will get steeper.
         /// Earning money from vega only when IV is significantly above forecasted IV. Not trying to capture theta here...
         /// 
         /// Easier thinking in Delta/IV Currado Su surface. Less skew, more linear...
@@ -482,7 +500,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             double midIV = _algo.MidIV(Symbol);            
             if (midIV == 0) { return 0; }
-            double midIVEwma = _algo.MidIVSSVI(Symbol);
+            double midIVEwma = _algo.MidIVSsvi(Symbol);
             // Favors selling skewed wings.
             double fv = (midIVEwma - midIV) * OCW.Vega(midIV) * (double)(Quantity * _option.ContractMultiplier);
             return (double)_algo.DiscountedValue((decimal)fv, 1.0/365.0);  // Expecting intraday reversion to expected IV levels
@@ -542,7 +560,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public override string ToString()
         {
-            var str = $"UTILITYORDER: {Symbol} {OrderDirection} {Quantity} ";
+            var str = $"UTILITY ORDER: {Symbol} {OrderDirection} {Quantity} ";
             // Iterate over utility names building a string that contains the attribute whenever its value is non-zero
             foreach (var name in _utilitiesToLog)
             {

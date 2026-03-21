@@ -7,10 +7,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
     public class KalmanOnUpdateEventArgs<T> : EventArgs
     {
-        public T State { get; set; }
-        public KalmanOnUpdateEventArgs(T state)
+        public T State { get; }
+        public Equity Equity { get; }
+        public KalmanOnUpdateEventArgs(T state, Equity equity)
         {
             State = state;
+            Equity = equity;
         }
     }
 
@@ -91,7 +93,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
             _nUpdated++;
 
-            OnUpdate?.Invoke(this, new KalmanOnUpdateEventArgs<T>(VecToParams(x)));
+            OnUpdate?.Invoke(this, new KalmanOnUpdateEventArgs<T>(VecToParams(x), Equity));
         }
 
         public T GetSSVIParams()

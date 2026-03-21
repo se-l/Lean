@@ -1,3 +1,4 @@
+using QuantConnect.Algorithm.CSharp.Core.Events;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
@@ -18,7 +19,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private readonly Equity _equity;
         private readonly PortfolioRisk _pfRisk;
         private readonly IEnumerable<SecurityHolding> _optionHoldings;
-        private readonly List<PLExplain> _plExplains;
+        private readonly List<PnLExplain> _plExplains;
         public string Time => _algo.Time.ToStringInvariant("yyyy-MM-dd HH:mm:ss");
         public Symbol Symbol => _equity.Symbol;
 
@@ -39,30 +40,31 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal PositionOptions => _optionHoldings.Select(h => h.Quantity).Sum();
         public decimal PositionOptionsUSD => _optionHoldings.Select(h => h.HoldingsValue).Sum();
 
-        public double PL_DeltaFillMid => (double)_plExplains.Sum(x => x.PL_DeltaFillMid);
-        public decimal PL_Fee => _plExplains.Sum(x => x.PL_Fee);
-        public double PL_DeltaIVdS => _plExplains.Sum(x => x.PL_DeltaIVdS);
-        public double PL_Delta => _plExplains.Sum(x => x.PL_Delta);
-        public double PL_Gamma => _plExplains.Sum(x => x.PL_Gamma);
-        public double PL_DeltaDecay => _plExplains.Sum(x => x.PL_DeltaDecay);
-        public double PL_dS3 => _plExplains.Sum(x => x.PL_dS3);
-        public double PL_GammaDecay => _plExplains.Sum(x => x.PL_GammaDecay);
-        public double PL_dGammaDIV => _plExplains.Sum(x => x.PL_dGammaDIV);
-        public double PL_Theta => _plExplains.Sum(x => x.PL_Theta);
-        public double PL_ThetaDecay => _plExplains.Sum(x => x.PL_ThetaDecay);
-        public double PL_Vega => _plExplains.Sum(x => x.PL_Vega);
-        public double PL_Vanna => _plExplains.Sum(x => x.PL_Vanna);
-        public double PL_VegaDecay => _plExplains.Sum(x => x.PL_VegaDecay);
-        public double PL_Volga => _plExplains.Sum(x => x.PL_Volga);
-        public double PL_Total => _plExplains.Sum(x => x.PL_Total);
+        public double PnLDeltaFillMid => (double)_plExplains.Sum(x => x.PnLDeltaFillMid);
+        public decimal PnLFee => _plExplains.Sum(x => x.PnLFee);
+        public double PnLDeltaIVdS => _plExplains.Sum(x => x.PnLDeltaIVdS);
+        public double PnLDelta => _plExplains.Sum(x => x.PnLDelta);
+        public double PnLGamma => _plExplains.Sum(x => x.PnLGamma);
+        public double PnLDeltaDecay => _plExplains.Sum(x => x.PnLDeltaDecay);
+        public double PnLdS3 => _plExplains.Sum(x => x.PnLdS3);
+        public double PnLGammaDecay => _plExplains.Sum(x => x.PnLGammaDecay);
+        public double PnLdGammaDIV => _plExplains.Sum(x => x.PnLdGammaDIV);
+        public double PnLTheta => _plExplains.Sum(x => x.PnLTheta);
+        public double PnLThetaDecay => _plExplains.Sum(x => x.PnLThetaDecay);
+        public double PnLVega => _plExplains.Sum(x => x.PnLVega);
+        public double PnLVanna => _plExplains.Sum(x => x.PnLVanna);
+        public double PnLVegaDecay => _plExplains.Sum(x => x.PnLVegaDecay);
+        public double PnLVolga => _plExplains.Sum(x => x.PnLVolga);
+        public double PnLTotal => _plExplains.Sum(x => x.PnLTotal);
+        public int CntPnLExplains => _plExplains.Count;
 
         public decimal MidPriceUnderlying => _algo.MidPrice(Symbol);
         public decimal HistoricalVolatility => _algo.Securities[Symbol].VolatilityModel.Volatility;
-        public double? SkewStrike => _algo.IVSurfaceSSVIMid[_equity].SkewStrike();
+        public double? SkewStrike => _algo.IvSurfaceSsviMid[_equity].SkewStrike();
         public decimal PosWeightedIV => _pfRisk.RiskByUnderlying(Symbol, Metric.PosWeightedIV);
         public decimal DeltaIVdSTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdSTotal);
         public decimal DeltaIVdS100BpUSDTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdS100BpUSDTotal);
-        public decimal PL => _algo.Portfolio.TotalPortfolioValue - _algo.TotalPortfolioValueSinceStart;
+        public decimal PnL => _algo.Portfolio.TotalPortfolioValue - _algo.TotalPortfolioValueSinceStart;
         public decimal TotalMarginUsed => _algo.Portfolio.TotalMarginUsed;
         public decimal MarginRemaining => _algo.Portfolio.MarginRemaining;
         public RiskRecord(Foundations algo, PortfolioRisk pfRisk, Equity equity)
@@ -72,9 +74,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _equity = equity;
             _optionHoldings = _algo.Securities.Where(kvp => kvp.Key.SecurityType == SecurityType.Option && kvp.Key.Underlying == Symbol).Select(kvp => kvp.Value.Holdings);
             // Include unrealized Positions (Quantity != 0) and closed positions (Trade1 != null)
-            _plExplains = Position.AllLifeCycles(_algo).Where(p => p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain).ToList();
-            //_plExplains = _algo.Positions.Values.Where(p => p.Quantity != 0 && p.UnderlyingSymbol == Symbol).Select(p => p.PLExplain.Update(new PositionSnap(_algo, p.Symbol))).ToList();
-            //_plExplains.AddRange(_algo.PositionsRealized.Values.SelectMany(l => l).Select(p => p.PLExplain).ToList());
+            _plExplains = Position.AllLifeCycles(_algo).Where(p => p.UnderlyingSymbol == Symbol).Select(p => p.PnLExplain).ToList();
+            //_plExplains = _algo.Positions.Values.Where(p => p.Quantity != 0 && p.UnderlyingSymbol == Symbol).Select(p => p.PnLExplain.Update(new PositionSnap(_algo, p.Symbol))).ToList();
+            //_plExplains.AddRange(_algo.PositionsRealized.Values.SelectMany(l => l).Select(p => p.PnLExplain).ToList());
 
             if (DeltaTotal * Delta100BpUSDTotal < 0)
             {
@@ -88,6 +90,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
     {
         private readonly string _path;
         public readonly List<string> riskRecordsHeader = typeof(RiskRecord).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(prop => prop.Name).ToList();
+        public void OnTradeEvent(object sender, TradeEventArgs e)
+        {
+            Record(Underlying(e.Trades.First().Symbol));
+        }
         public RiskRecorder(Foundations algo)
         {
             _algo = algo;
@@ -108,9 +114,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _writer.WriteLine(string.Join(",", riskRecordsHeader));
         }
 
-        public void Record(string ticker)
+        public void Record(Symbol symbol) => Record((Equity)_algo.Securities[symbol.Value]);
+
+        public void Record(Equity equity)
         {
-            List<RiskRecord> riskRecords = new() { new RiskRecord(_algo, _algo.PfRisk, (Equity)_algo.Securities[ticker]) };
+            List<RiskRecord> riskRecords = new() { new RiskRecord(_algo, _algo.PfRisk, equity) };
             string csv = ToCsv(riskRecords, riskRecordsHeader, skipHeader: true);
             _writer.Write(csv);
         }
