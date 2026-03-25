@@ -1533,7 +1533,7 @@ namespace QuantConnect.Util
                 }
 
             }
-            diskDataCacheProvider.Store(entries);
+            diskDataCacheProvider.Store(entries, overrideEntry: false);
         }
 
         public class FileMember

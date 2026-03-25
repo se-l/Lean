@@ -546,7 +546,7 @@ namespace QuantConnect.Data
                     });
                 }
 
-                _dataCacheProvider.Store(entriesByte);
+                _dataCacheProvider.Store(entriesByte, overrideEntry:true);
             }
         }
 
