@@ -39,10 +39,16 @@ namespace QuantConnect.ToolBox.Polygon
             public TickType TickType { get; set; }
         }
 
-        public static IEnumerable<DateTime> TradeDates(string market, MarketHoursDatabase marketHoursDatabase, Symbol symbol, DateTime startDate, DateTime endDate)
+        public static IEnumerable<DateTime> TradeDates(
+            string market,
+            MarketHoursDatabase marketHoursDatabase,
+            Symbol symbol,
+            DateTime startDate,
+            DateTime endDate
+            )
         {
             var securityExchangeHours = marketHoursDatabase.GetExchangeHours(market, symbol, symbol.ID.SecurityType);
-            return Time.EachTradeableDay(securityExchangeHours, startDate, endDate);  // typically requesting midnight of T+1
+            return Time.EachTradeableDay(securityExchangeHours, startDate, endDate); // typically requesting midnight of T+1
         }
 
         public static Symbol Underlying(Symbol symbol)
@@ -58,10 +64,32 @@ namespace QuantConnect.ToolBox.Polygon
         /// <summary>
         /// Primary entry point to the program. This program only supports SecurityType.Equity
         /// </summary>
-        public static void PolygonDownloader(IList<string> tickers, string securityTypeString, string market, string resolutionString, DateTime fromDate, DateTime toDate, string apiKey="",
-            IList<string> tickTypeStrings = null, bool skipFilled = true, bool skipEmpty=true, DateTime? skipModifiedSince = null, int nClients=16)
+        public static void PolygonDownloader(
+            IList<string> tickers,
+            string securityTypeString,
+            string market,
+            string resolutionString,
+            DateTime fromDate,
+            DateTime toDate,
+            string apiKey = "",
+            IList<string> tickTypeStrings = null,
+            bool skipFilled = true,
+            bool skipEmpty = true,
+            DateTime? skipModifiedSince = null,
+            int nClients = 16
+            )
         {
-            void WriteDataQueueToDisk(ConcurrentQueue<Tuple<Symbol, IEnumerable<BaseData>>> dataQueue, Symbol underlying, TickType tickType, DiskDataCacheProvider diskDataCacheProvider, LeanDataWriter writer, CancellationTokenSource downloadFinished, DateTime startDate, DateTime endDate, Resolution resolution)
+            void WriteDataQueueToDisk(
+                ConcurrentQueue<Tuple<Symbol, IEnumerable<BaseData>>> dataQueue,
+                Symbol underlying,
+                TickType tickType,
+                DiskDataCacheProvider diskDataCacheProvider,
+                LeanDataWriter writer,
+                CancellationTokenSource downloadFinished,
+                DateTime startDate,
+                DateTime endDate,
+                Resolution resolution
+                )
             {
                 var dataDirectory = Config.Get("data-folder", "../../../Data");
                 var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
@@ -101,7 +129,7 @@ namespace QuantConnect.ToolBox.Polygon
                         Thread.Sleep(100);
 
                         stopWriting = downloadFinished.Token.IsCancellationRequested && dataQueue.IsEmpty;
-                    };
+                    }
                     LeanData.WriteEmptyFileIfNotExists(dataDirectory, diskDataCacheProvider, tradeDates, processedSymbols, resolution, tickType);
 
                     Log.Trace($"PolygonDownloaderProgram.WriteDataQueueToDisk(): {underlying} {tickType} Exiting...");
@@ -127,6 +155,7 @@ namespace QuantConnect.ToolBox.Polygon
                 Console.WriteLine("--n-clients=16");
                 Environment.Exit(1);
             }
+
             DiskDataCacheProvider _diskDataCacheProvider = new();
             Log.Trace($"PolygonDownloader: n-clients: {nClients}");
             try
@@ -152,7 +181,7 @@ namespace QuantConnect.ToolBox.Polygon
                 else
                 {
                     tickTypes = tickTypeStrings.Select(tickType => (TickType)Enum.Parse(typeof(TickType), tickType));
-                }                
+                }
 
                 // Load settings from config.json
                 var dataDirectory = Config.Get("data-folder", "../../../Data");
@@ -162,9 +191,9 @@ namespace QuantConnect.ToolBox.Polygon
                 // Create an instance of the downloader
                 using var downloader = new PolygonDataDownloader();
                 IEnumerable<Symbol> symbols = tickers.Select(x => Symbol.Create(x, securityType, market));
-                
+
                 var tradeDates = TradeDates(market, marketHoursDatabase, symbols.First(), fromDate, toDate);
-                Dictionary<Symbol, IEnumerable<DateTime>> symbolDates = new();  // Dont request options for dates where option was not issued yet
+                Dictionary<Symbol, IEnumerable<DateTime>> symbolDates = new(); // Dont request options for dates where option was not issued yet
 
                 IEnumerable<Request> requests;
                 if (securityType == SecurityType.Option)
@@ -187,6 +216,7 @@ namespace QuantConnect.ToolBox.Polygon
                             }
                         }
                     }
+
                     symbolDates.Keys.GroupBy(sym => sym.Underlying).ToList().ForEach(group =>
                     {
                         Log.Trace($"For Underlying: {group.Key.Value} fetched {group.Count()} OptionContracts");
@@ -200,20 +230,17 @@ namespace QuantConnect.ToolBox.Polygon
                         Resolution = resolution,
                         TickType = tickType
                     })).ToList();
-                }    
+                }
                 else
                 {
-                    // Same like for options, send daily requests, not over whole timeframe.
-                    requests = symbols.SelectMany(symbol =>
-                            TradeDates(market, marketHoursDatabase, symbol, fromDate, toDate)
-                                .SelectMany(date => tickTypes.Select(tickType => new Request
-                                {
-                                    Symbol = symbol,
-                                    Start = date,
-                                    End = date,
-                                    Resolution = resolution,
-                                    TickType = tickType
-                                })))
+                    requests = symbols.SelectMany(symbol => tickTypes.Select(tickType => new Request
+                        {
+                            Symbol = symbol,
+                            Start = fromDate,
+                            End = toDate,
+                            Resolution = resolution,
+                            TickType = tickType
+                        }))
                         .ToList();
                 }
 
@@ -226,7 +253,7 @@ namespace QuantConnect.ToolBox.Polygon
                 {
                     writers.Add(tickType, new LeanDataWriter(dataDirectory, resolution, securityType, tickType, _diskDataCacheProvider));
                 }
-                
+
                 Dictionary<Tuple<Symbol, TickType>, ConcurrentQueue<Tuple<Symbol, IEnumerable<BaseData>>>> dataQueues = new();
                 CancellationTokenSource CTS = new();
                 CancellationTokenSource DownloadFinished = new();
@@ -239,31 +266,27 @@ namespace QuantConnect.ToolBox.Polygon
                     if (!dataQueues.ContainsKey(key))
                     {
                         dataQueues.Add(key, new ConcurrentQueue<Tuple<Symbol, IEnumerable<BaseData>>>());
-                        Action action = () => WriteDataQueueToDisk(dataQueues[key], underlying, request.TickType, _diskDataCacheProvider, writers[request.TickType], DownloadFinished, fromDate, toDate, resolution);
+                        Action action = () => WriteDataQueueToDisk(dataQueues[key], underlying, request.TickType, _diskDataCacheProvider, writers[request.TickType],
+                            DownloadFinished, fromDate, toDate, resolution);
                         tasksWriteToDisk.Add(Task.Factory.StartNew(action, CTS.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default));
                     }
                 }
 
                 Parallel.ForEach(requests, new ParallelOptions { MaxDegreeOfParallelism = nClients }, request =>
                 {
-                    var writer = writers[request.TickType];  // new LeanDataWriter(resolution, request.Symbol, dataDirectory, request.TickType, _diskDataCacheProvider);
+                    var writer = writers[request.TickType]; // new LeanDataWriter(resolution, request.Symbol, dataDirectory, request.TickType, _diskDataCacheProvider);
                     var tradeDates = TradeDates(market, marketHoursDatabase, request.Symbol, request.Start, request.End);
 
-                    if (skipFilled && tradeDates.All(date => writer.FileEntryExists(date, request.Symbol))
-                        )
+                    if (skipFilled && tradeDates.All(date => writer.FileEntryExists(date, request.Symbol) && writer.FileEntrySize(date, request.Symbol) > 0)
+                        || skipEmpty && tradeDates.All(date => writer.FileEntrySize(date, request.Symbol) == 0))
                     {
                         Interlocked.Increment(ref completedRequests);
                         return;
                     }
 
-                    if (skipEmpty && tradeDates.All(date => writer.FileEntrySize(date, request.Symbol) == 0))
-                    {
-                        Interlocked.Increment(ref completedRequests);
-                        return;
-                    }
                     // For each trade date, check if the file has any entries. If not, reload and overwrite if any data came back, otherwise skip.
-                    else if (skipModifiedSince != null && tradeDates.All(date => (writer.EntryLastModified(date, request.Symbol) ?? DateTime.MinValue) >= skipModifiedSince)
-                    )
+                    if (skipModifiedSince != null && tradeDates.All(date => (writer.EntryLastModified(date, request.Symbol) ?? DateTime.MinValue) >= skipModifiedSince)
+                       )
                     {
                         Interlocked.Increment(ref completedRequests);
                         return;
@@ -271,18 +294,18 @@ namespace QuantConnect.ToolBox.Polygon
 
                     var securityExchangeHours = marketHoursDatabase.GetExchangeHours(market, symbols.First(), securityType);
                     var exchangeTimeZone = securityExchangeHours.TimeZone;
-                    var dataTimeZone = marketHoursDatabase.GetDataTimeZone(market, request.Symbol, securityType);                    
+                    var dataTimeZone = marketHoursDatabase.GetDataTimeZone(market, request.Symbol, securityType);
 
                     // Download the data
                     var startUtc = request.Start.Date.Add(TimeSpan.FromHours(-4)).ConvertToUtc(exchangeTimeZone);
-                    var endUtc = request.Start.Date.Add(TimeSpan.FromHours(20)).ConvertToUtc(exchangeTimeZone);
+                    var endUtc = request.End.Date.Add(TimeSpan.FromHours(20)).ConvertToUtc(exchangeTimeZone);
                     var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, startUtc, endUtc, request.TickType))
                         .Select(x =>
-                        {
-                            x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);
-                            return x;
-                        }
-                    );
+                            {
+                                x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);
+                                return x;
+                            }
+                        );
 
                     var key = new Tuple<Symbol, TickType>(Underlying(request.Symbol), request.TickType);
                     dataQueues[key].Enqueue(new(request.Symbol, data.ToList()));
@@ -303,7 +326,6 @@ namespace QuantConnect.ToolBox.Polygon
                 tasksWriteToDisk.DoForEach(t => t.Wait());
                 DownloadFinished.Dispose();
                 CTS.Dispose();
-
             }
             catch (Exception err)
             {
