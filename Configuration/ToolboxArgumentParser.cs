@@ -82,7 +82,8 @@ namespace QuantConnect.Configuration
                 new CommandLineOption("chain-symbol-count", CommandOptionType.SingleValue, "[OPTIONAL for RandomDataGenerator. Sets the size of the option chain. Defaults to 1 put and 1 call: Example: --chain-symbol-count=2 ]"),
                 new CommandLineOption("skip-filled", CommandOptionType.NoValue, "[OPTIONAL for PolygonDatadownloader. Skips downloading again entries that contain no data ]"),
                 new CommandLineOption("skip-empty", CommandOptionType.NoValue, "[OPTIONAL for PolygonDatadownloader. Skips downloading entries that exist, but are empty ]"),
-                new CommandLineOption("skip-modified-since", CommandOptionType.SingleValue, "[OPTIONAL for PolygonDatadownloader. Skips downloading entries that have been modified since this date. Use isoformat ]")
+                new CommandLineOption("skip-modified-since", CommandOptionType.SingleValue, "[OPTIONAL for PolygonDatadownloader. Skips downloading entries that have been modified since this date. Use isoformat ]"),
+                new CommandLineOption("flush-interval", CommandOptionType.SingleValue, "[OPTIONAL for PolygonDatadownloader. Number of processed download requests before saving to .zip. ]")
             };
 
         /// <summary>

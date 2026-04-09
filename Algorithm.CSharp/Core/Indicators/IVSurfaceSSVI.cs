@@ -19,8 +19,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public double Psi { get; internal set; }
         public bool IsCalibrated { get; internal set; }
 
-        private readonly OptionRight[] OptionRights = new[] { OptionRight.Call, OptionRight.Put };
-
         // CSV writer
         private readonly string _path;
         private readonly StreamWriter _writer;

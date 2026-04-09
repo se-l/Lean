@@ -370,6 +370,8 @@ namespace QuantConnect.Data
         {
             var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
             var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+            if (!File.Exists(filePath))
+                return 0;
             return EntrySize(filePath, entryName);
         }
 
@@ -387,6 +389,8 @@ namespace QuantConnect.Data
         {
             var filePath = GetZipOutputFileName(_dataDirectory, date, symbol);
             var entryName = LeanData.GenerateZipEntryName(symbol, date, _resolution, _tickType);
+            if (!File.Exists(filePath))
+                return null;
             return _keySynchronizer.Execute(filePath, () => _dataCacheProvider.LastModified($"{filePath}#{entryName}"));
         }
 
