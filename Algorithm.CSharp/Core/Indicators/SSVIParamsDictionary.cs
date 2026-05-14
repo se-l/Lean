@@ -13,9 +13,9 @@ using QuantConnect;
 public class SSVIParamsDictionary : Dictionary<DateTime, SSVIParamsRecord>
 {
     public SSVIParamsDictionary() { }
-    public SSVIParamsDictionary(QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams[] ssviParams)
+    public SSVIParamsDictionary(QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb[] ssviParams)
     {
-        foreach (QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams param in ssviParams)
+        foreach (QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb param in ssviParams)
         {
             DateTime tenorDt = DateTime.ParseExact(param.TenorDt, "yyyy-MM-dd", CultureInfo.InvariantCulture);
             Add(tenorDt, new SSVIParamsRecord(param.ModelParams.Theta, param.ModelParams.Rho, param.ModelParams.Psi));

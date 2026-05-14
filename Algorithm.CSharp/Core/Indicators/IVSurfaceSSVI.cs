@@ -15,8 +15,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public Equity Underlying { get; }
         public QuoteSide? Side { get; }
         public SSVIParamsDictionary ModelParams { get; internal set; }
-        public double Rho { get; internal set; }
-        public double Psi { get; internal set; }
         public bool IsCalibrated { get; internal set; }
 
         // CSV writer

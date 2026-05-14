@@ -322,8 +322,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal DeltaMVTerm(decimal? spot = null)
         {
             decimal spotNna = spot ?? Mid1Underlying;
+            double ivRaw = _algo.MidIV(Symbol);
+            if (!double.IsFinite(ivRaw) || ivRaw <= 0 || spotNna == 0) { return 0; }
             decimal vega = (decimal)GetGreeks1().Vega;
-            decimal iv = (decimal)_algo.MidIV(Symbol);
+            decimal iv = (decimal)ivRaw;
             decimal vv = _algo.Cfg.VolatilityOfVolatility.TryGetValue(UnderlyingSymbol, out vv) ? vv : _algo.Cfg.VolatilityOfVolatility[CfgDefault];
             decimal rho = _algo.Cfg.CorrelationSpotVolatility.TryGetValue(UnderlyingSymbol, out rho) ? rho : _algo.Cfg.CorrelationSpotVolatility[CfgDefault];
             if (iv * spotNna == 0) { return 0; }
@@ -369,14 +371,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             {
                 SecurityType.Option => ToDecimal(0.5 * GammaImplied(volatility) * Math.Pow((double)Mid1Underlying * dS * (double)BP, 2)) * Multiplier * Quantity,
                 _ => 0
-            };
-        }
-        public decimal ThetaTillExpiryTotal()
-        {
-            return SecurityType switch
-            {
-                SecurityType.Option => ToDecimal(GetGreeks1().ThetaTillExpiry) * Multiplier * Quantity,
-                _ => 0,
             };
         }
         public decimal ThetaTotal(decimal dT = 1) => ToDecimal(GetGreeks1().Theta) * Multiplier * Quantity * dT;

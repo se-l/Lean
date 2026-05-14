@@ -25,29 +25,29 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       byte[] descriptorData = global::System.Convert.FromBase64String(
           string.Concat(
             "Cg9XZWJzb2NrZXQucHJvdG8SJVF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1No",
-            "YXJwLkNvcmUuSU8ipgEKB01lc3NhZ2USPwoHY2hhbm5lbBgBIAEoDjIuLlF1",
-            "YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uQ2hhbm5lbBIK",
-            "CgJpZBgCIAEoCRI9CgZhY3Rpb24YAyABKA4yLS5RdWFudENvbm5lY3QuQWxn",
-            "b3JpdGhtLkNTaGFycC5Db3JlLklPLkFjdGlvbhIPCgdwYXlsb2FkGAQgASgM",
-            "KuwBCgdDaGFubmVsEgYKAkhCEAASFAoQVEFSR0VUX1BPUlRGT0xJTxABEggK",
-            "BEVDSE8QAhINCglURVJNSU5BVEUQAxISCg5TVFJFU1NfVEVTVF9EUxAEEh4K",
-            "GkNNRF9GRVRDSF9UQVJHRVRfUE9SVEZPTElPEAUSEgoOQ01EX0NBTkNFTF9P",
-            "SUQQBhIPCgtLQUxNQU5fSU5JVBAHEhQKEENNRF9DRkdfT1ZFUlJJREUQCBIc",
-            "ChhSRVFVRVNUX1NTVklfQ0FMSUJSQVRJT04QCRIdChlSRVFVRVNUX1BGX1JJ",
-            "U0tfU0NFTkFSSU9TEAoqKAoGQWN0aW9uEg0KCVNVQlNDUklCRRAAEg8KC1VO",
-            "U1VCU0NSSUJFEAFCKKoCJVF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJw",
-            "LkNvcmUuSU9iBnByb3RvMw=="));
+            "YXJwLkNvcmUuSU8irAEKCU1lc3NhZ2VQYhJBCgdjaGFubmVsGAEgASgOMjAu",
+            "UXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5DaGFubmVs",
+            "UGISCgoCaWQYAiABKAkSPwoGYWN0aW9uGAMgASgOMi8uUXVhbnRDb25uZWN0",
+            "LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5BY3Rpb25QYhIPCgdwYXlsb2Fk",
+            "GAQgASgMKu4BCglDaGFubmVsUGISBgoCSEIQABIUChBUQVJHRVRfUE9SVEZP",
+            "TElPEAESCAoERUNITxACEg0KCVRFUk1JTkFURRADEhIKDlNUUkVTU19URVNU",
+            "X0RTEAQSHgoaQ01EX0ZFVENIX1RBUkdFVF9QT1JURk9MSU8QBRISCg5DTURf",
+            "Q0FOQ0VMX09JRBAGEg8KC0tBTE1BTl9JTklUEAcSFAoQQ01EX0NGR19PVkVS",
+            "UklERRAIEhwKGFJFUVVFU1RfU1NWSV9DQUxJQlJBVElPThAJEh0KGVJFUVVF",
+            "U1RfUEZfUklTS19TQ0VOQVJJT1MQCioqCghBY3Rpb25QYhINCglTVUJTQ1JJ",
+            "QkUQABIPCgtVTlNVQlNDUklCRRABQiiqAiVRdWFudENvbm5lY3QuQWxnb3Jp",
+            "dGhtLkNTaGFycC5Db3JlLklPYgZwcm90bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
-          new pbr::GeneratedClrTypeInfo(new[] {typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Channel), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Action), }, null, new pbr::GeneratedClrTypeInfo[] {
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.Message), global::QuantConnect.Algorithm.CSharp.Core.IO.Message.Parser, new[]{ "Channel", "Id", "Action", "Payload" }, null, null, null, null)
+          new pbr::GeneratedClrTypeInfo(new[] {typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb), }, null, new pbr::GeneratedClrTypeInfo[] {
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.MessagePb), global::QuantConnect.Algorithm.CSharp.Core.IO.MessagePb.Parser, new[]{ "Channel", "Id", "Action", "Payload" }, null, null, null, null)
           }));
     }
     #endregion
 
   }
   #region Enums
-  public enum Channel {
+  public enum ChannelPb {
     [pbr::OriginalName("HB")] Hb = 0,
     [pbr::OriginalName("TARGET_PORTFOLIO")] TargetPortfolio = 1,
     [pbr::OriginalName("ECHO")] Echo = 2,
@@ -61,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [pbr::OriginalName("REQUEST_PF_RISK_SCENARIOS")] RequestPfRiskScenarios = 10,
   }
 
-  public enum Action {
+  public enum ActionPb {
     [pbr::OriginalName("SUBSCRIBE")] Subscribe = 0,
     [pbr::OriginalName("UNSUBSCRIBE")] Unsubscribe = 1,
   }
@@ -70,16 +70,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
   #region Messages
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
-  public sealed partial class Message : pb::IMessage<Message>
+  public sealed partial class MessagePb : pb::IMessage<MessagePb>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
   #endif
   {
-    private static readonly pb::MessageParser<Message> _parser = new pb::MessageParser<Message>(() => new Message());
+    private static readonly pb::MessageParser<MessagePb> _parser = new pb::MessageParser<MessagePb>(() => new MessagePb());
     private pb::UnknownFieldSet _unknownFields;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public static pb::MessageParser<Message> Parser { get { return _parser; } }
+    public static pb::MessageParser<MessagePb> Parser { get { return _parser; } }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -95,7 +95,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public Message() {
+    public MessagePb() {
       OnConstruction();
     }
 
@@ -103,7 +103,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public Message(Message other) : this() {
+    public MessagePb(MessagePb other) : this() {
       channel_ = other.channel_;
       id_ = other.id_;
       action_ = other.action_;
@@ -113,16 +113,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public Message Clone() {
-      return new Message(this);
+    public MessagePb Clone() {
+      return new MessagePb(this);
     }
 
     /// <summary>Field number for the "channel" field.</summary>
     public const int ChannelFieldNumber = 1;
-    private global::QuantConnect.Algorithm.CSharp.Core.IO.Channel channel_ = global::QuantConnect.Algorithm.CSharp.Core.IO.Channel.Hb;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb channel_ = global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public global::QuantConnect.Algorithm.CSharp.Core.IO.Channel Channel {
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb Channel {
       get { return channel_; }
       set {
         channel_ = value;
@@ -143,10 +143,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     /// <summary>Field number for the "action" field.</summary>
     public const int ActionFieldNumber = 3;
-    private global::QuantConnect.Algorithm.CSharp.Core.IO.Action action_ = global::QuantConnect.Algorithm.CSharp.Core.IO.Action.Subscribe;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb action_ = global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public global::QuantConnect.Algorithm.CSharp.Core.IO.Action Action {
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb Action {
       get { return action_; }
       set {
         action_ = value;
@@ -168,12 +168,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
-      return Equals(other as Message);
+      return Equals(other as MessagePb);
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public bool Equals(Message other) {
+    public bool Equals(MessagePb other) {
       if (ReferenceEquals(other, null)) {
         return false;
       }
@@ -191,9 +191,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override int GetHashCode() {
       int hash = 1;
-      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.Channel.Hb) hash ^= Channel.GetHashCode();
+      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) hash ^= Channel.GetHashCode();
       if (Id.Length != 0) hash ^= Id.GetHashCode();
-      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.Action.Subscribe) hash ^= Action.GetHashCode();
+      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) hash ^= Action.GetHashCode();
       if (Payload.Length != 0) hash ^= Payload.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
@@ -213,7 +213,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       output.WriteRawMessage(this);
     #else
-      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.Channel.Hb) {
+      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) {
         output.WriteRawTag(8);
         output.WriteEnum((int) Channel);
       }
@@ -221,7 +221,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(18);
         output.WriteString(Id);
       }
-      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.Action.Subscribe) {
+      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) {
         output.WriteRawTag(24);
         output.WriteEnum((int) Action);
       }
@@ -239,7 +239,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
-      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.Channel.Hb) {
+      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) {
         output.WriteRawTag(8);
         output.WriteEnum((int) Channel);
       }
@@ -247,7 +247,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(18);
         output.WriteString(Id);
       }
-      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.Action.Subscribe) {
+      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) {
         output.WriteRawTag(24);
         output.WriteEnum((int) Action);
       }
@@ -265,13 +265,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public int CalculateSize() {
       int size = 0;
-      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.Channel.Hb) {
+      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) {
         size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) Channel);
       }
       if (Id.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(Id);
       }
-      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.Action.Subscribe) {
+      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) {
         size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) Action);
       }
       if (Payload.Length != 0) {
@@ -285,17 +285,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public void MergeFrom(Message other) {
+    public void MergeFrom(MessagePb other) {
       if (other == null) {
         return;
       }
-      if (other.Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.Channel.Hb) {
+      if (other.Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) {
         Channel = other.Channel;
       }
       if (other.Id.Length != 0) {
         Id = other.Id;
       }
-      if (other.Action != global::QuantConnect.Algorithm.CSharp.Core.IO.Action.Subscribe) {
+      if (other.Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) {
         Action = other.Action;
       }
       if (other.Payload.Length != 0) {
@@ -317,7 +317,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
           case 8: {
-            Channel = (global::QuantConnect.Algorithm.CSharp.Core.IO.Channel) input.ReadEnum();
+            Channel = (global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb) input.ReadEnum();
             break;
           }
           case 18: {
@@ -325,7 +325,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             break;
           }
           case 24: {
-            Action = (global::QuantConnect.Algorithm.CSharp.Core.IO.Action) input.ReadEnum();
+            Action = (global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb) input.ReadEnum();
             break;
           }
           case 34: {
@@ -348,7 +348,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
           case 8: {
-            Channel = (global::QuantConnect.Algorithm.CSharp.Core.IO.Channel) input.ReadEnum();
+            Channel = (global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb) input.ReadEnum();
             break;
           }
           case 18: {
@@ -356,7 +356,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             break;
           }
           case 24: {
-            Action = (global::QuantConnect.Algorithm.CSharp.Core.IO.Action) input.ReadEnum();
+            Action = (global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb) input.ReadEnum();
             break;
           }
           case 34: {

@@ -7,31 +7,31 @@ package QuantConnect.Algorithm.CSharp.Core.IO;
 
 option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
 
-message PfRiskScenario {
+message PfRiskScenarioPb {
 
   string underlying = 1;
-  map<string, Holding> holdings_hedge = 2;
+  map<string, HoldingPb> holdings_hedge = 2;
   double dPL = 3;
   double score = 4;
   double dPLEqHedged = 5;
   map<string, double> iv_enter = 6;
-  map<string, Holding> holdings_current = 7;
+  map<string, HoldingPb> holdings_current = 7;
 }
 
-message RequestPfRiskScenarios {
+message RequestPfRiskScenariosPb {
 
   string ts = 1;
   string underlying = 2;
-  map<string, Holding> holdings = 3;
-  repeated MarketDataSnapByUnderlying market_data_snaps = 4;
-  repeated SSVIParams params = 5;
+  map<string, HoldingPb> holdings = 3;
+  repeated MarketDataSnapByUnderlyingPb market_data_snaps = 4;
+  repeated SSVIParamsPb params = 5;
   repeated string scoped_symbols = 6;
 }
 
-message ResponsePfRiskScenarios {
+message ResponsePfRiskScenariosPb {
 
   string ts = 1;
   string underlying = 2;  
-  repeated PfRiskScenario pf_risk_scenarios = 3;  
+  repeated PfRiskScenarioPb pf_risk_scenarios = 3;  
 }
 

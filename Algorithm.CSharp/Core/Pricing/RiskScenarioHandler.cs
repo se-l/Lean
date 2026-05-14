@@ -31,14 +31,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
     /// </summary>
     public class RiskScenarioHandler
     {
-        private Dictionary<Equity, IEnumerable<PfRiskScenario>> PfRiskScenarios { get; set; }
+        private Dictionary<Equity, IEnumerable<PfRiskScenarioPb>> PfRiskScenarios { get; set; }
         public Dictionary<Equity, Option[]> TradableOptions { get; internal set; }
         private readonly Foundations _algo;
         private Dictionary<Tuple<Option, OrderDirection>, double> WorstIVs { get; set; }
         private Dictionary<Tuple<Option, OrderDirection>, double> ScenarioUtilities { get; set; }
         private Dictionary<Tuple<Option, OrderDirection>, double> ScenarioEntryIVs { get; set; }
         private Dictionary<Equity, Tuple<Option, OrderDirection>> BestOrder { get; set; }
-        private Dictionary<Equity, PfRiskScenario> BestScenario { get; set; }        
+        private Dictionary<Equity, PfRiskScenarioPb> BestScenario { get; set; }        
         private Dictionary<Equity, DateTime> SweepStart { get; set; }
         private Dictionary<Equity, TimeSpan> SweepDuration { get; set; }
         public ConcurrentDictionary<Equity, (StreamWriter writer, object lockObj)> Writers { get; }
@@ -72,7 +72,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             && s.Direction == direction
             );
         }
-        internal void SetScenarios(PfRiskScenario[] scenarios)
+        internal void SetScenarios(PfRiskScenarioPb[] scenarios)
         {
             if (scenarios.Length == 0)
             {
@@ -189,17 +189,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
             return false;
         }
-        private static IO.Holding GetOptionHolding(Equity underlying, PfRiskScenario pfRiskScenario)
+        private static IO.HoldingPb GetOptionHolding(Equity underlying, PfRiskScenarioPb pfRiskScenario)
         {
             return pfRiskScenario.HoldingsHedge.FirstOrDefault(h => h.Key != underlying.Symbol.Value).Value;
         }
-        private static double GetOptionQuantity(Equity underlying, MapField<string, IO.Holding> holdings)
+        private static double GetOptionQuantity(Equity underlying, MapField<string, IO.HoldingPb> holdings)
         {
             // Example logic: Sum all the values in the holdings
             return holdings.FirstOrDefault(h => h.Key == underlying.Symbol.Value).Value.Quantity;
         }
 
-        private static IO.Holding? GetOptionHolding(Equity underlying, MapField<string, IO.Holding> holdings)
+        private static IO.HoldingPb? GetOptionHolding(Equity underlying, MapField<string, IO.HoldingPb> holdings)
         {
             // Example logic: Sum all the values in the holdings
             return holdings.FirstOrDefault(h => h.Key != underlying.Symbol.Value).Value;
@@ -287,7 +287,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 .OrderByDescending(x => x.Score)
                 .FirstOrDefault();
             
-            IO.Holding h = GetOptionHolding(equity, BestScenario[equity]);
+            IO.HoldingPb h = GetOptionHolding(equity, BestScenario[equity]);
             Option option = (Option)_algo.Securities[h.Symbol];
             OrderDirection direction = Num2Direction(h.Quantity);
 
@@ -364,7 +364,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             if (ScenarioEntryIVs.TryGetValue(key, out double scenarioFillIv) &&
                 ScenarioUtilities.TryGetValue(key, out double scenarioUtility) &&
-                BestScenario.TryGetValue((Equity)option.Underlying, out PfRiskScenario bestScenario))
+                BestScenario.TryGetValue((Equity)option.Underlying, out PfRiskScenarioPb bestScenario))
             {
                 double utilityBestScenario = bestScenario.Score - UtilitySwept(equity);
                 double offsetToBestIv = (scenarioUtility - utilityBestScenario) / (100 * Vega(option));  // a negative number by construction
@@ -466,7 +466,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             Equity equity = _algo.ToEquity(Underlying(option.Symbol));
 
             double? iv = GetEquiUtilityIv(option, direction);
-            decimal price = iv == null ? 0 : (decimal)OptionContractWrap.E(_algo, option, _algo.Time.Date).NPV((double)iv, _algo.MidPrice(option.Underlying.Symbol));
+            double npvRaw = (iv == null || !double.IsFinite(iv.Value))
+                ? double.NaN
+                : OptionContractWrap.E(_algo, option, _algo.Time.Date).NPV(iv.Value, _algo.MidPrice(option.Underlying.Symbol));
             
             (StreamWriter writer, object lockObj) = GetStreamWriter(equity);
             lock (lockObj)
@@ -477,7 +479,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                     option.Symbol.Value,
                     direction,
                     iv,
-                    price,
+                    npvRaw,
                     _algo.MidPrice(equity.Symbol),
                     Vega(option),
                     CollectionExtensions.GetValueOrDefault(ScenarioEntryIVs, Tuple.Create(option, direction), 0),

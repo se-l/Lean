@@ -270,8 +270,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     int samples = 0;
                     foreach (VolatilityQuoteBar volBar in Statics.ToIEnumerable(history))
                     {
-                        IVQuote bid = null;
-                        IVQuote ask = null;
+                        IVQuote bid;
+                        IVQuote ask;
 
                         // Data issue. empty row is loaded.
                         if (volBar.Ask.Close == 0 && volBar.Bid.Close == 0)

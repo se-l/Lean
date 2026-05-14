@@ -3,84 +3,84 @@ package QuantConnect.Algorithm.CSharp.Core.IO;
 
 option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
 
-message Holding {
+message HoldingPb {
 
   string symbol = 1;
   float quantity = 2;
-  SecurityType security_type = 3;
+  SecurityTypePb security_type = 3;
 }
 
-message OptionQuote {
+message OptionQuotePb {
 
   float bid = 1;
   float ask = 2;
 }
 
-message Trade {
+message TradePb {
    
     string ts = 1;
     string symbol = 2;
-    SecurityType security_type = 3;
+    SecurityTypePb security_type = 3;
     float price = 4;
     float price_underlying = 5;
 }
 
-message Quote {
+message QuotePb {
    
     string ts = 1;
     string symbol = 2;
-    SecurityType security_type = 3;
+    SecurityTypePb security_type = 3;
     float bid = 4;
     float ask = 5;
     float price_underlying = 6;
     
 }
 
-message Quotes {
+message QuotesPb {
 
     string symbol = 1;
-    SecurityType security_type = 2;
-    repeated Quote quotes = 3;
+    SecurityTypePb security_type = 2;
+    repeated QuotePb quotes = 3;
 }
 
-message Trades {
+message TradesPb {
 
     string symbol = 1;
-    SecurityType security_type = 2;
-    repeated Trade trades = 3;
+    SecurityTypePb security_type = 2;
+    repeated TradePb trades = 3;
 }
 
-message MarketDataHistory {
+message MarketDataHistoryPb {
 
     string ts = 1;
     string ts_start = 2;
     string ts_end = 3;
     string underlying = 4;
-    map<string, Quotes> quotes = 5;
-    map<string, Trades> trades = 6;
+    map<string, QuotesPb> quotes = 5;
+    map<string, TradesPb> trades = 6;
 }
 
-enum OptionRight {
+enum OptionRightPb {
 
     CALL = 0;
     PUT = 1;
 }
 
-enum SecurityType {
+enum SecurityTypePb {
 
     EQUITY = 0;
     OPTION = 1;
 }
 
-message MarketDataSnapByUnderlying {
+message MarketDataSnapByUnderlyingPb {
 
   string ts = 1;
   string underlying = 2;
   float underlying_price = 3;
-  map<string, OptionQuote> option_quotes = 4;
+  map<string, OptionQuotePb> option_quotes = 4;
 }
 
-message VectorDouble
+message VectorDoublePb
 {
     repeated double values = 1;    
 }

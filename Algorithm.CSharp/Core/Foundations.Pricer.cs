@@ -47,13 +47,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Should be replaced with a sweep that is anchored on the option with best utility. Hence quote all option with equal utility. That'll improve
             // chances on arriving at the most profitbale scenario.
             double? iv = RiskScenarioHandler.SweepIv(qr.Option, qr.OrderDirection);
-            if ((iv ?? 0) == 0)
+            if ((iv ?? 0) == 0 || !double.IsFinite(iv ?? 0))
             {
                 // No risk scenario, no price.
                 return 0;
             }
             // Convert IV to a price
-            decimal priceSweep = (decimal)OptionContractWrap.E(this, qr.Option, Time.Date).NPV((double)iv, MidPrice(qr.Option.Underlying.Symbol));
+            double priceSweepRaw = OptionContractWrap.E(this, qr.Option, Time.Date).NPV((double)iv, MidPrice(qr.Option.Underlying.Symbol));
+            if (!double.IsFinite(priceSweepRaw))
+                return 0;
+            decimal priceSweep = (decimal)priceSweepRaw;
 
             decimal kfPrice = GetKalmanQuote(qr) ?? 0;
             decimal price = TakeAggressivePrice(qr.OrderDirection, kfPrice, priceSweep);
@@ -243,7 +246,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Defensive rounding and adjustments
             decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection == OrderDirection.Sell);
             double ivPrice = OptionContractWrap.E(this, qr.Option, Time.Date).IV(price, MidPrice(qr.Symbol.Underlying), 0.001);
-
             return new Quote<Option>(qr.Option, qr.Quantity, priceRounded, ivPrice, qr.UtilityOrder, null, 0);
         }
     }

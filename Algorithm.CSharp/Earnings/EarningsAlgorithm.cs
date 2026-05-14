@@ -43,13 +43,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
     /// <summary>
     /// 
     /// </summary>
-    public partial class EarningsAlgorithm : Foundations
+    public class EarningsAlgorithm : Foundations
     {
         private EarningsAlgorithmConfig CfgAlgo;
         private readonly string CfgAlgoName = "EarningsAlgorithmConfig.json";
         private WsClient wsClient;
         private bool ExecuteScheduledTargetPortfolioFetch = true;
-        private readonly Dictionary<Symbol, IEnumerable<MarketDataSnapByUnderlying>> MarketDataSnaps = new();
+        private readonly Dictionary<Symbol, IEnumerable<MarketDataSnapByUnderlyingPb>> MarketDataSnaps = new();
         // private readonly Dictionary<Symbol, bool> FetchingTargetPortfolio = new();
 
         public override void Initialize()
@@ -62,7 +62,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             File.Copy($"./{FoundationsConfigFileName}", Path.Combine(Globals.PathAnalytics, FoundationsConfigFileName));
             File.Copy($"./{CfgAlgoName}", Path.Combine(Globals.PathAnalytics, CfgAlgoName));
 
-            wsClient = new(this);
+            wsClient = new WsClient(this);
             Log($"{Time} Connecting to ws://{CfgAlgo.WsHost}:{CfgAlgo.WsPort}/ws ...");
             wsClient.ConnectAsync($"ws://{CfgAlgo.WsHost}:{CfgAlgo.WsPort}/ws").Wait();
 
@@ -73,7 +73,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             foreach (string s in Cfg.Ticker)
             {
                 Symbol symbol = Securities[s].Symbol;
-                DateTime nextReleaseDate = NextReleaseDate(symbol, StartDate);
                 SetTargetHoldingsToZeroAfterEarnings(symbol);
                 Schedule.On(DateRules.EveryDay(symbol), TimeRules.At(1, 0),
                     () => SetTargetHoldingsToZeroAfterEarnings(
@@ -119,12 +118,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
 
             wsClient.EventHandlerWSConnected += OnWSConnected;
-            wsClient.RegisterEventHandler<TargetPortfoliosEventArgs>(Core.IO.Channel.TargetPortfolio, OnResponseTargetPortfolios);
-            wsClient.RegisterEventHandler<ResultStressTestDsEventArgs>(Core.IO.Channel.StressTestDs, OnResultStressTestDs);
-            wsClient.RegisterEventHandler<ResponseKalmanInitEventArgs>(Core.IO.Channel.KalmanInit, OnResponseKalmanInit);
-            wsClient.RegisterEventHandler<CmdCfgOverrideEventArgs>(Core.IO.Channel.CmdCfgOverride, OnCmdCfgOverride);
-            wsClient.RegisterEventHandler<ResponseSSVICalibrationEventArgs>(Core.IO.Channel.RequestSsviCalibration, OnResponseSSVICalibration);
-            wsClient.RegisterEventHandler<ResponsePfRiskScenariosEventArgs>(Core.IO.Channel.RequestPfRiskScenarios, OnResponsePfRiskScenarios);
+            wsClient.RegisterEventHandler<TargetPortfoliosEventArgs>(ChannelPb.TargetPortfolio, OnResponseTargetPortfolios);
+            wsClient.RegisterEventHandler<ResultStressTestDsEventArgs>(ChannelPb.StressTestDs, OnResultStressTestDs);
+            wsClient.RegisterEventHandler<ResponseKalmanInitEventArgs>(ChannelPb.KalmanInit, OnResponseKalmanInit);
+            wsClient.RegisterEventHandler<CmdCfgOverrideEventArgs>(ChannelPb.CmdCfgOverride, OnCmdCfgOverride);
+            wsClient.RegisterEventHandler<ResponseSSVICalibrationEventArgs>(ChannelPb.RequestSsviCalibration, OnResponseSSVICalibration);
+            wsClient.RegisterEventHandler<ResponsePfRiskScenariosEventArgs>(ChannelPb.RequestPfRiskScenarios, OnResponsePfRiskScenarios);
 
             MarketRegimesChangeEventHandler += (object sender, MarketRegimesChangeEventArgs e) => RequestPfRiskScenarios(e.Symbol);
         }
@@ -165,14 +164,14 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             if (string.IsNullOrEmpty(snap.Ts)) return;
 
             MarketDataSnaps[underlying] =
-                MarketDataSnaps.TryGetValue(underlying, out IEnumerable<MarketDataSnapByUnderlying> snaps)
+                MarketDataSnaps.TryGetValue(underlying, out IEnumerable<MarketDataSnapByUnderlyingPb> snaps)
                     ? snaps.Append(snap)
-                    : new List<MarketDataSnapByUnderlying> { snap };
+                    : new List<MarketDataSnapByUnderlyingPb> { snap };
         }
 
-        private MarketDataSnapByUnderlying GetMarketDataSnapByUnderlying(Symbol underlying, bool excludeStaleData = true)
+        private MarketDataSnapByUnderlyingPb GetMarketDataSnapByUnderlying(Symbol underlying, bool excludeStaleData = true)
         {
-            Dictionary<string, OptionQuote> mapSymbolQuote = new();
+            Dictionary<string, OptionQuotePb> mapSymbolQuote = new();
             DateTime mostRecentPriceUpdate = DateTime.MinValue;
 
             foreach (Security option in Securities.Where(kvp => kvp.Key.SecurityType == SecurityType.Option
@@ -187,11 +186,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     : cache.LastOHLCUpdate;
                 mostRecentPriceUpdate = mostRecentPriceUpdate > lastUpdated ? mostRecentPriceUpdate : lastUpdated;
 
-                OptionQuote quote = new() { Bid = (float)option.BidPrice, Ask = (float)option.AskPrice };
+                OptionQuotePb quote = new() { Bid = (float)option.BidPrice, Ask = (float)option.AskPrice };
                 mapSymbolQuote[option.Symbol.Value] = quote;
             }
 
-            MarketDataSnapByUnderlying marketDataSnap = new();
+            MarketDataSnapByUnderlyingPb marketDataSnap = new();
 
             // Return empty snap if no option data is included
             if (mapSymbolQuote.Count == 0)
@@ -214,7 +213,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     string sym = kvp.Key.Value;
                     if (!mapSymbolQuote.ContainsKey(kvp.Key.Value))
                     {
-                        OptionQuote quote = new()
+                        OptionQuotePb quote = new()
                             { Bid = (float)Securities[sym].BidPrice, Ask = (float)Securities[sym].AskPrice };
                         mapSymbolQuote[kvp.Key.Value] = quote;
                     }
@@ -419,7 +418,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
         }
 
-        private static string Portfolio2String(TargetPortfolio portfolio)
+        private static string Portfolio2String(TargetPortfolioPb portfolio)
         {
             return portfolio == null ? "" : string.Join(", ", portfolio.Holdings.Values.Select(v => $"{v.Symbol}: {v.Quantity}"));
         }
@@ -437,7 +436,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 SetTargetHoldingsToZeroAfterEarnings(underlying);
                 return;
             }
-            else if (
+            if (
                 !IsPreparingEarningsRelease(underlying)
                 || !TargetPortfolios.ContainsKey(underlying)
             )
@@ -447,7 +446,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             var nextReleaseDate = NextReleaseDate(underlying);
 
-            foreach (TargetPortfolio portfolio in TargetPortfolios[underlying].ToList())
+            foreach (TargetPortfolioPb portfolio in TargetPortfolios[underlying].ToList())
             {
                 Log(
                     $"{Time} {underlying} WeightedAvgDNLV: {portfolio.ResultStressTestDs.WeightedDnlv:0.00}, Obj: {portfolio.Objective:0.00}, TargetPortfolio: {Portfolio2String(portfolio)}");
@@ -491,13 +490,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 $"{Time} SetTargetHoldingsFromTargetPortfolios: Underlying={underlying}, TargetHoldings={string.Join(", ",  TargetHoldings.Select(kvp => $"{kvp.Key}:{kvp.Value}"))}");
         }
 
-        private IEnumerable<TargetPortfolio> TargetPortfoliosWithoutOppositeQuantities(
-            IEnumerable<TargetPortfolio> portfolios
+        private IEnumerable<TargetPortfolioPb> TargetPortfoliosWithoutOppositeQuantities(
+            IEnumerable<TargetPortfolioPb> portfolios
             )
         {
-            List<TargetPortfolio> result = new();
+            List<TargetPortfolioPb> result = new();
             Dictionary<Symbol, decimal> simulatedTargetHoldings = new();
-            foreach (TargetPortfolio portfolio in portfolios.ToList())
+            foreach (TargetPortfolioPb portfolio in portfolios.ToList())
             {
                 if (portfolio.Objective <= 0)
                 {
@@ -548,12 +547,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// <summary>
         /// SetRiskScenario as a handler for sweeping across all target holdings respective equiUtilityBoundary.
         /// </summary>
-        private void SetEquiUtilitySweeperFromTargetPortfolios(List<TargetPortfolio> TargetPortfolios)
+        private void SetEquiUtilitySweeperFromTargetPortfolios(List<TargetPortfolioPb> TargetPortfolios)
         {
             // For each entry, pick the <symbol, quantity> and maximum utility.
             List<TradeUtility> tradeUtilities = new();
 
-            foreach (TargetPortfolio targetPortfolio in TargetPortfolios)
+            foreach (TargetPortfolioPb targetPortfolio in TargetPortfolios)
             {
                 foreach (var kvp in targetPortfolio.Holdings)
                 {
@@ -574,19 +573,19 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             // Create risk scenarios for each symbol
             // and set the holdings hedge to that symbol and quantity.
-            List<PfRiskScenario> riskScenarios = new();
+            List<PfRiskScenarioPb> riskScenarios = new();
 
             foreach (TradeUtility tradeUtility in tradeUtilities)
             {
-                PfRiskScenario scenario = new()
+                PfRiskScenarioPb scenario = new()
                 {
                     Underlying = tradeUtility.Underlying,
                     HoldingsHedge =
                     {
-                        [tradeUtility.Symbol.Value] = new Core.IO.Holding()
+                        [tradeUtility.Symbol.Value] = new HoldingPb()
                         {
                             Symbol = tradeUtility.Symbol, Quantity = (float)tradeUtility.Quantity,
-                            SecurityType = Core.IO.SecurityType.Option
+                            SecurityType = SecurityTypePb.Option
                         }
                     },
                     DPL = tradeUtility.Utility,
@@ -634,17 +633,15 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 return;
             }
 
-            ;
-
             Symbol underlying = Securities[targetPfs.First().Underlying].Symbol;
 
-            foreach (string underlyingStr in targetPfs.Select((p) => p.Underlying).Distinct())
+            foreach (string _ in targetPfs.Select((p) => p.Underlying).Distinct())
             {
                 underlying = Securities[targetPfs.First().Underlying].Symbol;
                 TargetPortfolios[underlying] = new();
             }
 
-            foreach (TargetPortfolio pf in targetPfs.OrderBy(pf => pf.Objective).Reverse())
+            foreach (TargetPortfolioPb pf in targetPfs.OrderBy(pf => pf.Objective).Reverse())
             {
                 if (!IsTargetPortfolioCompatibleWithHoldings(pf))
                 {
@@ -676,13 +673,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 });
 
                 underlying = Securities[pf.Underlying].Symbol;
-                if (TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolio> list))
+                if (TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> list))
                 {
                     list.Add(pf);
                 }
                 else
                 {
-                    TargetPortfolios[underlying] = new List<TargetPortfolio> { pf };
+                    TargetPortfolios[underlying] = new List<TargetPortfolioPb> { pf };
                 }
 
                 foreach (var kvp in
@@ -736,7 +733,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     $"dS: {double.Parse(kvp.Key, CultureInfo.InvariantCulture):0.00}:{kvp.Value:0.00} USD"));
             
             float holdingUnderlyingQuantity =
-                e.ResultStressTestDs.Holdings.TryGetValue(e.ResultStressTestDs.Underlying, out Core.IO.Holding holdingUnderlying) ? holdingUnderlying.Quantity : 0;
+                e.ResultStressTestDs.Holdings.TryGetValue(e.ResultStressTestDs.Underlying, out HoldingPb holdingUnderlying) ? holdingUnderlying.Quantity : 0;
             
             LastDeltaAcrossDsOptionsOnly[underlying] = e.ResultStressTestDs.DeltaTotalAcrossDs - holdingUnderlyingQuantity;
             decimal deltaTotalOptions = PfRisk.RiskByUnderlying(underlying, Metric.DeltaTotal) - Portfolio[underlying].Quantity;
@@ -886,7 +883,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         private void RequestKalmanInit(Equity underlying)
         {
             DateTime start = SubtractBusinessDays(Time.Date, 1);
-            RequestKalmanInit requestKalmanInit = new()
+            RequestKalmanInitPb requestKalmanInit = new()
             {
                 Underlying = underlying.Symbol.Value,
                 DateFitStart = start.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
@@ -928,7 +925,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             return ocw.DaysToExpiration() / 365 < 0.1 && absDelta < 0.8 && absDelta > 0.2;
         }
 
-        internal bool IsTargetPortfolioCompatibleWithHoldings(TargetPortfolio portfolio)
+        internal bool IsTargetPortfolioCompatibleWithHoldings(TargetPortfolioPb portfolio)
         {
             Symbol underlying = Securities[portfolio.Underlying].Symbol;
             var options = Portfolio
@@ -939,11 +936,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             foreach (var option in options)
             {
                 var holdings = portfolio.Holdings.Values.Where(h => h.Symbol == option.Value).FirstOrDefault();
-                if (holdings == null)
-                {
-                    Log($"{Time} Removing TargetPortfolio. Symbol={option.Value}, No Quantity in Target Portfolio");
-                    return false;
-                }
+                if (holdings != null) continue;
+                Log($"{Time} Removing TargetPortfolio. Symbol={option.Value}, No Quantity in Target Portfolio");
+                return false;
                 //var algoQuantity = Portfolio[option].Quantity;
                 //if (holdings.Quantity * (float)algoQuantity < 0)
                 //{
@@ -982,7 +977,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             return (dt - TimeSpan.FromDays(days)) + dt.TimeOfDay;
         }
 
-        private static bool IsValidMarketDataSnap(MarketDataSnapByUnderlying snap)
+        private static bool IsValidMarketDataSnap(MarketDataSnapByUnderlyingPb snap)
         {
             return
                 snap != null &&
@@ -990,12 +985,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 snap.OptionQuotes.Count > 0;
         }
 
-        private Dictionary<string, Core.IO.Holding> PortfolioOptionHoldings(Symbol underlying)
+        private Dictionary<string, HoldingPb> PortfolioOptionHoldings(Symbol underlying)
         {
             var holdings = Portfolio
                 .Where(kvp =>
                     kvp.Value.Quantity != 0 && kvp.Key.SecurityType == SecurityType.Option &&
-                    kvp.Key.Underlying == underlying).ToDictionary(kvp => kvp.Key.Value, kvp => new Core.IO.Holding()
+                    kvp.Key.Underlying == underlying).ToDictionary(kvp => kvp.Key.Value, kvp => new HoldingPb()
                 {
                     Symbol = kvp.Key.Value,
                     Quantity = (float)kvp.Value.Quantity,
@@ -1004,11 +999,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             return holdings;
         }
 
-        public Dictionary<string, Core.IO.Holding> PortfolioUnderlyingHoldings(Symbol underlying)
+        public Dictionary<string, HoldingPb> PortfolioUnderlyingHoldings(Symbol underlying)
         {
             //var holdings = Portfolio.Where(kvp => kvp.Value.Quantity != 0 && kvp.Key.SecurityType == SecurityType.Option && kvp.Key.Underlying == underlying).ToDictionary(kvp => kvp.Key.Value, kvp => new Core.IO.Holding()
             var holdings = Portfolio.Where(kvp => kvp.Value.Quantity != 0 && Underlying(kvp.Key) == underlying)
-                .ToDictionary(kvp => kvp.Key.Value, kvp => new Core.IO.Holding()
+                .ToDictionary(kvp => kvp.Key.Value, kvp => new HoldingPb()
                 {
                     Symbol = kvp.Key.Value,
                     Quantity = (float)kvp.Value.Quantity,
@@ -1039,7 +1034,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     ? handler.GetContractsRequested()
                     : 0;
 
-            RequestTargetPortfolios requestTargetPortfolios = new()
+            RequestTargetPortfoliosPb requestTargetPortfolios = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Underlying = underlying,
@@ -1057,7 +1052,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             // var startTime = SubtractBusinessDays(Time, 1);
 
-            MarketDataSnapByUnderlying snap = GetMarketDataSnapByUnderlying(underlying);
+            MarketDataSnapByUnderlyingPb snap = GetMarketDataSnapByUnderlying(underlying);
             if (IsValidMarketDataSnap(snap))
             {
                 requestTargetPortfolios.MarketDataSnaps.Add(snap);
@@ -1106,7 +1101,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 return;
             }
 
-            RequestPfRiskScenarios request = new()
+            RequestPfRiskScenariosPb request = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Underlying = underlying
@@ -1159,7 +1154,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 RequestContractsHandlers.TryGetValue(underlying, out RequestContractsHandler handler)
                     ? handler.GetContractsRequested()
                     : 0;
-            RequestTargetPortfolios requestTargetPortfolios = new()
+            RequestTargetPortfoliosPb requestTargetPortfolios = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Underlying = underlying,
@@ -1229,7 +1224,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Log($"{Time} RequestStressTestDs: {underlying}");
 
             // Build request
-            RequestStressTestDs requestStressTestDs = new()
+            RequestStressTestDsPb requestStressTestDs = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Underlying = underlying,
@@ -1262,34 +1257,34 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
         }
 
-        private MarketDataHistory GetMarketDataHistory(Equity underlying, DateTime start, DateTime end)
+        private MarketDataHistoryPb GetMarketDataHistory(Equity underlying, DateTime start, DateTime end)
         {
-            // string _start = start.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture);
-            // string _end = end.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture);
-
-            MarketDataHistory history = new()
+            float lastUnderlyingPrice = (float)MidPrice(underlying.Symbol);
+            
+            MarketDataHistoryPb history = new()
             {
                 Underlying = underlying.Symbol.Value,
                 TsStart = start.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 TsEnd = end.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
             };
 
-            Dictionary<string, Quotes> quotesMap = new();
+            Dictionary<string, QuotesPb> quotesMap = new();
             lock (MarketDataQuotes)
             {
                 foreach (var kvp in MarketDataQuotes.Where(kvp =>
                              Underlying(kvp.Key) == underlying.Symbol && kvp.Key.SecurityType == SecurityType.Option))
                 {
-                    Quotes quotes = new()
+                    QuotesPb quotes = new()
                     {
                         Symbol = kvp.Key.Value,
                         SecurityType = SecurityType2SecurityTypePb(kvp.Key.SecurityType),
                     };
-                    // Bad costly processing. Remove someday... Dont send price data here and rather have the service fetch it from a db.
-                    quotes.Quotes_.Add(kvp.Value.Where(v =>
+                    
+                    quotes.Quotes.Add(kvp.Value.Where(v =>
                         v != null &&
                         DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) >= start &&
-                        DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) <= end
+                        DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) <= end &&
+                        v.PriceUnderlying > 0 && Math.Abs(v.PriceUnderlying - lastUnderlyingPrice) / lastUnderlyingPrice <= 0.01f
                     ).ToArray());
                     quotesMap[kvp.Key.Value] = quotes;
                 }
@@ -1297,20 +1292,21 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             history.Quotes.Add(quotesMap);
 
-            Dictionary<string, Core.IO.Trades> tradesMap = new();
+            Dictionary<string, TradesPb> tradesMap = new();
             lock (MarketDataTrades)
             {
                 foreach (var kvp in MarketDataTrades.Where(kvp =>
                              Underlying(kvp.Key) == underlying.Symbol && kvp.Key.SecurityType == SecurityType.Option))
                 {
-                    Trades trades = new()
+                    TradesPb trades = new()
                     {
                         Symbol = kvp.Key.Value,
                         SecurityType = SecurityType2SecurityTypePb(kvp.Key.SecurityType),
                     };
-                    trades.Trades_.Add(kvp.Value.Where(v =>
+                    trades.Trades.Add(kvp.Value.Where(v =>
                         DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) >= start &&
-                        DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) <= end
+                        DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) <= end &&
+                        v.PriceUnderlying > 0 && Math.Abs(v.PriceUnderlying - lastUnderlyingPrice) / lastUnderlyingPrice <= 0.01f
                     ).ToArray());
                     tradesMap[kvp.Key.Value] = trades;
                 }
@@ -1324,21 +1320,38 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         private void RequestSSVICalibration(Equity underlying)
         {
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
-
-            Log($"{Time} RequestSSVICalibration: {underlying}");
-            MarketDataHistory history;
+            
+            MarketDataHistoryPb history;
+            // Exclude quotes/trades from the last calibration request
+            DateTime filterStartTime = SubtractBusinessDays(Time, 1);
+            if (LastSSVICalibrationRequestTime.TryGetValue(underlying.Symbol, out DateTime lastCalibrationTime))
+            {
+                filterStartTime = lastCalibrationTime;
+            }
+            
             try
             {
-                history = GetMarketDataHistory(underlying, SubtractBusinessDays(Time, 1), Time);
+                history = GetMarketDataHistory(underlying, filterStartTime, Time);
             }
             catch (Exception e)
             {
-                Error($"{Time} RequestSSVICalibration: {underlying}. {e.Message}");
+                Error($"{Time} RequestSSVICalibration: {underlying}. {e.Message}.");
+                return;
+            }
+            // int totalQuotesTenor = history?.Quotes?.Sum(kvp => kvp.Key.Length) ?? 0;
+            int totalQuotes = history?.Quotes?.Sum(kvp => kvp.Value.Quotes.Count) ?? 0;
+            int totalTrades = history?.Trades?.Sum(kvp => kvp.Value.Trades.Count) ?? 0;
+            Log($"{Time} RequestSSVICalibration: {underlying}. # Tenors/Quotes: {totalQuotes}. # Trades: {totalTrades}");
+            
+            const int MinQuotesCount = 500;
+            if (totalQuotes < MinQuotesCount)
+            {
+                Log($"{Time} RequestSSVICalibration: {underlying}. Insufficient regime-filtered quotes ({totalQuotes} < {MinQuotesCount}). Skipping calibration.");
                 return;
             }
 
             // Build request
-            RequestSSVICalibration requestSsviCalibration = new()
+            RequestSSVICalibrationPb requestSsviCalibration = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Underlying = underlying.Symbol.Value,
@@ -1355,44 +1368,31 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             {
                 _ = wsClient.SendMessageAsync(requestSsviCalibration);
             }
+            LastSSVICalibrationRequestTime[underlying.Symbol] = Time;
+            // Now I am storing all past market data in history. That's not too great for memory
+            MarketDataQuotes[underlying.Symbol].Clear();
+            MarketDataTrades[underlying.Symbol].Clear();
         }
 
         private void OnResponseSSVICalibration(object source, ResponseSSVICalibrationEventArgs e)
         {
             wsClient.ReleaseThread();
 
-            lock (MarketDataQuotes)
-            {
-                foreach (Symbol key in MarketDataQuotes.Keys)
-                {
-                    // Keep the last 30 mins of elements.
-                    // MarketDataQuotes[key] = MarketDataQuotes[key].Where(v => DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) >= Time - Ma).ToList();
-                    MarketDataQuotes[key].Clear();
-                }
-            }
-
-            lock (MarketDataTrades)
-            {
-                foreach (Symbol key in MarketDataTrades.Keys)
-                {
-                    MarketDataTrades[key].Clear();
-                }
-            }
-
             Equity underlying = (Equity)Securities[e.ResponseSSVICalibration.Request.Underlying];
             SSVIParamsDictionary currentStateParams = KalmanFiltersSSVI[underlying].GetSSVIParams();
             SSVIParamsDictionary responseParams = new(e.ResponseSSVICalibration.Params.ToArray());
             KalmanFiltersSSVI[underlying].Update(currentStateParams.Update(responseParams).ToVector());
-            Log($"{Time} OnResponseSSVICalibration: {underlying} Kalman state updated.");
+            Log($"{Time} OnResponseSSVICalibration: {underlying} Kalman state updated for # tenors: {currentStateParams.Count} -> {responseParams.Count}");
         }
 
         private void OnSSVISurfaceUpdated(object sender, KalmanOnUpdateEventArgs<SSVIParamsDictionary> e)
         {
-            if (!ActiveRegimes.TryGetValue(e.Equity, out var regimes) || !regimes.Contains(MarketRegime.PostEarningsRelease)) return;
+            if (!ActiveRegimes.TryGetValue(e.Equity, out var regimes)) return;
+            // if (!ActiveRegimes.TryGetValue(e.Equity, out var regimes) || !regimes.Contains(MarketRegime.PostEarningsRelease)) return;
             
             Log($"{Time} OnSSVISurfaceUpdated(): ...");
                 
-            List<PfRiskScenario> scenarios = new();
+            List<PfRiskScenarioPb> scenarios = new();
             // Only need scenarios for the targetHoldings
             foreach ((Symbol symbol, decimal targetQ) in TargetHoldings.Where(kvp => kvp.Key.SecurityType == SecurityType.Option))
             {
@@ -1412,18 +1412,18 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 double npvEntry = OptionContractWrap.E(this, option, Time.Date).NPV(entryIvSsvi, midPriceUnderlying);
                 double currentMid = (double)MidPrice(option.Symbol);
                         
-                PfRiskScenario scenario = new()
+                PfRiskScenarioPb scenario = new()
                 {
                     Underlying = e.Equity.Symbol.Value,
                     DPL = 0,
                     Score = 100*(currentMid - npvEntry) * Math.Sign(orderQ),  // Half the spread in USD
                     DPLEqHedged = 0,
                 };
-                scenario.HoldingsHedge.Add(symbol.Value, new Core.IO.Holding
+                scenario.HoldingsHedge.Add(symbol.Value, new HoldingPb
                 {
                     Symbol = symbol.Value,
                     Quantity = (float)orderQ,
-                    SecurityType = Core.IO.SecurityType.Option
+                    SecurityType = SecurityTypePb.Option
                 });
                 scenario.IvEnter.Add(symbol.Value, entryIvSsvi);
                 scenarios.Add(scenario);
@@ -1442,8 +1442,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             float deltaTotalOptions = (float)(PfRisk.RiskByUnderlying(underlying, Metric.DeltaTotal) -
                 Portfolio[underlying].Quantity);
             float eodDeltaToHedge = LastDeltaAcrossDsOptionsOnly.TryGetValue(underlying, out double v) ? (float)v : deltaTotalOptions;
-            Core.IO.Holding h;
-            List<PfRiskScenario> validScenarios = new();
+            HoldingPb h;
+            List<PfRiskScenarioPb> validScenarios = new();
             foreach (var scenario in e.ResponsePfRiskScenarios.PfRiskScenarios)
             {
                 float holdingsCurrentQty = scenario.HoldingsCurrent.TryGetValue(underlyingStr, out h) ? h.Quantity : 0;

@@ -11,22 +11,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 {
     public class TargetPortfoliosEventArgs : EventArgs
     {
-        public TargetPortfoliosEventArgs(ResponseTargetPortfolios responseTargetPortfolios)
+        public TargetPortfoliosEventArgs(ResponseTargetPortfoliosPb responseTargetPortfolios)
         {
             ResponseTargetPortfolios = responseTargetPortfolios;
         }
 
-        public ResponseTargetPortfolios ResponseTargetPortfolios { get; }
+        public ResponseTargetPortfoliosPb ResponseTargetPortfolios { get; }
     }
 
     public class ResultStressTestDsEventArgs : EventArgs
     {
-        public ResultStressTestDsEventArgs(ResultStressTestDs resultStressTestDs)
+        public ResultStressTestDsEventArgs(ResultStressTestDsPb resultStressTestDs)
         {
             ResultStressTestDs = resultStressTestDs;
         }
 
-        public ResultStressTestDs ResultStressTestDs { get; }
+        public ResultStressTestDsPb ResultStressTestDs { get; }
     }
 
     public class CmdFetchTargetPortfolioEventArgs : EventArgs
@@ -41,12 +41,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
     public class CmdCancelOIDEventArgs : EventArgs
     {
-        public CmdCancelOIDEventArgs(CmdCancelOID cmdCancelOID)
+        public CmdCancelOIDEventArgs(CmdCancelOID cmdCancelOid)
         {
-            CmdCancelOID = cmdCancelOID;
+            CmdCancelOid = cmdCancelOid;
         }
 
-        public CmdCancelOID CmdCancelOID { get; }
+        public CmdCancelOID CmdCancelOid { get; }
     }
 
     public class CmdCfgOverrideEventArgs : EventArgs
@@ -61,32 +61,32 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
     public class ResponseKalmanInitEventArgs : EventArgs
     {
-        public ResponseKalmanInitEventArgs(ResponseKalmanInit responseKalmanInit)
+        public ResponseKalmanInitEventArgs(ResponseKalmanInitPb responseKalmanInit)
         {
             ResponseKalmanInit = responseKalmanInit;
         }
 
-        public ResponseKalmanInit ResponseKalmanInit { get; }
+        public ResponseKalmanInitPb ResponseKalmanInit { get; }
     }
 
     public class ResponseSSVICalibrationEventArgs : EventArgs
     {
-        public ResponseSSVICalibrationEventArgs(ResponseSSVICalibration responseSSVICalibration)
+        public ResponseSSVICalibrationEventArgs(ResponseSSVICalibrationPb responseSSVICalibration)
         {
             ResponseSSVICalibration = responseSSVICalibration;
         }
 
-        public ResponseSSVICalibration ResponseSSVICalibration { get; }
+        public ResponseSSVICalibrationPb ResponseSSVICalibration { get; }
     }
 
     public class ResponsePfRiskScenariosEventArgs : EventArgs
     {
-        public ResponsePfRiskScenariosEventArgs(ResponsePfRiskScenarios responsePfRiskScenarios)
+        public ResponsePfRiskScenariosEventArgs(ResponsePfRiskScenariosPb responsePfRiskScenarios)
         {
             ResponsePfRiskScenarios = responsePfRiskScenarios;
         }
 
-        public ResponsePfRiskScenarios ResponsePfRiskScenarios { get; }
+        public ResponsePfRiskScenariosPb ResponsePfRiskScenarios { get; }
     }
 
     public class WsClient : IDisposable
@@ -101,8 +101,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         private readonly Foundations _algo;
         private string url;
         private DateTime lastHeartbeat = DateTime.MaxValue;
-        private ConcurrentQueue<Message> _messageQueue = new();
-        private readonly Dictionary<Channel, EventHandler<EventArgs>> _eventHandlers;
+        private ConcurrentQueue<MessagePb> _messageQueue = new();
+        private readonly Dictionary<ChannelPb, EventHandler<EventArgs>> _eventHandlers;
 
         public WsClient(Foundations algo)
         {
@@ -110,7 +110,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             _eventHandlers = new();
         }
 
-        public void RegisterEventHandler<T>(Channel channel, Action<object, T> handler) where T : EventArgs
+        public void RegisterEventHandler<T>(ChannelPb channel, Action<object, T> handler) where T : EventArgs
         {
             if (!_eventHandlers.ContainsKey(channel))
             {
@@ -324,7 +324,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                         _algo.Error("WebSocket is null. Cannot send message.");
                         continue;
                     }
-                    if (!_messageQueue.TryDequeue(out Message message)) {
+                    if (!_messageQueue.TryDequeue(out MessagePb message)) {
                         continue;
                     }
                     try
@@ -351,26 +351,26 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             }
         }
 
-        private Channel GetRequestTypeChannel<T>()
+        private ChannelPb GetRequestTypeChannel<T>()
         {
             return typeof(T) switch
             {
-                _ when typeof(T) == typeof(RequestTargetPortfolios) => Channel.TargetPortfolio,
-                _ when typeof(T) == typeof(RequestKalmanInit) => Channel.KalmanInit,
-                _ when typeof(T) == typeof(RequestStressTestDs) => Channel.StressTestDs,
-                _ when typeof(T) == typeof(RequestSSVICalibration) => Channel.RequestSsviCalibration,
-                _ when typeof(T) == typeof(RequestPfRiskScenarios) => Channel.RequestPfRiskScenarios,
+                _ when typeof(T) == typeof(RequestTargetPortfoliosPb) => ChannelPb.TargetPortfolio,
+                _ when typeof(T) == typeof(RequestKalmanInitPb) => ChannelPb.KalmanInit,
+                _ when typeof(T) == typeof(RequestStressTestDsPb) => ChannelPb.StressTestDs,
+                _ when typeof(T) == typeof(RequestSSVICalibrationPb) => ChannelPb.RequestSsviCalibration,
+                _ when typeof(T) == typeof(RequestPfRiskScenariosPb) => ChannelPb.RequestPfRiskScenarios,
                 _ => throw new InvalidOperationException($"No channel mapping found for request type {typeof(T)}.")
             };
         }
 
         public async Task SendMessageAsync<T>(T request) where T : IMessage<T>
         {
-            _messageQueue.Enqueue(new Message()
+            _messageQueue.Enqueue(new MessagePb()
             {
                 Channel = GetRequestTypeChannel<T>(),
                 Id = Guid.NewGuid().ToString(),
-                Action = Action.Subscribe,
+                Action = ActionPb.Subscribe,
                 Payload = request.ToByteString()
             });
 
@@ -380,11 +380,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         public async void SubscribeToHeartbeat()
         {
             _algo.Log("WsClient.SubscribeToHeartbeat(): Subscribing to heartbeat");
-            Message message = new()
+            MessagePb message = new()
             {
-                Channel = Channel.Hb,
+                Channel = ChannelPb.Hb,
                 Id = Guid.NewGuid().ToString(),
-                Action  = Action.Subscribe,
+                Action  = ActionPb.Subscribe,
                 Payload = ByteString.Empty
             };
             lastHeartbeat = DateTime.Now;
@@ -393,38 +393,38 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
         private void OnMessage(Stream inputStream)
         {
-            Message message = Message.Parser.ParseFrom(inputStream);
+            MessagePb message = MessagePb.Parser.ParseFrom(inputStream);
             inputStream.Dispose();
-            Channel channel = message.Channel;
+            ChannelPb channel = message.Channel;
 
             switch (channel)
             {
-                case Channel.Hb:
+                case ChannelPb.Hb:
                     HandleHeartbeat(message);
                     break;
-                case Channel.TargetPortfolio:
-                    _eventHandlers[channel]?.Invoke(this, new TargetPortfoliosEventArgs(ResponseTargetPortfolios.Parser.ParseFrom(message.Payload)));
+                case ChannelPb.TargetPortfolio:
+                    _eventHandlers[channel]?.Invoke(this, new TargetPortfoliosEventArgs(ResponseTargetPortfoliosPb.Parser.ParseFrom(message.Payload)));
                     break;
-                case Channel.StressTestDs:
-                    _eventHandlers[channel]?.Invoke(this, new ResultStressTestDsEventArgs(ResultStressTestDs.Parser.ParseFrom(message.Payload)));
+                case ChannelPb.StressTestDs:
+                    _eventHandlers[channel]?.Invoke(this, new ResultStressTestDsEventArgs(ResultStressTestDsPb.Parser.ParseFrom(message.Payload)));
                     break;
-                case Channel.CmdFetchTargetPortfolio:
+                case ChannelPb.CmdFetchTargetPortfolio:
                     _eventHandlers[channel]?.Invoke(this, new CmdFetchTargetPortfolioEventArgs(CmdFetchTargetPortfolio.Parser.ParseFrom(message.Payload)));
                     break;
-                case Channel.CmdCancelOid:
+                case ChannelPb.CmdCancelOid:
                     _eventHandlers[channel]?.Invoke(this, new CmdCancelOIDEventArgs(CmdCancelOID.Parser.ParseFrom(message.Payload)));
                     break;
-                case Channel.CmdCfgOverride:
+                case ChannelPb.CmdCfgOverride:
                     _eventHandlers[channel]?.Invoke(this, new CmdCfgOverrideEventArgs(CmdCfgOverride.Parser.ParseFrom(message.Payload)));
                     break;
-                case Channel.KalmanInit:
-                    _eventHandlers[channel]?.Invoke(this, new ResponseKalmanInitEventArgs(ResponseKalmanInit.Parser.ParseFrom(message.Payload)));
+                case ChannelPb.KalmanInit:
+                    _eventHandlers[channel]?.Invoke(this, new ResponseKalmanInitEventArgs(ResponseKalmanInitPb.Parser.ParseFrom(message.Payload)));
                     break;
-                case Channel.RequestSsviCalibration:
-                    _eventHandlers[channel]?.Invoke(this, new ResponseSSVICalibrationEventArgs(ResponseSSVICalibration.Parser.ParseFrom(message.Payload)));
+                case ChannelPb.RequestSsviCalibration:
+                    _eventHandlers[channel]?.Invoke(this, new ResponseSSVICalibrationEventArgs(ResponseSSVICalibrationPb.Parser.ParseFrom(message.Payload)));
                     break;
-                case Channel.RequestPfRiskScenarios:
-                    _eventHandlers[channel]?.Invoke(this, new ResponsePfRiskScenariosEventArgs(ResponsePfRiskScenarios.Parser.ParseFrom(message.Payload)));
+                case ChannelPb.RequestPfRiskScenarios:
+                    _eventHandlers[channel]?.Invoke(this, new ResponsePfRiskScenariosEventArgs(ResponsePfRiskScenariosPb.Parser.ParseFrom(message.Payload)));
                     break;
                 default:
                     _algo.Error($"Unknown message channel: {message.Channel}");
@@ -432,7 +432,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             }
         }
 
-        private void HandleHeartbeat(Message message)
+        private void HandleHeartbeat(MessagePb message)
         {
             lastHeartbeat = DateTime.Now;
             // _algo.Log($"WsClient.HandleHeartbeat(): Received heartbeat: {lastHeartbeat}");
