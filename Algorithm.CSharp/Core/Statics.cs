@@ -388,12 +388,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public static Symbol Underlying(Option option) => option.Underlying.Symbol;
 
-        public static Core.IO.SecurityType SecurityType2SecurityTypePb(SecurityType securityType)
+        public static Core.IO.SecurityTypePb SecurityType2SecurityTypePb(SecurityType securityType)
         {
             return securityType switch
             {
-                SecurityType.Equity => Core.IO.SecurityType.Equity,
-                SecurityType.Option => Core.IO.SecurityType.Option,
+                SecurityType.Equity => Core.IO.SecurityTypePb.Equity,
+                SecurityType.Option => Core.IO.SecurityTypePb.Option,
                 _ => throw new NotImplementedException(),
             };
         }
@@ -615,28 +615,28 @@ namespace QuantConnect.Algorithm.CSharp.Core
             var begin = calcDate.TimeOfDay.TotalSeconds == 0 ? calcDate.Date.AddHours(9.5) : calcDate;
             return (end - begin).TotalDays / 365;
         }
-        public static SSVIParams[] IVSSSVIParamsToPb(Symbol underlying, Dictionary<DateTime, SSVIParamsRecord> input)
+        public static SSVIParamsPb[] IVSSSVIParamsToPb(Symbol underlying, Dictionary<DateTime, SSVIParamsRecord> input)
         {
-            List<SSVIParams> ssviParams = new();
+            List<SSVIParamsPb> ssviParams = new();
             foreach (var p in input)
             {
-                SSVIParams p_pb = new()
+                SSVIParamsPb p_pb = new()
                 {
                     Underlying = underlying,
                     TenorDt = p.Key.ToString(DtFmtISO, CultureInfo.InvariantCulture),
-                    ModelParams = new SSVIModelParams() { Theta = p.Value.Theta, Rho = p.Value.Rho, Psi = p.Value.Psi },
+                    ModelParams = new SSVIModelParamsPb() { Theta = p.Value.Theta, Rho = p.Value.Rho, Psi = p.Value.Psi },
                 };
                 ssviParams.Add(p_pb);
             }
             return ssviParams.ToArray();
         }
 
-        public static OptionRight RightPb2Right(IO.OptionRight right)
+        public static OptionRight RightPb2Right(Core.IO.OptionRightPb right)
         {
             return right switch
             {
-                Core.IO.OptionRight.Call => OptionRight.Call,
-                Core.IO.OptionRight.Put => OptionRight.Put,
+                Core.IO.OptionRightPb.Call => OptionRight.Call,
+                Core.IO.OptionRightPb.Put => OptionRight.Put,
                 _ => throw new NotImplementedException(),
             };
         }

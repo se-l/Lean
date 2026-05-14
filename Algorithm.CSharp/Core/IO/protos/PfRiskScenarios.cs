@@ -26,41 +26,41 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           string.Concat(
             "ChVQZlJpc2tTY2VuYXJpb3MucHJvdG8SJVF1YW50Q29ubmVjdC5BbGdvcml0",
             "aG0uQ1NoYXJwLkNvcmUuSU8aDENvbW1vbi5wcm90bxocUmVxdWVzdFNTVklD",
-            "YWxpYnJhdGlvbi5wcm90byLxBAoOUGZSaXNrU2NlbmFyaW8SEgoKdW5kZXJs",
-            "eWluZxgBIAEoCRJgCg5ob2xkaW5nc19oZWRnZRgCIAMoCzJILlF1YW50Q29u",
-            "bmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uUGZSaXNrU2NlbmFyaW8u",
-            "SG9sZGluZ3NIZWRnZUVudHJ5EgsKA2RQTBgDIAEoARINCgVzY29yZRgEIAEo",
-            "ARITCgtkUExFcUhlZGdlZBgFIAEoARJUCghpdl9lbnRlchgGIAMoCzJCLlF1",
-            "YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uUGZSaXNrU2Nl",
-            "bmFyaW8uSXZFbnRlckVudHJ5EmQKEGhvbGRpbmdzX2N1cnJlbnQYByADKAsy",
-            "Si5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlBmUmlz",
-            "a1NjZW5hcmlvLkhvbGRpbmdzQ3VycmVudEVudHJ5GmQKEkhvbGRpbmdzSGVk",
-            "Z2VFbnRyeRILCgNrZXkYASABKAkSPQoFdmFsdWUYAiABKAsyLi5RdWFudENv",
-            "bm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLkhvbGRpbmc6AjgBGi4K",
-            "DEl2RW50ZXJFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgB",
-            "GmYKFEhvbGRpbmdzQ3VycmVudEVudHJ5EgsKA2tleRgBIAEoCRI9CgV2YWx1",
-            "ZRgCIAEoCzIuLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUu",
-            "SU8uSG9sZGluZzoCOAEisQMKFlJlcXVlc3RQZlJpc2tTY2VuYXJpb3MSCgoC",
-            "dHMYASABKAkSEgoKdW5kZXJseWluZxgCIAEoCRJdCghob2xkaW5ncxgDIAMo",
-            "CzJLLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uUmVx",
-            "dWVzdFBmUmlza1NjZW5hcmlvcy5Ib2xkaW5nc0VudHJ5ElwKEW1hcmtldF9k",
-            "YXRhX3NuYXBzGAQgAygLMkEuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hh",
-            "cnAuQ29yZS5JTy5NYXJrZXREYXRhU25hcEJ5VW5kZXJseWluZxJBCgZwYXJh",
-            "bXMYBSADKAsyMS5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3Jl",
-            "LklPLlNTVklQYXJhbXMSFgoOc2NvcGVkX3N5bWJvbHMYBiADKAkaXwoNSG9s",
-            "ZGluZ3NFbnRyeRILCgNrZXkYASABKAkSPQoFdmFsdWUYAiABKAsyLi5RdWFu",
-            "dENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLkhvbGRpbmc6AjgB",
-            "IosBChdSZXNwb25zZVBmUmlza1NjZW5hcmlvcxIKCgJ0cxgBIAEoCRISCgp1",
-            "bmRlcmx5aW5nGAIgASgJElAKEXBmX3Jpc2tfc2NlbmFyaW9zGAMgAygLMjUu",
-            "UXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5QZlJpc2tT",
-            "Y2VuYXJpb0IoqgIlUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29y",
-            "ZS5JT2IGcHJvdG8z"));
+            "YWxpYnJhdGlvbi5wcm90byL9BAoQUGZSaXNrU2NlbmFyaW9QYhISCgp1bmRl",
+            "cmx5aW5nGAEgASgJEmIKDmhvbGRpbmdzX2hlZGdlGAIgAygLMkouUXVhbnRD",
+            "b25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5QZlJpc2tTY2VuYXJp",
+            "b1BiLkhvbGRpbmdzSGVkZ2VFbnRyeRILCgNkUEwYAyABKAESDQoFc2NvcmUY",
+            "BCABKAESEwoLZFBMRXFIZWRnZWQYBSABKAESVgoIaXZfZW50ZXIYBiADKAsy",
+            "RC5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlBmUmlz",
+            "a1NjZW5hcmlvUGIuSXZFbnRlckVudHJ5EmYKEGhvbGRpbmdzX2N1cnJlbnQY",
+            "ByADKAsyTC5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklP",
+            "LlBmUmlza1NjZW5hcmlvUGIuSG9sZGluZ3NDdXJyZW50RW50cnkaZgoSSG9s",
+            "ZGluZ3NIZWRnZUVudHJ5EgsKA2tleRgBIAEoCRI/CgV2YWx1ZRgCIAEoCzIw",
+            "LlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uSG9sZGlu",
+            "Z1BiOgI4ARouCgxJdkVudGVyRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVl",
+            "GAIgASgBOgI4ARpoChRIb2xkaW5nc0N1cnJlbnRFbnRyeRILCgNrZXkYASAB",
+            "KAkSPwoFdmFsdWUYAiABKAsyMC5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNT",
+            "aGFycC5Db3JlLklPLkhvbGRpbmdQYjoCOAEiuwMKGFJlcXVlc3RQZlJpc2tT",
+            "Y2VuYXJpb3NQYhIKCgJ0cxgBIAEoCRISCgp1bmRlcmx5aW5nGAIgASgJEl8K",
+            "CGhvbGRpbmdzGAMgAygLMk0uUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hh",
+            "cnAuQ29yZS5JTy5SZXF1ZXN0UGZSaXNrU2NlbmFyaW9zUGIuSG9sZGluZ3NF",
+            "bnRyeRJeChFtYXJrZXRfZGF0YV9zbmFwcxgEIAMoCzJDLlF1YW50Q29ubmVj",
+            "dC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uTWFya2V0RGF0YVNuYXBCeVVu",
+            "ZGVybHlpbmdQYhJDCgZwYXJhbXMYBSADKAsyMy5RdWFudENvbm5lY3QuQWxn",
+            "b3JpdGhtLkNTaGFycC5Db3JlLklPLlNTVklQYXJhbXNQYhIWCg5zY29wZWRf",
+            "c3ltYm9scxgGIAMoCRphCg1Ib2xkaW5nc0VudHJ5EgsKA2tleRgBIAEoCRI/",
+            "CgV2YWx1ZRgCIAEoCzIwLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJw",
+            "LkNvcmUuSU8uSG9sZGluZ1BiOgI4ASKPAQoZUmVzcG9uc2VQZlJpc2tTY2Vu",
+            "YXJpb3NQYhIKCgJ0cxgBIAEoCRISCgp1bmRlcmx5aW5nGAIgASgJElIKEXBm",
+            "X3Jpc2tfc2NlbmFyaW9zGAMgAygLMjcuUXVhbnRDb25uZWN0LkFsZ29yaXRo",
+            "bS5DU2hhcnAuQ29yZS5JTy5QZlJpc2tTY2VuYXJpb1BiQiiqAiVRdWFudENv",
+            "bm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPYgZwcm90bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenario), global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenario.Parser, new[]{ "Underlying", "HoldingsHedge", "DPL", "Score", "DPLEqHedged", "IvEnter", "HoldingsCurrent" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, null, }),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestPfRiskScenarios), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestPfRiskScenarios.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps", "Params", "ScopedSymbols" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponsePfRiskScenarios), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponsePfRiskScenarios.Parser, new[]{ "Ts", "Underlying", "PfRiskScenarios" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenarioPb), global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenarioPb.Parser, new[]{ "Underlying", "HoldingsHedge", "DPL", "Score", "DPLEqHedged", "IvEnter", "HoldingsCurrent" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, null, }),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestPfRiskScenariosPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestPfRiskScenariosPb.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps", "Params", "ScopedSymbols" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponsePfRiskScenariosPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponsePfRiskScenariosPb.Parser, new[]{ "Ts", "Underlying", "PfRiskScenarios" }, null, null, null, null)
           }));
     }
     #endregion
@@ -68,16 +68,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
   }
   #region Messages
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
-  public sealed partial class PfRiskScenario : pb::IMessage<PfRiskScenario>
+  public sealed partial class PfRiskScenarioPb : pb::IMessage<PfRiskScenarioPb>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
   #endif
   {
-    private static readonly pb::MessageParser<PfRiskScenario> _parser = new pb::MessageParser<PfRiskScenario>(() => new PfRiskScenario());
+    private static readonly pb::MessageParser<PfRiskScenarioPb> _parser = new pb::MessageParser<PfRiskScenarioPb>(() => new PfRiskScenarioPb());
     private pb::UnknownFieldSet _unknownFields;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public static pb::MessageParser<PfRiskScenario> Parser { get { return _parser; } }
+    public static pb::MessageParser<PfRiskScenarioPb> Parser { get { return _parser; } }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -93,7 +93,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public PfRiskScenario() {
+    public PfRiskScenarioPb() {
       OnConstruction();
     }
 
@@ -101,7 +101,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public PfRiskScenario(PfRiskScenario other) : this() {
+    public PfRiskScenarioPb(PfRiskScenarioPb other) : this() {
       underlying_ = other.underlying_;
       holdingsHedge_ = other.holdingsHedge_.Clone();
       dPL_ = other.dPL_;
@@ -114,8 +114,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public PfRiskScenario Clone() {
-      return new PfRiskScenario(this);
+    public PfRiskScenarioPb Clone() {
+      return new PfRiskScenarioPb(this);
     }
 
     /// <summary>Field number for the "underlying" field.</summary>
@@ -132,12 +132,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     /// <summary>Field number for the "holdings_hedge" field.</summary>
     public const int HoldingsHedgeFieldNumber = 2;
-    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec _map_holdingsHedge_codec
-        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser), 18);
-    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> holdingsHedge_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>();
+    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb>.Codec _map_holdingsHedge_codec
+        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb.Parser), 18);
+    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb> holdingsHedge_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> HoldingsHedge {
+    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb> HoldingsHedge {
       get { return holdingsHedge_; }
     }
 
@@ -190,24 +190,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     /// <summary>Field number for the "holdings_current" field.</summary>
     public const int HoldingsCurrentFieldNumber = 7;
-    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec _map_holdingsCurrent_codec
-        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser), 58);
-    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> holdingsCurrent_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>();
+    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb>.Codec _map_holdingsCurrent_codec
+        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb.Parser), 58);
+    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb> holdingsCurrent_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> HoldingsCurrent {
+    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb> HoldingsCurrent {
       get { return holdingsCurrent_; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
-      return Equals(other as PfRiskScenario);
+      return Equals(other as PfRiskScenarioPb);
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public bool Equals(PfRiskScenario other) {
+    public bool Equals(PfRiskScenarioPb other) {
       if (ReferenceEquals(other, null)) {
         return false;
       }
@@ -334,7 +334,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public void MergeFrom(PfRiskScenario other) {
+    public void MergeFrom(PfRiskScenarioPb other) {
       if (other == null) {
         return;
       }
@@ -447,16 +447,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
   }
 
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
-  public sealed partial class RequestPfRiskScenarios : pb::IMessage<RequestPfRiskScenarios>
+  public sealed partial class RequestPfRiskScenariosPb : pb::IMessage<RequestPfRiskScenariosPb>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
   #endif
   {
-    private static readonly pb::MessageParser<RequestPfRiskScenarios> _parser = new pb::MessageParser<RequestPfRiskScenarios>(() => new RequestPfRiskScenarios());
+    private static readonly pb::MessageParser<RequestPfRiskScenariosPb> _parser = new pb::MessageParser<RequestPfRiskScenariosPb>(() => new RequestPfRiskScenariosPb());
     private pb::UnknownFieldSet _unknownFields;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public static pb::MessageParser<RequestPfRiskScenarios> Parser { get { return _parser; } }
+    public static pb::MessageParser<RequestPfRiskScenariosPb> Parser { get { return _parser; } }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -472,7 +472,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public RequestPfRiskScenarios() {
+    public RequestPfRiskScenariosPb() {
       OnConstruction();
     }
 
@@ -480,7 +480,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public RequestPfRiskScenarios(RequestPfRiskScenarios other) : this() {
+    public RequestPfRiskScenariosPb(RequestPfRiskScenariosPb other) : this() {
       ts_ = other.ts_;
       underlying_ = other.underlying_;
       holdings_ = other.holdings_.Clone();
@@ -492,8 +492,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public RequestPfRiskScenarios Clone() {
-      return new RequestPfRiskScenarios(this);
+    public RequestPfRiskScenariosPb Clone() {
+      return new RequestPfRiskScenariosPb(this);
     }
 
     /// <summary>Field number for the "ts" field.</summary>
@@ -522,34 +522,34 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     /// <summary>Field number for the "holdings" field.</summary>
     public const int HoldingsFieldNumber = 3;
-    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec _map_holdings_codec
-        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding.Parser), 26);
-    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> holdings_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding>();
+    private static readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb>.Codec _map_holdings_codec
+        = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb>.Codec(pb::FieldCodec.ForString(10, ""), pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb.Parser), 26);
+    private readonly pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb> holdings_ = new pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.Holding> Holdings {
+    public pbc::MapField<string, global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb> Holdings {
       get { return holdings_; }
     }
 
     /// <summary>Field number for the "market_data_snaps" field.</summary>
     public const int MarketDataSnapsFieldNumber = 4;
-    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying> _repeated_marketDataSnaps_codec
-        = pb::FieldCodec.ForMessage(34, global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying.Parser);
-    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying> marketDataSnaps_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying>();
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlyingPb> _repeated_marketDataSnaps_codec
+        = pb::FieldCodec.ForMessage(34, global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlyingPb.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlyingPb> marketDataSnaps_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlyingPb>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlying> MarketDataSnaps {
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.MarketDataSnapByUnderlyingPb> MarketDataSnaps {
       get { return marketDataSnaps_; }
     }
 
     /// <summary>Field number for the "params" field.</summary>
     public const int ParamsFieldNumber = 5;
-    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams> _repeated_params_codec
-        = pb::FieldCodec.ForMessage(42, global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams.Parser);
-    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams> params_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams>();
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb> _repeated_params_codec
+        = pb::FieldCodec.ForMessage(42, global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb> params_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams> Params {
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb> Params {
       get { return params_; }
     }
 
@@ -567,12 +567,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
-      return Equals(other as RequestPfRiskScenarios);
+      return Equals(other as RequestPfRiskScenariosPb);
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public bool Equals(RequestPfRiskScenarios other) {
+    public bool Equals(RequestPfRiskScenariosPb other) {
       if (ReferenceEquals(other, null)) {
         return false;
       }
@@ -678,7 +678,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public void MergeFrom(RequestPfRiskScenarios other) {
+    public void MergeFrom(RequestPfRiskScenariosPb other) {
       if (other == null) {
         return;
       }
@@ -778,16 +778,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
   }
 
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
-  public sealed partial class ResponsePfRiskScenarios : pb::IMessage<ResponsePfRiskScenarios>
+  public sealed partial class ResponsePfRiskScenariosPb : pb::IMessage<ResponsePfRiskScenariosPb>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
   #endif
   {
-    private static readonly pb::MessageParser<ResponsePfRiskScenarios> _parser = new pb::MessageParser<ResponsePfRiskScenarios>(() => new ResponsePfRiskScenarios());
+    private static readonly pb::MessageParser<ResponsePfRiskScenariosPb> _parser = new pb::MessageParser<ResponsePfRiskScenariosPb>(() => new ResponsePfRiskScenariosPb());
     private pb::UnknownFieldSet _unknownFields;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public static pb::MessageParser<ResponsePfRiskScenarios> Parser { get { return _parser; } }
+    public static pb::MessageParser<ResponsePfRiskScenariosPb> Parser { get { return _parser; } }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -803,7 +803,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public ResponsePfRiskScenarios() {
+    public ResponsePfRiskScenariosPb() {
       OnConstruction();
     }
 
@@ -811,7 +811,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public ResponsePfRiskScenarios(ResponsePfRiskScenarios other) : this() {
+    public ResponsePfRiskScenariosPb(ResponsePfRiskScenariosPb other) : this() {
       ts_ = other.ts_;
       underlying_ = other.underlying_;
       pfRiskScenarios_ = other.pfRiskScenarios_.Clone();
@@ -820,8 +820,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public ResponsePfRiskScenarios Clone() {
-      return new ResponsePfRiskScenarios(this);
+    public ResponsePfRiskScenariosPb Clone() {
+      return new ResponsePfRiskScenariosPb(this);
     }
 
     /// <summary>Field number for the "ts" field.</summary>
@@ -850,24 +850,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     /// <summary>Field number for the "pf_risk_scenarios" field.</summary>
     public const int PfRiskScenariosFieldNumber = 3;
-    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenario> _repeated_pfRiskScenarios_codec
-        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenario.Parser);
-    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenario> pfRiskScenarios_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenario>();
+    private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenarioPb> _repeated_pfRiskScenarios_codec
+        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenarioPb.Parser);
+    private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenarioPb> pfRiskScenarios_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenarioPb>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenario> PfRiskScenarios {
+    public pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.PfRiskScenarioPb> PfRiskScenarios {
       get { return pfRiskScenarios_; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
-      return Equals(other as ResponsePfRiskScenarios);
+      return Equals(other as ResponsePfRiskScenariosPb);
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public bool Equals(ResponsePfRiskScenarios other) {
+    public bool Equals(ResponsePfRiskScenariosPb other) {
       if (ReferenceEquals(other, null)) {
         return false;
       }
@@ -958,7 +958,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
-    public void MergeFrom(ResponsePfRiskScenarios other) {
+    public void MergeFrom(ResponsePfRiskScenariosPb other) {
       if (other == null) {
         return;
       }

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using Accord.Math;
 using QuantConnect.Securities;
 using Fasterflect;
+using QuantConnect.Securities.Equity;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Util;
 using static QuantConnect.Algorithm.CSharp.Core.Foundations;
@@ -516,8 +517,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         protected double GetUtlityVegaMispricedIVUntilExpiry()
         {
             Symbol underlying = Symbol.Underlying;
-            double vol0 = IVPrice;
             double vol1;
+            
+            // Prefer SSVI surface IV for vol0; fall back to IVPrice
+            Equity equity = _algo.ToEquity(underlying);
+            double vol0 = (_algo.IvSurfaceSsviMid.TryGetValue(equity, out var surface) && surface.TryGetIV(_option, out double surfaceIv))
+                ? surfaceIv
+                : IVPrice;
 
             _algo.EarningsBySymbol.TryGetValue(underlying.Value, out EarningsAnnouncement[] earningsAnnouncements);
             if (earningsAnnouncements.Length > 0 && earningsAnnouncements.Where(x => (x.Date - _algo.Time.Date).Days < 45 && (x.Date - _algo.Time.Date).Days > 2).Any())
@@ -531,6 +537,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }            
             
             double fv = (vol1 - vol0) * OCW.Vega(vol0) * (double)(Quantity * _option.ContractMultiplier);
+            if (!double.IsFinite(fv)) { return 0; }
             return (double)_algo.DiscountedValue((decimal)fv, _option);
         }
 

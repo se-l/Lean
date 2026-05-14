@@ -296,9 +296,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private void Snap()
         {
             HistoricalVolatility = (double)SecurityUnderlying.VolatilityModel.Volatility;
-            IVBid0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Bid0, Mid0Underlying, 0.001) : 0;
-            IVAsk0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
-            IVPrice0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001) : 0;
+            IVBid0 = SecurityType == SecurityType.Option && Bid0 > 0 && Mid0Underlying > 0 ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Bid0, Mid0Underlying, 0.001) : 0;
+            IVAsk0 = SecurityType == SecurityType.Option && Ask0 > 0 && Mid0Underlying > 0 ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
+            IVPrice0 = SecurityType == SecurityType.Option && PriceFillAvg > 0 && Mid0Underlying > 0 ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001) : 0;
             _ = Greeks;
             SurfaceIVdS = ToDecimal(_algo.IvSurfaceSsviMid[Equity].IVdS(Symbol) ?? 0);
         }

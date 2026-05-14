@@ -11,7 +11,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 {
     public class UtilityOrderEarnings : UtilityOrderBase
     {
-        private readonly double UtilNo = -2000;
+        private const double UtilNo = -2000;
 
         public UtilityOrderEarnings(Foundations algo, Option option, decimal quantity, decimal? price = null)
         {
@@ -127,8 +127,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                      && OrderDirection == OrderDirection.Sell
                      && _algo.Time.TimeOfDay > earningsUtilityTargetHoldingsAfterReleaseStartTimeSell
                      && (dte >= 7 ||
-                         (dte < 7 && absDelta <
-                             0.95)) // Dont sell deep ITM options, too much trouble adjusting the hedge. Just let it exercise.
+                         (dte < 7 && absDelta < 0.95)) // Dont sell deep ITM options, too much trouble adjusting the hedge. Just let it exercise.
                     )
             {
                 utility = 200;

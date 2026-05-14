@@ -1,10 +1,10 @@
 {
-  "StartDate": "2024-07-10",
-  "EndDate": "2024-07-12",
-  "Ticker": [ "DAL" ],
+  "StartDate": "2026-02-11",
+  "EndDate": "2026-02-11",
+  "Ticker": [ "CSCO" ],
   "WsHost": "localhost",
   "WsPort": 8002,
   "EarningsEntryStartTime": {
-    "_": [ 9, 45 ]
+    "_": [ 9, 35 ]
   }
 }

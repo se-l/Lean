@@ -57,9 +57,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             
             if (HaveInputsChanged(quote, midPriceUnderlying, time.Date) && iv == null)
             {
-                iv = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
+                IV = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
             }
-            IV = iv ?? IV;                
             Time = time;
             Price = quote;
             MidPriceUnderlying = midPriceUnderlying;

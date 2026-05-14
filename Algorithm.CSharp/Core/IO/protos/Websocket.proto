@@ -3,7 +3,7 @@ package QuantConnect.Algorithm.CSharp.Core.IO;
 
 option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
 
-enum Channel {
+enum ChannelPb {
     HB = 0;
     TARGET_PORTFOLIO = 1;
     ECHO = 2;
@@ -17,15 +17,15 @@ enum Channel {
     REQUEST_PF_RISK_SCENARIOS = 10;
 }
 
-enum Action {
+enum ActionPb {
     SUBSCRIBE = 0;
     UNSUBSCRIBE = 1;
 }
 
-message Message {
+message MessagePb {
 
-  Channel channel = 1;
+  ChannelPb channel = 1;
   string id = 2;
-  Action action = 3;
+  ActionPb action = 3;
   bytes payload = 4;
 }

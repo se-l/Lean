@@ -31,6 +31,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
     public partial class Foundations : QCAlgorithm
     {
         public SecurityInitializerMine securityInitializer;
+        public readonly JuliaPricingClient julia = new();
         internal Resolution resolution;
         public Dictionary<Symbol, QuoteBarConsolidator> QuoteBarConsolidators = new();
         public Dictionary<Symbol, TradeBarConsolidator> TradeBarConsolidators = new();
@@ -66,8 +67,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         //public Dictionary<Symbol, AtmIVIndicator> AtmIVIndicators = new();
         public Dictionary<Equity, HashSet<MarketRegime>> ActiveRegimes = new();
         public ConcurrentDictionary<Symbol, List<PositionSnap>> PositionSnaps = new();
-        public ConcurrentDictionary<Symbol, List<Quote>> MarketDataQuotes = new();
-        public ConcurrentDictionary<Symbol, List<Core.IO.Trade>> MarketDataTrades = new();
+        public ConcurrentDictionary<Symbol, List<QuotePb>> MarketDataQuotes = new();
+        public ConcurrentDictionary<Symbol, List<Core.IO.TradePb>> MarketDataTrades = new();
+        public ConcurrentDictionary<Symbol, DateTime> LastSSVICalibrationRequestTime = new();
         // End
 
         public RiskRecorder RiskRecorder;
@@ -118,7 +120,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int ocaGroupId;
         public int SignalQuantityDflt = 9999;
         public ConcurrentDictionary<Symbol, decimal> TargetHoldings = new();
-        protected readonly ConcurrentDictionary<Symbol, List<TargetPortfolio>> TargetPortfolios = new();
+        protected readonly ConcurrentDictionary<Symbol, List<TargetPortfolioPb>> TargetPortfolios = new();
         protected IUtilityOrderFactory UtilityOrderFactory;
         public Dictionary<Symbol, double> LastDeltaAcrossDsOptionsOnly = new();
         public readonly ConcurrentDictionary<Core.Holding, double> MarginalUtility = new();
@@ -314,7 +316,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public void AppendQuoteToMarketsDataSnap(object sender, NewBidAskEventArgs e)
         {
             Security security = Securities[e.Symbol];
-            Quote quote = new()
+            QuotePb quote = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Symbol = e.Symbol.Value,
@@ -329,7 +331,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public void AppendTradeToMarketsDataSnap(object sender, NewTradeEventArgs e)
         {
             Security security = Securities[e.Symbol];
-            IO.Trade trade = new()
+            TradePb trade = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Symbol = e.Symbol.Value,
@@ -384,6 +386,30 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public override void OnData(Slice slice)
         {
             if (IsWarmingUp) return;
+            
+            // Feed pre-calculated IVs from disk into IvBid/Ask indicators (backtest only),
+            // bypassing the Julia pricer call that would otherwise be triggered by the consolidator.
+            if (!LiveMode)
+            {
+                foreach (var (key, volBar) in slice.Get<VolatilityQuoteBar>())
+                {
+                    Symbol optionSymbol = key.Underlying; // VolatilityQuoteBar's underlying is the option symbol
+
+                    if (volBar.Bid.Close == 0 && volBar.Ask.Close == 0) continue;
+                    if (!IvBids.ContainsKey(optionSymbol) || !IvAsks.ContainsKey(optionSymbol)) continue;
+
+                    if (volBar.Bid.Close > 0)
+                    {
+                        var bid = new IVQuote(optionSymbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceBid.Close, (double)volBar.Bid.Close);
+                        IvBids[optionSymbol].Update(bid);
+                    }
+                    if (volBar.Ask.Close > 0)
+                    {
+                        var ask = new IVQuote(optionSymbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceAsk.Close, (double)volBar.Ask.Close);
+                        IvAsks[optionSymbol].Update(ask);    
+                    }
+                }
+            }
 
             foreach (Symbol symbol in slice.QuoteBars.Keys)
             {
@@ -727,13 +753,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
+        /// <summary>
+        /// Mid IV is bad - Always convert from MidPrice
+        /// </summary>
+        /// <param name="symbol"></param>
+        /// <param name="defaultSpread"></param>
+        /// <returns></returns>
         public double MidIV(Symbol symbol, double defaultSpread = 0.005)
         {
-            if (symbol.SecurityType != SecurityType.Option) return 0;
+            if (symbol.SecurityType != SecurityType.Option) return double.NaN;
 
-            double bidIV = IvBids[symbol].IVBidAsk.IV;
-            double askIV = IvAsks[symbol].IVBidAsk.IV;
-            return InterpolateMidIVIfAnyZero(bidIV, askIV, defaultSpread);
+            decimal bid = IvBids[symbol].IVBidAsk.Price;
+            decimal ask = IvAsks[symbol].IVBidAsk.Price;
+            decimal mid = (bid + ask) / 2;
+            return OptionContractWrap.E(this, (Option)Securities[symbol], Time.Date).IV(mid, MidPrice(Underlying(symbol)), 0.0001);
         }
 
         public double MidIVSsvi(Symbol symbol, double defaultSpread = 0.005)
@@ -743,27 +776,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Option option = (Option)Securities[symbol];
             Equity equity = (Equity)option.Underlying;
             return IvSurfaceSsviMid[equity].IV(option);
-        }
-
-
-        public double InterpolateMidIVIfAnyZero(double bidIv, double askIv, double defaultSpread = 0.005)
-        {
-            if (bidIv == 0 && askIv == 0)
-            {
-                return 0;
-            }
-            else if (bidIv == 0)
-            {
-                return askIv - defaultSpread / 2;
-            }
-            else if (askIv == 0)
-            {
-                return bidIv + defaultSpread / 2;
-            }
-            else
-            {
-                return (bidIv + askIv) / 2;
-            }
         }
 
         public Equity ToEquity(Symbol underlying) => (Equity)Securities[underlying];
@@ -1285,6 +1297,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     continue;
                 }
                 double delta = OptionContractWrap.E(this, (Option)Securities[t.Symbol], Time.Date).Delta(MidIV(t.Symbol), spot);
+                if (!double.IsFinite(delta)) continue;
                 var key = (t.Symbol.Underlying, Math.Sign(delta));
                 ocaGroupByUnderlyingDelta[key] = t.OcaGroup;
             }
@@ -1293,7 +1306,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 decimal spot = MidPrice(Underlying(s.Symbol));
                 double delta = OptionContractWrap.E(this, (Option)Securities[s.Symbol], Time.Date).Delta(MidIV(s.Symbol), spot);
-                var key = (Underlying(s.Symbol), Math.Sign(delta));
+                int deltaSign = double.IsFinite(delta) ? Math.Sign(delta) : 0;
+                var key = (Underlying(s.Symbol), deltaSign);
                 if (!ocaGroupByUnderlyingDelta.ContainsKey(key))
                 {
                     ocaGroupByUnderlyingDelta[key] = NewOcaGroupId();

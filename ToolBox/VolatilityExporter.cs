@@ -33,6 +33,7 @@ using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text;
 using QuantConnect.Algorithm.CSharp.Core;
+using QuantConnect.Algorithm.CSharp.Core.Pricing;
 
 namespace QuantConnect.ToolBox
 {
@@ -75,6 +76,7 @@ namespace QuantConnect.ToolBox
             var riskFreeRateHandle = new Handle<Quote>(riskFreeRate);
             var dayCounter = new Actual365Fixed();
             var calendar = new UnitedStates(UnitedStates.Market.NYSE);
+            JuliaPricingClient julia = new();
 
             foreach (string ticker in tickers)
             {
@@ -120,6 +122,8 @@ namespace QuantConnect.ToolBox
                         bsmProcesses[optionSymbol] = GetBsmProcess(spotQuoteHandle[optionSymbol], rateTSHandle, dividendTSHandle, volatilityTSHandle);
                         euOptions[optionSymbol] = CreateEuOption(optionSymbol, bsmProcesses[optionSymbol]);
                     }
+                    
+                    // Accumulate vectors of input data
 
                     Parallel.ForEach(optionSymbols, new ParallelOptions { MaxDegreeOfParallelism = nThreads }, optionSymbol =>
                     {
@@ -143,10 +147,6 @@ namespace QuantConnect.ToolBox
                             //double spotMidOpen = (double)(equityQuoteBar.Bid.Open + equityQuoteBar.Ask.Open) / 2;
                             double spotMidClose = (double)(equityQuoteBar.Bid.Close + equityQuoteBar.Ask.Close) / 2;
 
-                            //SetQuote(spotQuote[optionSymbol], spotMidOpen);
-                            //var bidIvOpen = (decimal)IV(euOptions[optionSymbol], (double)quoteBar.Bid.Open, bsmProcesses[optionSymbol]);
-                            //var askIvOpen = (decimal)IV(euOptions[optionSymbol], (double)quoteBar.Ask.Open, bsmProcesses[optionSymbol]);
-
                             SetQuote(spotQuote[optionSymbol], spotMidClose);
                             var bidIvClose = (decimal)IV(euOptions[optionSymbol], (double)(quoteBar?.Bid?.Close ?? 0), bsmProcesses[optionSymbol]);
                             var askIvClose = (decimal)IV(euOptions[optionSymbol], (double)(quoteBar?.Ask?.Close ?? 0), bsmProcesses[optionSymbol]);
@@ -168,6 +168,21 @@ namespace QuantConnect.ToolBox
                             ));
                         });
                     });
+                    
+                    // Now use Julia GPU IV pricer
+                    // Need a vectorized overload ...
+                    // var vBidIvOpen = julia.IV();
+                    // var vBidIvHigh = julia.IV();
+                    // var vBidIvLow = julia.IV();
+                    // var vBidIvClose = julia.IV();
+                    
+                    // var vAskIvOpen = julia.IV();
+                    // var vAskIvHigh = julia.IV();
+                    // var vAskIvLow = julia.IV();
+                    // var vAskIvClose = julia.IV();
+                    
+                    // Build the IVQuotes and continue with below write
+                    
                     WriteIV(IVQuotes, dateTime, resolution, TickType.IV_Quote);
                     IVQuotes.Clear();
 

@@ -133,6 +133,7 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
 
             var testContractsEu = new List<OptionContractWrap>();
             var testContractsAm = new List<OptionContractWrap>();
+            var testContractsOld = new List<OptionContractWrapQlNet>();
 
 
             foreach (var tenor in tenors)
@@ -144,12 +145,14 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
                 AddOptionContract(s, resolution: Resolution.Daily, fillForward: false, extendedMarketHours: false);
                 Option o = (Option)Securities[s];
                 testContractsAm.Add(OptionContractWrap.E(this, o, calculationDate));
+                testContractsOld.Add(OptionContractWrapQlNet.E(this, o, calculationDate));
                 
                 // Create Put
                 s = QuantConnect.Symbol.CreateOption(underlying.Symbol, Market.USA, OptionStyle.American, OptionRight.Put, strike, expiry);
                 AddOptionContract(s, resolution: Resolution.Daily, fillForward: false, extendedMarketHours: false);
                 o = (Option)Securities[s];
                 testContractsAm.Add(OptionContractWrap.E(this, o, calculationDate));
+                testContractsOld.Add(OptionContractWrapQlNet.E(this, o, calculationDate));
 
                 // Create Call
                 s = QuantConnect.Symbol.CreateOption(underlying.Symbol, Market.USA, OptionStyle.European, OptionRight.Call, strike, expiry);
@@ -171,8 +174,9 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
             // var msAmMerlinCuda = LogPerformanceMerlin("AM Options Merlin Cuda", testContractsAm, prices, calculationDate, priceOption);
             // RegressIVDotNetMerlinCPU(testContractsAm, prices, priceOption);
             // RegressPriceDotNetMerlinCPU(testContractsAm, prices, 0.3);
-            RegressPriceDotNetMerlinGPU(testContractsAm, prices, 0.3);
-            RegressIVDotNetMerlinGPU(testContractsAm, prices, priceOption);
+            // RegressPriceDotNetMerlinGPU(testContractsAm, prices, 0.3);
+            // RegressIVDotNetMerlinGPU(testContractsAm, prices, priceOption);
+            RegressPriceDotNetJuliaGPU(testContractsAm, testContractsOld, prices, 0.3);
             
             // AM Options QNet takes 30x longer. Dont even have dividends yet.
             // Log($"AM Options QLNet took {(msAmQl / msEu):F2} longer than vanilla eu options");
@@ -195,8 +199,8 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
 
                 foreach (decimal price in prices)
                 {
-                    double iv = ocw.IV(priceOption, price, 0.001);
-                    sumIv += iv == null ? 0 : iv;
+                    double? iv = ocw.IV(priceOption, price, 0.001);
+                    sumIv += iv ?? 0;
                     count++;
                     totalCalculations++;
                 }
@@ -462,6 +466,52 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
 
             LogRegressionTable(results);
         }
+  
+        public void RegressPriceDotNetJuliaGPU(List<OptionContractWrap> contracts, List<OptionContractWrapQlNet> contractsOld, List<decimal> spots, double iv)
+        {
+            var results = new List<RegressionResult>();
+
+            var sw = Stopwatch.StartNew();
+            foreach (var ocw in contracts)
+            {
+                var ocw2Old = contractsOld.First(ocwOld => ocwOld.Contract.ToString() == ocw.Contract.ToString());
+                
+                double sumQlMs = 0;
+                double sumMerlinMs = 0;
+                double sumQlMetric = 0;
+                double sumMerlinMetric = 0;
+
+                foreach (decimal spot in spots)
+                {
+                    // QLNet Benchmark
+                    sw.Restart();
+                    sumQlMetric += (float)ocw2Old.NPV(iv, spot);
+                    sw.Stop();
+                    sumQlMs += sw.Elapsed.TotalMilliseconds;
+                }
+                
+                foreach (decimal spot in spots)
+                {
+                    // Julia Benchmark
+                    sw.Restart();
+                    sumMerlinMetric += (float)ocw.NPV(iv, spot);
+                    sw.Stop();
+                    sumMerlinMs += sw.Elapsed.TotalMilliseconds;
+                }
+                
+                results.Add(new RegressionResult
+                {
+                    Symbol = ocw.Contract.Symbol.Value,
+                    QlMetric = sumQlMetric / spots.Count,
+                    MerlinMetric = sumMerlinMetric / spots.Count,
+                    QlMs = sumQlMs,
+                    MerlinMs = sumMerlinMs,
+                    Count = spots.Count
+                });
+            }
+
+            LogRegressionTable(results);
+        }
         
         /// </summary>
         /// <param name="contracts"></param>
@@ -534,7 +584,8 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
                     QlMetric = ivsCleanCpu.Average(v => float.IsNaN(v) || v >= 5 ? 0 : v),
                     MerlinMetric = ivs.Average(v => float.IsNaN(v) || v >= 5 ? 0 : v),
                     QlMs = swSingle.Elapsed.TotalMilliseconds,
-                    MerlinMs = swVec.Elapsed.TotalMilliseconds
+                    MerlinMs = swVec.Elapsed.TotalMilliseconds,
+                    Count = ivsCleanCpu.Length
                 });
             }
 
@@ -614,7 +665,7 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
             }
 
             Log(line);
-            Log($"TOTAL PERFORMANCE: QLNet: {totalQlMs:F2}ms | Merlin: {totalMerlinMs:F2}ms | Merlin slower by: {totalMerlinMs / totalQlMs:F2}x");
+            Log($"TOTAL PERFORMANCE: QLNet: {totalQlMs:F2}ms | Merlin: {totalMerlinMs:F2}ms | Total Merlin / Ql time: {totalMerlinMs / totalQlMs:F2}");
             Log(line);
         }
         
@@ -625,6 +676,8 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
             public double MerlinMetric { get; set; }
             public double QlMs { get; set; }
             public double MerlinMs { get; set; }
+            public int Count { get; set; }
+            
         }
     }
 }
