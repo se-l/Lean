@@ -62,6 +62,17 @@ namespace QuantConnect.Algorithm.CSharp
             //var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(2).First();
             //Log($"WarmUp TimeSpan: {timeSpan}");
             SetWarmUp(0);
+            
+            var ticker = "NKE";
+            
+            var equity = AddEquity(ticker, resolution: resolution, Market.USA, fillForward: false, extendedMarketHours: true);
+            equities.Add(equity.Symbol);
+
+            // if (optionTicker.Contains(ticker))
+            // {
+            //     var option = QuantConnect.Symbol.CreateCanonicalOption(equity.Symbol, Market.USA, $"?{equity.Symbol}");
+            //     options.Add(option);
+            // }
         }
 
         public override void OnBrokerageMessage(BrokerageMessageEvent messageEvent)

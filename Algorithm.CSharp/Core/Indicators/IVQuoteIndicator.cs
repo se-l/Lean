@@ -9,6 +9,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
     public class IVQuoteIndicator : IndicatorBase<IndicatorDataPoint>, IIndicatorWarmUpPeriodProvider
     {
+        private const double DecimalMaxAsDouble = 79228162514264337593543950335d;
         private readonly QuoteSide _side;
         public QuoteSide Side { get => _side; }
         public Symbol Symbol { get => Option.Symbol; }
@@ -43,6 +44,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public override bool IsReady => _samples > 0;
 
+        private static bool CanConvertToDecimal(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value) && value <= DecimalMaxAsDouble && value >= -DecimalMaxAsDouble;
+        }
+
         public IVQuoteIndicator(QuoteSide side, Option option, Foundations algo) : base($"IVQuoteIndicator {side} {option.Symbol}")
         {
             _side = side;
@@ -59,6 +65,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             {
                 IV = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
             }
+
+            if (iv != null)
+            {
+                IV = iv.Value;
+            }
+
+            if (!CanConvertToDecimal(IV))
+            {
+                _algo.Log($"{_algo.Time} IVQuoteIndicator.Update: Invalid IV encountered for {Symbol}. IV={IV}, Quote={quote}, UnderlyingMid={midPriceUnderlying}");
+                return;
+            }
+
             Time = time;
             Price = quote;
             MidPriceUnderlying = midPriceUnderlying;
@@ -97,7 +115,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         {
             if (input.Time <= Time) { return Current; }
             Update(input.Time, input.Value, _algo.MidPrice(Symbol.Underlying));
-            return (decimal)IVBidAsk.IV;
+            return CanConvertToDecimal(IVBidAsk.IV) ? (decimal)IVBidAsk.IV : Current.Value;
         }
         public IVQuote Refresh()
         {

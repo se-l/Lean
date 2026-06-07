@@ -49,7 +49,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 _algo.MarginalUtility.TryGetValue(Holding, out double marginalUtil);
                 if (marginalUtil != 0)
                 {
-                    return marginalUtil + UtilityCapitalCostPerDay + UtilityTransactionCosts;
+                    // MarginalUtility can be for either adding or removing a symbol from the portfolio. Marginal is not just for adding. Done this way as utility is non-linear. Direction is chosen based on TargetPortfolio.
+                    return marginalUtil * Math.Sign(Quantity) + UtilityCapitalCostPerDay + UtilityTransactionCosts;
                 }
 
                 return 0;
@@ -120,6 +121,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             // Before earnings release, utility is managed by the marginal util coming from estimator.
             if (_algo.IsPreparingEarningsRelease(Underlying))
             {
+                // MarginalUtility is by Holding, so for either Buy Or Sell.
                 utility = _algo.MarginalUtility.TryGetValue(Holding, out utility) ? utility : 0;
             }
             // After release, sell any longs from SOD.

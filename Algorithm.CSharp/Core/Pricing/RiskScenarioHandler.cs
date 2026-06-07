@@ -16,7 +16,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 {
     /// <summary>
     /// Need to log this well. What do I wanna know.
-    /// Key is the IV or price being returned by this class and whether the utility of the respective option aligns with what is quoted. Given all option quotes depend on the 
+    /// Key is the IV or price being returned by this class and whether the utility of the respective option aligns with what is quoted. Given all option quotes depend on 
     /// how much the cheapest option is swept, best to log that too in each order. Simpler later...
     /// Therefore, need to log each time: 
     /// 
@@ -320,7 +320,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             if (ivNow != null && ScenarioEntryIVs.TryGetValue(Tuple.Create(option, direction), out double entryIv)) 
             {
                 double entryUtility = ScenarioUtilities[Tuple.Create(option, direction)];
-                return entryUtility - 100 * ((double)ivNow - entryIv) / Vega(option);
+                return entryUtility - 100 * ((double)ivNow - entryIv) * Vega(option);
             };
             return null;
         }

@@ -589,6 +589,7 @@ namespace QuantConnect.Interfaces
         /// <remarks>Deprecated because different assets have different market close times,
         /// and because Python does not support two methods with the same name</remarks>
         [Obsolete("This method is deprecated. Please use this overload: OnEndOfDay(Symbol symbol)")]
+        [StubsIgnore]
         void OnEndOfDay();
 
         /// <summary>
@@ -772,7 +773,7 @@ namespace QuantConnect.Interfaces
         void SetCash(string symbol, decimal startingCash, decimal conversionRate = 0);
 
         /// <summary>
-        /// Liquidate your portfolio holdings:
+        /// Liquidate your portfolio holdings
         /// </summary>
         /// <param name="symbolToLiquidate">Specific asset to liquidate, defaults to all.</param>
         /// <param name="tag">Custom tag to know who is calling this.</param>

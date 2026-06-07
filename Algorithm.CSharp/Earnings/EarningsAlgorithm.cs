@@ -47,10 +47,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
     {
         private EarningsAlgorithmConfig CfgAlgo;
         private readonly string CfgAlgoName = "EarningsAlgorithmConfig.json";
-        private WsClient wsClient;
+        private RabbitMQClient rMQClient;
         private bool ExecuteScheduledTargetPortfolioFetch = true;
         private readonly Dictionary<Symbol, IEnumerable<MarketDataSnapByUnderlyingPb>> MarketDataSnaps = new();
         // private readonly Dictionary<Symbol, bool> FetchingTargetPortfolio = new();
+
+        public override bool HasActiveRequests() => rMQClient?.HasActiveRequests() ?? false;
+        public override (DateTime? algoTime, DateTime systemTime) GetActiveRequestTiming() => rMQClient?.GetActiveRequestTiming() ?? (null, default);
 
         public override void Initialize()
         {
@@ -62,9 +65,15 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             File.Copy($"./{FoundationsConfigFileName}", Path.Combine(Globals.PathAnalytics, FoundationsConfigFileName));
             File.Copy($"./{CfgAlgoName}", Path.Combine(Globals.PathAnalytics, CfgAlgoName));
 
-            wsClient = new WsClient(this);
-            Log($"{Time} Connecting to ws://{CfgAlgo.WsHost}:{CfgAlgo.WsPort}/ws ...");
-            wsClient.ConnectAsync($"ws://{CfgAlgo.WsHost}:{CfgAlgo.WsPort}/ws").Wait();
+            string pricerUri = CfgAlgo.PricerProtocol.ToLower() == "ipc" 
+                ? $"ipc://{CfgAlgo.PricerHost}.{CfgAlgo.PricerPort}"
+                : $"{CfgAlgo.PricerProtocol}://{CfgAlgo.PricerHost}:{CfgAlgo.PricerPort}";
+            julia = new JuliaPricingClient(pricerUri);
+            Log($"Connecting to JuliaPricer: {pricerUri} ...");
+
+            rMQClient = new(this);
+            rMQClient.ConnectAsync(CfgAlgo.MQHost, CfgAlgo.MQPort, CfgAlgo.MQUser, CfgAlgo.MQPass, CfgAlgo.MQVirtualHost);
+            Log($"Connecting to RabbitMQ: {CfgAlgo.MQHost}:{CfgAlgo.MQPort} VHost: {CfgAlgo.MQVirtualHost} ...");
 
             UtilityOrderFactory utilityOrderFactory = new (typeof(UtilityOrderEarnings));
             InitializeAlgo(utilityOrderFactory);
@@ -117,13 +126,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 }
             }
 
-            wsClient.EventHandlerWSConnected += OnWSConnected;
-            wsClient.RegisterEventHandler<TargetPortfoliosEventArgs>(ChannelPb.TargetPortfolio, OnResponseTargetPortfolios);
-            wsClient.RegisterEventHandler<ResultStressTestDsEventArgs>(ChannelPb.StressTestDs, OnResultStressTestDs);
-            wsClient.RegisterEventHandler<ResponseKalmanInitEventArgs>(ChannelPb.KalmanInit, OnResponseKalmanInit);
-            wsClient.RegisterEventHandler<CmdCfgOverrideEventArgs>(ChannelPb.CmdCfgOverride, OnCmdCfgOverride);
-            wsClient.RegisterEventHandler<ResponseSSVICalibrationEventArgs>(ChannelPb.RequestSsviCalibration, OnResponseSSVICalibration);
-            wsClient.RegisterEventHandler<ResponsePfRiskScenariosEventArgs>(ChannelPb.RequestPfRiskScenarios, OnResponsePfRiskScenarios);
+            rMQClient.EventHandlerConnected += OnWSConnected;
+            rMQClient.RegisterEventHandler<TargetPortfoliosEventArgs>(ChannelPb.TargetPortfolio, OnResponseTargetPortfolios);
+            rMQClient.RegisterEventHandler<ResultStressTestDsEventArgs>(ChannelPb.StressTestDs, OnResultStressTestDs);
+            rMQClient.RegisterEventHandler<ResponseKalmanInitEventArgs>(ChannelPb.KalmanInit, OnResponseKalmanInit);
+            rMQClient.RegisterEventHandler<CmdCfgOverrideEventArgs>(ChannelPb.CmdCfgOverride, OnCmdCfgOverride);
+            rMQClient.RegisterEventHandler<ResponseSSVICalibrationEventArgs>(ChannelPb.RequestSsviCalibration, OnResponseSSVICalibration);
+            rMQClient.RegisterEventHandler<ResponsePfRiskScenariosEventArgs>(ChannelPb.RequestPfRiskScenarios, OnResponsePfRiskScenarios);
 
             MarketRegimesChangeEventHandler += (object sender, MarketRegimesChangeEventArgs e) => RequestPfRiskScenarios(e.Symbol);
         }
@@ -139,7 +148,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Cfg.Ticker
                 .Select(s => Securities[s].Symbol)
                 .Where(underlying => IsPreparingEarningsRelease(underlying))
-                .DoForEach(underlying => RequestTargetPortfolios(underlying));
+                .DoForEach(underlying => RequestTargetPortfolios(underlying, force:true));
 
             Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(2)), FetchTargetPortfolios);
         }
@@ -277,6 +286,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         public override void OnOrderEvent(OrderEvent orderEvent)
         {
             if (orderEvent == null) return;
+            if (!Cfg.Ticker.Contains(Underlying(orderEvent.Symbol).Value))
+            {
+                Log($"{Time} OnOrderEvent(): OrderEvent {orderEvent}. Not in Ticker for this job. Ignoring...");
+                return;
+            }
             OnOrderEventDelayed(orderEvent);
         }
 
@@ -354,6 +368,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
                 InternalAudit(orderEvent);
                 
+                LogPositions();
+                
                 TaskHandler.Add("RunSignals", new Task(() => RunSignals(orderEvent.Symbol)));
                 TaskHandler.Add("RequestStressTestDs", new Task(() =>
                 {
@@ -410,10 +426,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     IUtilityOrder util = UtilityOrderFactory.Create(this, option,
                         SignalQuantity(symbol, Num2Direction(quantityToOrder)), MidPrice(option.Symbol));
                     Core.Holding holding = new(symbol, Math.Sign(quantityToOrder));
-                    double marginalUtility =
-                        MarginalUtility.TryGetValue(holding, out marginalUtility) ? marginalUtility : 0;
-                    Error(
-                        $"{Time} No order ticket present for {symbol}. Remaining Quantity to fill: {quantityToOrder}. Marginal utility: {marginalUtility:0.00}, Util: {util:0.00} UUtil: {util.Utility:0.00} UEquity: {util.UtilityEquityPosition:0.00} UGamma: {util.UtilityGamma:0.00}");
+                    double marginalUtility = MarginalUtility.TryGetValue(holding, out marginalUtility) ? marginalUtility : 0;
+                    Error($"{Time} No order ticket present for {symbol}. Remaining Quantity to fill: {quantityToOrder}. Marginal utility: {marginalUtility:0.00}, Util: {util:0.00} UUtil: {util.Utility:0.00} UEquity: {util.UtilityEquityPosition:0.00} UGamma: {util.UtilityGamma:0.00}");
                 }
             }
         }
@@ -453,6 +467,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 foreach (var holding in portfolio.Holdings.Values.Where(h => SymbolCache.TryGetSymbol(h.Symbol, out _)))
                 {
                     Symbol option = Securities[holding.Symbol].Symbol;
+                    if (Securities[option].Type != SecurityType.Option)
+                        continue;
                     decimal quantity = (int)holding.Quantity;
 
                     // Delaying adding highly liquid options to target portfolio until last trading session before release to allow room for spot moves.
@@ -602,11 +618,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         private void OnResponseTargetPortfolios(object sender, TargetPortfoliosEventArgs e)
         {
-            if (e.ResponseTargetPortfolios.IsLastTransmission)
-            {
-                wsClient.ReleaseThread();
-            }
-
             if (e.ResponseTargetPortfolios == null)
             {
                 Log($"{Time} OnTargetPortfolios: ResponseTargetPortfolios is null. Ignoring.");
@@ -667,6 +678,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 {
                     if (SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol))
                     {
+                        if (Securities[symbol].Type != SecurityType.Option) return;
                         Option option = (Option)Securities[symbol];
                         PresumedFillIV[option] = kvp.Value;
                     }
@@ -682,18 +694,14 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     TargetPortfolios[underlying] = new List<TargetPortfolioPb> { pf };
                 }
 
-                foreach (var kvp in
-                         pf.ResultStressTestDs
-                             .MarginalUtilityByHolding) // Includes dNLV and a utility for going delta neutral (should split)
+                foreach (var kvp in pf.ResultStressTestDs.MarginalUtilityByHolding) // Includes dNLV and a utility for going delta neutral (should split)
                 {
                     if (SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol))
                     {
+                        // MarginalUtility can be for either adding or removing a symbol from the portfolio. Marginal is not just for adding. Done this way as utility is non-linear. Direction is chosen based on TargetPortfolio.
                         Core.Holding holding = new(symbol, Math.Sign(pf.ResultStressTestDs.Holdings[symbol].Quantity));
                         MarginalUtility[holding] = kvp.Value;
-
-                        string comment = kvp.Value < 0 ? "Negative Utility -> Revert" : "";
-                        Log(
-                            $"{Time} MarginalUtility: Symbol={holding.Symbol}, Quantity={holding.Quantity}, Utility={kvp.Value:0.00}, Comment={comment}");
+                        Log($"{Time} MarginalUtility for Quantity={holding.Quantity}, Symbol={holding.Symbol}, Val={kvp.Value:0.00}, Quantity={holding.Quantity}");
                     }
                 }
             }
@@ -714,7 +722,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         public void OnResultStressTestDs(object sender, ResultStressTestDsEventArgs e)
         {
-            wsClient.ReleaseThread();
             if (e.ResultStressTestDs == null)
             {
                 Log($"{Time} OnResultStressTestDs: resultStressTestDs is null. Ignoring.");
@@ -743,7 +750,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 $"DeltaTotalAcrossDs: {e.ResultStressTestDs.DeltaTotalAcrossDs:0.0}, " +
                 $"DeltaTotal OptionsOnly Algo: {deltaTotalOptions:0.0}\n" +
                 $"DeltaTotal StressTest: {e.ResultStressTestDs.DeltaTotal:0.0}\n" +
-                $"{underlying} S: {MidPrice(Securities[underlying].Symbol)}, " +
+                $"{underlying} S: {MidPrice(Securities[underlying].Symbol)}\n" +
                 $"{dsString}"
             );
         }
@@ -784,7 +791,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         private void OnResponseKalmanInit(object sender, ResponseKalmanInitEventArgs e)
         {
-            wsClient.ReleaseThread();
             Equity equity = (Equity)Securities[e.ResponseKalmanInit.Request.Underlying];
             if (e.ResponseKalmanInit.InitState.Count > 0)
             {
@@ -804,9 +810,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     IvSurfaceSsviMid[equity].SetModelParams(KalmanFiltersSSVI[equity].GetSSVIParams());
                     KalmanFiltersSSVI[equity].OnUpdate += OnSSVISurfaceUpdated;
                     Log($"{Time} OnResponseKalmanInit: {equity} Kalman filter initialized.");
-
-                    // Don't call TestFetchTargetPortfolios directly because this function runs in the WS.ReceiveLoop. Wouldn't wanna block that thread.
-                    //Schedule.On(DateRules.Today, TimeRules.At(Time.AddMinutes(1).TimeOfDay), () => TestFetchTargetPortfolios(equity.Symbol));
                 }
                 else
                 {
@@ -891,17 +894,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
             };
 
-            if (!LiveMode)
-            {
-                wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                _ = wsClient.SendMessageAsync(requestKalmanInit);
-                Log($"{Time} RequestKalmanInit: BLOCKING THREAD until response received. Backtesting only");
-                wsClient.WaitThread();
-            }
-            else
-            {
-                _ = wsClient.SendMessageAsync(requestKalmanInit);
-            }
+            _ = rMQClient.SendMessageAsync(requestKalmanInit);
         }
 
         public void OnCmdFetchTargetPortfolio(object sender, CmdFetchTargetPortfolio cmdFetchTargetPortfolio)
@@ -914,7 +907,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             if (Securities.TryGetValue(cmdFetchTargetPortfolio.Symbol, out Security security))
             {
-                RequestTargetPortfolios(Underlying(security.Symbol));
+                RequestTargetPortfolios(Underlying(security.Symbol), force:true);
             }
         }
 
@@ -925,8 +918,15 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             return ocw.DaysToExpiration() / 365 < 0.1 && absDelta < 0.8 && absDelta > 0.2;
         }
 
+        /// <summary>
+        /// Target Portfolio calculator received holdings H, but decided to kick one out. Wouldnt want to reject it all, rather set that to zero.
+        /// Far reason, setting to true for now, hence switching off any removal.
+        /// </summary>
+        /// <param name="portfolio"></param>
+        /// <returns></returns>
         internal bool IsTargetPortfolioCompatibleWithHoldings(TargetPortfolioPb portfolio)
         {
+            return true;
             Symbol underlying = Securities[portfolio.Underlying].Symbol;
             var options = Portfolio
                 .Where(kvp =>
@@ -1012,72 +1012,68 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             return holdings;
         }
 
-        private void RequestTargetPortfolios(Symbol underlying)
+        private void RequestTargetPortfolios(Symbol underlying, bool force = false)
         {
             // ToDo: Need a new class. History of MarketDataSnaps every x% change + latest one when requested. history for skew calculation... 
-
-            HashSet<MarketRegime> regimes = ActiveRegimes.TryGetValue(ToEquity(underlying), out regimes)
-                ? regimes
-                : new HashSet<MarketRegime>();
-            if (IsWarmingUp || !regimes.Contains(MarketRegime.PreEarningsRelease) ||
-                !IsMyMarketOpen(symbolSubscribed) || !IsPreparingEarningsRelease(underlying) ||
-                !IsPastEarningsEntryStartTime(underlying)) return;
-
-            Equity equity = ToEquity(underlying);
-
-            if (!KalmanFiltersSSVI.ContainsKey(equity)) return;
-
-            // Build request
-            //int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
-            int requestNContracts =
-                RequestContractsHandlers.TryGetValue(underlying, out RequestContractsHandler handler)
-                    ? handler.GetContractsRequested()
-                    : 0;
-
-            RequestTargetPortfoliosPb requestTargetPortfolios = new()
+            try
             {
-                Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-                Underlying = underlying,
-                NContracts = requestNContracts,
-            };
-            requestTargetPortfolios.Holdings.Add(PortfolioOptionHoldings(underlying));
+                HashSet<MarketRegime> regimes = ActiveRegimes.TryGetValue(ToEquity(underlying), out regimes)
+                    ? regimes
+                    : new HashSet<MarketRegime>();
+                if (!force && (IsWarmingUp || !regimes.Contains(MarketRegime.PreEarningsRelease) ||
+                        !IsMyMarketOpen(symbolSubscribed) || !IsPreparingEarningsRelease(underlying) ||
+                        !IsPastEarningsEntryStartTime(underlying))) return;
 
-            HashSet<DateTime> scopedSlices = Securities.Values
-                .Where(k => k.Type == SecurityType.Option && Underlying(k.Symbol) == underlying).Select(k => (Option)k)
-                .Select(o => o.Expiry).ToHashSet();
-            requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying,
-                KalmanFiltersSSVI[equity].GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
-            requestTargetPortfolios.ScopedSymbols.AddRange(Securities.Keys
-                .Where(k => k.SecurityType == SecurityType.Option && Underlying(k) == underlying).Select(k => k.Value));
+                Equity equity = ToEquity(underlying);
 
-            // var startTime = SubtractBusinessDays(Time, 1);
+                if (!KalmanFiltersSSVI.ContainsKey(equity) && !force) return;
 
-            MarketDataSnapByUnderlyingPb snap = GetMarketDataSnapByUnderlying(underlying);
-            if (IsValidMarketDataSnap(snap))
-            {
-                requestTargetPortfolios.MarketDataSnaps.Add(snap);
+                // Build request
+                //int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
+                int requestNContracts =
+                    RequestContractsHandlers.TryGetValue(underlying, out RequestContractsHandler handler)
+                        ? handler.GetContractsRequested()
+                        : 0;
 
-                // Send request - response is handled in WsClient.ResponseReceived -> EventHandlers
-                Log($"{Time} FetchTargetPortfolios: {underlying}");
-
-                if (!LiveMode)
+                RequestTargetPortfoliosPb requestTargetPortfolios = new()
                 {
-                    wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                    _ = wsClient.SendMessageAsync(requestTargetPortfolios);
-                    Log($"{Time} RequestTargetPortfolios: BLOCKING THREAD until response received. Backtesting only");
-                    wsClient.WaitThread();
+                    Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
+                    Underlying = underlying,
+                    NContracts = requestNContracts,
+                };
+                requestTargetPortfolios.Holdings.Add(PortfolioOptionHoldings(underlying));
+
+                HashSet<DateTime> scopedSlices = Securities.Values
+                    .Where(k => k.Type == SecurityType.Option && Underlying(k.Symbol) == underlying).Select(k => (Option)k)
+                    .Select(o => o.Expiry).ToHashSet();
+                if (KalmanFiltersSSVI.ContainsKey(equity))
+                {
+                    requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying, KalmanFiltersSSVI[equity].GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
+                }
+                requestTargetPortfolios.ScopedSymbols.AddRange(Securities.Keys
+                    .Where(k => k.SecurityType == SecurityType.Option && Underlying(k) == underlying).Select(k => k.Value));
+
+                MarketDataSnapByUnderlyingPb snap = GetMarketDataSnapByUnderlying(underlying);
+                if (IsValidMarketDataSnap(snap) || force)  // Before market open use, no need for snap. Use yday's data.
+                {
+                    requestTargetPortfolios.MarketDataSnaps.Add(snap);
+
+                    // Send request - response is handled in WsClient.ResponseReceived -> EventHandlers
+                    Log($"{Time} FetchTargetPortfolios: {underlying}, force={force}");
+
+                    _ = rMQClient.SendMessageAsync(requestTargetPortfolios);
                 }
                 else
                 {
-                    _ = wsClient.SendMessageAsync(requestTargetPortfolios);
+                    Log(
+                        $"{Time} FetchTargetPortfolios: {underlying}, force={force}. No valid snap found. Not fetching target portfolios. Scheduling next try in 1min");
+                    Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(1)),
+                        () => RequestTargetPortfolios(underlying));
                 }
             }
-            else
+            catch (Exception e)
             {
-                Log(
-                    $"{Time} FetchTargetPortfolios: {underlying}. No valid snap found. Not fetching target portfolios. Scheduling next try in 1min");
-                Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(1)),
-                    () => RequestTargetPortfolios(underlying));
+                Error($"{Time} RequestTargetPortfolios: {underlying}. {e.Message}.");
             }
         }
 
@@ -1112,8 +1108,18 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 .Select(o => o.Expiry).ToHashSet();
             request.Params.AddRange(IVSSSVIParamsToPb(underlying,
                 KalmanFiltersSSVI[equity].GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
-            request.ScopedSymbols.AddRange(Securities.Keys
-                .Where(k => k.SecurityType == SecurityType.Option && Underlying(k) == underlying).Select(k => k.Value));
+
+            IEnumerable<string> scopedSymbols = TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> targetPortfolios)
+                ? targetPortfolios
+                    .SelectMany(p => p.Holdings.Values)
+                    .Select(h => h.Symbol)
+                    .Where(symbolString =>
+                        SymbolCache.TryGetSymbol(symbolString, out Symbol symbol)
+                        && symbol.SecurityType == SecurityType.Option
+                        && Underlying(symbol) == underlying)
+                    .Distinct()
+                : Enumerable.Empty<string>();
+            request.ScopedSymbols.AddRange(scopedSymbols);
 
             var snap = GetMarketDataSnapByUnderlying(underlying);
             if (IsValidMarketDataSnap(snap))
@@ -1123,17 +1129,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 // Send request - response is handled in WsClient.ResponseReceived -> EventHandlers
                 Log($"{Time} RequestPfRiskScenarios: {underlying}");
 
-                if (!LiveMode)
-                {
-                    wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                    _ = wsClient.SendMessageAsync(request);
-                    Log($"{Time} RequestPfRiskScenarios: BLOCKING THREAD until response received. Backtesting only");
-                    wsClient.WaitThread();
-                }
-                else
-                {
-                    _ = wsClient.SendMessageAsync(request);
-                }
+                _ = rMQClient.SendMessageAsync(request);
             }
             else
             {
@@ -1141,61 +1137,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     $"{Time} RequestPfRiskScenarios: {underlying}. No valid snap found. Not fetching target portfolios. Scheduling next try in 1min");
                 Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(1)),
                     () => RequestPfRiskScenarios(underlying));
-            }
-        }
-
-        public void TestFetchTargetPortfolios(Symbol underlying)
-        {
-            if (!IsPreparingEarningsRelease(underlying)) return;
-
-            // Build request
-            //int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
-            int requestNContracts =
-                RequestContractsHandlers.TryGetValue(underlying, out RequestContractsHandler handler)
-                    ? handler.GetContractsRequested()
-                    : 0;
-            RequestTargetPortfoliosPb requestTargetPortfolios = new()
-            {
-                Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-                Underlying = underlying,
-                NContracts = requestNContracts
-            };
-            requestTargetPortfolios.Holdings.Add(PortfolioOptionHoldings(underlying));
-
-            Equity equity = ToEquity(underlying);
-            HashSet<DateTime> scopedSlices = Securities.Values
-                .Where(k => k.Type == SecurityType.Option && Underlying(k.Symbol) == underlying).Select(k => (Option)k)
-                .Select(o => o.Expiry).ToHashSet();
-            requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying,
-                KalmanFiltersSSVI[equity].GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
-            requestTargetPortfolios.ScopedSymbols.AddRange(Securities.Keys
-                .Where(k => k.SecurityType == SecurityType.Option && Underlying(k) == underlying).Select(k => k.Value));
-
-            var startTime = SubtractBusinessDays(Time, 1);
-
-            var snap = GetMarketDataSnapByUnderlying(underlying, false);
-            if (IsValidMarketDataSnap(snap))
-            {
-                requestTargetPortfolios.MarketDataSnaps.Add(snap);
-
-                // Send request - response is handled in WsClient.ResponseReceived -> EventHandlers
-                Log($"{Time} TestFetchTargetPortfolios: {underlying}.");
-
-                if (!LiveMode)
-                {
-                    wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                    _ = wsClient.SendMessageAsync(requestTargetPortfolios);
-                    wsClient.WaitThread();
-                }
-                else
-                {
-                    _ = wsClient.SendMessageAsync(requestTargetPortfolios);
-                }
-            }
-            else
-            {
-                Log(
-                    $"{Time} TestFetchTargetPortfolios: {underlying}. No valid snap found. Not fetching target portfolios. Expecting to be populated with warmup data.");
             }
         }
 
@@ -1240,16 +1181,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             if (IsValidMarketDataSnap(snap))
             {
                 requestStressTestDs.MarketDataSnaps.Add(snap);
-                if (!LiveMode)
-                {
-                    wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                    _ = wsClient.SendMessageAsync(requestStressTestDs);
-                    wsClient.WaitThread();
-                }
-                else
-                {
-                    _ = wsClient.SendMessageAsync(requestStressTestDs);
-                }
+                _ = rMQClient.SendMessageAsync(requestStressTestDs);
             }
             else
             {
@@ -1358,16 +1290,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 MarketDataHistory = history
             };
 
-            if (!LiveMode)
-            {
-                wsClient.SetSemaphore(new SemaphoreSlim(0, 1));
-                _ = wsClient.SendMessageAsync(requestSsviCalibration);
-                wsClient.WaitThread();
-            }
-            else
-            {
-                _ = wsClient.SendMessageAsync(requestSsviCalibration);
-            }
+            _ = rMQClient.SendMessageAsync(requestSsviCalibration);
+
             LastSSVICalibrationRequestTime[underlying.Symbol] = Time;
             // Now I am storing all past market data in history. That's not too great for memory
             MarketDataQuotes[underlying.Symbol].Clear();
@@ -1376,9 +1300,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         private void OnResponseSSVICalibration(object source, ResponseSSVICalibrationEventArgs e)
         {
-            wsClient.ReleaseThread();
-
             Equity underlying = (Equity)Securities[e.ResponseSSVICalibration.Request.Underlying];
+            if (!KalmanFiltersSSVI.TryGetValue(underlying, out var kalmanFilter))
+            {
+                Log($"{Time} OnResponseSSVICalibration: {underlying} Kalman filter not found. Ignoring.");
+                return;
+            }
             SSVIParamsDictionary currentStateParams = KalmanFiltersSSVI[underlying].GetSSVIParams();
             SSVIParamsDictionary responseParams = new(e.ResponseSSVICalibration.Params.ToArray());
             KalmanFiltersSSVI[underlying].Update(currentStateParams.Update(responseParams).ToVector());
@@ -1436,7 +1363,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         {
             // When the risk scenario was requested, likely not delta neutral hedged. In order to filter for scenarios
             // that reduce the final absolute equity position, need to filter for those where requested equity position + hedge equity quantity is lower than current deltaTotalOptions.
-            wsClient.ReleaseThread();
+
             string underlyingStr = e.ResponsePfRiskScenarios.Underlying;
             Symbol underlying = Securities[underlyingStr].Symbol;
             float deltaTotalOptions = (float)(PfRisk.RiskByUnderlying(underlying, Metric.DeltaTotal) -
@@ -1496,9 +1423,14 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         public bool IsPastEarningsEntryStartTime(Symbol underlying)
         {
-            List<int> hourMin = CfgAlgo.EarningsEntryStartTime.TryGetValue(underlying.Value, out hourMin)
-                ? hourMin
-                : CfgAlgo.EarningsEntryStartTime[CfgDefault];
+            if (!CfgAlgo.EarningsEntryStartTime.TryGetValue(underlying.Value, out List<int> hourMin))
+            {
+                if (!CfgAlgo.EarningsEntryStartTime.TryGetValue(CfgDefault, out hourMin))
+                {
+                    Error($"{Time} IsPastEarningsEntryStartTime: No entry for '{underlying.Value}' or default '{CfgDefault}'");
+                    return false; // or true, depending on desired default behavior
+                }
+            }
             return Time.TimeOfDay >= new TimeSpan(hourMin[0], hourMin[1], 0);
         }
 
@@ -1536,8 +1468,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         public override void OnEndOfAlgorithm()
         {
             base.OnEndOfAlgorithm();
-            wsClient.StopHealthCheck();
-            wsClient.Dispose();
+            rMQClient.Dispose();
         }
     }
 }

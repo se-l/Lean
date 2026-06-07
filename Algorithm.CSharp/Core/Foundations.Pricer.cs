@@ -59,16 +59,47 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal priceSweep = (decimal)priceSweepRaw;
 
             decimal kfPrice = GetKalmanQuote(qr) ?? 0;
-            decimal price = TakeAggressivePrice(qr.OrderDirection, kfPrice, priceSweep);
+            decimal priceAggressive = TakeAggressivePrice(qr.OrderDirection, kfPrice, priceSweep);
+            decimal price = priceAggressive;
+
+            decimal bid = qr.Option.BidPrice;
+            decimal ask = qr.Option.AskPrice;
+            decimal spread = ask - bid;
+
+            decimal aggressiveCrossRatio = 0;
+            if (spread > 0)
+            {
+                aggressiveCrossRatio = qr.OrderDirection switch
+                {
+                    OrderDirection.Buy => (priceAggressive - bid) / spread,
+                    OrderDirection.Sell => (ask - priceAggressive) / spread,
+                    _ => 0
+                };
+            }
 
             if (IsPricerOverridePricesWithPresumedIvFillDefensively(qr.Underlying.Value))
             {
                 price = TakeDefensivePrice(qr.OrderDirection, PriceModelPresumedFill(qr) ?? price, price);
             }
 
+            decimal priceBeforeBboCap = price;
             price = LimitPriceToBBO(qr, price);
-            //price = BufferPriceCrossingSpread(qr, price);
-            //price = LimitMaxSpreadDiscount(qr, price);
+
+            decimal finalCrossRatio = 0;
+            if (spread > 0)
+            {
+                finalCrossRatio = qr.OrderDirection switch
+                {
+                    OrderDirection.Buy => (price - bid) / spread,
+                    OrderDirection.Sell => (ask - price) / spread,
+                    _ => 0
+                };
+            }
+
+            Log($"{Time} GetPricePreEarningsReleasePricerKalman(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, utility={qr.UtilityOrder.Utility:0.00}, sweepIV={iv:0.000}, sweepPrice={priceSweep:0.0000}, kfPrice={kfPrice:0.0000}, aggressivePrice={priceAggressive:0.0000}, preBboPrice={priceBeforeBboCap:0.0000}, finalPrice={price:0.0000}, bid={bid:0.0000}, ask={ask:0.0000}, spread={spread:0.0000}, aggressiveCrossRatio={aggressiveCrossRatio:0.000}, finalCrossRatio={finalCrossRatio:0.000}");
+            price = BufferPriceCrossingSpread(qr, price);
+            price = LimitPriceToBBO(qr, price);
+            // price = LimitMaxSpreadDiscount(qr, price);
 
             return price;
         }
@@ -86,8 +117,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return 0;
             }
             // Convert IV to a price
-            decimal price = (decimal)OptionContractWrap.E(this, qr.Option, Time.Date).NPV((double)iv, MidPrice(qr.Option.Underlying.Symbol));
-
+            double priceRaw = OptionContractWrap.E(this, qr.Option, Time.Date).NPV((double)iv, MidPrice(qr.Option.Underlying.Symbol));
+            if (!double.IsFinite(priceRaw))
+                return 0;
+            decimal price = (decimal)priceRaw;
             price = LimitPriceToBBO(qr, price);
 
             return price;
@@ -97,16 +130,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         private decimal GetPricePostEarningsReleasePricer(QuoteRequest<Option> qr)
         {
             double? iv = RiskScenarioHandler.SweepIv(qr.Option, qr.OrderDirection);
-            decimal priceSweep = (iv != 0 && iv != null) ? (decimal)OptionContractWrap.E(this, qr.Option, Time.Date).NPV((double)iv, MidPrice(qr.Option.Underlying.Symbol)) : 0;
+            double npvRaw = (iv != 0 && iv != null) ? OptionContractWrap.E(this, qr.Option, Time.Date).NPV((double)iv, MidPrice(qr.Option.Underlying.Symbol)) : 0;
+            decimal priceSweep = double.IsFinite(npvRaw) ? (decimal)npvRaw : 0;
             
             // Convert IV to a price
             decimal kfPrice = GetKalmanQuote(qr) ?? 0;
             
             decimal price = TakeAggressivePrice(qr.OrderDirection, priceSweep, kfPrice);
-            if (price == 0 || price == null)
-            {
-                var a = 1;
-            }
 
             price = LimitPriceToBBO(qr, price);
             //price = BufferPriceCrossingSpread(qr, price);

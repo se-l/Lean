@@ -37,8 +37,7 @@ message RequestSSVICalibrationPb {
 }
 
 message ResponseSSVICalibrationPb {
-
-  RequestSSVICalibrationPb request = 1;
-  repeated SSVIParamsPb params = 2;
-
+  string ts = 1;
+  RequestSSVICalibrationPb request = 2;
+  repeated SSVIParamsPb params = 3;
 }

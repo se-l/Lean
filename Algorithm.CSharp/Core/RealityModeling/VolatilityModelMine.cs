@@ -100,7 +100,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             {
                 SecurityExchangeHours securityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, security.Symbol, security.Type);
                 Func<DateTime, Security, DateTime> nextTradeDate = (DateTime date, Security security) => Time.EachTradeableDay(securityExchangeHours, date.AddDays(1), date.AddDays(10)).First();
-                _postEarningsReleaseDates[security] = _algo.EarningsBySymbol[security.Symbol].Select(x => nextTradeDate(x.Date, security));
+                var earnings = _algo.EarningsBySymbol.TryGetValue(security.Symbol, out var announcements)
+                    ? announcements
+                    : Array.Empty<EarningsAnnouncement>();
+                _postEarningsReleaseDates[security] = earnings.Select(x => nextTradeDate(x.Date, security));
             }
             return _postEarningsReleaseDates[security].Contains(time.Date);
         }
