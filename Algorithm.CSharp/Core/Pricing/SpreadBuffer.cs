@@ -66,6 +66,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public TimeSpan WaitingPeriod => TimeSpan.FromSeconds(_algo.Cfg.BufferIntraSpreadWaitingPeriodSeconds);
         public decimal RatioPriceSpreadCrossed(decimal price)
         {
+            if (Spread <= 0)
+            {
+                return 0m;
+            }
+
             return Direction switch
             {
                 OrderDirection.Buy => (price - Option.BidPrice) / Spread,
@@ -76,8 +81,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public double RatioIVSpreadCrossed(double priceIV) => Direction switch
         {
-            OrderDirection.Buy => (priceIV - AskIV) / SpreadIV,
-            OrderDirection.Sell => (BidIV - priceIV) / SpreadIV,
+            OrderDirection.Buy => SpreadIV > 0 ? (priceIV - AskIV) / SpreadIV : 0,
+            OrderDirection.Sell => SpreadIV > 0 ? (BidIV - priceIV) / SpreadIV : 0,
             _ => throw new ArgumentException($"Unknown order direction {Direction}")
         };
 
@@ -121,6 +126,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// <exception cref="ArgumentException"></exception>
         private bool TryUpdateWorstIV(double priceIV)
         {
+            if (SpreadIV <= 0 || !double.IsFinite(SpreadIV))
+            {
+                return false;
+            }
+
             if (
                 IsReadyToQuoteWorseIV &&
                 IsPriceIVCrossingTolerance(priceIV) && 
@@ -143,11 +153,25 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// </summary>
         public decimal BufferIntraSpreadQuote(decimal price)
         {   
+            if (Spread <= 0)
+            {
+                return price;
+            }
+
             decimal spot = _algo.MidPrice(Underlying(Option.Symbol));
             double priceIV = OCW.IV(price, Spot, OptionContractWrap.Accuracy);
 
-            //SetWorstIVToAtLeastNBBO();
-            SetWorstIVToMidIV();
+            if (!double.IsFinite(priceIV))
+            {
+                return price;
+            }
+
+            if (!double.IsFinite(BidIV) || !double.IsFinite(AskIV) || SpreadIV <= 0)
+            {
+                return price;
+            }
+
+            SetWorstIVToAtLeastNBBO();
 
             if (IsPriceIVCrossingTolerance(priceIV))
             {
@@ -162,6 +186,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 if (bufferedIV != priceIV)
                 {
                     decimal bufferedPrice = (decimal)OCW.NPV(bufferedIV, spot);
+
+                    if (!double.IsFinite((double)bufferedPrice))
+                    {
+                        return price;
+                    }
+
                     _algo.Log($"{_algo.Time} BufferIntraSpreadQuotes: {Direction} {Option.Symbol} - Restricted crossing more spread to bufferedIV={bufferedIV}, bufferedPrice={bufferedPrice}, priceIV={priceIV}, price={price}, bidIV={BidIV}, askIV={AskIV}, WorstIV={WorstIV}");
                     return bufferedPrice;
                 }

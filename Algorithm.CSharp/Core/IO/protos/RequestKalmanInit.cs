@@ -28,19 +28,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "aXRobS5DU2hhcnAuQ29yZS5JTxoMQ29tbW9uLnByb3RvGhxSZXF1ZXN0U1NW",
             "SUNhbGlicmF0aW9uLnByb3RvImMKE1JlcXVlc3RLYWxtYW5Jbml0UGISEgoK",
             "dW5kZXJseWluZxgBIAEoCRIWCg5kYXRlX2ZpdF9zdGFydBgCIAEoCRIUCgxk",
-            "YXRlX2ZpdF9lbmQYAyABKAkSCgoCdHMYBCABKAki/AEKFFJlc3BvbnNlS2Fs",
-            "bWFuSW5pdFBiEksKB3JlcXVlc3QYASABKAsyOi5RdWFudENvbm5lY3QuQWxn",
-            "b3JpdGhtLkNTaGFycC5Db3JlLklPLlJlcXVlc3RLYWxtYW5Jbml0UGISRwoK",
-            "aW5pdF9zdGF0ZRgCIAMoCzIzLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1No",
-            "YXJwLkNvcmUuSU8uU1NWSVBhcmFtc1BiEk4KD2luaXRfY292YXJpYW5jZRgD",
-            "IAMoCzI1LlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8u",
-            "VmVjdG9yRG91YmxlUGJCKKoCJVF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1No",
-            "YXJwLkNvcmUuSU9iBnByb3RvMw=="));
+            "YXRlX2ZpdF9lbmQYAyABKAkSCgoCdHMYBCABKAkiiAIKFFJlc3BvbnNlS2Fs",
+            "bWFuSW5pdFBiEgoKAnRzGAEgASgJEksKB3JlcXVlc3QYAiABKAsyOi5RdWFu",
+            "dENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlJlcXVlc3RLYWxt",
+            "YW5Jbml0UGISRwoKaW5pdF9zdGF0ZRgDIAMoCzIzLlF1YW50Q29ubmVjdC5B",
+            "bGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uU1NWSVBhcmFtc1BiEk4KD2luaXRf",
+            "Y292YXJpYW5jZRgEIAMoCzI1LlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1No",
+            "YXJwLkNvcmUuSU8uVmVjdG9yRG91YmxlUGJCKKoCJVF1YW50Q29ubmVjdC5B",
+            "bGdvcml0aG0uQ1NoYXJwLkNvcmUuSU9iBnByb3RvMw=="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInitPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInitPb.Parser, new[]{ "Underlying", "DateFitStart", "DateFitEnd", "Ts" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInitPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInitPb.Parser, new[]{ "Request", "InitState", "InitCovariance" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInitPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInitPb.Parser, new[]{ "Ts", "Request", "InitState", "InitCovariance" }, null, null, null, null)
           }));
     }
     #endregion
@@ -383,6 +383,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public ResponseKalmanInitPb(ResponseKalmanInitPb other) : this() {
+      ts_ = other.ts_;
       request_ = other.request_ != null ? other.request_.Clone() : null;
       initState_ = other.initState_.Clone();
       initCovariance_ = other.initCovariance_.Clone();
@@ -395,8 +396,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       return new ResponseKalmanInitPb(this);
     }
 
+    /// <summary>Field number for the "ts" field.</summary>
+    public const int TsFieldNumber = 1;
+    private string ts_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Ts {
+      get { return ts_; }
+      set {
+        ts_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     /// <summary>Field number for the "request" field.</summary>
-    public const int RequestFieldNumber = 1;
+    public const int RequestFieldNumber = 2;
     private global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInitPb request_;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -408,9 +421,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     }
 
     /// <summary>Field number for the "init_state" field.</summary>
-    public const int InitStateFieldNumber = 2;
+    public const int InitStateFieldNumber = 3;
     private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb> _repeated_initState_codec
-        = pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb.Parser);
+        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb.Parser);
     private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb> initState_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -419,9 +432,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     }
 
     /// <summary>Field number for the "init_covariance" field.</summary>
-    public const int InitCovarianceFieldNumber = 3;
+    public const int InitCovarianceFieldNumber = 4;
     private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.VectorDoublePb> _repeated_initCovariance_codec
-        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.VectorDoublePb.Parser);
+        = pb::FieldCodec.ForMessage(34, global::QuantConnect.Algorithm.CSharp.Core.IO.VectorDoublePb.Parser);
     private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.VectorDoublePb> initCovariance_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.VectorDoublePb>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -444,6 +457,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (ReferenceEquals(other, this)) {
         return true;
       }
+      if (Ts != other.Ts) return false;
       if (!object.Equals(Request, other.Request)) return false;
       if(!initState_.Equals(other.initState_)) return false;
       if(!initCovariance_.Equals(other.initCovariance_)) return false;
@@ -454,6 +468,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override int GetHashCode() {
       int hash = 1;
+      if (Ts.Length != 0) hash ^= Ts.GetHashCode();
       if (request_ != null) hash ^= Request.GetHashCode();
       hash ^= initState_.GetHashCode();
       hash ^= initCovariance_.GetHashCode();
@@ -475,8 +490,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       output.WriteRawMessage(this);
     #else
-      if (request_ != null) {
+      if (Ts.Length != 0) {
         output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (request_ != null) {
+        output.WriteRawTag(18);
         output.WriteMessage(Request);
       }
       initState_.WriteTo(output, _repeated_initState_codec);
@@ -491,8 +510,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
-      if (request_ != null) {
+      if (Ts.Length != 0) {
         output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (request_ != null) {
+        output.WriteRawTag(18);
         output.WriteMessage(Request);
       }
       initState_.WriteTo(ref output, _repeated_initState_codec);
@@ -507,6 +530,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public int CalculateSize() {
       int size = 0;
+      if (Ts.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Ts);
+      }
       if (request_ != null) {
         size += 1 + pb::CodedOutputStream.ComputeMessageSize(Request);
       }
@@ -523,6 +549,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     public void MergeFrom(ResponseKalmanInitPb other) {
       if (other == null) {
         return;
+      }
+      if (other.Ts.Length != 0) {
+        Ts = other.Ts;
       }
       if (other.request_ != null) {
         if (request_ == null) {
@@ -548,17 +577,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
           case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
             if (request_ == null) {
               Request = new global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInitPb();
             }
             input.ReadMessage(Request);
             break;
           }
-          case 18: {
+          case 26: {
             initState_.AddEntriesFrom(input, _repeated_initState_codec);
             break;
           }
-          case 26: {
+          case 34: {
             initCovariance_.AddEntriesFrom(input, _repeated_initCovariance_codec);
             break;
           }
@@ -578,17 +611,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
           case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
             if (request_ == null) {
               Request = new global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInitPb();
             }
             input.ReadMessage(Request);
             break;
           }
-          case 18: {
+          case 26: {
             initState_.AddEntriesFrom(ref input, _repeated_initState_codec);
             break;
           }
-          case 26: {
+          case 34: {
             initCovariance_.AddEntriesFrom(ref input, _repeated_initCovariance_codec);
             break;
           }

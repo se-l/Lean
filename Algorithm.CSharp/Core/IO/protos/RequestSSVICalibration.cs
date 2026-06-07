@@ -38,12 +38,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "GFJlcXVlc3RTU1ZJQ2FsaWJyYXRpb25QYhIKCgJ0cxgBIAEoCRISCgp1bmRl",
             "cmx5aW5nGAIgASgJElcKE21hcmtldF9kYXRhX2hpc3RvcnkYAyABKAsyOi5R",
             "dWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLk1hcmtldERh",
-            "dGFIaXN0b3J5UGIisgEKGVJlc3BvbnNlU1NWSUNhbGlicmF0aW9uUGISUAoH",
-            "cmVxdWVzdBgBIAEoCzI/LlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJw",
-            "LkNvcmUuSU8uUmVxdWVzdFNTVklDYWxpYnJhdGlvblBiEkMKBnBhcmFtcxgC",
-            "IAMoCzIzLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8u",
-            "U1NWSVBhcmFtc1BiQiiqAiVRdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFy",
-            "cC5Db3JlLklPYgZwcm90bzM="));
+            "dGFIaXN0b3J5UGIivgEKGVJlc3BvbnNlU1NWSUNhbGlicmF0aW9uUGISCgoC",
+            "dHMYASABKAkSUAoHcmVxdWVzdBgCIAEoCzI/LlF1YW50Q29ubmVjdC5BbGdv",
+            "cml0aG0uQ1NoYXJwLkNvcmUuSU8uUmVxdWVzdFNTVklDYWxpYnJhdGlvblBi",
+            "EkMKBnBhcmFtcxgDIAMoCzIzLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1No",
+            "YXJwLkNvcmUuSU8uU1NWSVBhcmFtc1BiQiiqAiVRdWFudENvbm5lY3QuQWxn",
+            "b3JpdGhtLkNTaGFycC5Db3JlLklPYgZwcm90bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
@@ -51,7 +51,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb), global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb.Parser, new[]{ "Underlying", "TenorDt", "ModelParams" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsByRightPb), global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsByRightPb.Parser, new[]{ "Underlying", "Right", "TenorDt", "ModelParams" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationPb.Parser, new[]{ "Ts", "Underlying", "MarketDataHistory" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseSSVICalibrationPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseSSVICalibrationPb.Parser, new[]{ "Request", "Params" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseSSVICalibrationPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseSSVICalibrationPb.Parser, new[]{ "Ts", "Request", "Params" }, null, null, null, null)
           }));
     }
     #endregion
@@ -1213,6 +1213,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public ResponseSSVICalibrationPb(ResponseSSVICalibrationPb other) : this() {
+      ts_ = other.ts_;
       request_ = other.request_ != null ? other.request_.Clone() : null;
       params_ = other.params_.Clone();
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
@@ -1224,8 +1225,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       return new ResponseSSVICalibrationPb(this);
     }
 
+    /// <summary>Field number for the "ts" field.</summary>
+    public const int TsFieldNumber = 1;
+    private string ts_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Ts {
+      get { return ts_; }
+      set {
+        ts_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     /// <summary>Field number for the "request" field.</summary>
-    public const int RequestFieldNumber = 1;
+    public const int RequestFieldNumber = 2;
     private global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationPb request_;
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -1237,9 +1250,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     }
 
     /// <summary>Field number for the "params" field.</summary>
-    public const int ParamsFieldNumber = 2;
+    public const int ParamsFieldNumber = 3;
     private static readonly pb::FieldCodec<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb> _repeated_params_codec
-        = pb::FieldCodec.ForMessage(18, global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb.Parser);
+        = pb::FieldCodec.ForMessage(26, global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb.Parser);
     private readonly pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb> params_ = new pbc::RepeatedField<global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb>();
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -1262,6 +1275,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (ReferenceEquals(other, this)) {
         return true;
       }
+      if (Ts != other.Ts) return false;
       if (!object.Equals(Request, other.Request)) return false;
       if(!params_.Equals(other.params_)) return false;
       return Equals(_unknownFields, other._unknownFields);
@@ -1271,6 +1285,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override int GetHashCode() {
       int hash = 1;
+      if (Ts.Length != 0) hash ^= Ts.GetHashCode();
       if (request_ != null) hash ^= Request.GetHashCode();
       hash ^= params_.GetHashCode();
       if (_unknownFields != null) {
@@ -1291,8 +1306,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       output.WriteRawMessage(this);
     #else
-      if (request_ != null) {
+      if (Ts.Length != 0) {
         output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (request_ != null) {
+        output.WriteRawTag(18);
         output.WriteMessage(Request);
       }
       params_.WriteTo(output, _repeated_params_codec);
@@ -1306,8 +1325,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
-      if (request_ != null) {
+      if (Ts.Length != 0) {
         output.WriteRawTag(10);
+        output.WriteString(Ts);
+      }
+      if (request_ != null) {
+        output.WriteRawTag(18);
         output.WriteMessage(Request);
       }
       params_.WriteTo(ref output, _repeated_params_codec);
@@ -1321,6 +1344,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public int CalculateSize() {
       int size = 0;
+      if (Ts.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Ts);
+      }
       if (request_ != null) {
         size += 1 + pb::CodedOutputStream.ComputeMessageSize(Request);
       }
@@ -1336,6 +1362,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     public void MergeFrom(ResponseSSVICalibrationPb other) {
       if (other == null) {
         return;
+      }
+      if (other.Ts.Length != 0) {
+        Ts = other.Ts;
       }
       if (other.request_ != null) {
         if (request_ == null) {
@@ -1360,13 +1389,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
           case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
             if (request_ == null) {
               Request = new global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationPb();
             }
             input.ReadMessage(Request);
             break;
           }
-          case 18: {
+          case 26: {
             params_.AddEntriesFrom(input, _repeated_params_codec);
             break;
           }
@@ -1386,13 +1419,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
           case 10: {
+            Ts = input.ReadString();
+            break;
+          }
+          case 18: {
             if (request_ == null) {
               Request = new global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationPb();
             }
             input.ReadMessage(Request);
             break;
           }
-          case 18: {
+          case 26: {
             params_.AddEntriesFrom(ref input, _repeated_params_codec);
             break;
           }

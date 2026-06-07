@@ -32,6 +32,6 @@ message ResponsePfRiskScenariosPb {
 
   string ts = 1;
   string underlying = 2;  
-  repeated PfRiskScenarioPb pf_risk_scenarios = 3;  
+  repeated PfRiskScenarioPb pf_risk_scenarios = 3;
 }
 

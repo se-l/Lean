@@ -218,6 +218,7 @@
     "_": 1
   },
   "BacktestingBrokerageLatency": 2,
+  "BacktestNearRealtimePacingEnabled": true,
   "MinHistoryDaysUnderlyingForScoping": 2,
   "MaxDelta100BpUSDSignalQuantity": {
     "_": 150
@@ -251,7 +252,7 @@
         "End": "14:00",
         "NRemaining": 3,
         "Increment": 10,
-        "NMaximum": 100
+        "NMaximum": 20
       },
       {
         "StartDaysOffset": 0,
@@ -260,7 +261,7 @@
         "End": "15:30",
         "NRemaining": 2,
         "Increment": 5,
-        "NMaximum": 100
+        "NMaximum": 20
       },
       {
         "StartDaysOffset": 0,
@@ -269,7 +270,7 @@
         "End": "",
         "NRemaining": 0,
         "Increment": 0,
-        "NMaximum": 100
+        "NMaximum": 20
       }
     ]
   },

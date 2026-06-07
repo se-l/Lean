@@ -31,7 +31,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
     public partial class Foundations : QCAlgorithm
     {
         public SecurityInitializerMine securityInitializer;
-        public readonly JuliaPricingClient julia = new();
+        public JuliaPricingClient julia;
         internal Resolution resolution;
         public Dictionary<Symbol, QuoteBarConsolidator> QuoteBarConsolidators = new();
         public Dictionary<Symbol, TradeBarConsolidator> TradeBarConsolidators = new();
@@ -45,6 +45,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public MMWindow mmWindow;
         public Symbol symbolSubscribed;
         public Dictionary<Symbol, SecurityCache> PriceCache = new();
+
+        public virtual bool HasActiveRequests() => false;
+        public virtual (DateTime? algoTime, DateTime systemTime) GetActiveRequestTiming() => (null, default);
         public SecurityExchangeHours SecurityExchangeHours;
         private DateTime endOfDay;
 
@@ -123,7 +126,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         protected readonly ConcurrentDictionary<Symbol, List<TargetPortfolioPb>> TargetPortfolios = new();
         protected IUtilityOrderFactory UtilityOrderFactory;
         public Dictionary<Symbol, double> LastDeltaAcrossDsOptionsOnly = new();
-        public readonly ConcurrentDictionary<Core.Holding, double> MarginalUtility = new();
+        public readonly ConcurrentDictionary<Holding, double> MarginalUtility = new();
         //public ConcurrentDictionary<Symbol, ConcurrentDictionary<OrderDirection, Sweep>> SweepState = new();
         public Dictionary<OrderDirection, ConcurrentDictionary<Symbol, SpreadBuffer>> SpreadBuffers = new() { { OrderDirection.Buy, new() }, { OrderDirection.Sell, new() } };
         public Dictionary<Equity, KalmanFilter<SSVIParamsDictionary>> KalmanFiltersSSVI = new();
@@ -137,6 +140,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, Func<QuoteRequest<Option>, decimal>> PricingStrategy = new();
         
         public TaskHandler TaskHandler = new();
+        private DateTime _lastOnDataLagWarningUtc = DateTime.MinValue;
         
         public DateTime TimeWarmupFinished = DateTime.MaxValue;
 
@@ -316,6 +320,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public void AppendQuoteToMarketsDataSnap(object sender, NewBidAskEventArgs e)
         {
             Security security = Securities[e.Symbol];
+            Symbol underlying = security.Type == SecurityType.Option ? ((Option)security).Underlying.Symbol : security.Symbol;
+            if (!Cfg.Ticker.Contains(underlying.Value))
+            {
+                return;
+            }
+
             QuotePb quote = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
@@ -325,12 +335,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Ask = (float)security.AskPrice,
                 PriceUnderlying = (float)(security.Type == SecurityType.Option ? ((Option)security).Underlying.Price : 0),
             };
-            MarketDataQuotes[e.Symbol].Add(quote);
+            if (MarketDataQuotes.TryGetValue(e.Symbol, out List<QuotePb> quotes))
+            {
+                quotes.Add(quote);
+            }
         }
 
         public void AppendTradeToMarketsDataSnap(object sender, NewTradeEventArgs e)
         {
             Security security = Securities[e.Symbol];
+            Symbol underlying = security.Type == SecurityType.Option ? ((Option)security).Underlying.Symbol : security.Symbol;
+            if (!Cfg.Ticker.Contains(underlying.Value))
+            {
+                return;
+            }
+
             TradePb trade = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
@@ -339,7 +358,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Price = (float)security.Price,
                 PriceUnderlying = (float)(security.Type == SecurityType.Option ? ((Option)security).Underlying.Price : 0),
             };
-            MarketDataTrades[e.Symbol].Add(trade);
+            if (MarketDataTrades.TryGetValue(e.Symbol, out List<TradePb> trades))
+            {
+                trades.Add(trade);
+            }
         }
 
         public DateTime GetCurrentMarketOpen(Symbol symbol)
@@ -376,6 +398,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
             NextMarketClose.Clear();
             Log($"{Time} ClearNextMarketOpenClose");
         }
+        
+        void WarnIfProcessedMarketDataIsLagging(Slice slice)
+        {
+            if (!LiveMode) return;
+
+            var lag = DateTime.UtcNow - slice.UtcTime;
+            if (lag <= TimeSpan.FromSeconds(5)) return;
+
+            if (_lastOnDataLagWarningUtc != DateTime.MinValue && DateTime.UtcNow - _lastOnDataLagWarningUtc < TimeSpan.FromSeconds(30)) return;
+            _lastOnDataLagWarningUtc = DateTime.UtcNow;
+
+            QuickLog(new Dictionary<string, string>
+            {
+                { "topic", "DATA" },
+                { "msg", $"Processed market data is lagging by {lag.TotalSeconds:F1}s. SliceTime={slice.Time:O}, SliceUtcTime={slice.UtcTime:O}, NowUtc={DateTime.UtcNow:O}" }
+            });
+        }
 
         /// <summary>
         /// The algorithm manager calls events in the following order:
@@ -386,7 +425,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public override void OnData(Slice slice)
         {
             if (IsWarmingUp) return;
-            
+            PaceBacktestNearRealtime();
             // Feed pre-calculated IVs from disk into IvBid/Ask indicators (backtest only),
             // bypassing the Julia pricer call that would otherwise be triggered by the consolidator.
             if (!LiveMode)
@@ -410,9 +449,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }
                 }
             }
+            
+            WarnIfProcessedMarketDataIsLagging(slice);
 
             foreach (Symbol symbol in slice.QuoteBars.Keys)
             {
+                if (!Cfg.Ticker.Contains(Underlying(symbol).Value))
+                {
+                    continue;
+                }
                 if (IsEventNewQuote(symbol)) // also called in Consolidator. Should cache result at timestamp, update PriceCache and read here from cache.
                 {
                     Publish(new NewBidAskEventArgs(symbol));
@@ -429,10 +474,29 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             foreach (Symbol underlying in equities)
             {
-                if (SignalsLastRun[underlying] < Time - TimeSpan.FromMinutes(30)) RunSignals(underlying);
+                if (SignalsLastRun[underlying] < Time - TimeSpan.FromMinutes(5)) RunSignals(underlying);
             }
 
             TaskHandler.RunTasks();
+        }
+
+        public void PaceBacktestNearRealtime()
+        {
+            if (!LiveMode && Cfg.BacktestNearRealtimePacingEnabled && HasActiveRequests())
+            {
+                var timing = GetActiveRequestTiming();
+                if (timing.algoTime.HasValue)
+                {
+                    var elapsedSystemTime = DateTime.UtcNow - timing.systemTime;
+                    var targetAlgoTime = timing.algoTime.Value + elapsedSystemTime;
+                    if (targetAlgoTime < Time)
+                    {
+                        var wait = Time - targetAlgoTime;
+                        Log($"Pacing backtest near realtime: waiting {wait.TotalMilliseconds}ms until {targetAlgoTime}");
+                        System.Threading.Thread.Sleep(wait);
+                    }
+                }
+            }
         }
 
         public void CancelOptionTicketsWithSameDeltaSign(Symbol symbol)
@@ -536,7 +600,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             List<Symbol> subscribedSymbols = new();
             foreach (var symbol in contractSymbols)
             {
-                if (Securities.ContainsKey(symbol) && Securities[symbol].IsTradable) continue;  // already subscribed
+                if (Securities.ContainsKey(symbol)) continue;  // already subscribed
 
                 Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
 
@@ -665,10 +729,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return;
             }
             
-            Positions.Values.Where(p => p.Quantity != 0).DoForEach(p => Snap(p.Symbol));
+            Positions.Values.Where(p => p.Quantity != 0 && Cfg.Ticker.Contains(Underlying(p.Symbol).Value)).DoForEach(p => Snap(p.Symbol));
             foreach (PositionWriter writer in PositionWriters.Values)
             {
-                writer.WriteCsvRows(Positions.Values.Where(p => p.Quantity != 0));
+                writer.WriteCsvRows(Positions.Values.Where(p => p.Quantity != 0 && Cfg.Ticker.Contains(Underlying(p.Symbol).Value)));
             }
         }
 
@@ -775,7 +839,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             Option option = (Option)Securities[symbol];
             Equity equity = (Equity)option.Underlying;
-            return IvSurfaceSsviMid[equity].IV(option);
+            if (!IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface ivSurface) || ivSurface is not IVSurfaceSSVI ssviSurface || !ssviSurface.IsCalibrated || !ssviSurface.HasParams(option))
+            {
+                return MidIV(symbol, defaultSpread);
+            }
+
+            return ssviSurface.IV(option);
         }
 
         public Equity ToEquity(Symbol underlying) => (Equity)Securities[underlying];
@@ -1457,7 +1526,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 decimal spot = MidPrice(underlying);
                 int direction = DIRECTION2NUM[orderDirection];
-                double delta = direction * OptionContractWrap.E(this, (Option)Securities[symbol], Time.Date).Delta(MidIV(symbol), spot);
+                double iv = MidIV(symbol);
+                if (!double.IsFinite(iv))
+                {
+                    Log($"{Time} IfFilledDecreasesEquityHedgeOrderSize: {symbol} MidIV is NaN/Inf. Defaulting to true.");
+                    return true;
+                }
+                double delta = direction * OptionContractWrap.E(this, (Option)Securities[symbol], Time.Date).Delta(iv, spot);
+                if (!double.IsFinite(delta))
+                {
+                    Log($"{Time} IfFilledDecreasesEquityHedgeOrderSize: {symbol} Delta is NaN/Inf. Defaulting to true.");
+                    return true;
+                }
 
                 double pfDeltaTotal = (double)DeltaMV(underlying);
 
@@ -1527,7 +1607,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 ((Time.TimeOfDay < mmWindow.Start || Time.TimeOfDay > mmWindow.End) && symbol.SecurityType == SecurityType.Option)  // Delta hedging with Equity anytime.
                 )
             {
-                QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"Not time to trade yet." } });
+                QuickLog(new Dictionary<string, string> { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"Not time to trade yet." } });
                 return false;
             }
 
@@ -1539,13 +1619,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     // Assigning fairly negative utility to this inventory increase.
                     if (ticket.Quantity * quantity >= 0)
                     {
-                        QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"{symbol}. Already have an order ticket with same sign: LeanID={ticket.OrderId}. Status: {ticket.Status}. For now only want 1 order. Not processing" } });
+                        QuickLog(new Dictionary<string, string> { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"{symbol}. Already have an order ticket with same sign: LeanID={ticket.OrderId}. Status: {ticket.Status}. For now only want 1 order. Not processing" } });
                         return false;
                     }
 
                     if (ticket.Quantity * quantity <= 0)
                     {
-                        QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"IsOrderValid. {symbol}. IB does not allow opposite-side simultaneous order: LeanID={ticket.OrderId}. Status: {ticket.Status} Not processing..." } });
+                        QuickLog(new Dictionary<string, string> { { "topic", "EXECUTION.IsOrderValid" }, { "msg", $"IsOrderValid. {symbol}. IB does not allow opposite-side simultaneous order: LeanID={ticket.OrderId}. Status: {ticket.Status} Not processing..." } });
                         return false;
                     }
                 }
@@ -1559,27 +1639,29 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (symbol.SecurityType == SecurityType.Option && !ContractScopedForSubscription(symbol) && Portfolio[symbol].Quantity == 0)
             {
-                QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION" }, { "msg", $"contract {symbol} is not in scope. Not trading..." } });
+                QuickLog(new Dictionary<string, string> { { "topic", "EXECUTION" }, { "msg", $"contract {symbol} is not in scope. Not trading..." } });
                 RemoveUniverseSecurity(Securities[symbol]);
                 return false;
             }
 
             if (Transactions.CancelRequestsUnprocessed.Count() >= Cfg.MinCancelRequestsUnprocessedBlockingSubmit && symbol.SecurityType != SecurityType.Equity)
             {
-                QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION" }, { "msg", $"CancelRequests awaiting processing {Transactions.CancelRequestsUnprocessed.Count()}. Not submitting..." } });
+                QuickLog(new Dictionary<string, string> { { "topic", "EXECUTION" }, { "msg", $"CancelRequests awaiting processing {Transactions.CancelRequestsUnprocessed.Count()}. Not submitting..." } });
                 return false;
             }
 
             if (Transactions.SubmitRequestsUnprocessed.Count() >= Cfg.MinSubmitRequestsUnprocessedBlockingSubmit && symbol.SecurityType != SecurityType.Equity)
             {
-                QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION" }, { "msg", $"SubmitRequest awaiting processing {Transactions.SubmitRequestsUnprocessed.Count()}. Not submitting..." } });
+                QuickLog(new Dictionary<string, string> { { "topic", "EXECUTION" }, { "msg", $"SubmitRequest awaiting processing {Transactions.SubmitRequestsUnprocessed.Count()}. Not submitting..." } });
                 return false;
             }
 
             // Protect against ordering on stale data. Especially dangerous when restarting the algo.
             if (IsPriceStale(symbol))
             {
-                QuickLog(new Dictionary<string, string>() { { "topic", "EXECUTION" }, { "msg", $"Price is stale. Not trading..." } });
+                var cache = Securities[symbol].Cache;
+                var lastUpdated = cache.LastQuoteBarUpdate > cache.LastOHLCUpdate ? cache.LastQuoteBarUpdate : cache.LastOHLCUpdate;
+                QuickLog(new Dictionary<string, string> { { "topic", "EXECUTION" }, { "msg", $"Price is stale. Not trading... Symbol={symbol}, LastUpdated={lastUpdated:O}" } });
                 return false;
             }
 
@@ -1714,8 +1796,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     throw new NotImplementedException($"OrderType {orderType} not implemented");
             }
 
-            //SweepState[contract.Symbol][Num2Direction(orderTicket.Quantity)].ContinueSweep();
-
             LogOrderTicket(orderTicket);
             StoreOrderTicket(orderTicket, quote, signal.UtilityOrder);
             return orderTicket;
@@ -1843,6 +1923,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 //{
                 //    Log($"{Time} UpdateLimitPriceContract {option} ticket={ticket}, OrderStatus={ticket.Status} - Should not run this function for this ticket. Cleanup orderTickets.");
                 //}
+                // Log($"{Time} UpdateLimitPriceContract {option} ticket={ticket}, OrderStatus={ticket.Status}. No action taken.");
             }
         }
 

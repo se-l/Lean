@@ -56,7 +56,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             MnyFwd     = 0x0D
         }
 
-        public JuliaPricingClient(string endpoint = "tcp://127.0.0.1:5555")
+        public JuliaPricingClient(string endpoint)
         // public JuliaPricingClient(string endpoint = "ipc:///tmp/julia_pricer")
         {
             _socket = new RequestSocket();

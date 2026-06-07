@@ -63,7 +63,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var dailyVolume = _algo.History<TradeBar>(security.Symbol, _algo.Periods(Resolution.Daily, days: 7), Resolution.Daily, fillForward: false).Select(bar => bar.Volume);
                 decimal meanDailyVolume = dailyVolume.Any() ? dailyVolume.Average() : 0;
                 _algo.Log($"SecurityInitializer.Initialize FillModelVolumeWeighted: {symbol} MeanDailyVolume={meanDailyVolume}.");
-                security.SetFillModel(new FillModelVolumeWeighted(meanDailyVolume, 100, 4));
+                security.SetFillModel(new FillModelVolumeWeighted(meanDailyVolume, 100, 2.0, new StaticLiquiditySurface()));
             }
             else if(!_algo.LiveMode)
             {
@@ -98,12 +98,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 security.VolatilityModel = new VolatilityModelMine(_algo, security, periods: totalRollingPeriods, _algo.resolution, TimeSpan.FromSeconds(samplePeriods));
                 int samples = 0;
                 int historyPeriods = _algo.Periods(days: VolatilityPeriodDays + 2);
+                // foreach (var tradeBar in _algo.History(symbol, _algo.Time.AddDays(-(VolatilityPeriodDays + 2)), _algo.Time, _algo.resolution))
                 foreach (var tradeBar in _algo.HistoryWrap(symbol, historyPeriods, _algo.resolution))
                 {
                     security.VolatilityModel.Update(security, tradeBar);
                     samples++;
                 }
                 _algo.Log($"SecurityInitializer.Initialized VolatilityModel: {symbol} Resolution={_algo.resolution}, Periods={totalRollingPeriods}, historySamples={samples}.");
+                
+                if (samples == 0)
+                {
+                    _algo.Log($"SecurityInitializer.Initialize: {symbol} No history found. Skipping indicator and writer initialization.");
+                    return;
+                }
 
                 // Initialize a Security Specific Hedge Band or Risk Limit object. Constitutes underlying, hence risk limit not just by security but also its derivatives.
                 // Adjust delta by underlying's volatility.

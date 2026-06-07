@@ -329,7 +329,7 @@ namespace QuantConnect.ToolBox.Polygon
                             var dataTimeZone = marketHoursDatabase.GetDataTimeZone(market, request.Symbol, securityType);
 
                             // Download the data
-                            var startUtc = request.Date.Date.Add(TimeSpan.FromHours(-4)).ConvertToUtc(exchangeTimeZone);
+                            var startUtc = request.Date.Date.Add(TimeSpan.FromHours(0)).ConvertToUtc(exchangeTimeZone);
                             var endUtc = request.Date.Date.Add(TimeSpan.FromHours(20)).ConvertToUtc(exchangeTimeZone);
                             var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, startUtc, endUtc, request.TickType))
                                 .Select(x =>

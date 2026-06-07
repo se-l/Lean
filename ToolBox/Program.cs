@@ -101,10 +101,6 @@ namespace QuantConnect.ToolBox
                             nClients,
                             flushInterval);
                         break;
-                    case "ive":
-                        int nThreads = int.Parse(optionsObject.TryGetValue("n-clients", out var nThreadsObject) ? nThreadsObject.ToString() : "16");
-                        new VolatilityExporter().Run(tickers, fromDate, toDate, nThreads: nThreads, skipExisting: false);
-                        break;
 
                     default:
                         PrintMessageAndExit(1, "ERROR: Unrecognized --app value");

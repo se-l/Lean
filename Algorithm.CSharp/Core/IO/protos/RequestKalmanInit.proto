@@ -18,8 +18,8 @@ message RequestKalmanInitPb {
 
 message ResponseKalmanInitPb {
 
-  RequestKalmanInitPb request = 1;  
-  repeated SSVIParamsPb init_state = 2;
-  repeated VectorDoublePb init_covariance = 3;
-
+  string ts = 1;
+  RequestKalmanInitPb request = 2;  
+  repeated SSVIParamsPb init_state = 3;
+  repeated VectorDoublePb init_covariance = 4;
 }
