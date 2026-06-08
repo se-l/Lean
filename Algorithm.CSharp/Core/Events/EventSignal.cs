@@ -5,11 +5,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Events
 {
     public class Signal
     {
-        public Symbol Symbol { get; internal set; }
-        public OrderDirection OrderDirection { get; internal set; }
-        public IUtilityOrder UtilityOrder { get; internal set; }
+        public Symbol Symbol { get; }
+        public OrderDirection OrderDirection { get; }
+        public IUtilityOrder UtilityOrder { get; }
         public string OcaGroup { get; internal set; }
-        public int OcaType { get; internal set; }
+        public int OcaType { get; }
 
         public Signal(Symbol symbol, OrderDirection orderDirection, IUtilityOrder utilityOrder, string ocaGroup = "", int ocaType = 3)
         {

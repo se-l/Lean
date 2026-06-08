@@ -1,13 +1,25 @@
 {
-  "StartDate": "2024-06-24",
-  "EndDate": "2024-06-24",
-  "Ticker": [ "FDX" ],
+  "StartDate": "2024-07-10",
+  "EndDate": "2024-07-11",
+  "Ticker": [ "DAL" ],
   "LiquidateTicker": [],
   "SkipRunSignals": {
     "_": false
   },
   "ExecuteManualOrderInstructions": true,
   "BacktestingHoldings": {
+//    "DAL": -3,
+//    "DAL   240920P00039000": -1,
+//    "DAL   240920P00040000": -1,
+//    "DAL   240712C00043000": 1,
+//    "DAL   250117P00050000": 1,
+//    "DAL   240712P00050000": 1,
+//    "DAL   250620C00052500": -1,
+//    "DAL   240712P00051000": 1,
+//    "DAL   240719P00050000": -1,
+//    "DAL   240719P00052500": -2,
+//    "DAL   240719C00046500": -1,
+//    "DAL   240719C00048000": -1
   },
   "LogOrderUpdates": true,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
@@ -16,20 +28,13 @@
 
   /// Scoping Contracts for data feed subscription
   "ScopeContractStrikeOverUnderlyingMax": 1.35,
-  "ScopeContractStrikeOverUnderlyingMaxSignal": 1.25,
   "ScopeContractStrikeOverUnderlyingMin": 0.65,
-  "ScopeContractStrikeOverUnderlyingMinSignal": 0.75,
   "ScopeContractStrikeOverUnderlyingMargin": 0.05,
-  "ScopeContractMoneynessITM": 1.05, // Replace with delta
   "ScopeContractMinDTE": 0,
   "ScopeContractMaxDTE": 730,
   "ScopeContractIsLiquidDays": 5,
   ///
-
-  "IVSurfaceRelativeStrikeAlpha": {
-    "_": 0.05
-  },
-  "PutCallRatioWarmUpDays": 0,
+  
   "PutCallRatioTargetRisks": {
     "PFE": [
       {
@@ -50,27 +55,12 @@
   "IntradayIVSlopeTrendingRange": {
     "_": [ 0.02, -0.02 ]
   },
-
-  /// Whole earnigns announcement pending deletion. To be moved into more jump vola utils or more general term structure arb utils.
-  "DaysBeforeConsideringEarningsAnnouncement": {
-    "_": 7
-  },
-  "IVSpreadIndicatorWindowSec": {
-    "_": 3600
-  },
-  "EarningsAnnouncementUtilityMinAtmIVElevation": {
-    "_": 1.15
-  },
-  "EarningsAnnouncementUtilityMinDTE": {
-    "_": 7
-  },
   "UpcomingEventLongIV": { // To be deleted and inferred from utils.
     "_": false
   },
   "UpcomingEventCalendarSpreadStartDaysPrior": { // To be deleted and inferred from utils.
     "_": 2
   },
-  "CalendarSpreadPeriodDays": 10, // To be deleted and inferred from utils.
   ///
 
   /// Gamma scalping
@@ -91,9 +81,6 @@
   },
   "TargetMarginAsFractionOfNLV": {
     "_": 0.5
-  },
-  "SignalQuantityFraction": {
-    "_": 2
   },
   "MinSubmitRequestsUnprocessedBlockingSubmit": 5,
   "MinCancelRequestsUnprocessedBlockingSubmit": 3,
@@ -145,23 +132,8 @@
     "_": 0.1
   },
   "MinUtility": {
-    "_": 10
-  },
-  "SlopeNeg": {
-    "_": -0.005
-  },
-  "SlopePos": {
-    "_": -0.002
-  },
-  "ZeroSDUtil": {
-    "_": 30
-  },
-  "UtilBidTaperer": {
-    "_": 0.002
-  },
-  "MaxSpreadDiscount": {
-    "_": 0.3
-  },
+    "_": 0
+  },  
   "DiscountParams": {
     "_-Absolute-discount-params": {
       "TargetRisk": 0,
@@ -174,28 +146,64 @@
   },
   "LimitOrderUpdateBeforeMarketOrderConversion": 2,
   "MaxSpreadForMarketOrderHedging": 0.02,
-  ///
-  "SweepLongSchedule": {
+  /// Refactor into using string datetimes, duration in seconds. days offset gets replaced by marketregime.
+  "SweepSchedules": {
     "_": [
-      // Before Release
-      [ 0, 12, 16, 60 ],
-
-      // After release
-      [ 1, 14, 16, 60 ],
-      [ 2, 9, 16, 60 ]
+      // Before Release. Start longing more aggressively around noon. Then short more aggressively before close.
+      {
+        "MarketRegime": "PreEarningsRelease",
+        "Start": "09:00",
+        "End": "11:00",
+        "Duration": "00:30",
+        "Direction": "Buy"
+      },
+      {
+        "MarketRegime": "PreEarningsRelease",
+        "Start": "09:00",
+        "End": "11:00",
+        "Duration": "00:30",
+        "Direction": "Sell"
+      },
+      {
+        "MarketRegime": "PreEarningsReleaseBeforeMarketClose",
+        "Start": "11:00",
+        "End": "16:00",
+        "Duration": "00:05",
+        "Direction": "Buy"
+      },
+      {
+        "MarketRegime": "PreEarningsReleaseBeforeMarketClose",
+        "Start": "11:00",
+        "End": "16:00",
+        "Duration": "00:05",
+        "Direction": "Sell"
+      },
+      // After release. Short aggressively SOD.
+      {
+        "MarketRegime": "PostEarningsRelease",
+        "Start": "14:00",
+        "End": "16:00",
+        "Duration": "00:15",
+        "Direction": "Buy"
+      },
+      {
+        "MarketRegime": "PostEarningsRelease",
+        "Start": "09:00",
+        "End": "11:00",
+        "Duration": "00:15",
+        "Direction": "Sell"
+      },
+      {
+        "MarketRegime": "PostEarningsRelease",
+        "Start": "11:00",
+        "End": "16:00",
+        "Duration": "00:15",
+        "Direction": "Sell"
+      }
     ]
   },
-  "SweepShortSchedule": {
-    "_": [
-      // Before release
-      [ 0, 15, 16, 30 ],
-
-      // After release
-      [ 1, 9, 10, 30 ],
-      [ 1, 10, 11, 40 ],
-      [ 1, 11, 16, 60 ],
-      [ 2, 9, 16, 60 ]
-    ]
+  "SweepWorstIVUtilityBump": {
+    "_": 20
   },
   "KalmanScopedMoneyness": {
     "_": [ 0.8, 1.2 ]
@@ -210,27 +218,27 @@
     "_": 1
   },
   "BacktestingBrokerageLatency": 2,
-  "MinHistoryDaysUnderlyingForScoping": 7,
+  "BacktestNearRealtimePacingEnabled": true,
+  "MinHistoryDaysUnderlyingForScoping": 2,
   "MaxDelta100BpUSDSignalQuantity": {
     "_": 150
   },
-  "UseKalmanFilterAfterEarningsRelease": true,
   "UseKalmanFilterBeforeEarningsRelease": true,
-  "PricerOverridePricesWithPresumedIVFillDefensively": { "_": true },
+  "PricerOverridePricesWithPresumedIvFillDefensively": { "_": false },
+  "TimeRangeReduceAbsDeltaPosition": {
+    "_": {
+      "Start": "11:00",
+      "End": "23:59"
+    }
+  },
   "TimeStartKfBeforeRelease": {
     "_": "09:30"
   },
-  "TimeStartKfAfterRelease": {
-    "_": "09:40"
-  },
   "EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy": {
-    "_": "12:00"
+    "_": "10:00"
   },
   "EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell": {
-    "_": "09:40"
-  },
-  "HedgeToAcrossDsAfterTime": {
-    "_": "15:45"
+    "_": "10:00"
   },
   "BufferIntraSpreadRatioSpreadThreshold": 0.05,
   "BufferIntraSpreadWaitingPeriodSeconds": 15,
@@ -241,25 +249,28 @@
         "StartDaysOffset": 0,
         "Start": "",
         "EndDaysOffset": 0,
-        "End": "11:00",
+        "End": "14:00",
         "NRemaining": 3,
-        "Increment": 10
+        "Increment": 10,
+        "NMaximum": 20
       },
       {
         "StartDaysOffset": 0,
-        "Start": "11:00",
+        "Start": "14:00",
         "EndDaysOffset": 0,
-        "End": "15:00",
+        "End": "15:30",
         "NRemaining": 2,
-        "Increment": 5
+        "Increment": 5,
+        "NMaximum": 20
       },
       {
         "StartDaysOffset": 0,
-        "Start": "15:00",
+        "Start": "15:30",
         "EndDaysOffset": 0,
         "End": "",
         "NRemaining": 0,
-        "Increment": 0
+        "Increment": 0,
+        "NMaximum": 20
       }
     ]
   },
@@ -268,7 +279,7 @@
   "MinutesAfterOpenMMWindowStarts": 1,
   "MinutesBeforeCloseMMWindowEnds": 5,
   "MinutesBeforeCloseHedgeToAcrossDs": 3,
-  "SpreadDiscountSweepMinSpreadRatio": { "_": 0.3 },
-  "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread 1-Mid ; 2-Passive earn spread
-  "IVSpreadSMAPeriod": { "_": 500 } // 0-Aggressive pay spread 1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
+  "MinutesBeforeCloseIsPreEarningsReleaseEOD": 300,
+  "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread;  1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
+  "IVSpreadSMAPeriod": { "_": 100 }
 }

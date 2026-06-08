@@ -8,7 +8,7 @@ package QuantConnect.Algorithm.CSharp.Core.IO;
 option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
 
 
-message RequestKalmanInit {
+message RequestKalmanInitPb {
 
   string underlying = 1;
   string date_fit_start = 2;
@@ -16,10 +16,10 @@ message RequestKalmanInit {
   string ts = 4;
 }
 
-message ResponseKalmanInit {
+message ResponseKalmanInitPb {
 
-  RequestKalmanInit request = 1;  
-  repeated SSVIParams init_state = 2;
-  repeated VectorDouble init_covariance = 3;
-
+  string ts = 1;
+  RequestKalmanInitPb request = 2;  
+  repeated SSVIParamsPb init_state = 3;
+  repeated VectorDoublePb init_covariance = 4;
 }

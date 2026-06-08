@@ -32,7 +32,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// Constructor for Pos0 off Portfolio Holdings.
         /// </summary>
         public Position(Foundations algo, SecurityHolding holding)
-        {            
+        {
             _algo = algo;
             Symbol = holding.Symbol;
             Quantity = holding.Quantity;
@@ -127,7 +127,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             get => Trade1?.IVBid0 ?? SecurityType switch
             {
-                SecurityType.Option => _algo.IVBids[Symbol].IVBidAsk.IV,
+                SecurityType.Option => _algo.IvBids[Symbol].IVBidAsk.IV,
                 _ => 0
             };
         }
@@ -135,7 +135,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             get => Trade1?.IVBid0 ?? SecurityType switch
             {
-                SecurityType.Option => _algo.IVAsks[Symbol].IVBidAsk.IV,
+                SecurityType.Option => _algo.IvAsks[Symbol].IVBidAsk.IV,
                 _ => 0
             };
         }
@@ -312,22 +312,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal BsmIVdS() => ToDecimal(GetGreeks1().IVdS);
 
         public decimal BsmIVdSTotal() => BsmIVdS() * Multiplier * Quantity;
-        public decimal SurfaceIVdS => Trade1?.SurfaceIVdS ?? ToDecimal(_algo.IVSurfaceSSVIMid[Equity].IVdS(Symbol) ?? 0);
+        public decimal SurfaceIVdS => Trade1?.SurfaceIVdS ?? ToDecimal(_algo.IvSurfaceSsviMid[Equity].IVdS(Symbol) ?? 0);
         public decimal SurfacedIVdSTotal => SurfaceIVdS * Multiplier * Quantity;
         /// <summary>
-        /// From Derman, The volatility smile. Chapter 22, Heston model minmize PL Variance.
+        /// From Derman, The volatility smile. Chapter 22, Heston model minmize PnL Variance.
         /// </summary>
         /// <param name="spot"></param>
         /// <returns></returns>
         public decimal DeltaMVTerm(decimal? spot = null)
         {
-            decimal _spot = spot ?? Mid1Underlying;
+            decimal spotNna = spot ?? Mid1Underlying;
+            double ivRaw = _algo.MidIV(Symbol);
+            if (!double.IsFinite(ivRaw) || ivRaw <= 0 || spotNna == 0) { return 0; }
             decimal vega = (decimal)GetGreeks1().Vega;
-            decimal iv = (decimal)_algo.MidIV(Symbol);
+            decimal iv = (decimal)ivRaw;
             decimal vv = _algo.Cfg.VolatilityOfVolatility.TryGetValue(UnderlyingSymbol, out vv) ? vv : _algo.Cfg.VolatilityOfVolatility[CfgDefault];
             decimal rho = _algo.Cfg.CorrelationSpotVolatility.TryGetValue(UnderlyingSymbol, out rho) ? rho : _algo.Cfg.CorrelationSpotVolatility[CfgDefault];
-            if (iv * _spot == 0) { return 0; }
-            return rho * vv * vega / iv * _spot;
+            if (iv * spotNna == 0) { return 0; }
+            return rho * vv * vega / iv * spotNna;
         }
         public decimal DeltaIVdSTotal()
         {            
@@ -371,14 +373,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 _ => 0
             };
         }
-        public decimal ThetaTillExpiryTotal()
-        {
-            return SecurityType switch
-            {
-                SecurityType.Option => ToDecimal(GetGreeks1().ThetaTillExpiry) * Multiplier * Quantity,
-                _ => 0,
-            };
-        }
         public decimal ThetaTotal(decimal dT = 1) => ToDecimal(GetGreeks1().Theta) * Multiplier * Quantity * dT;
 
         public decimal IntrinsicValue1 => SecurityType switch
@@ -400,7 +394,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal DS { get => Mid1Underlying - Mid0Underlying; }
         public double DTDays { get => (Ts1 - Trade0.Ts0).TotalSeconds / 86400; }
         public decimal DSPct { get => Mid0Underlying != 0 ? 100 * (Mid1Underlying / Mid0Underlying - 1) : 0; }
-        public decimal PL
+        public decimal PnL
         {
             get
             {
@@ -427,40 +421,39 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         public double IVPrice1 { get => IVMid1; }
         public double DIVMid { get => IVMid1 - Trade0.IVMid0; }
-        private PLExplain _pLExplain { get; set; }
-        public PLExplain PLExplain { get => _pLExplain ??= GetPLExplain(); }  // public getter for easy CSV export
+        private PnLExplain _PnLExplain { get; set; }
+        public PnLExplain PnLExplain { get => _PnLExplain ??= GetPnLExplain(); }  // public getter for easy CSV export
 
         /// <summary>
-        /// Initialize PL Explain with Trade0 and other details, then update with PositionSnaps.
+        /// Initialize PnL Explain with Trade0 and other details, then update with PositionSnaps.
         /// </summary>
-        private PLExplain GetPLExplain()
+        private PnLExplain GetPnLExplain()
         {
-            _pLExplain ??= new PLExplain(this);
+            _PnLExplain ??= new PnLExplain(this);
             _algo.LastSnap(Symbol);
-            return _pLExplain.Update(_algo.PositionSnaps[Symbol].Concat(new List<PositionSnap>() { new PositionSnap(_algo, Symbol) } ).ToList());
+            return _PnLExplain.Update(_algo.PositionSnaps[Symbol].Concat(new List<PositionSnap>() { new PositionSnap(_algo, Symbol) } ).ToList());
         }
 
         /// <summary>
         /// Generate trade history backwards as every Position is linked to its previous position via trade. Redundant with frequent position snapping.
         /// </summary>
-        public static IEnumerable<Position> AllLifeCycles(Foundations algo)
+        internal static IEnumerable<Position> AllLifeCycles(Foundations algo)
         {
             List<Position> positions = new();
 
-            foreach (var (symbol, trades) in algo.Trades)
+            foreach ((Symbol symbol, var trades) in algo.Trades)
             {
                 Position position = null;
-                List<Trade> _trades = trades.OrderBy(t => t.Ts0).ToList();
+                List<Trade> sortedTrades = trades.OrderBy(t => t.Ts0).ToList();
 
-                for (ushort i = 0; i < _trades.Count; i++)
+                for (ushort i = 0; i < sortedTrades.Count; i++)
                 {
-                    Trade trade1 = (i + 1) < _trades.Count ? _trades[i + 1] : null;
-                    position = new Position(position, _trades[i], algo, trade1);
+                    Trade trade1 = (i + 1) < sortedTrades.Count ? sortedTrades[i + 1] : null;
+                    position = new Position(position, sortedTrades[i], algo, trade1);
                     positions.Add(position);
                 }
             }
             return positions;
         }
-        public DateTime TsQueried { get => _algo.Time; }
     }
 }

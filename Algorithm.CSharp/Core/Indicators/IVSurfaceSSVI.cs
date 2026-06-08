@@ -15,11 +15,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public Equity Underlying { get; }
         public QuoteSide? Side { get; }
         public SSVIParamsDictionary ModelParams { get; internal set; }
-        public double Rho { get; internal set; }
-        public double Psi { get; internal set; }
         public bool IsCalibrated { get; internal set; }
-
-        private readonly OptionRight[] OptionRights = new[] { OptionRight.Call, OptionRight.Put };
 
         // CSV writer
         private readonly string _path;
@@ -62,12 +58,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public bool HasParams(DateTime tenor, OptionRight right)
         {
-            return ModelParams.ContainsKey((tenor, right));
+            return ModelParams != null && ModelParams.ContainsKey(tenor);
         }
 
         public bool HasParams(Option option)
         {
-            return ModelParams.ContainsKey((option.Expiry, option.Right));
+            return ModelParams != null && ModelParams.ContainsKey(option.Expiry);
         }
 
         public double IV(Option option)
@@ -81,7 +77,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             if (!IsCalibrated) throw new InvalidOperationException($"IVSurface is not calibrated: Underlying={Underlying}");
             if (!HasParams(tenor, right)) throw new InvalidOperationException($"IVSurface does not have parameters for this tenor={tenor}, right={right}, Underlying={Underlying}");
 
-            SSVIParamsRecord mParams = ModelParams[(tenor, right)];
+            SSVIParamsRecord mParams = ModelParams[tenor];
             return SsviIV(k, mParams, ToTenor(tenor, calcDate));
         }
 
@@ -98,7 +94,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public double AtmIv()
         {
             // Use tenor from params keys that is at least 7 days away
-            DateTime tenor = ModelParams.Keys.Where(k => k.Item1 > _algo.Time.Date.AddDays(7)).Min(k => k.Item1);
+            DateTime tenor = ModelParams.Keys.Where(k => k > _algo.Time.Date.AddDays(7)).Min(k => k);
             return (IV(0, tenor, OptionRight.Call, _algo.Time.Date) + IV(0, tenor, OptionRight.Put, _algo.Time.Date)) / 2;
 
         }
@@ -119,7 +115,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         /// </summary>
         public double SsviTotalVariance(double k, SSVIParamsRecord p)
         {
-            return 0.5 * (p.Theta + p.Rho * p.Psi * k + Math.Sqrt(Math.Pow(p.Psi * k + p.Theta * p.Rho, 2) + Math.Pow(p.Theta, 2) * Math.Pow(1 - p.Rho, 2)));
+            return 0.5 * (p.Theta + p.Rho * p.Psi * k + Math.Sqrt(
+                    Math.Pow(p.Psi * k + p.Theta * p.Rho, 2) + 
+                    Math.Pow(p.Theta, 2) * (1 - Math.Pow(p.Rho, 2))
+                    )
+                );
         }
 
         public double? IVdS(Symbol symbol)
@@ -162,9 +162,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public void Dispose()
         {
-            _writer.Flush();
-            _writer.Close();
-            _writer.Dispose();
+            if (_writer != null)
+            {
+                _writer.Flush();
+                _writer.Close();
+                _writer.Dispose();
+            }
         }
     }
 }

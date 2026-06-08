@@ -2,6 +2,7 @@ using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using System;
 using System.Collections.Generic;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -16,11 +17,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, decimal> BacktestingHoldings { get; set; }
         public int VolatilityPeriodDays { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMax { get; set; }
-        public decimal ScopeContractStrikeOverUnderlyingMaxSignal { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMin { get; set; }
-        public decimal ScopeContractStrikeOverUnderlyingMinSignal { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMargin { get; set; }
-        public decimal ScopeContractMoneynessITM { get; set; }
         public int ScopeContractMinDTE { get; set; }
         public int ScopeContractMaxDTE { get; set; }
         public int ScopeContractIsLiquidDays { get; set; }
@@ -29,23 +27,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
         public Dictionary<string, decimal> TotalDeltaHedgeThresholdIntercept { get; set; }
         public Dictionary<string, decimal> TotalDeltaHedgeThresholdGammaFactor { get; set; }
-        public Dictionary<string, double> IVSurfaceRelativeStrikeAlpha { get; set; }
         public int WarmUpDays { get; set; }
         public bool LogOrderUpdates { get; set; }
         public bool SkipWarmUpSecurity { get; set; }
-        public int PutCallRatioWarmUpDays { get; set; }
         public Dictionary<string, List<TargetRisk>> PutCallRatioTargetRisks { get; set; }
         public Dictionary<string, double> EOD2SODATMIVJumpThreshold { get; set; }
         public Dictionary<string, double[]> IntradayIVSlopeTrendingRange { get; set; }
-        public Dictionary<string, int> DaysBeforeConsideringEarningsAnnouncement { get; set; }
-        public Dictionary<string, int> IVSpreadIndicatorWindowSec { get; set; }
-        public Dictionary<string, double> EarningsAnnouncementUtilityMinAtmIVElevation { get; set; }
-        public Dictionary<string, int> EarningsAnnouncementUtilityMinDTE { get; set; }
         public Dictionary<string, bool> GammaScalpingEnabled { get; set; }
         public Dictionary<string, decimal> TrailingHedgePct { get; set; }
         public Dictionary<string, decimal> MaxOptionOrderQuantity { get; set; }
         public Dictionary<string, decimal> TargetMaxEquityPositionUSD { get; set; }
-        public Dictionary<string, decimal> SignalQuantityFraction { get; set; }
         public Dictionary<string, decimal> TargetMarginAsFractionOfNLV { get; set; }
         public Dictionary<string, double> MarginUtilScaleFactor { get; set; }
         public int MinSubmitRequestsUnprocessedBlockingSubmit { get; set; }
@@ -56,49 +47,42 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, int> HedgingMode { get; set; }
         public Dictionary<string, bool> UpcomingEventLongIV { get; set; }
         public Dictionary<string, int> UpcomingEventCalendarSpreadStartDaysPrior { get; set; }
-        public int CalendarSpreadPeriodDays { get; set; }
         public decimal EquityShortingRate { get; set; }
         public decimal DiscountRatePortfolioCAGR { get; set; }
         public decimal DiscountRateMarket { get; set; }
         public Dictionary<string, double> MinUtility { get; set; }
         public Dictionary<string, decimal> CorrelationSpotVolatility { get; set; }
         public Dictionary<string, decimal> VolatilityOfVolatility { get; set; }
-        public Dictionary<string, double> SlopeNeg { get; set; }
-        public Dictionary<string, double> SlopePos { get; set; }
-        public Dictionary<string, double> ZeroSDUtil { get; set; }
-        public Dictionary<string, double> UtilBidTaperer { get; set; }
-        public Dictionary<string, decimal> MaxSpreadDiscount { get; set; }
         public Dictionary<string, Dictionary<string, List<double>>> DeltaAdjustmentParameters { get; set; }
         public int LimitOrderUpdateBeforeMarketOrderConversion { get; set; }
         public decimal MaxSpreadForMarketOrderHedging { get; set; }
-        public Dictionary<string, List<List<double>>> SweepLongSchedule { get; set; }
-        public Dictionary<string, List<List<double>>> SweepShortSchedule { get; set; }
+        public Dictionary<string, List<SweepScheduleCfg>> SweepSchedules { get; set; }
+        public Dictionary<string, double> SweepWorstIVUtilityBump { get; set; }
         public Dictionary<string, List<double>> KalmanScopedMoneyness { get; set; }
         public Dictionary<string, double> KalmanAlphaBid { get; set; }
         public Dictionary<string, double> KalmanAlphaAsk { get; set; }
         public Dictionary<string, int> PrepareEarningsPeriodDays { get; set; }
         public int BacktestingBrokerageLatency {  get; set; }
+        public bool BacktestNearRealtimePacingEnabled { get; set; }
         public int MinHistoryDaysUnderlyingForScoping { get; set; }
         public Dictionary<string, double> MaxDelta100BpUSDSignalQuantity { get; set; }
-        public bool UseKalmanFilterAfterEarningsRelease { get; set; }
         public bool UseKalmanFilterBeforeEarningsRelease { get; set; }
-        public Dictionary<string, bool> PricerOverridePricesWithPresumedIVFillDefensively { get; set; }
+        public Dictionary<string, bool> PricerOverridePricesWithPresumedIvFillDefensively { get; set; }
+        public Dictionary<string, Dictionary<string, string>> TimeRangeReduceAbsDeltaPosition { get; set; }
         public Dictionary<string, string> TimeStartKfBeforeRelease { get; set; }
-        public Dictionary<string, string> TimeStartKfAfterRelease { get; set; }
         public Dictionary<string, string> EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy { get; set; }
         public Dictionary<string, string> EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell { get; set; }
-        public Dictionary<string, string> HedgeToAcrossDsAfterTime { get; set; }
         public double BufferIntraSpreadRatioSpreadThreshold {  get; set; }
         public int BufferIntraSpreadWaitingPeriodSeconds {  get; set; }
         public bool BufferIntraSpreadQuotes {  get; set; }
-
+        
         public Dictionary<string, List<RequestContractsScheduleCfg>> RequestContractsSchedules;
         public Dictionary<string, int> KalmanMinUpdatesToReady { get; set; }
         public int MinutesBeforeMarketCloseHedgeDeltaFlat { get; set; }
         public int MinutesAfterOpenMMWindowStarts { get; set; }
         public int MinutesBeforeCloseMMWindowEnds { get; set; }
         public int MinutesBeforeCloseHedgeToAcrossDs { get; set; }
-        public Dictionary<string, decimal> SpreadDiscountSweepMinSpreadRatio { get; set; }
+        public int MinutesBeforeCloseIsPreEarningsReleaseEOD { get; set; }
         public Dictionary<string, int> EquityHedgeMode { get; set; }
         public Dictionary<string, int> IVSpreadSMAPeriod { get; set; }
     }

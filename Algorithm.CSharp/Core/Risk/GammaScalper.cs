@@ -223,7 +223,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             decimal scalpedDelta = gammaTotal * (MidPrice - _startingPrice);            
             decimal gammaScalpingProfit = 0.5m * scalpedDelta * (MidPrice - _startingPrice);  // 0.5. integration. Intuitively, delta rose with price. full profit is half the box.
             decimal transactionCosts = _algo.TransactionCosts(Symbol, scalpedDelta);
-            _algo.Log($"{_algo.Time} GammaScalper.ScalpingGainsExceedTransactionCosts: Symbol={Symbol}, deltaTotal(notInCalc)={deltaTotal}, scalpedDelta={scalpedDelta}, gammaTotal={gammaTotal}, gammaScalpingProfit={gammaScalpingProfit}, transactionCosts={transactionCosts}");
+            _algo.Log($"{_algo.Time} GammaScalper.ScalpingGainsExceedTransactionCosts: Symbol={Symbol}, deltaTotal(notInCalc)={deltaTotal}, scalpedDelta={scalpedDelta}, gammaTotal={gammaTotal:0.000}, gammaScalpingProfit={gammaScalpingProfit}, transactionCosts={transactionCosts}");
             return gammaScalpingProfit > transactionCosts;
         }
         public string StatusShort()

@@ -15,6 +15,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public string End;
         public int NRemaining;
         public int Increment;
+        public int NMaximum;
     }
 
     public class RequestContractsSchedule
@@ -23,6 +24,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public DateTime End;
         public int NRemaining;
         public int Increment;
+        public int NMaximum;
 
         public RequestContractsSchedule(RequestContractsScheduleCfg cfg, Foundations algo, Symbol underlying)
         {
@@ -32,6 +34,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             End = cfg.End.IsNullOrEmpty() ? DateTime.MaxValue : nextReleaseDate + TimeSpan.FromDays(cfg.EndDaysOffset) + AlgoConfig.GetTimeSpan(cfg.End);
             NRemaining = cfg.NRemaining;
             Increment = cfg.Increment;
+            NMaximum = cfg.NMaximum;
         }
     }
 
@@ -96,9 +99,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             if (schedule != null && schedule.Increment > 0)
             {
                 CurrentNContractsRequested = ContractsRemaining() > schedule.NRemaining ? CurrentNContractsRequested : TotalAbsPosition + schedule.Increment;
-                // Temporarily
-                CurrentNContractsRequested = Math.Min(CurrentNContractsRequested, 20);
-                _algo.Log($"{_algo.Time} RequestContractsHandler.UpdateCurrentNContractsRequested(): {Underlying.Symbol.Value} - Updated to {CurrentNContractsRequested} contracts. Max: 20");
+                CurrentNContractsRequested = Math.Min(CurrentNContractsRequested, schedule.NMaximum);
+                _algo.Log($"{_algo.Time} RequestContractsHandler.UpdateCurrentNContractsRequested(): {Underlying.Symbol.Value} - Updated to {CurrentNContractsRequested} contracts. Max: {schedule.NMaximum}");
             }
         }
 

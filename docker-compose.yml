@@ -1,13 +1,17 @@
 services:
-  
-  trader.prod.1:
-    image: sebastianluen/amm:prod
+  trader.prd.1:
+    image: sebastianluen/amm:prd
     build:
       context: .
       dockerfile: Dockerfile
     environment:
-      - Ticker=UNH
-      - ib-port=4001  # 7497 for TWS
+      - Ticker=CRWD
+      # - ib-port=4001  # 7497 for TWS
+      - ib-port=7497  # 7497 for TWS
+      
+      - tws-is-running=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
+      # - ignore-tws=true
+      - ib-host=host.docker.internal  # default: 127.0.0.1
 
       - environment=live-interactive-polygon
       - algorithm-type-name=EarningsAlgorithm
@@ -16,30 +20,35 @@ services:
       - ib-user-name=${ib_user_name_live}
       - ib-password=${ib_password_live}
       - ib-trading-mode=live
-      - ignore-tws=true
-      - CONTAINER_NAME=trader.prod.1
-      - WsHost=host.docker.internal
-      - WsPort=8000
-      # - ib-host=host.docker.internal  # default: 127.0.0.1
+      - CONTAINER_NAME=trader.prd.1
+
+      - MQVirtualHost=prd
+      - MQUser=${MQUserPrd}
+      - MQPass=${MQPasswordPrd}
+       
+      - PricerProtocol=tcp
+      - PricerHost=mind.prd
+      - PricerPort=8103
     networks: [net1]
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: [ws.prod]
+    depends_on: [mind.prd]
     volumes:
       - trade:/repos/quantconnect/Lean/trade:rw
 
-  # Cant run paper in parallel to prod because got only 1 Polygon WS.
-  trader.paper.1:
-    image: sebastianluen/amm:paper
+  # Cant run sit in parallel to prd because got only 1 Polygon WS
+  trader.sit.1:
+    image: sebastianluen/amm:sit
     build:
       context: .
       dockerfile: Dockerfile
     environment:
-      - Ticker=DAL
-      - ib-port=4002  # 7498 TWS
-      - ignore-tws=true=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
-      #- ib-port=7498 # TWS
-      #- tws-is-running=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
+      - Ticker=TCOM
+      # - ib-port=4002  # Gateway
+      # - ignore-tws=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
+      - ib-port=7498 # TWS
+      - tws-is-running=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
+      - ib-host=host.docker.internal  # default: 127.0.0.1
 
       - environment=live-interactive-polygon
       - algorithm-type-name=EarningsAlgorithm
@@ -49,91 +58,106 @@ services:
       - ib-password=${ib_password_paper}
       - ib-trading-mode=paper
       - CONTAINER_NAME=trader.paper.1
-      - WsHost=host.docker.internal
-      - WsPort=8001
+      
+      - MQHost=rabbitmq
+      - MQVirtualHost=sit
+      - MQUser=${MQUserSit}
+      - MQPass=${MQPasswordSit}
+      
+      - PricerProtocol=tcp
+      - PricerHost=host.docker.internal
+      - PricerPort=8101
     networks: [net1]
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on: [ws.paper]
+    depends_on: [mind.sit]
     volumes:
       - trade:/repos/quantconnect/Lean/trade:rw
 
-
-  recorder.prod.1:
-    image: sebastianluen/amm:dev
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      - environment=live-iqfeed
-      - algorithm-type-name=ADataRecorder
-      - Ticker=PLTR
-    networks: [net1]
-    volumes:
-      - trade:/repos/quantconnect/Lean/trade:rw
-
-
-  ws.prod:
-    image: sebastianluen/ws:prod
-    container_name: ws.prod
+  mind.prd:
+    image: sebastianluen/mind:prd
+    container_name: mind.prd
     ports:
-     - "8000:8000"
+     - "8103:8103"
     environment:
       - PATH_TRADE=/mnt/trade
-      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_v3_2024-07-08.joblib
-      - WS_PORT=8000
-      - N_WORKERS=1
-    healthcheck:
-      test: ["CMD", "python3", "/usr/app/trade/src/connector/api_minlp/terminate_zombies.py"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 1m
+      - earnings_iv_drop_regressor_model_name_version=f_20260516-230556
+
+      - MQHost=rabbitmq
+      - MQVirtualHost=prd
+      - MQUser=${MQUserPrd}
+      - MQPassword=${MQPasswordPrd}
+      
+      - PricerProtocol=tcp
+      - PricerHost=mind.prd
+      - PricerPort=8103
     networks: [net1]
     volumes:
       - trade:/mnt/trade:rw
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all        # or count: 1
+              capabilities: [ gpu ]
 
 
-  ws.paper:
-    image: sebastianluen/ws:paper
-    container_name: ws.paper
+  mind.sit:
+    image: sebastianluen/mind:sit
+    container_name: mind.sit
     ports:
-     - "8001:8001"
+     - "8101:8101"
     environment:
       - PATH_TRADE=/mnt/trade
-      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_v3_2024-07-08.joblib
-      - WS_PORT=8001
-      - N_WORKERS=4
-    healthcheck:
-      test: ["CMD", "python3", "/usr/app/trade/src/connector/api_minlp/terminate_zombies.py"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 1m
+      - earnings_iv_drop_regressor_model_name_version=f_20260516-230556
+      - MQHost=rabbitmq
+      - MQVirtualHost=sit
+      - MQUser=${MQUserSit}
+      - MQPassword=${MQPasswordSit}
+
+      - PricerProtocol=tcp
+      - PricerHost=mind.sit
+      - PricerPort=8101
     networks: [net1]
     volumes:
       - trade:/mnt/trade:rw
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all        # or count: 1
+              capabilities: [ gpu ]
 
 
-  ws.dev:
-    image: sebastianluen/ws:dev
-    container_name: ws.dev
+  mind.dev:
+    image: sebastianluen/mind:dev
+    container_name: mind.dev
     ports:
-     - "8002:8002"
+     - "8102:8102"
     environment:
       - PATH_TRADE=/mnt/trade
-      - model_nm_earnings_iv_drop_regressor=earnings_iv_drop_regressor_v3_2024-07-08.joblib
-      - WS_PORT=8002
-      - N_WORKERS=4
-    healthcheck:
-      test: ["CMD", "python3", "/usr/app/trade/src/connector/api_minlp/terminate_zombies.py"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 1m
+      - earnings_iv_drop_regressor_model_name_version=f_20260516-230556
+      - MQHost=rabbitmq
+      - MQVirtualHost=dev
+      - MQUser=${MQUserDev}
+      - MQPassword=${MQPasswordDev}
+      
+      - PricerProtocol=tcp
+      - PricerHost=mind.dev
+      - PricerPort=8102
+
     networks: [net1]
     volumes:
       - trade:/mnt/trade:rw
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all        # or count: 1
+              capabilities: [ gpu ]
 
 
   bt.dev.1:
@@ -144,21 +168,28 @@ services:
     environment:
       - environment=backtesting
       - algorithm-type-name=EarningsAlgorithm
-      - StartDate=2024-06-26
-      - EndDate=2024-06-26
-      - Ticker=FDX
-      - WsHost=host.docker.internal
-      - WsPort=8002
-      - CONTAINER_NAME=bt.dev.fdx.240326
+      - StartDate=2026-03-09
+      - EndDate=2026-03-10
+      - Ticker=HPE
+
+      - MQVirtualHost=dev
+      - MQUser=${MQUserDev}
+      - MQPass=${MQPasswordDev}
+ 
+      - PricerProtocol=tcp
+      - PricerHost=mind.dev
+      - PricerPort=8102
+      
+      - CONTAINER_NAME=bt.dev.hpe.260309
       # - BacktestingHoldings={FDX:-377,FDX   240719P00270000:1,FDX   240712P00265000:-1,FDX   240712C00250000:1,FDX   250620C00240000:-2,FDX   240705P00252500:-1,FDX   250620C00320000:-5,FDX   250620C00330000:-3,FDX   240628C00227500:1,FDX   240628C00235000:2,FDX   240628C00240000:1,FDX   240628P00267500:-1,FDX   240628C00242500:1,FDX   240628C00247500:1,FDX   240628C00250000:1,FDX   240628C00252500:1,FDX   240628C00285000:2}
-    depends_on: [ws.dev]
+    depends_on: [mind.dev]
     networks: [net1]
     volumes:
       - trade:/repos/quantconnect/Lean/trade:rw
 
 
-  bt.prod.1:
-    image: sebastianluen/amm:prod
+  bt.prd.1:
+    image: sebastianluen/amm:prd
     build:
       context: .
       dockerfile: Dockerfile
@@ -168,14 +199,39 @@ services:
       - StartDate=2024-01-01
       - EndDate=2024-02-12
       - Ticker=DELL,CSCO
-      - WsHost=host.docker.internal
-      - WsPort=8000
-      - CONTAINER_NAME=bt.prod.jan
-    depends_on: [ws.prod]
+      - MQHost=host.docker.internal
+      - MQPort=8000
+      
+      - PricerProtocol=tcp
+      - PricerHost=mind.dev
+      - PricerPort=8000
+      
+      - CONTAINER_NAME=bt.prd.jan
+    depends_on: [mind.prd]
     networks: [net1]
     volumes:
       - trade:/repos/quantconnect/Lean/trade:rw
-
+  
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    hostname: rabbitmq-host
+    ports:
+      - "5672:5672"   # AMQP protocol port (Applications connect here)
+      - "15672:15672" # RabbitMQ Management Web UI port
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_config:/etc/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: myuser
+      RABBITMQ_DEFAULT_PASS: mysecurepassword
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [net1]
 
   test:
     image: ubuntu:latest
@@ -205,3 +261,8 @@ volumes:
       type: ${driver_opts_type}
       o: ${driver_opts_o}
       device: ${device}
+
+  rabbitmq_data:
+    driver: local
+  rabbitmq_config:
+    driver: local

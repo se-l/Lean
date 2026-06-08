@@ -1,6 +1,7 @@
 using System;
 using QuantConnect.Securities;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
+using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Option;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
@@ -296,11 +297,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         private void Snap()
         {
             HistoricalVolatility = (double)SecurityUnderlying.VolatilityModel.Volatility;
-            IVBid0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Bid0, Mid0Underlying, 0.001) : 0;
-            IVAsk0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
-            IVPrice0 = SecurityType == SecurityType.Option ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001) : 0;
+            IVBid0 = SecurityType == SecurityType.Option && Bid0 > 0 && Mid0Underlying > 0 ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Bid0, Mid0Underlying, 0.001) : 0;
+            IVAsk0 = SecurityType == SecurityType.Option && Ask0 > 0 && Mid0Underlying > 0 ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(Ask0, Mid0Underlying, 0.001) : 0;
+            IVPrice0 = SecurityType == SecurityType.Option && PriceFillAvg > 0 && Mid0Underlying > 0 ? OptionContractWrap.E(_algo, (Option)Security, Ts0.Date).IV(PriceFillAvg, Mid0Underlying, 0.001) : 0;
             _ = Greeks;
-            SurfaceIVdS = ToDecimal(_algo.IVSurfaceSSVIMid[Equity].IVdS(Symbol) ?? 0);
+
+            // Existing holdings may include symbols that are not configured in Cfg.Ticker and therefore
+            // do not have an initialized IV surface in the algorithm state.
+            if (!_algo.Cfg.Ticker.Contains(UnderlyingSymbol.Value) || !_algo.IvSurfaceSsviMid.TryGetValue(Equity, out IIVSurface ivSurface))
+            {
+                SurfaceIVdS = 0;
+                return;
+            }
+
+            SurfaceIVdS = ToDecimal(ivSurface.IVdS(Symbol) ?? 0);
         }
 
         private void SnapExpired()

@@ -9,7 +9,7 @@ using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
-    public record Record(DateTime Ts, DateTime Expiry, OptionRight Right, decimal S, double Theta, double Rho, double Psi);
+    public record Record(DateTime Ts, DateTime Expiry, decimal S, double Theta, double Rho, double Psi);
     public class KalmanFilterSSVIWriter : IDisposable
     {
         private readonly Foundations _algo;
@@ -37,7 +37,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             {
                 var key = kvp.Key;
                 var value = kvp.Value;
-                records.Add(new Record(ts, key.Item1, key.Item2, s, value.Theta, value.Rho, value.Psi));
+                records.Add(new Record(ts, key, s, value.Theta, value.Rho, value.Psi));
             }
             WriteCsvRows(records);
         }
@@ -49,7 +49,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public static string ToCsv(Record record)
         {
-            return $"{record.Ts.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture)},{record.Expiry.ToString(DtFmtISO, CultureInfo.InvariantCulture)},{record.Right},{record.S},{record.Theta},{record.Rho},{record.Psi}";
+            return $"{record.Ts.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture)},{record.Expiry.ToString(DtFmtISO, CultureInfo.InvariantCulture)},{record.S},{record.Theta},{record.Rho},{record.Psi}";
         }
 
         public void WriteCsvRows(IEnumerable<Record> records)

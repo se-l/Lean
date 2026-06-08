@@ -7,32 +7,37 @@ package QuantConnect.Algorithm.CSharp.Core.IO;
 option csharp_namespace = "QuantConnect.Algorithm.CSharp.Core.IO";
 
 
-message SSVIModelParams {
+message SSVIModelParamsPb {
 
     double theta = 1;
     double rho = 2;
     double psi = 3;
 }
 
-message SSVIParams {
+message SSVIParamsPb {
 
-    string underlying = 1;  
-    OptionRight right = 2;
-    string tenor_dt = 3;
-    SSVIModelParams model_params = 4;
-
+    string underlying = 1;
+    string tenor_dt = 2;
+    SSVIModelParamsPb model_params = 3;
 }
 
-message RequestSSVICalibration {
+message SSVIParamsByRightPb {
+
+    string underlying = 1;  
+    OptionRightPb right = 2;
+    string tenor_dt = 3;
+    SSVIModelParamsPb model_params = 4;
+}
+
+message RequestSSVICalibrationPb {
 
     string ts = 1;
     string underlying = 2;  
-    MarketDataHistory market_data_history = 3;
+    MarketDataHistoryPb market_data_history = 3;
 }
 
-message ResponseSSVICalibration {
-
-  RequestSSVICalibration request = 1;
-  repeated SSVIParams params = 2;
-
+message ResponseSSVICalibrationPb {
+  string ts = 1;
+  RequestSSVICalibrationPb request = 2;
+  repeated SSVIParamsPb params = 3;
 }

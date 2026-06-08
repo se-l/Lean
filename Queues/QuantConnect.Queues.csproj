@@ -46,9 +46,4 @@
       <PackagePath></PackagePath>
     </None>
   </ItemGroup>
-  <ItemGroup>
-    <Reference Include="QuantConnect.Lean.DataSource.Polygon">
-      <HintPath>..\..\Lean.DataSource.Polygon\QuantConnect.Polygon\bin\Release\QuantConnect.Lean.DataSource.Polygon.dll</HintPath>
-    </Reference>
-  </ItemGroup>
 </Project>

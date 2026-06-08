@@ -53,7 +53,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public double GetAtmIV(Symbol symbol)
         {
-            return IVSurfaceSSVIMid.TryGetValue(ToEquity(Underlying(symbol)), out IIVSurface ivs) ? ivs.AtmIv() : 0;
+            return IvSurfaceSsviMid.TryGetValue(ToEquity(Underlying(symbol)), out IIVSurface ivs) ? ivs.AtmIv() : 0;
         }
 
         private double GetBeta(Symbol index, Symbol asset, int periods, Resolution resolution = Resolution.Daily)
@@ -140,8 +140,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Special case scenario
             if (IsEODAcrossDsHedge(underlying))
             {
-                decimal quantity = -(decimal)LastDeltaAcrossDs[underlying] - Portfolio[underlying].Quantity;
-                Log($"{Time} {underlying} GetHedgeOptionWithUnderlying with DeltaTotalAcrossDs: {LastDeltaAcrossDs[underlying]}, quantity: {quantity}, Position: {Portfolio[underlying].Quantity}");
+                decimal quantity = -(decimal)LastDeltaAcrossDsOptionsOnly[underlying] - Portfolio[underlying].Quantity;
+                Log($"{Time} {underlying} GetHedgeOptionWithUnderlying with LastDeltaAcrossDsOptionsOnly: {LastDeltaAcrossDsOptionsOnly[underlying]}, quantity: {quantity}, Position: {Portfolio[underlying].Quantity}");
                 if (Math.Abs(quantity) > 1)
                 {
                     ExecuteHedge(underlying, quantity);
@@ -168,7 +168,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             DateTime nextMarketClose = NextMarketClose.TryGetValue(underlying, out nextMarketClose) ? nextMarketClose : GetNextMarketClose(underlying);            
             TimeSpan hedgeToAcrossDs = nextMarketClose.TimeOfDay - TimeSpan.FromMinutes(Cfg.MinutesBeforeCloseHedgeToAcrossDs);
             
-            return LastDeltaAcrossDs.ContainsKey(underlying)
+            return LastDeltaAcrossDsOptionsOnly.ContainsKey(underlying)
                 && Time.TimeOfDay  >= hedgeToAcrossDs
                 && nextReleaseDate == Time.Date;
         }
@@ -227,6 +227,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <param name="orderType"></param>
         public void ExecuteHedge(Symbol symbol, decimal quantity, OrderType? orderType = null)
         {
+            // // Quickly Test algo performance without any hedge on July 11 2024
+            // if (Time.Date == new DateTime(2024, 7, 11).Date)
+            // {
+            //     Log($"{Time} ExecuteHedge: Skipping hedge for performance test.");
+            //     return;
+            // }
             Equity equity = (Equity)Securities[symbol];
 
             if (!Cfg.Ticker.Contains(equity.ToString()))

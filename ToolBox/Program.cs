@@ -85,6 +85,7 @@ namespace QuantConnect.ToolBox
                         bool skipEmpty = optionsObject.ContainsKey("skip-empty") ? true : false;
                         DateTime? skipModifiedSince = optionsObject.ContainsKey("skip-modified-since") ? Parse.DateTimeExact((string)optionsObject["skip-modified-since"], "yyyy-MM-dd") : null;
                         int nClients = int.Parse(optionsObject.TryGetValue("n-clients", out var nClientsObject) ? nClientsObject.ToString() : "16");
+                        int flushInterval = int.Parse(optionsObject.TryGetValue("flush-interval", out var flushIntervalObj) ? flushIntervalObj.ToString() : "1000");
                         PolygonDownloaderProgram.PolygonDownloader(
                             tickers,
                             GetParameterOrExit(optionsObject, "security-type"),
@@ -97,11 +98,8 @@ namespace QuantConnect.ToolBox
                             skipFilled,
                             skipEmpty,
                             skipModifiedSince,
-                            nClients);
-                        break;
-                    case "ive":
-                        int nThreads = int.Parse(optionsObject.TryGetValue("n-clients", out var nThreadsObject) ? nThreadsObject.ToString() : "16");
-                        new VolatilityExporter().Run(tickers, fromDate, toDate, nThreads: nThreads, skipExisting: true);
+                            nClients,
+                            flushInterval);
                         break;
 
                     default:

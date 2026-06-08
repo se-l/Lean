@@ -1,9 +1,15 @@
 {
-  "StartDate": "2024-06-25",
-  "EndDate": "2024-06-26",
-  "Ticker": [ "FDX" ],
-  "WsHost": "localhost",
-  "WsPort": 8002,
+  "StartDate": "2026-03-09",
+  "EndDate": "2026-03-10",
+  "Ticker": [ "HPE" ],
+  "MQHost": "127.0.0.1",
+  "MQPort": 5672,
+  "MQVirtualHost": "dev",
+  "MQUser": "myuser",
+  "MQPass": "mysecurepassword",
+  "PricerProtocol": "tcp",
+  "PricerHost": "127.0.0.1",
+  "PricerPort": 8102,
   "EarningsEntryStartTime": {
     "_": [ 9, 45 ]
   }

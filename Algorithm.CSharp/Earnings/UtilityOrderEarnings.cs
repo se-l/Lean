@@ -11,7 +11,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 {
     public class UtilityOrderEarnings : UtilityOrderBase
     {
-        private readonly double UtilNo = -2000;
+        private const double UtilNo = -2000;
+
         public UtilityOrderEarnings(Foundations algo, Option option, decimal quantity, decimal? price = null)
         {
             _algo = algo;
@@ -21,47 +22,58 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             IVPrice = IV(_price);
             Time = _algo.Time;
             OrderDirection = Num2Direction(Quantity);
-            _regimes = _algo.ActiveRegimes.TryGetValue(Underlying, out _regimes) ? _regimes : new HashSet<Regime>();
+
+            _algo.UtilityWriters[Underlying].Write(this);
 
             // Calling Utility to snap the risk => cached for future use.
             _ = Utility;
-            _algo.UtilityWriters[Underlying].Write(this);
         }
 
         public override double Utility
         {
             get =>
                 // PV based
-                UtilityTargetHoldings +
+                UtilityTargetHoldings + // if the strategy changes to risk reduction, target holdings kinda change...
                 // IntradayVolatilityRisk + Needs more research and calibration
                 UtilityCapitalCostPerDay +
-                UtilityTransactionCosts +  // Very approximate, but small at the moment
+                UtilityTransactionCosts + // Very approximate, but small at the moment
                 UtilityGamma +
-                UtilityEquityPosition;
+                UtilityEquityPosition +
+                UtilityRiskScenario;
         }
 
         public override double UtilityPV
         {
-            get {
-                _algo.MarginalWeightedDNLV.TryGetValue(Symbol, out double marginalUtil);
+            get
+            {
+                _algo.MarginalUtility.TryGetValue(Holding, out double marginalUtil);
                 if (marginalUtil != 0)
                 {
+                    // MarginalUtility can be for either adding or removing a symbol from the portfolio. Marginal is not just for adding. Done this way as utility is non-linear. Direction is chosen based on TargetPortfolio.
                     return marginalUtil * Math.Sign(Quantity) + UtilityCapitalCostPerDay + UtilityTransactionCosts;
                 }
+
                 return 0;
             }
         }
 
-        protected new HashSet<string> _utilitiesToLog = new() {
+        protected override HashSet<string> _utilitiesToLog => new HashSet<string>()
+        {
             "UtilityPV",
             "UtilityTargetHoldings",
-            "UtilityCapitalCostPerDay", "UtilityEquityPosition",
+            "UtilityCapitalCostPerDay",
+            "UtilityEquityPosition",
             "UtilityGamma",
-            "UtilityTransactionCosts"
-            };
+            "UtilityTransactionCosts",
+            "UtilityRiskScenario",
+        };
 
         protected double? _utilityTargetHoldings;
-        public virtual double UtilityTargetHoldings { get => _utilityTargetHoldings ??= GetUtilityTargetHoldings(); }
+
+        public virtual double UtilityTargetHoldings
+        {
+            get => _utilityTargetHoldings ??= GetUtilityTargetHoldings();
+        }
 
         /// <summary>
         /// Options of very high liquidity, lowest tenor, expiring same week should only be sold on release day, can buy day earlier.
@@ -70,6 +82,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// <returns></returns>
         protected double GetUtilityTargetHoldings()
         {
+            if (!(MarketRegimes.Contains(MarketRegime.PreEarningsRelease) ||
+                MarketRegimes.Contains(MarketRegime.PostEarningsRelease)))
+            {
+                return 0;
+            }
+
             double utility = UtilNo;
 
             decimal orderQuantity = _algo.QuantityToTargetHolding(Symbol);
@@ -87,8 +105,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             TimeSpan earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy;
             try
             {
-                earningsUtilityTargetHoldingsAfterReleaseStartTimeSell = AlgoConfig.GetTimeSpan(AlgoConfig.GetEntry(_algo.Cfg.EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell, Underlying.Value));
-                earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy = AlgoConfig.GetTimeSpan(AlgoConfig.GetEntry(_algo.Cfg.EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy, Underlying.Value));
+                earningsUtilityTargetHoldingsAfterReleaseStartTimeSell = AlgoConfig.GetTimeSpan(
+                    AlgoConfig.GetEntry(_algo.Cfg.EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell,
+                        Underlying.Value));
+                earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy = AlgoConfig.GetTimeSpan(
+                    AlgoConfig.GetEntry(_algo.Cfg.EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy,
+                        Underlying.Value));
             }
             catch (Exception e)
             {
@@ -97,26 +119,27 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
 
             // Before earnings release, utility is managed by the marginal util coming from estimator.
-            if (_algo.PreparingEarningsRelease(Underlying))
+            if (_algo.IsPreparingEarningsRelease(Underlying))
             {
-                double marginalUtility = _algo.MarginalWeightedDNLV.TryGetValue(Symbol, out marginalUtility) ? marginalUtility : 0;
-                utility = marginalUtility * Math.Sign(Quantity);
+                // MarginalUtility is by Holding, so for either Buy Or Sell.
+                utility = _algo.MarginalUtility.TryGetValue(Holding, out utility) ? utility : 0;
             }
             // After release, sell any longs from SOD.
-            else if (isAfterRelease 
-                && OrderDirection == OrderDirection.Sell
-                && _algo.Time.TimeOfDay > earningsUtilityTargetHoldingsAfterReleaseStartTimeSell
-                && (dte >= 7 || (dte < 7 && absDelta < 0.95))  // Dont sell deep ITM options, too much trouble adjusting the hedge. Just get let it exercise.
-                )
+            else if (isAfterRelease
+                     && OrderDirection == OrderDirection.Sell
+                     && _algo.Time.TimeOfDay > earningsUtilityTargetHoldingsAfterReleaseStartTimeSell
+                     && (dte >= 7 ||
+                         (dte < 7 && absDelta < 0.95)) // Dont sell deep ITM options, too much trouble adjusting the hedge. Just let it exercise.
+                    )
             {
                 utility = 200;
             }
             //After release, sell any longs only after noon when vola has dropped.
-            else if (isAfterRelease 
-                && OrderDirection == OrderDirection.Buy 
-                && _algo.Time.TimeOfDay > earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy
-                && dte >= 7
-                )
+            else if (isAfterRelease
+                     && OrderDirection == OrderDirection.Buy
+                     && _algo.Time.TimeOfDay > earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy
+                     && dte >= 7
+                    )
             {
                 utility = 200;
             }
@@ -139,51 +162,42 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// <returns></returns>
         protected override double GetUtilityEquityPosition()
         {
-            return 0;
-            decimal orderQuantity = _algo.QuantityToTargetHolding(Symbol);
-            if (orderQuantity == 0 || Quantity * orderQuantity < 0)
+            double utility = 0;
+
+            if (_algo.IsReducingAbsEquityPosition(Underlying))
             {
-                return UtilNo;
+                decimal orderQuantity = _algo.QuantityToTargetHolding(Symbol);
+                if (orderQuantity == 0 || Quantity * orderQuantity < 0)
+                {
+                    return utility;
+                }
+
+                // Move these model parameters to a config file or with model specs.
+                double b = 0.5;
+                double c = 0.0;
+
+                decimal deltaPfTotal = _algo.LastDeltaAcrossDsOptionsOnly.TryGetValue(Underlying, out double lastDeltaAcrossDsOptionsOnly)
+                    ? (decimal)lastDeltaAcrossDsOptionsOnly
+                    : _algo.DeltaMV(Symbol);
+
+                double totalOptionsDelta = (double)(deltaPfTotal - _algo.Securities[Underlying].Holdings.Quantity);
+                double orderDelta = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, _algo.HedgeMetric(Underlying));
+                double whatIfTotalOptionsDelta = totalOptionsDelta + orderDelta;
+                double absDeltaReduction = Math.Abs(totalOptionsDelta) - Math.Abs(whatIfTotalOptionsDelta);
+
+                if (absDeltaReduction <= 0) // Wrong direction or too much in opposite direction
+                {
+                    utility = UtilNo;
+                }
+                else
+                {
+                    double deltaReductionUsd = absDeltaReduction * (double)_algo.Securities[Underlying].Price;
+
+                    utility = Math.Abs(b * deltaReductionUsd + c * Math.Pow(deltaReductionUsd, 2));
+                }
             }
-            // Move these model parameters to a config file or with model specs.
-            double util;
-            double b = 0.01;
-            double c = 0.005;
 
-            decimal deltaPfTotal = _algo.LastDeltaAcrossDs.TryGetValue(Underlying, out double lastDeltaAcrossD) ? (decimal)lastDeltaAcrossD : _algo.DeltaMV(Symbol);
-
-            double optionDelta = (double)(deltaPfTotal - _algo.Securities[Underlying].Holdings.Quantity);
-            double orderDelta = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, _algo.HedgeMetric(Underlying));
-
-            var whatIfOptionDelta = optionDelta + orderDelta;
-            DateTime nextReleaseDate = _algo.NextReleaseDate(Underlying);
-
-            // Need to become very strict on reducing abs deltaAcross within last 30min of release date.
-            if (nextReleaseDate == _algo.Time.Date 
-                && new TimeSpan(0, 16, 0, 0) - _algo.Time.TimeOfDay < TimeSpan.FromMinutes(15) 
-                && Math.Abs(whatIfOptionDelta) > Math.Abs(optionDelta) && Math.Abs(whatIfOptionDelta) > 50
-                )
-            {
-                util = UtilNo;
-            }
-            // More relaxed threshold beforehand
-            else if (
-                Math.Abs(whatIfOptionDelta) > Math.Abs(optionDelta) 
-                && Math.Abs(whatIfOptionDelta) > 150
-                )  // Refactor this back to a threshold considering volatility and underlying price. So a vola adjusted DeltaUSD.
-            {
-                util = UtilNo;
-            }
-            else
-            {
-                double scaleByOrder = optionDelta == 0 ? 1 : Math.Abs(orderDelta / optionDelta);
-
-                double absCurrentPfUtil = Math.Abs(b * optionDelta + c * Math.Pow(optionDelta, 2));
-                double absWhatIfUtil = Math.Abs(b * whatIfOptionDelta + c * Math.Pow(whatIfOptionDelta, 2));
-                double absPfUtil = Math.Abs(absWhatIfUtil - absCurrentPfUtil);
-                util = -Math.Sign(optionDelta) * Math.Sign(orderDelta) * absPfUtil * scaleByOrder;
-            }
-            return util;
+            return utility;
         }
     }
 }

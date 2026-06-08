@@ -4,7 +4,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Events
 {
     public class NewTradeEventArgs : EventArgs
     {
-        public Symbol Symbol;
+        public Symbol Symbol { get; }
 
         public NewTradeEventArgs(Symbol symbol)
         {

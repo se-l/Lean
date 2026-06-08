@@ -10,23 +10,22 @@ using QuantConnect;
 
 
 
-public class SSVIParamsDictionary : Dictionary<(DateTime, OptionRight), SSVIParamsRecord>
+public class SSVIParamsDictionary : Dictionary<DateTime, SSVIParamsRecord>
 {
     public SSVIParamsDictionary() { }
-    public SSVIParamsDictionary(QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams[] ssviParams)
+    public SSVIParamsDictionary(QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb[] ssviParams)
     {
-        foreach (QuantConnect.Algorithm.CSharp.Core.IO.SSVIParams param in ssviParams)
+        foreach (QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb param in ssviParams)
         {
-            OptionRight right = RightPb2Right(param.Right);
             DateTime tenorDt = DateTime.ParseExact(param.TenorDt, "yyyy-MM-dd", CultureInfo.InvariantCulture);
-            Add((tenorDt, right), new SSVIParamsRecord(param.ModelParams.Theta, param.ModelParams.Rho, param.ModelParams.Psi));
+            Add(tenorDt, new SSVIParamsRecord(param.ModelParams.Theta, param.ModelParams.Rho, param.ModelParams.Psi));
         }
     }
-    public new void Add((DateTime, OptionRight) key, SSVIParamsRecord value)
+    public new void Add(DateTime key, SSVIParamsRecord value)
     {
         base.Add(key, value);
     }
-    public new SSVIParamsRecord this[(DateTime, OptionRight) key]
+    public new SSVIParamsRecord this[DateTime key]
     {
         get => base[key];
         set => base[key] = value;
@@ -48,10 +47,9 @@ public class SSVIParamsDictionary : Dictionary<(DateTime, OptionRight), SSVIPara
         return this;
     }
 
-    public List<KeyValuePair<(DateTime, OptionRight), SSVIParamsRecord>> GetSortedRecords()
+    public List<KeyValuePair<DateTime, SSVIParamsRecord>> GetSortedRecords()
     {
-        return this.OrderBy(kvp => kvp.Key.Item1) // Sort by DateTime
-                   .ThenBy(kvp => kvp.Key.Item2) // Sort by OptionRight (Call first, then Put)
+        return this.OrderBy(kvp => kvp.Key) // Sort by DateTime
                    .ToList();
     }
 
@@ -59,7 +57,7 @@ public class SSVIParamsDictionary : Dictionary<(DateTime, OptionRight), SSVIPara
     /// Sorted keys
     /// </summary>
     /// <returns></returns>
-    public List<(DateTime, OptionRight)> GetSortedKeys()
+    public List<DateTime> GetSortedKeys()
     {
         return GetSortedRecords().Select(kvp => kvp.Key).ToList();
     }

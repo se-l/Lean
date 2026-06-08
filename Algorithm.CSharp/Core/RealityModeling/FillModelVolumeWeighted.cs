@@ -1,6 +1,8 @@
+using NodaTime;
 using QuantConnect.Orders;
 using System;
 using QuantConnect.Securities;
+using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
 {
@@ -16,15 +18,36 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
     public class FillModelVolumeWeighted : FillModelMine
     {
         private readonly decimal MeanDailyVolume;
-        private readonly Random random = new (1);
+        private readonly Random random;
+        private readonly ILiquiditySurface liquiditySurface;
         private readonly double VolWeight;
         private readonly double PFillSpreadExp;
+        private readonly double LambdaBase;
+        private readonly double VolumeExponent;
+        private readonly double MinVolumeWeight;
+        private readonly double MaxVolumeWeight;
         // Some convexity adjustment. More fills at the start of the day.
-        public FillModelVolumeWeighted(decimal meanDailyVolume, int baseVolumeWeight, double pFillSpreadExp) 
+        public FillModelVolumeWeighted(
+            decimal meanDailyVolume,
+            int baseVolumeWeight,
+            double pFillSpreadExp,
+            ILiquiditySurface liquiditySurface,
+            int? randomSeed = null,
+            double lambdaBase = 0.35,
+            double volumeExponent = 0.5,
+            double minVolumeWeight = 0.25,
+            double maxVolumeWeight = 4.0)
         {
             MeanDailyVolume = meanDailyVolume;
-            VolWeight = (double)meanDailyVolume / baseVolumeWeight;
+            var baseWeight = Math.Max(1, baseVolumeWeight);
+            VolWeight = (double)meanDailyVolume / baseWeight;
             PFillSpreadExp = pFillSpreadExp;
+            this.liquiditySurface = liquiditySurface ?? new StaticLiquiditySurface();
+            random = randomSeed.HasValue ? new Random(randomSeed.Value) : new Random();
+            LambdaBase = lambdaBase;
+            VolumeExponent = volumeExponent;
+            MinVolumeWeight = minVolumeWeight;
+            MaxVolumeWeight = maxVolumeWeight;
         }
 
         /// <summary>
@@ -36,15 +59,32 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             if (fill.Status == OrderStatus.Filled) return fill;
 
             decimal spread = asset.AskPrice - asset.BidPrice;
-            double spreadCrossedPc = (double)(order.Direction == OrderDirection.Buy ? (limitPrice - asset.BidPrice) / spread : (asset.AskPrice - limitPrice) / spread);
-            double pFillSpread = spreadCrossedPc * Math.Pow(spreadCrossedPc, PFillSpreadExp);
-            double pFill = pFillSpread * VolWeight;
+            if (spread <= 0)
+            {
+                return fill;
+            }
+
+            var rawSpreadCrossedPc = (double)(order.Direction == OrderDirection.Buy
+                ? (limitPrice - asset.BidPrice) / spread
+                : (asset.AskPrice - limitPrice) / spread);
+            double spreadCrossedPc = Math.Clamp(rawSpreadCrossedPc, 0d, 1d);
+            if (spreadCrossedPc <= 0)
+            {
+                return fill;
+            }
+
+            double spreadTerm = Math.Pow(spreadCrossedPc, Math.Max(0d, PFillSpreadExp));
+            double volumeTerm = Math.Clamp(Math.Pow(Math.Max(0d, VolWeight), VolumeExponent), MinVolumeWeight, MaxVolumeWeight);
+            double liquidityWeight = Math.Max(0d, liquiditySurface.GetLiquidityWeight(asset, fill.UtcTime));
+            double lambda = LambdaBase * spreadTerm * volumeTerm * liquidityWeight;
+            double pFill = 1d - Math.Exp(-Math.Max(0d, lambda));
 
             if (random.NextDouble() < pFill)
             {
-                Logging.Log.Trace($"UTC {fill.UtcTime} FillModelVolumeWeighted: Filled quantity={quantity}, symbol={order.Symbol}, " +
-                    $"bid={asset.BidPrice}, fillPrice={limitPrice}, ask={asset.AskPrice}, spreadCrossedPc={spreadCrossedPc},  " +
-                    $"pFill={pFill}, pFillSpread={pFillSpread}, MeanDailyVolume ={MeanDailyVolume}");
+                DateTime localTime = fill.UtcTime.ConvertTo(DateTimeZone.Utc, asset.Exchange.TimeZone);
+                Logging.Log.Trace($"{localTime} FillModelVolumeWeighted: Filled quantity={quantity}, symbol={order.Symbol}, " +
+                    $"bid={asset.BidPrice}, fillPrice={limitPrice}, ask={asset.AskPrice}, spreadCrossedPc={spreadCrossedPc:0.00},  " +
+                    $"pFill={pFill:0.00}, spreadTerm={spreadTerm:0.00}, volumeTerm={volumeTerm:0.00}, liqWeight={liquidityWeight:0.00}, MeanDailyVolume ={MeanDailyVolume:0.0}");
 
                 fill.Status = OrderStatus.Filled;
                 fill.FillPrice = limitPrice;

@@ -1,6 +1,8 @@
 
 using QuantConnect.Securities;
 using System;
+using QuantConnect.Securities.Equity;
+using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 {
@@ -23,7 +25,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private double? _gammaDecay;
         private double? _dGammaDIV;
         private double? _theta;
-        private double? _thetaTotal;
         private double? _thetaDecay;
         private double? _vega;
         private double? _dSdIV;
@@ -38,14 +39,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             get
             {
-                if (_iV != null && _iV != 0) return _iV ?? 0;
-
-                _iV = _algo.MidIV(Security.Symbol);
-                return _iV ?? 0;
+                if (_iV != null && _iV != 0) return (double)_iV;
+                _iV = SurfaceIV() ?? _algo.MidIV(Security.Symbol);
+                return _iV ?? double.NaN;
             }
         }
 
-        public double NPV { get => _nPV ?? OCW.NPV(); }  // theoretical price
+        /// Returns the SSVI surface IV for this contract, or null if unavailable/invalid.
+        private double? SurfaceIV()
+        {
+            Option contract = OCW?.Contract;
+            if (contract == null) return null;
+            if (!_algo.IvSurfaceSsviMid.TryGetValue(_algo.ToEquity(contract), out var surface)) return null;
+            return surface.TryGetIV(contract, out double iv) ? iv : null;
+        }
+
+        public double NPV { get => _nPV ?? OCW.NPV(IV); }  // theoretical price
         public double IVdS { get => _iVdS ?? OCW.IVdS(IV); }
         public int DTE { get => _dte ?? OCW.DaysToExpiration(); }
 
@@ -53,12 +62,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         // dS
         public double Delta { get => _delta ?? OCW.Delta(IV); }  // dP ; sensitivity to underlying price}
         public double Gamma { get => _gamma ?? OCW.Gamma(IV); }  // dP2
-        public double DeltaDecay { get => _deltaDecay ?? OCW.DeltaDecay(IV); }  // dPdT
+        public double DeltaDecay => _deltaDecay ?? 0; // OCW.DeltaDecay(IV); }  // dPdT
         public double DDeltadIV { get => _dSdIV ?? OCW.DDeltadIV(IV); }  // dVegadP ; Vanna
         public double Vanna { get => DDeltadIV; }
         // dT
         public double Theta { get => _theta ?? OCW.Theta(IV); }  // dT ; sensitivity to time
-        public double ThetaTillExpiry { get => _thetaTotal ?? OCW.ThetaTillExpiry(IV); }
         public double ThetaDecay { get => _thetaDecay ?? OCW.ThetaDecay(IV); }  // dT2
         // dIV
         public double Vega { get => _vega ?? OCW.Vega(IV); }  // dIV ; sensitivity to volatility
@@ -108,7 +116,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _dSdIV = 0;
 
             _theta = 0;
-            _thetaTotal = 0;
             _thetaDecay = 0;
 
             _vega = 0;
@@ -124,8 +131,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public GreeksPlus Snap(decimal spotUnderlying, decimal priceContract, double volatility)
         {
-            OCW.SetIndependents(spotUnderlying, priceContract, volatility);
-            return Snap(volatility);
+            if (spotUnderlying > 0 && priceContract > 0 && volatility > 0)
+            {
+                OCW.SetIndependents(spotUnderlying, priceContract, volatility);
+                return Snap(volatility);    
+            }
+            return Snap();
         }
 
         public GreeksPlus Snap()
@@ -140,7 +151,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 SnapExpired();
                 return this;
             }
-
             _iV = volatility ?? IV;
             _hV = HV;
             _nPV = NPV;
@@ -153,7 +163,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _dSdIV = DDeltadIV;
 
             _theta = Theta;
-            _thetaTotal = ThetaTillExpiry;
             _thetaDecay = ThetaDecay;
 
             _vega = Vega;
@@ -183,7 +192,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             _dSdIV = 0;
 
             _theta = 0;
-            _thetaTotal = 0;
             _thetaDecay = 0;
 
             _vega = 0;

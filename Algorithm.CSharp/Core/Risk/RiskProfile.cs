@@ -76,10 +76,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (!WriteHeader()) { return; }
 
             var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol && x.Quantity != 0);
-            //if (positions.Any())
-            //{
-            //    _writer.Write(ToCsv(positions, _header, skipHeader: true));
-            //}
+            if (positions.Any())
+            {
+                _writer.Write(ToCsv(positions, _header, skipHeader: true));
+            }
             CachedMetric2F.Clear();
         }
 
