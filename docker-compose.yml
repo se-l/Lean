@@ -21,9 +21,10 @@ services:
       - ib-password=${ib_password_live}
       - ib-trading-mode=live
       - CONTAINER_NAME=trader.prd.1
-      
-      - WsHost=mind.prd
-      - WsPort=8003
+
+      - MQVirtualHost=prd
+      - MQUser=${MQUserPrd}
+      - MQPass=${MQPasswordPrd}
        
       - PricerProtocol=tcp
       - PricerHost=mind.prd
@@ -42,10 +43,10 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - Ticker=CRWD
-       - ib-port=4002  # Gateway
+      - Ticker=TCOM
+      # - ib-port=4002  # Gateway
       # - ignore-tws=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
-#      - ib-port=7498 # TWS
+      - ib-port=7498 # TWS
       - tws-is-running=true  # If TWS instead of gateway. refactor to use-tws (assumes it's been started and skips gateway)')
       - ib-host=host.docker.internal  # default: 127.0.0.1
 
@@ -57,8 +58,12 @@ services:
       - ib-password=${ib_password_paper}
       - ib-trading-mode=paper
       - CONTAINER_NAME=trader.paper.1
-      - WsHost=host.docker.internal
-      - WsPort=8001
+      
+      - MQHost=rabbitmq
+      - MQVirtualHost=sit
+      - MQUser=${MQUserSit}
+      - MQPass=${MQPasswordSit}
+      
       - PricerProtocol=tcp
       - PricerHost=host.docker.internal
       - PricerPort=8101
@@ -78,6 +83,7 @@ services:
       - PATH_TRADE=/mnt/trade
       - earnings_iv_drop_regressor_model_name_version=f_20260516-230556
 
+      - MQHost=rabbitmq
       - MQVirtualHost=prd
       - MQUser=${MQUserPrd}
       - MQPassword=${MQPasswordPrd}
@@ -105,6 +111,7 @@ services:
     environment:
       - PATH_TRADE=/mnt/trade
       - earnings_iv_drop_regressor_model_name_version=f_20260516-230556
+      - MQHost=rabbitmq
       - MQVirtualHost=sit
       - MQUser=${MQUserSit}
       - MQPassword=${MQPasswordSit}
@@ -132,6 +139,7 @@ services:
     environment:
       - PATH_TRADE=/mnt/trade
       - earnings_iv_drop_regressor_model_name_version=f_20260516-230556
+      - MQHost=rabbitmq
       - MQVirtualHost=dev
       - MQUser=${MQUserDev}
       - MQPassword=${MQPasswordDev}
@@ -163,6 +171,10 @@ services:
       - StartDate=2026-03-09
       - EndDate=2026-03-10
       - Ticker=HPE
+
+      - MQVirtualHost=dev
+      - MQUser=${MQUserDev}
+      - MQPass=${MQPasswordDev}
  
       - PricerProtocol=tcp
       - PricerHost=mind.dev
@@ -219,6 +231,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    networks: [net1]
 
   test:
     image: ubuntu:latest

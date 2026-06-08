@@ -58,12 +58,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public bool HasParams(DateTime tenor, OptionRight right)
         {
-            return ModelParams.ContainsKey(tenor);
+            return ModelParams != null && ModelParams.ContainsKey(tenor);
         }
 
         public bool HasParams(Option option)
         {
-            return ModelParams.ContainsKey(option.Expiry);
+            return ModelParams != null && ModelParams.ContainsKey(option.Expiry);
         }
 
         public double IV(Option option)
