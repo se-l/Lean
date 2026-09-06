@@ -26,7 +26,7 @@ using QuantConnect.Algorithm.CSharp.Earnings;
 using QuantConnect.Algorithm.Framework.Selection;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
-using Merlin;
+// using Merlin;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
@@ -260,61 +260,61 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
             var underlyingSymbol = contracts.First().Contract.Underlying.Symbol.Value;
             var dividends = new DividendManager().GetDividends(underlyingSymbol, CfgAlgo.StartDate);
 
-            foreach (var ocw in contracts)
-            {
-                double sumQlMs = 0;
-                double sumMerlinMs = 0;
-                double sumQlMetric = 0;
-                double sumMerlinMetric = 0;
-                int count = 0;
-                var dividendTenors = dividends.
-                    Where(d => d.ExDate <= ocw.Contract.Expiry).
-                    Select(d => (float)ToTenor(d.ExDate, calculationDate)).ToArray();
-                var dividendAmounts = dividends.
-                    Where(d => d.ExDate <= ocw.Contract.Expiry).
-                    Select(d => (float)d.Amount).ToArray();
-
-                foreach (decimal price in prices)
-                {
-                    // QLNet Benchmark
-                    var sw = Stopwatch.StartNew();
-                    sumQlMetric += (float)ocw.IV(priceOption, price, 0.0001);
-                    // (float)ocw.IV((decimal)optionPrices[i], (decimal)spotPrices[i], 0.0001);
-                    sw.Stop();
-                    sumQlMs += sw.Elapsed.TotalMilliseconds;
-
-                    // MerlinNative Test
-                    sw.Restart();
-                    var merlinIv = MerlinNative.merlin_implied_vol_american_fd_host(
-                        (float)priceOption,
-                        (float)price,
-                        (float)ocw.Contract.StrikePrice,
-                        (float)ToTenor(ocw.Contract.Expiry, calculationDate),
-                        ocw.Contract.Right == OptionRight.Call,
-                        zeroRates.Rates,
-                        zeroRates.Times,
-                        zeroRates.Rates.Length,
-                        dividendAmounts,
-                        dividendTenors,
-                        dividendAmounts.Length,
-                        0.0001f,
-                        400
-                    );
-                    sumMerlinMetric += (float.IsNaN(merlinIv) || merlinIv >= 5) ? 0 : merlinIv;
-                    sw.Stop();
-                    sumMerlinMs += sw.Elapsed.TotalMilliseconds;
-                    count++;
-
-                }
-                results.Add(new RegressionResult
-                {
-                    Symbol = ocw.Contract.Symbol.Value,
-                    QlMetric = sumQlMetric / count,
-                    MerlinMetric = sumMerlinMetric / count,
-                    QlMs = sumQlMs,
-                    MerlinMs = sumMerlinMs
-                });
-            }
+            // foreach (var ocw in contracts)
+            // {
+            //     double sumQlMs = 0;
+            //     double sumMerlinMs = 0;
+            //     double sumQlMetric = 0;
+            //     double sumMerlinMetric = 0;
+            //     int count = 0;
+            //     var dividendTenors = dividends.
+            //         Where(d => d.ExDate <= ocw.Contract.Expiry).
+            //         Select(d => (float)ToTenor(d.ExDate, calculationDate)).ToArray();
+            //     var dividendAmounts = dividends.
+            //         Where(d => d.ExDate <= ocw.Contract.Expiry).
+            //         Select(d => (float)d.Amount).ToArray();
+            //
+            //     foreach (decimal price in prices)
+            //     {
+            //         // QLNet Benchmark
+            //         var sw = Stopwatch.StartNew();
+            //         sumQlMetric += (float)ocw.IV(priceOption, price, 0.0001);
+            //         // (float)ocw.IV((decimal)optionPrices[i], (decimal)spotPrices[i], 0.0001);
+            //         sw.Stop();
+            //         sumQlMs += sw.Elapsed.TotalMilliseconds;
+            //
+            //         // MerlinNative Test
+            //         sw.Restart();
+            //         var merlinIv = MerlinNative.merlin_implied_vol_american_fd_host(
+            //             (float)priceOption,
+            //             (float)price,
+            //             (float)ocw.Contract.StrikePrice,
+            //             (float)ToTenor(ocw.Contract.Expiry, calculationDate),
+            //             ocw.Contract.Right == OptionRight.Call,
+            //             zeroRates.Rates,
+            //             zeroRates.Times,
+            //             zeroRates.Rates.Length,
+            //             dividendAmounts,
+            //             dividendTenors,
+            //             dividendAmounts.Length,
+            //             0.0001f,
+            //             400
+            //         );
+            //         sumMerlinMetric += (float.IsNaN(merlinIv) || merlinIv >= 5) ? 0 : merlinIv;
+            //         sw.Stop();
+            //         sumMerlinMs += sw.Elapsed.TotalMilliseconds;
+            //         count++;
+            //
+            //     }
+            //     results.Add(new RegressionResult
+            //     {
+            //         Symbol = ocw.Contract.Symbol.Value,
+            //         QlMetric = sumQlMetric / count,
+            //         MerlinMetric = sumMerlinMetric / count,
+            //         QlMs = sumQlMs,
+            //         MerlinMs = sumMerlinMs
+            //     });
+            // }
 
             LogRegressionTable(results);
         }
@@ -328,60 +328,60 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
             var underlyingSymbol = contracts.First().Contract.Underlying.Symbol.Value;
             var dividends = new DividendManager().GetDividends(underlyingSymbol, CfgAlgo.StartDate);
 
-            foreach (var ocw in contracts)
-            {
-                double sumQlMs = 0;
-                double sumMerlinMs = 0;
-                double sumQlMetric = 0;
-                double sumMerlinMetric = 0;
-                int count = 0;
-                var dividendTenors = dividends.
-                    Where(d => d.ExDate <= ocw.Contract.Expiry).
-                    Select(d => (float)ToTenor(d.ExDate, calculationDate)).ToArray();
-                var dividendAmounts = dividends.
-                    Where(d => d.ExDate <= ocw.Contract.Expiry).
-                    Select(d => (float)d.Amount).ToArray();
-
-                foreach (decimal spot in spots)
-                {
-                    // QLNet Benchmark
-                    var sw = Stopwatch.StartNew();
-                    sumQlMetric += (float)ocw.NPV(iv, spot);
-                    sw.Stop();
-                    sumQlMs += sw.Elapsed.TotalMilliseconds;
-
-                    // MerlinNative Test
-                    sw.Restart();
-                    var merlinIv = MerlinNative.merlin_get_price_fd_cpu(
-                        (float)spot,
-                        (float)ocw.Contract.StrikePrice,
-                        (float)ToTenor(ocw.Contract.Expiry, calculationDate),
-                        (float)iv,
-                        ocw.Contract.Right == OptionRight.Call,
-                        zeroRates.Rates,
-                        zeroRates.Times,
-                        zeroRates.Rates.Length,
-                        dividendAmounts,
-                        dividendTenors,
-                        dividendAmounts.Length,
-                        200,
-                        200
-                    );
-                    sumMerlinMetric += merlinIv;
-                    sw.Stop();
-                    sumMerlinMs += sw.Elapsed.TotalMilliseconds;
-                    count++;
-
-                }
-                results.Add(new RegressionResult
-                {
-                    Symbol = ocw.Contract.Symbol.Value,
-                    QlMetric = sumQlMetric / count,
-                    MerlinMetric = sumMerlinMetric / count,
-                    QlMs = sumQlMs,
-                    MerlinMs = sumMerlinMs
-                });
-            }
+            // foreach (var ocw in contracts)
+            // {
+            //     double sumQlMs = 0;
+            //     double sumMerlinMs = 0;
+            //     double sumQlMetric = 0;
+            //     double sumMerlinMetric = 0;
+            //     int count = 0;
+            //     var dividendTenors = dividends.
+            //         Where(d => d.ExDate <= ocw.Contract.Expiry).
+            //         Select(d => (float)ToTenor(d.ExDate, calculationDate)).ToArray();
+            //     var dividendAmounts = dividends.
+            //         Where(d => d.ExDate <= ocw.Contract.Expiry).
+            //         Select(d => (float)d.Amount).ToArray();
+            //
+            //     foreach (decimal spot in spots)
+            //     {
+            //         // QLNet Benchmark
+            //         var sw = Stopwatch.StartNew();
+            //         sumQlMetric += (float)ocw.NPV(iv, spot);
+            //         sw.Stop();
+            //         sumQlMs += sw.Elapsed.TotalMilliseconds;
+            //
+            //         // MerlinNative Test
+            //         sw.Restart();
+            //         var merlinIv = MerlinNative.merlin_get_price_fd_cpu(
+            //             (float)spot,
+            //             (float)ocw.Contract.StrikePrice,
+            //             (float)ToTenor(ocw.Contract.Expiry, calculationDate),
+            //             (float)iv,
+            //             ocw.Contract.Right == OptionRight.Call,
+            //             zeroRates.Rates,
+            //             zeroRates.Times,
+            //             zeroRates.Rates.Length,
+            //             dividendAmounts,
+            //             dividendTenors,
+            //             dividendAmounts.Length,
+            //             200,
+            //             200
+            //         );
+            //         sumMerlinMetric += merlinIv;
+            //         sw.Stop();
+            //         sumMerlinMs += sw.Elapsed.TotalMilliseconds;
+            //         count++;
+            //
+            //     }
+            //     results.Add(new RegressionResult
+            //     {
+            //         Symbol = ocw.Contract.Symbol.Value,
+            //         QlMetric = sumQlMetric / count,
+            //         MerlinMetric = sumMerlinMetric / count,
+            //         QlMs = sumQlMs,
+            //         MerlinMs = sumMerlinMs
+            //     });
+            // }
 
             LogRegressionTable(results);
         }
@@ -395,74 +395,74 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
             var dividends = new DividendManager().GetDividends(underlyingSymbol, CfgAlgo.StartDate);
 
             var sw = Stopwatch.StartNew();
-            foreach (var ocw in contracts)
-            {
-                double sumQlMs = 0;
-                double sumMerlinMs = 0;
-                double sumQlMetric = 0;
-                double sumMerlinMetric = 0;
-                
-                var dividendTenors = dividends.
-                    Where(d => d.ExDate <= ocw.Contract.Expiry).
-                    Select(d => (float)ToTenor(d.ExDate, calculationDate)).ToArray();
-                var dividendAmounts = dividends.
-                    Where(d => d.ExDate <= ocw.Contract.Expiry).
-                    Select(d => (float)d.Amount).ToArray();
-                
-                var ivs = spots.Select(_ => (float)iv).ToArray();
-                var spotPrices = spots.Select(p => (float)p).ToArray();
-                var strikes = spots.Select(_ => (float)ocw.Contract.StrikePrice).ToArray();
-                var tenors = spots.Select(_ => (float)ToTenor(ocw.Contract.Expiry, calculationDate)).ToArray();
-                var isCallsByte = spots.Select(_ => Convert.ToByte(ocw.Contract.Right == OptionRight.Call)).ToArray();
-
-                foreach (decimal spot in spots)
-                {
-                    // QLNet Benchmark
-                    sw.Restart();
-                    sumQlMetric += (float)ocw.NPV(iv, spot);
-                    sw.Stop();
-                    sumQlMs += sw.Elapsed.TotalMilliseconds;
-                }
-                
-                // var shift = 1f / 365f;
-                // for (int i = 0; i < zeroRates.Times.Length; i++)
-                //     zeroRates.Times[i] += shift;
-                
-                // var shift = 0.0001f;
-                // for (int i = 0; i < zeroRates.Times.Length; i++)
-                //     zeroRates.Rates[i] -= shift;
-                
-                // MerlinNative Test
-                sw.Restart();
-                float[] pricesOut = new float[spots.Count];
-                MerlinNative.merlin_get_price_fd_cuda(
-                    pricesOut,
-                    spotPrices,
-                    strikes,
-                    tenors,
-                    isCallsByte,
-                    ivs,
-                    spots.Count,
-                    zeroRates.Rates,
-                    zeroRates.Times,
-                    zeroRates.Rates.Length,
-                    dividendAmounts,
-                    dividendTenors,
-                    // 0
-                    dividendAmounts.Length
-                );
-                sw.Stop();
-                sumMerlinMs += sw.Elapsed.TotalMilliseconds;
-                sumMerlinMetric += pricesOut.Sum();
-                results.Add(new RegressionResult
-                {
-                    Symbol = ocw.Contract.Symbol.Value,
-                    QlMetric = sumQlMetric / spots.Count,
-                    MerlinMetric = sumMerlinMetric / spots.Count,
-                    QlMs = sumQlMs,
-                    MerlinMs = sumMerlinMs
-                });
-            }
+            // foreach (var ocw in contracts)
+            // {
+            //     double sumQlMs = 0;
+            //     double sumMerlinMs = 0;
+            //     double sumQlMetric = 0;
+            //     double sumMerlinMetric = 0;
+            //     
+            //     var dividendTenors = dividends.
+            //         Where(d => d.ExDate <= ocw.Contract.Expiry).
+            //         Select(d => (float)ToTenor(d.ExDate, calculationDate)).ToArray();
+            //     var dividendAmounts = dividends.
+            //         Where(d => d.ExDate <= ocw.Contract.Expiry).
+            //         Select(d => (float)d.Amount).ToArray();
+            //     
+            //     var ivs = spots.Select(_ => (float)iv).ToArray();
+            //     var spotPrices = spots.Select(p => (float)p).ToArray();
+            //     var strikes = spots.Select(_ => (float)ocw.Contract.StrikePrice).ToArray();
+            //     var tenors = spots.Select(_ => (float)ToTenor(ocw.Contract.Expiry, calculationDate)).ToArray();
+            //     var isCallsByte = spots.Select(_ => Convert.ToByte(ocw.Contract.Right == OptionRight.Call)).ToArray();
+            //
+            //     foreach (decimal spot in spots)
+            //     {
+            //         // QLNet Benchmark
+            //         sw.Restart();
+            //         sumQlMetric += (float)ocw.NPV(iv, spot);
+            //         sw.Stop();
+            //         sumQlMs += sw.Elapsed.TotalMilliseconds;
+            //     }
+            //     
+            //     // var shift = 1f / 365f;
+            //     // for (int i = 0; i < zeroRates.Times.Length; i++)
+            //     //     zeroRates.Times[i] += shift;
+            //     
+            //     // var shift = 0.0001f;
+            //     // for (int i = 0; i < zeroRates.Times.Length; i++)
+            //     //     zeroRates.Rates[i] -= shift;
+            //     
+            //     // MerlinNative Test
+            //     sw.Restart();
+            //     float[] pricesOut = new float[spots.Count];
+            //     MerlinNative.merlin_get_price_fd_cuda(
+            //         pricesOut,
+            //         spotPrices,
+            //         strikes,
+            //         tenors,
+            //         isCallsByte,
+            //         ivs,
+            //         spots.Count,
+            //         zeroRates.Rates,
+            //         zeroRates.Times,
+            //         zeroRates.Rates.Length,
+            //         dividendAmounts,
+            //         dividendTenors,
+            //         // 0
+            //         dividendAmounts.Length
+            //     );
+            //     sw.Stop();
+            //     sumMerlinMs += sw.Elapsed.TotalMilliseconds;
+            //     sumMerlinMetric += pricesOut.Sum();
+            //     results.Add(new RegressionResult
+            //     {
+            //         Symbol = ocw.Contract.Symbol.Value,
+            //         QlMetric = sumQlMetric / spots.Count,
+            //         MerlinMetric = sumMerlinMetric / spots.Count,
+            //         QlMs = sumQlMs,
+            //         MerlinMs = sumMerlinMs
+            //     });
+            // }
 
             LogRegressionTable(results);
         }
@@ -526,122 +526,122 @@ namespace QuantConnect.Algorithm.CSharp.PerformanceAndRegression
             var underlyingSymbol = contracts.First().Contract.Underlying.Symbol.Value;
             var dividends = new DividendManager().GetDividends(underlyingSymbol, CfgAlgo.StartDate);
             
-            foreach (var ocw in contracts)
-            {
-                var numPrices = prices.Count;
-                var ivsCleanCpu  = new float[numPrices];
-
-                // Prepare arrays for vectorized call
-                var optionPrices = prices.Select(_ => (float)priceOption).ToArray();
-                var spotPrices = prices.Select(p => (float)p).ToArray();
-                var strikes = prices.Select(_ => (float)ocw.Contract.StrikePrice).ToArray();
-                var tenors = prices.Select(_ => (float)ToTenor(ocw.Contract.Expiry, calculationDate)).ToArray();
-                var isCalls = prices.Select(_ => ocw.Contract.Right == OptionRight.Call).ToArray();
-                var isCallsByte = prices.Select(_ => Convert.ToByte(ocw.Contract.Right == OptionRight.Call)).ToArray();
-                
-                var dividendTenors = dividends.
-                    Where(d => d.ExDate <= ocw.Contract.Expiry).
-                    Select(d => (float)ToTenor(d.ExDate, calculationDate)).ToArray();
-                var dividendAmounts = dividends.
-                    Where(d => d.ExDate <= ocw.Contract.Expiry).
-                    Select(d => (float)d.Amount).ToArray();
-                
-                // 1. Calculate using Single CPU method
-                var swSingle = Stopwatch.StartNew();
-                for (int i = 0; i < numPrices; i++)
-                {
-                    ivsCleanCpu[i] = (float)ocw.IV((decimal)optionPrices[i], (decimal)spotPrices[i], 0.0001);
-                }
-                swSingle.Stop();
-
-                // 2. Calculate using Vectorized FD method
-                var swVec = Stopwatch.StartNew();
-                float[] ivs = new float[numPrices];
-                MerlinNative.merlin_get_iv_fd_gpu(
-                    ivs,
-                    optionPrices,
-                    spotPrices,
-                    strikes,
-                    tenors,
-                    isCallsByte,
-                    numPrices,
-                    zeroRates.Rates,
-                    zeroRates.Times,
-                    zeroRates.Rates.Length,
-                    dividendAmounts,
-                    dividendTenors,
-                    dividendAmounts.Length,
-                    0.0001f,
-                    400,
-                    time_steps: 200,
-                    space_steps: 200
-                );
-                swVec.Stop();
-
-                results.Add(new RegressionResult
-                {
-                    Symbol = ocw.Contract.Symbol.Value,
-                    QlMetric = ivsCleanCpu.Average(v => float.IsNaN(v) || v >= 5 ? 0 : v),
-                    MerlinMetric = ivs.Average(v => float.IsNaN(v) || v >= 5 ? 0 : v),
-                    QlMs = swSingle.Elapsed.TotalMilliseconds,
-                    MerlinMs = swVec.Elapsed.TotalMilliseconds,
-                    Count = ivsCleanCpu.Length
-                });
-            }
+            // foreach (var ocw in contracts)
+            // {
+            //     var numPrices = prices.Count;
+            //     var ivsCleanCpu  = new float[numPrices];
+            //
+            //     // Prepare arrays for vectorized call
+            //     var optionPrices = prices.Select(_ => (float)priceOption).ToArray();
+            //     var spotPrices = prices.Select(p => (float)p).ToArray();
+            //     var strikes = prices.Select(_ => (float)ocw.Contract.StrikePrice).ToArray();
+            //     var tenors = prices.Select(_ => (float)ToTenor(ocw.Contract.Expiry, calculationDate)).ToArray();
+            //     var isCalls = prices.Select(_ => ocw.Contract.Right == OptionRight.Call).ToArray();
+            //     var isCallsByte = prices.Select(_ => Convert.ToByte(ocw.Contract.Right == OptionRight.Call)).ToArray();
+            //     
+            //     var dividendTenors = dividends.
+            //         Where(d => d.ExDate <= ocw.Contract.Expiry).
+            //         Select(d => (float)ToTenor(d.ExDate, calculationDate)).ToArray();
+            //     var dividendAmounts = dividends.
+            //         Where(d => d.ExDate <= ocw.Contract.Expiry).
+            //         Select(d => (float)d.Amount).ToArray();
+            //     
+            //     // 1. Calculate using Single CPU method
+            //     var swSingle = Stopwatch.StartNew();
+            //     for (int i = 0; i < numPrices; i++)
+            //     {
+            //         ivsCleanCpu[i] = (float)ocw.IV((decimal)optionPrices[i], (decimal)spotPrices[i], 0.0001);
+            //     }
+            //     swSingle.Stop();
+            //
+            //     // 2. Calculate using Vectorized FD method
+            //     var swVec = Stopwatch.StartNew();
+            //     float[] ivs = new float[numPrices];
+            //     MerlinNative.merlin_get_iv_fd_gpu(
+            //         ivs,
+            //         optionPrices,
+            //         spotPrices,
+            //         strikes,
+            //         tenors,
+            //         isCallsByte,
+            //         numPrices,
+            //         zeroRates.Rates,
+            //         zeroRates.Times,
+            //         zeroRates.Rates.Length,
+            //         dividendAmounts,
+            //         dividendTenors,
+            //         dividendAmounts.Length,
+            //         0.0001f,
+            //         400,
+            //         time_steps: 200,
+            //         space_steps: 200
+            //     );
+            //     swVec.Stop();
+            //
+            //     results.Add(new RegressionResult
+            //     {
+            //         Symbol = ocw.Contract.Symbol.Value,
+            //         QlMetric = ivsCleanCpu.Average(v => float.IsNaN(v) || v >= 5 ? 0 : v),
+            //         MerlinMetric = ivs.Average(v => float.IsNaN(v) || v >= 5 ? 0 : v),
+            //         QlMs = swSingle.Elapsed.TotalMilliseconds,
+            //         MerlinMs = swVec.Elapsed.TotalMilliseconds,
+            //         Count = ivsCleanCpu.Length
+            //     });
+            // }
 
             Log("--- Regression: Single CPU vs Vectorized FD ---");
             LogRegressionTable(results);
         }
         
-        public double LogPerformanceMerlin(String tag, List<OptionContractWrap> contracts, List<decimal> prices, DateTime calculationDate, decimal priceOption)
-        {
-            var sw = Stopwatch.StartNew();
-            var totalCalculations = 0;
-            
-            int nSteps = 10;
-
-            foreach (var ocw in contracts)
-            {
-                double sumIv = 0;
-                int count = 0;
-
-                foreach (decimal price in prices)
-                {
-                    // Submit each contract-price combination on its own (size 1 arrays)
-                    float outIv = MerlinNative.merlin_implied_vol_american_fd_host(
-                        (float)priceOption,
-                        (float)price,
-                        (float)ocw.Contract.StrikePrice,
-                        (float)ToTenor(ocw.Contract.Expiry, calculationDate),
-                        ocw.Contract.Right == OptionRight.Call,
-                        Array.Empty<float>(), Array.Empty<float>(),0,
-                        Array.Empty<float>(), Array.Empty<float>(), 0,
-                        0.001f,
-                        max_iter: 200
-                    );
-
-                    sumIv += float.IsNaN(outIv) ? 0 : outIv;
-                    count++;
-                    totalCalculations++;
-                }
-
-                var avgIv = count > 0 ? sumIv / count : 0;
-                Log($"Contract: {ocw.Contract.Symbol} | Avg IV (Merlin-Single): {avgIv:F4}");
-            }
-
-            sw.Stop();
-
-            double totalMs = sw.Elapsed.TotalMilliseconds;
-            var avgMsPerIv = totalCalculations > 0 ? totalMs / totalCalculations : 0;
-
-            Log($"--- Performance Metrics {tag}---");
-            Log($"Contracts Measured: {contracts.Count}");
-            Log($"Total IV Calcs: {totalCalculations}");
-            Log($"Total Time: {totalMs:F2} ms");
-            Log($"Average Time/Calc: {avgMsPerIv:F4} ms");
-
-            return totalMs;
-        }
+        // public double LogPerformanceMerlin(String tag, List<OptionContractWrap> contracts, List<decimal> prices, DateTime calculationDate, decimal priceOption)
+        // {
+        //     var sw = Stopwatch.StartNew();
+        //     var totalCalculations = 0;
+        //     
+        //     int nSteps = 10;
+        //
+        //     foreach (var ocw in contracts)
+        //     {
+        //         double sumIv = 0;
+        //         int count = 0;
+        //
+        //         foreach (decimal price in prices)
+        //         {
+        //             // Submit each contract-price combination on its own (size 1 arrays)
+        //             float outIv = MerlinNative.merlin_implied_vol_american_fd_host(
+        //                 (float)priceOption,
+        //                 (float)price,
+        //                 (float)ocw.Contract.StrikePrice,
+        //                 (float)ToTenor(ocw.Contract.Expiry, calculationDate),
+        //                 ocw.Contract.Right == OptionRight.Call,
+        //                 Array.Empty<float>(), Array.Empty<float>(),0,
+        //                 Array.Empty<float>(), Array.Empty<float>(), 0,
+        //                 0.001f,
+        //                 max_iter: 200
+        //             );
+        //
+        //             sumIv += float.IsNaN(outIv) ? 0 : outIv;
+        //             count++;
+        //             totalCalculations++;
+        //         }
+        //
+        //         var avgIv = count > 0 ? sumIv / count : 0;
+        //         Log($"Contract: {ocw.Contract.Symbol} | Avg IV (Merlin-Single): {avgIv:F4}");
+        //     }
+        //
+        //     sw.Stop();
+        //
+        //     double totalMs = sw.Elapsed.TotalMilliseconds;
+        //     var avgMsPerIv = totalCalculations > 0 ? totalMs / totalCalculations : 0;
+        //
+        //     Log($"--- Performance Metrics {tag}---");
+        //     Log($"Contracts Measured: {contracts.Count}");
+        //     Log($"Total IV Calcs: {totalCalculations}");
+        //     Log($"Total Time: {totalMs:F2} ms");
+        //     Log($"Average Time/Calc: {avgMsPerIv:F4} ms");
+        //
+        //     return totalMs;
+        // }
 
         private void LogRegressionTable(List<RegressionResult> results)
         {
