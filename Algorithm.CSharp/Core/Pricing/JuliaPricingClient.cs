@@ -29,8 +29,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
     ///   4  bytes  time_steps     Int32    (0 → server default 200)
     ///   4  bytes  space_steps    Int32    (0 → server default 200)
     ///
-    /// Reply (success):  4 bytes Float32 LE
-    /// Reply (error):    0xFF byte + UTF-8 error message
+    /// Reply (success):  0x02 byte
+    /// Reply (error):    0x03 byte + UTF-8 error message
     /// </summary>
     public sealed class JuliaPricingClient : IDisposable
     {

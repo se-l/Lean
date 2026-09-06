@@ -17,7 +17,6 @@ using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.ToolBox.AlgoSeekFuturesConverter;
 using QuantConnect.ToolBox.CoarseUniverseGenerator;
-using QuantConnect.ToolBox.IQFeedDownloader;
 using QuantConnect.ToolBox.KaikoDataConverter;
 using QuantConnect.ToolBox.Polygon;
 using QuantConnect.ToolBox.RandomDataGenerator;
@@ -71,16 +70,9 @@ namespace QuantConnect.ToolBox
                 var apiKey = optionsObject.ContainsKey("api-key") ? optionsObject["api-key"].ToString() : "";
                 switch (targetApp)
                 {
-                    case "iqfdl":
-                    case "iqfeeddownloader":
-                        var securityType = optionsObject.ContainsKey("security-type") ? optionsObject["security-type"].ToString() : "";
-                        IList<string> tickTypes = optionsObject.ContainsKey("tick-types") ? ToolboxArgumentParser.GetTickTypes(optionsObject) : new List<string>() { "Trade" };
-                        IList<string> resolutions = optionsObject.ContainsKey("resolutions") ? ToolboxArgumentParser.GetResolutions(optionsObject) : new List<string>();
-                        IQFeedDownloaderProgram.IQFeedDownloader(tickers, resolutions, fromDate, toDate, tickTypes, securityType);
-                        break;
                     case "pdl":
                     case "polygondownloader":
-                        tickTypes = optionsObject.ContainsKey("tick-types") ? ToolboxArgumentParser.GetTickTypes(optionsObject) : new List<string>() { "Trade", "Quote" };
+                        IList<string> tickTypes = optionsObject.ContainsKey("tick-types") ? ToolboxArgumentParser.GetTickTypes(optionsObject) : new List<string>() { "Trade", "Quote" };
                         bool skipFilled = optionsObject.ContainsKey("skip-filled") ? true : false;
                         bool skipEmpty = optionsObject.ContainsKey("skip-empty") ? true : false;
                         DateTime? skipModifiedSince = optionsObject.ContainsKey("skip-modified-since") ? Parse.DateTimeExact((string)optionsObject["skip-modified-since"], "yyyy-MM-dd") : null;
