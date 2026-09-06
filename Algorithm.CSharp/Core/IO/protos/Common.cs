@@ -25,49 +25,61 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       byte[] descriptorData = global::System.Convert.FromBase64String(
           string.Concat(
             "CgxDb21tb24ucHJvdG8SJVF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJw",
-            "LkNvcmUuSU8iewoJSG9sZGluZ1BiEg4KBnN5bWJvbBgBIAEoCRIQCghxdWFu",
-            "dGl0eRgCIAEoAhJMCg1zZWN1cml0eV90eXBlGAMgASgOMjUuUXVhbnRDb25u",
-            "ZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5TZWN1cml0eVR5cGVQYiIp",
-            "Cg1PcHRpb25RdW90ZVBiEgsKA2JpZBgBIAEoAhILCgNhc2sYAiABKAIinAEK",
-            "B1RyYWRlUGISCgoCdHMYASABKAkSDgoGc3ltYm9sGAIgASgJEkwKDXNlY3Vy",
-            "aXR5X3R5cGUYAyABKA4yNS5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFy",
-            "cC5Db3JlLklPLlNlY3VyaXR5VHlwZVBiEg0KBXByaWNlGAQgASgCEhgKEHBy",
-            "aWNlX3VuZGVybHlpbmcYBSABKAIipwEKB1F1b3RlUGISCgoCdHMYASABKAkS",
-            "DgoGc3ltYm9sGAIgASgJEkwKDXNlY3VyaXR5X3R5cGUYAyABKA4yNS5RdWFu",
-            "dENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlNlY3VyaXR5VHlw",
-            "ZVBiEgsKA2JpZBgEIAEoAhILCgNhc2sYBSABKAISGAoQcHJpY2VfdW5kZXJs",
-            "eWluZxgGIAEoAiKoAQoIUXVvdGVzUGISDgoGc3ltYm9sGAEgASgJEkwKDXNl",
-            "Y3VyaXR5X3R5cGUYAiABKA4yNS5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNT",
-            "aGFycC5Db3JlLklPLlNlY3VyaXR5VHlwZVBiEj4KBnF1b3RlcxgDIAMoCzIu",
-            "LlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uUXVvdGVQ",
-            "YiKoAQoIVHJhZGVzUGISDgoGc3ltYm9sGAEgASgJEkwKDXNlY3VyaXR5X3R5",
-            "cGUYAiABKA4yNS5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3Jl",
-            "LklPLlNlY3VyaXR5VHlwZVBiEj4KBnRyYWRlcxgDIAMoCzIuLlF1YW50Q29u",
-            "bmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uVHJhZGVQYiLHAwoTTWFy",
-            "a2V0RGF0YUhpc3RvcnlQYhIKCgJ0cxgBIAEoCRIQCgh0c19zdGFydBgCIAEo",
-            "CRIOCgZ0c19lbmQYAyABKAkSEgoKdW5kZXJseWluZxgEIAEoCRJWCgZxdW90",
-            "ZXMYBSADKAsyRi5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3Jl",
-            "LklPLk1hcmtldERhdGFIaXN0b3J5UGIuUXVvdGVzRW50cnkSVgoGdHJhZGVz",
-            "GAYgAygLMkYuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5J",
-            "Ty5NYXJrZXREYXRhSGlzdG9yeVBiLlRyYWRlc0VudHJ5Gl4KC1F1b3Rlc0Vu",
-            "dHJ5EgsKA2tleRgBIAEoCRI+CgV2YWx1ZRgCIAEoCzIvLlF1YW50Q29ubmVj",
-            "dC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uUXVvdGVzUGI6AjgBGl4KC1Ry",
-            "YWRlc0VudHJ5EgsKA2tleRgBIAEoCRI+CgV2YWx1ZRgCIAEoCzIvLlF1YW50",
-            "Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uVHJhZGVzUGI6AjgB",
-            "IrECChxNYXJrZXREYXRhU25hcEJ5VW5kZXJseWluZ1BiEgoKAnRzGAEgASgJ",
-            "EhIKCnVuZGVybHlpbmcYAiABKAkSGAoQdW5kZXJseWluZ19wcmljZRgDIAEo",
-            "AhJsCg1vcHRpb25fcXVvdGVzGAQgAygLMlUuUXVhbnRDb25uZWN0LkFsZ29y",
-            "aXRobS5DU2hhcnAuQ29yZS5JTy5NYXJrZXREYXRhU25hcEJ5VW5kZXJseWlu",
-            "Z1BiLk9wdGlvblF1b3Rlc0VudHJ5GmkKEU9wdGlvblF1b3Rlc0VudHJ5EgsK",
-            "A2tleRgBIAEoCRJDCgV2YWx1ZRgCIAEoCzI0LlF1YW50Q29ubmVjdC5BbGdv",
-            "cml0aG0uQ1NoYXJwLkNvcmUuSU8uT3B0aW9uUXVvdGVQYjoCOAEiIAoOVmVj",
-            "dG9yRG91YmxlUGISDgoGdmFsdWVzGAEgAygBKiIKDU9wdGlvblJpZ2h0UGIS",
-            "CAoEQ0FMTBAAEgcKA1BVVBABKigKDlNlY3VyaXR5VHlwZVBiEgoKBkVRVUlU",
-            "WRAAEgoKBk9QVElPThABQiiqAiVRdWFudENvbm5lY3QuQWxnb3JpdGhtLkNT",
-            "aGFycC5Db3JlLklPYgZwcm90bzM="));
+            "LkNvcmUuSU8irAEKCU1lc3NhZ2VQYhJBCgdjaGFubmVsGAEgASgOMjAuUXVh",
+            "bnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5DaGFubmVsUGIS",
+            "CgoCaWQYAiABKAkSPwoGYWN0aW9uGAMgASgOMi8uUXVhbnRDb25uZWN0LkFs",
+            "Z29yaXRobS5DU2hhcnAuQ29yZS5JTy5BY3Rpb25QYhIPCgdwYXlsb2FkGAQg",
+            "ASgMInsKCUhvbGRpbmdQYhIOCgZzeW1ib2wYASABKAkSEAoIcXVhbnRpdHkY",
+            "AiABKAISTAoNc2VjdXJpdHlfdHlwZRgDIAEoDjI1LlF1YW50Q29ubmVjdC5B",
+            "bGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uU2VjdXJpdHlUeXBlUGIiKQoNT3B0",
+            "aW9uUXVvdGVQYhILCgNiaWQYASABKAISCwoDYXNrGAIgASgCIpwBCgdUcmFk",
+            "ZVBiEgoKAnRzGAEgASgJEg4KBnN5bWJvbBgCIAEoCRJMCg1zZWN1cml0eV90",
+            "eXBlGAMgASgOMjUuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29y",
+            "ZS5JTy5TZWN1cml0eVR5cGVQYhINCgVwcmljZRgEIAEoAhIYChBwcmljZV91",
+            "bmRlcmx5aW5nGAUgASgCIqcBCgdRdW90ZVBiEgoKAnRzGAEgASgJEg4KBnN5",
+            "bWJvbBgCIAEoCRJMCg1zZWN1cml0eV90eXBlGAMgASgOMjUuUXVhbnRDb25u",
+            "ZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5TZWN1cml0eVR5cGVQYhIL",
+            "CgNiaWQYBCABKAISCwoDYXNrGAUgASgCEhgKEHByaWNlX3VuZGVybHlpbmcY",
+            "BiABKAIiqAEKCFF1b3Rlc1BiEg4KBnN5bWJvbBgBIAEoCRJMCg1zZWN1cml0",
+            "eV90eXBlGAIgASgOMjUuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAu",
+            "Q29yZS5JTy5TZWN1cml0eVR5cGVQYhI+CgZxdW90ZXMYAyADKAsyLi5RdWFu",
+            "dENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlF1b3RlUGIiqAEK",
+            "CFRyYWRlc1BiEg4KBnN5bWJvbBgBIAEoCRJMCg1zZWN1cml0eV90eXBlGAIg",
+            "ASgOMjUuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5T",
+            "ZWN1cml0eVR5cGVQYhI+CgZ0cmFkZXMYAyADKAsyLi5RdWFudENvbm5lY3Qu",
+            "QWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlRyYWRlUGIixwMKE01hcmtldERh",
+            "dGFIaXN0b3J5UGISCgoCdHMYASABKAkSEAoIdHNfc3RhcnQYAiABKAkSDgoG",
+            "dHNfZW5kGAMgASgJEhIKCnVuZGVybHlpbmcYBCABKAkSVgoGcXVvdGVzGAUg",
+            "AygLMkYuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5N",
+            "YXJrZXREYXRhSGlzdG9yeVBiLlF1b3Rlc0VudHJ5ElYKBnRyYWRlcxgGIAMo",
+            "CzJGLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uTWFy",
+            "a2V0RGF0YUhpc3RvcnlQYi5UcmFkZXNFbnRyeRpeCgtRdW90ZXNFbnRyeRIL",
+            "CgNrZXkYASABKAkSPgoFdmFsdWUYAiABKAsyLy5RdWFudENvbm5lY3QuQWxn",
+            "b3JpdGhtLkNTaGFycC5Db3JlLklPLlF1b3Rlc1BiOgI4ARpeCgtUcmFkZXNF",
+            "bnRyeRILCgNrZXkYASABKAkSPgoFdmFsdWUYAiABKAsyLy5RdWFudENvbm5l",
+            "Y3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlRyYWRlc1BiOgI4ASKxAgoc",
+            "TWFya2V0RGF0YVNuYXBCeVVuZGVybHlpbmdQYhIKCgJ0cxgBIAEoCRISCgp1",
+            "bmRlcmx5aW5nGAIgASgJEhgKEHVuZGVybHlpbmdfcHJpY2UYAyABKAISbAoN",
+            "b3B0aW9uX3F1b3RlcxgEIAMoCzJVLlF1YW50Q29ubmVjdC5BbGdvcml0aG0u",
+            "Q1NoYXJwLkNvcmUuSU8uTWFya2V0RGF0YVNuYXBCeVVuZGVybHlpbmdQYi5P",
+            "cHRpb25RdW90ZXNFbnRyeRppChFPcHRpb25RdW90ZXNFbnRyeRILCgNrZXkY",
+            "ASABKAkSQwoFdmFsdWUYAiABKAsyNC5RdWFudENvbm5lY3QuQWxnb3JpdGht",
+            "LkNTaGFycC5Db3JlLklPLk9wdGlvblF1b3RlUGI6AjgBIiAKDlZlY3RvckRv",
+            "dWJsZVBiEg4KBnZhbHVlcxgBIAMoASqgAgoJQ2hhbm5lbFBiEgYKAkhCEAAS",
+            "FAoQVEFSR0VUX1BPUlRGT0xJTxABEggKBEVDSE8QAhINCglURVJNSU5BVEUQ",
+            "AxISCg5TVFJFU1NfVEVTVF9EUxAEEh4KGkNNRF9GRVRDSF9UQVJHRVRfUE9S",
+            "VEZPTElPEAUSEgoOQ01EX0NBTkNFTF9PSUQQBhIPCgtLQUxNQU5fSU5JVBAH",
+            "EhQKEENNRF9DRkdfT1ZFUlJJREUQCBIcChhSRVFVRVNUX1NTVklfQ0FMSUJS",
+            "QVRJT04QCRIdChlSRVFVRVNUX1BGX1JJU0tfU0NFTkFSSU9TEAoSFQoRUkVR",
+            "VUVTVF9DQUNIRV9JVlMQCxIZChVSRVFVRVNUX0xFQU5fUFJJQ0UySVYQDCoq",
+            "CghBY3Rpb25QYhINCglTVUJTQ1JJQkUQABIPCgtVTlNVQlNDUklCRRABKiIK",
+            "DU9wdGlvblJpZ2h0UGISCAoEQ0FMTBAAEgcKA1BVVBABKigKDlNlY3VyaXR5",
+            "VHlwZVBiEgoKBkVRVUlUWRAAEgoKBk9QVElPThABQiiqAiVRdWFudENvbm5l",
+            "Y3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPYgZwcm90bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
-          new pbr::GeneratedClrTypeInfo(new[] {typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRightPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityTypePb), }, null, new pbr::GeneratedClrTypeInfo[] {
+          new pbr::GeneratedClrTypeInfo(new[] {typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRightPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityTypePb), }, null, new pbr::GeneratedClrTypeInfo[] {
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.MessagePb), global::QuantConnect.Algorithm.CSharp.Core.IO.MessagePb.Parser, new[]{ "Channel", "Id", "Action", "Payload" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb), global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb.Parser, new[]{ "Symbol", "Quantity", "SecurityType" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuotePb), global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuotePb.Parser, new[]{ "Bid", "Ask" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.TradePb), global::QuantConnect.Algorithm.CSharp.Core.IO.TradePb.Parser, new[]{ "Ts", "Symbol", "SecurityType", "Price", "PriceUnderlying" }, null, null, null, null),
@@ -83,6 +95,27 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
   }
   #region Enums
+  public enum ChannelPb {
+    [pbr::OriginalName("HB")] Hb = 0,
+    [pbr::OriginalName("TARGET_PORTFOLIO")] TargetPortfolio = 1,
+    [pbr::OriginalName("ECHO")] Echo = 2,
+    [pbr::OriginalName("TERMINATE")] Terminate = 3,
+    [pbr::OriginalName("STRESS_TEST_DS")] StressTestDs = 4,
+    [pbr::OriginalName("CMD_FETCH_TARGET_PORTFOLIO")] CmdFetchTargetPortfolio = 5,
+    [pbr::OriginalName("CMD_CANCEL_OID")] CmdCancelOid = 6,
+    [pbr::OriginalName("KALMAN_INIT")] KalmanInit = 7,
+    [pbr::OriginalName("CMD_CFG_OVERRIDE")] CmdCfgOverride = 8,
+    [pbr::OriginalName("REQUEST_SSVI_CALIBRATION")] RequestSsviCalibration = 9,
+    [pbr::OriginalName("REQUEST_PF_RISK_SCENARIOS")] RequestPfRiskScenarios = 10,
+    [pbr::OriginalName("REQUEST_CACHE_IVS")] RequestCacheIvs = 11,
+    [pbr::OriginalName("REQUEST_LEAN_PRICE2IV")] RequestLeanPrice2Iv = 12,
+  }
+
+  public enum ActionPb {
+    [pbr::OriginalName("SUBSCRIBE")] Subscribe = 0,
+    [pbr::OriginalName("UNSUBSCRIBE")] Unsubscribe = 1,
+  }
+
   public enum OptionRightPb {
     [pbr::OriginalName("CALL")] Call = 0,
     [pbr::OriginalName("PUT")] Put = 1,
@@ -96,6 +129,315 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
   #endregion
 
   #region Messages
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
+  public sealed partial class MessagePb : pb::IMessage<MessagePb>
+  #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      , pb::IBufferMessage
+  #endif
+  {
+    private static readonly pb::MessageParser<MessagePb> _parser = new pb::MessageParser<MessagePb>(() => new MessagePb());
+    private pb::UnknownFieldSet _unknownFields;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pb::MessageParser<MessagePb> Parser { get { return _parser; } }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public static pbr::MessageDescriptor Descriptor {
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[0]; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    pbr::MessageDescriptor pb::IMessage.Descriptor {
+      get { return Descriptor; }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public MessagePb() {
+      OnConstruction();
+    }
+
+    partial void OnConstruction();
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public MessagePb(MessagePb other) : this() {
+      channel_ = other.channel_;
+      id_ = other.id_;
+      action_ = other.action_;
+      payload_ = other.payload_;
+      _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public MessagePb Clone() {
+      return new MessagePb(this);
+    }
+
+    /// <summary>Field number for the "channel" field.</summary>
+    public const int ChannelFieldNumber = 1;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb channel_ = global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb Channel {
+      get { return channel_; }
+      set {
+        channel_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "id" field.</summary>
+    public const int IdFieldNumber = 2;
+    private string id_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string Id {
+      get { return id_; }
+      set {
+        id_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    /// <summary>Field number for the "action" field.</summary>
+    public const int ActionFieldNumber = 3;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb action_ = global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb Action {
+      get { return action_; }
+      set {
+        action_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "payload" field.</summary>
+    public const int PayloadFieldNumber = 4;
+    private pb::ByteString payload_ = pb::ByteString.Empty;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public pb::ByteString Payload {
+      get { return payload_; }
+      set {
+        payload_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override bool Equals(object other) {
+      return Equals(other as MessagePb);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public bool Equals(MessagePb other) {
+      if (ReferenceEquals(other, null)) {
+        return false;
+      }
+      if (ReferenceEquals(other, this)) {
+        return true;
+      }
+      if (Channel != other.Channel) return false;
+      if (Id != other.Id) return false;
+      if (Action != other.Action) return false;
+      if (Payload != other.Payload) return false;
+      return Equals(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override int GetHashCode() {
+      int hash = 1;
+      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) hash ^= Channel.GetHashCode();
+      if (Id.Length != 0) hash ^= Id.GetHashCode();
+      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) hash ^= Action.GetHashCode();
+      if (Payload.Length != 0) hash ^= Payload.GetHashCode();
+      if (_unknownFields != null) {
+        hash ^= _unknownFields.GetHashCode();
+      }
+      return hash;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public override string ToString() {
+      return pb::JsonFormatter.ToDiagnosticString(this);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void WriteTo(pb::CodedOutputStream output) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      output.WriteRawMessage(this);
+    #else
+      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) {
+        output.WriteRawTag(8);
+        output.WriteEnum((int) Channel);
+      }
+      if (Id.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Id);
+      }
+      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) {
+        output.WriteRawTag(24);
+        output.WriteEnum((int) Action);
+      }
+      if (Payload.Length != 0) {
+        output.WriteRawTag(34);
+        output.WriteBytes(Payload);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(output);
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
+      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) {
+        output.WriteRawTag(8);
+        output.WriteEnum((int) Channel);
+      }
+      if (Id.Length != 0) {
+        output.WriteRawTag(18);
+        output.WriteString(Id);
+      }
+      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) {
+        output.WriteRawTag(24);
+        output.WriteEnum((int) Action);
+      }
+      if (Payload.Length != 0) {
+        output.WriteRawTag(34);
+        output.WriteBytes(Payload);
+      }
+      if (_unknownFields != null) {
+        _unknownFields.WriteTo(ref output);
+      }
+    }
+    #endif
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public int CalculateSize() {
+      int size = 0;
+      if (Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) {
+        size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) Channel);
+      }
+      if (Id.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(Id);
+      }
+      if (Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) {
+        size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) Action);
+      }
+      if (Payload.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeBytesSize(Payload);
+      }
+      if (_unknownFields != null) {
+        size += _unknownFields.CalculateSize();
+      }
+      return size;
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(MessagePb other) {
+      if (other == null) {
+        return;
+      }
+      if (other.Channel != global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb.Hb) {
+        Channel = other.Channel;
+      }
+      if (other.Id.Length != 0) {
+        Id = other.Id;
+      }
+      if (other.Action != global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb.Subscribe) {
+        Action = other.Action;
+      }
+      if (other.Payload.Length != 0) {
+        Payload = other.Payload;
+      }
+      _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
+    }
+
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public void MergeFrom(pb::CodedInputStream input) {
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+      input.ReadRawMessage(this);
+    #else
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
+            break;
+          case 8: {
+            Channel = (global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb) input.ReadEnum();
+            break;
+          }
+          case 18: {
+            Id = input.ReadString();
+            break;
+          }
+          case 24: {
+            Action = (global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb) input.ReadEnum();
+            break;
+          }
+          case 34: {
+            Payload = input.ReadBytes();
+            break;
+          }
+        }
+      }
+    #endif
+    }
+
+    #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
+      uint tag;
+      while ((tag = input.ReadTag()) != 0) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
+          default:
+            _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
+            break;
+          case 8: {
+            Channel = (global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb) input.ReadEnum();
+            break;
+          }
+          case 18: {
+            Id = input.ReadString();
+            break;
+          }
+          case 24: {
+            Action = (global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb) input.ReadEnum();
+            break;
+          }
+          case 34: {
+            Payload = input.ReadBytes();
+            break;
+          }
+        }
+      }
+    }
+    #endif
+
+  }
+
   [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class HoldingPb : pb::IMessage<HoldingPb>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
@@ -111,7 +453,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[0]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[1]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -310,7 +652,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -337,7 +683,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -375,7 +725,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[1]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[2]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -545,7 +895,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -568,7 +922,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -602,7 +960,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[2]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[3]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -859,7 +1217,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -894,7 +1256,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -940,7 +1306,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[3]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[4]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -1226,7 +1592,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -1265,7 +1635,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -1315,7 +1689,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[4]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[5]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -1503,7 +1877,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -1530,7 +1908,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -1568,7 +1950,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[5]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[6]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -1756,7 +2138,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -1783,7 +2169,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -1821,7 +2211,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[6]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[7]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -2085,7 +2475,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -2124,7 +2518,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -2174,7 +2572,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[7]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[8]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -2391,7 +2789,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -2422,7 +2824,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -2464,7 +2870,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public static pbr::MessageDescriptor Descriptor {
-      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[8]; }
+      get { return global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor.MessageTypes[9]; }
     }
 
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
@@ -2594,7 +3000,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -2614,7 +3024,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
