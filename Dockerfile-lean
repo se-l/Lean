@@ -14,24 +14,23 @@ CMD ["/sbin/my_init"]
 # Install OS Packages:
 # Misc tools for running Python.NET and IB inside a headless container.
 RUN apt-get update && apt-get -y install wget curl unzip \
-   && apt-get install -y git bzip2 zlib1g-dev \
-   xvfb libxrender1 libxtst6 libxi6 libglib2.0-dev libopenmpi-dev libstdc++6 openmpi-bin \
-   pandoc libcurl4-openssl-dev libgtk2.0.0 build-essential \
-   && apt-get clean && apt-get autoclean && apt-get autoremove --purge -y \
-   && rm -rf /var/lib/apt/lists/*
-
-# Install vsdbg for remote C# debugging in Visual Studio and Visual Studio Code
-RUN wget https://aka.ms/getvsdbgsh -O - 2>/dev/null | /bin/sh /dev/stdin -v 16.9.20122.2 -l /root/vsdbg
+    && apt-get install -y git bzip2 zlib1g-dev \
+    xvfb libxrender1 libxtst6 libxi6 libglib2.0-dev libopenmpi-dev libstdc++6 openmpi-bin \
+    pandoc libcurl4-openssl-dev libgtk2.0.0 build-essential \
+    && apt-get clean && apt-get autoclean && apt-get autoremove --purge -y \
+    && rm -rf /var/lib/apt/lists/* 
 
 # Install package to mount cifs drive
 RUN apt-get update && apt-get install -y cifs-utils && apt-get install -y dnsutils
 
 # Install IB Gateway: Installs to /root/ibgateway
-RUN mkdir -p /root/ibgateway && \
-    wget -q https://cdn.quantconnect.com/interactive/ibgateway-stable-standalone-linux-x64.v10.19.2a.sh && \
-    chmod 777 ibgateway-stable-standalone-linux-x64.v10.19.2a.sh && \
-    ./ibgateway-stable-standalone-linux-x64.v10.19.2a.sh -q -dir /root/ibgateway && \
-    rm ibgateway-stable-standalone-linux-x64.v10.19.2a.sh
+RUN apt-get update && apt-get -y install libasound2 libnss3 libnspr4 && apt-get clean &&  \
+    apt-get autoclean && apt-get autoremove --purge -y && rm -rf /var/lib/apt/lists/* &&     \
+    mkdir -p /root/ibgateway && \
+    wget -q https://cdn.quantconnect.com/interactive/ibgateway-latest-standalone-linux-x64.v10.39.1f.sh && \
+    chmod 777 ibgateway-latest-standalone-linux-x64.v10.39.1f.sh && \
+    ./ibgateway-latest-standalone-linux-x64.v10.39.1f.sh -q -dir /root/ibgateway && \
+    rm ibgateway-latest-standalone-linux-x64.v10.39.1f.sh
 
 # Install dotnet 6 sdk & runtime
 RUN wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
