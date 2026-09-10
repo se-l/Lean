@@ -8,9 +8,33 @@ tag := "latest"
 build name="" tag="latest":
     docker buildx build \
         -f Dockerfile-{{name}} \
+        --platform linux/amd64,linux/arm64 \
         -t {{registry}}/{{name}}:{{tag}} \
+        --push \
         .
     @echo "Build completed: {{name}}"
+
+build-toolbox tag="prd":
+    docker buildx build \
+        -f Dockerfile-toolbox \
+        --platform linux/amd64,linux/arm64 \
+        -t {{registry}}/amm:toolbox.{{tag}} \
+        --push \
+        .
+    @echo "Build completed: toolbox"
+
+# One-time setup: create the multi-arch builder
+setup-builder:
+    #!/usr/bin/env bash
+    if docker buildx inspect multiarch &>/dev/null; then
+        docker buildx use multiarch
+        echo "Builder 'multiarch' already exists, selected"
+    else
+        docker buildx create --name multiarch --driver docker-container --use
+        echo "Builder 'multiarch' created and set as default"
+    fi
+    docker buildx inspect --bootstrap
+
 
 # Tag with version
 tag name tagfrom tagto:
