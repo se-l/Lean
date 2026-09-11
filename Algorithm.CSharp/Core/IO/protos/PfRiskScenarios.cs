@@ -67,7 +67,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
   }
   #region Messages
-  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class PfRiskScenarioPb : pb::IMessage<PfRiskScenarioPb>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -341,7 +340,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (other.Underlying.Length != 0) {
         Underlying = other.Underlying;
       }
-      holdingsHedge_.MergeFrom(other.holdingsHedge_);
+      holdingsHedge_.Add(other.holdingsHedge_);
       if (other.DPL != 0D) {
         DPL = other.DPL;
       }
@@ -351,8 +350,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (other.DPLEqHedged != 0D) {
         DPLEqHedged = other.DPLEqHedged;
       }
-      ivEnter_.MergeFrom(other.ivEnter_);
-      holdingsCurrent_.MergeFrom(other.holdingsCurrent_);
+      ivEnter_.Add(other.ivEnter_);
+      holdingsCurrent_.Add(other.holdingsCurrent_);
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -364,11 +363,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-      if ((tag & 7) == 4) {
-        // Abort on any end group tag.
-        return;
-      }
-      switch(tag) {
+        switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -411,11 +406,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-      if ((tag & 7) == 4) {
-        // Abort on any end group tag.
-        return;
-      }
-      switch(tag) {
+        switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -454,7 +445,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
   }
 
-  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class RequestPfRiskScenariosPb : pb::IMessage<RequestPfRiskScenariosPb>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -696,7 +686,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (other.Underlying.Length != 0) {
         Underlying = other.Underlying;
       }
-      holdings_.MergeFrom(other.holdings_);
+      holdings_.Add(other.holdings_);
       marketDataSnaps_.Add(other.marketDataSnaps_);
       params_.Add(other.params_);
       scopedSymbols_.Add(other.scopedSymbols_);
@@ -711,11 +701,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-      if ((tag & 7) == 4) {
-        // Abort on any end group tag.
-        return;
-      }
-      switch(tag) {
+        switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -754,11 +740,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-      if ((tag & 7) == 4) {
-        // Abort on any end group tag.
-        return;
-      }
-      switch(tag) {
+        switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -793,7 +775,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
 
   }
 
-  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class ResponsePfRiskScenariosPb : pb::IMessage<ResponsePfRiskScenariosPb>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -996,11 +977,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-      if ((tag & 7) == 4) {
-        // Abort on any end group tag.
-        return;
-      }
-      switch(tag) {
+        switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -1027,11 +1004,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-      if ((tag & 7) == 4) {
-        // Abort on any end group tag.
-        return;
-      }
-      switch(tag) {
+        switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;

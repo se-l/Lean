@@ -77,7 +77,8 @@ namespace QuantConnect.ToolBox.Polygon
             )
         {
             var securityExchangeHours = marketHoursDatabase.GetExchangeHours(market, symbol, symbol.ID.SecurityType);
-            return Time.EachTradeableDay(securityExchangeHours, startDate, endDate); // typically requesting midnight of T+1
+            return Time.EachTradeableDay(securityExchangeHours, startDate,
+                endDate); // typically requesting midnight of T+1
         }
 
         public static Symbol Underlying(Symbol symbol)
@@ -109,9 +110,11 @@ namespace QuantConnect.ToolBox.Polygon
             int flushInterval = 1000
             )
         {
-            if (tickers.IsNullOrEmpty() || securityTypeString.IsNullOrEmpty() || market.IsNullOrEmpty() || resolutionString.IsNullOrEmpty())
+            if (tickers.IsNullOrEmpty() || securityTypeString.IsNullOrEmpty() || market.IsNullOrEmpty() ||
+                resolutionString.IsNullOrEmpty())
             {
-                Console.WriteLine("PolygonDownloader ERROR: '--tickers=' or '--security-type=' or '--market=' or '--resolution=' or '--api-key=' parameter is missing");
+                Console.WriteLine(
+                    "PolygonDownloader ERROR: '--tickers=' or '--security-type=' or '--market=' or '--resolution=' or '--api-key=' parameter is missing");
                 Console.WriteLine("--tickers=eg SPY,AAPL");
                 Console.WriteLine("--security-type=Equity/Option");
                 Console.WriteLine("--market=usa");
@@ -150,7 +153,7 @@ namespace QuantConnect.ToolBox.Polygon
                 }
 
                 // Load settings from config.json
-                var dataDirectory = Config.Get("data-folder", "../../../Data");
+                var dataDirectory = Config.Get("data-folder", "../../../trade/data");
 
                 var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
 
@@ -159,7 +162,8 @@ namespace QuantConnect.ToolBox.Polygon
                 IEnumerable<Symbol> symbols = tickers.Select(x => Symbol.Create(x, securityType, market));
 
                 var tradeDates = TradeDates(market, marketHoursDatabase, symbols.First(), fromDate, toDate);
-                Dictionary<Symbol, IEnumerable<DateTime>> symbolDates = new(); // Dont request options for dates where option was not issued yet
+                Dictionary<Symbol, IEnumerable<DateTime>>
+                    symbolDates = new(); // Dont request options for dates where option was not issued yet
 
                 IEnumerable<Request> requests;
                 if (securityType == SecurityType.Option)
@@ -168,7 +172,8 @@ namespace QuantConnect.ToolBox.Polygon
                     foreach (DateTime dt in tradeDates)
                     {
                         // Log.Trace($"Requesting {symbols.Count()} symbols for {dt}...");
-                        var optionSymbols = symbols.Select(sym => downloader.GetOptionContracts(sym.Underlying, dt)).SelectMany(list => list).OrderBy(s => s.ID.Date);
+                        var optionSymbols = symbols.Select(sym => downloader.GetOptionContracts(sym.Underlying, dt))
+                            .SelectMany(list => list).OrderBy(s => s.ID.Date);
                         Log.Trace($"{dt}: {optionSymbols.Count()} Contracts from {symbols.Count()} underlyings");
                         foreach (var optionSymbol in optionSymbols)
                         {
@@ -188,17 +193,18 @@ namespace QuantConnect.ToolBox.Polygon
                         Log.Trace($"For Underlying: {group.Key.Value} fetched {group.Count()} OptionContracts");
                     });
 
-                    requests = symbolDates.SelectMany(kvp => tickTypes.SelectMany(tickType => kvp.Value.Select(dt => new Request
-                    {
-                        Symbol = kvp.Key,
-                        Date = dt,
-                        Resolution = resolution,
-                        TickType = tickType
-                    }))).ToList();
+                    requests = symbolDates.SelectMany(kvp => tickTypes.SelectMany(tickType => kvp.Value.Select(dt =>
+                        new Request
+                        {
+                            Symbol = kvp.Key,
+                            Date = dt,
+                            Resolution = resolution,
+                            TickType = tickType
+                        }))).ToList();
                 }
                 else
                 {
-                    requests = symbols.SelectMany(symbol => 
+                    requests = symbols.SelectMany(symbol =>
                         {
                             var dates = TradeDates(market, marketHoursDatabase, symbol, fromDate, toDate);
                             return tickTypes.SelectMany(tickType => dates.Select(dt => new Request
@@ -219,7 +225,8 @@ namespace QuantConnect.ToolBox.Polygon
                 Dictionary<TickType, LeanDataWriter> writers = new();
                 foreach (TickType tickType in tickTypes)
                 {
-                    writers.Add(tickType, new LeanDataWriter(dataDirectory, resolution, securityType, tickType, _diskDataCacheProvider));
+                    writers.Add(tickType,
+                        new LeanDataWriter(dataDirectory, resolution, securityType, tickType, _diskDataCacheProvider));
                 }
 
                 // Build a mapping of each (date, underlying, tickType) to the requests that affect it
@@ -246,10 +253,12 @@ namespace QuantConnect.ToolBox.Polygon
                     }
                 }
 
-                Log.Trace($"PolygonDownloader: Grouped {nRequests} requests into {groupToRequests.Count} day-groups for batch writing");
+                Log.Trace(
+                    $"PolygonDownloader: Grouped {nRequests} requests into {groupToRequests.Count} day-groups for batch writing");
 
                 // Track downloaded data grouped by (date, underlying, tickType)
-                var downloadedDataByGroup = new ConcurrentDictionary<DayGroupKey, ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>>();
+                var downloadedDataByGroup =
+                    new ConcurrentDictionary<DayGroupKey, ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>>();
                 var completedRequestsByGroup = new ConcurrentDictionary<DayGroupKey, int>();
                 var processedSymbolsByGroup = new ConcurrentDictionary<DayGroupKey, ConcurrentBag<Symbol>>();
 
@@ -260,7 +269,7 @@ namespace QuantConnect.ToolBox.Polygon
                     downloadedDataByGroup[kvp.Key] = new ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>();
                     processedSymbolsByGroup[kvp.Key] = new ConcurrentBag<Symbol>();
                 }
-                
+
                 int lastBulkFlushAt = 0;
 
                 try
@@ -275,103 +284,127 @@ namespace QuantConnect.ToolBox.Polygon
                         downloadedDataByGroup[groupKey] = new ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>();
                         processedSymbolsByGroup[groupKey] = new ConcurrentBag<Symbol>();
 
-                        Log.Trace($"PolygonDownloader: Processing group {groupKey} ({groupRequests.Count} requests)...");
+                        Log.Trace(
+                            $"PolygonDownloader: Processing group {groupKey} ({groupRequests.Count} requests)...");
 
-                        Parallel.ForEach(groupRequests, new ParallelOptions { MaxDegreeOfParallelism = nClients }, request =>
-                        {
-                            var writer = writers[request.TickType];
-                            var underlying = Underlying(request.Symbol);
-
-                            if ((skipFilled && writer.FileEntryExists(request.Date, request.Symbol) && writer.FileEntrySize(request.Date, request.Symbol) > 0)
-                                || (skipEmpty && writer.FileEntrySize(request.Date, request.Symbol) == 0))
+                        Parallel.ForEach(groupRequests, new ParallelOptions { MaxDegreeOfParallelism = nClients },
+                            request =>
                             {
-                                Interlocked.Increment(ref completedRequests);
+                                var writer = writers[request.TickType];
+                                var underlying = Underlying(request.Symbol);
+                                var entryExists = writer.FileEntryExists(request.Date, request.Symbol);
+                                var entrySize = writer.FileEntrySize(request.Date, request.Symbol);
 
-                                // Mark the group for this request as having one more completed request
-                                var groupKey = new DayGroupKey { Date = request.Date, Underlying = underlying, TickType = request.TickType };
-                                if (completedRequestsByGroup.ContainsKey(groupKey))
+                                if ((
+                                        skipFilled && entryExists && entrySize > 0
+                                    ) || (
+                                        skipEmpty && entryExists && entrySize == 0
+                                    ))
                                 {
-                                    var completed = completedRequestsByGroup.AddOrUpdate(groupKey, 1, (k, v) => v + 1);
-                                    CheckAndWriteGroup(groupKey, completed, groupToRequests, downloadedDataByGroup,
-                                        processedSymbolsByGroup, writer, dataDirectory, resolution, _diskDataCacheProvider);
-                                }
+                                    Interlocked.Increment(ref completedRequests);
 
-                                MaybeBulkFlush(ref completedRequests, ref lastBulkFlushAt, groupToRequests,
-                                    downloadedDataByGroup, processedSymbolsByGroup,
-                                    writers, dataDirectory, resolution, _diskDataCacheProvider, flushInterval);
-
-                                return;
-                            }
-
-                            // For the trade date, check if the file has any entries. If not, reload and overwrite if any data came back, otherwise skip.
-                            if (skipModifiedSince != null && (writer.EntryLastModified(request.Date, request.Symbol) ?? DateTime.MinValue) >= skipModifiedSince)
-                            {
-                                Interlocked.Increment(ref completedRequests);
-
-                                // Mark the group for this request as having one more completed request
-                                var groupKey = new DayGroupKey { Date = request.Date, Underlying = underlying, TickType = request.TickType };
-                                if (completedRequestsByGroup.ContainsKey(groupKey))
-                                {
-                                    var completed = completedRequestsByGroup.AddOrUpdate(groupKey, 1, (k, v) => v + 1);
-                                    CheckAndWriteGroup(groupKey, completed, groupToRequests, downloadedDataByGroup,
-                                        processedSymbolsByGroup, writer, dataDirectory, resolution, _diskDataCacheProvider);
-                                }
-
-                                MaybeBulkFlush(ref completedRequests, ref lastBulkFlushAt, groupToRequests,
-                                    downloadedDataByGroup, processedSymbolsByGroup,
-                                    writers, dataDirectory, resolution, _diskDataCacheProvider, flushInterval);
-
-                                return;
-                            }
-
-                            var securityExchangeHours = marketHoursDatabase.GetExchangeHours(market, symbols.First(), securityType);
-                            var exchangeTimeZone = securityExchangeHours.TimeZone;
-                            var dataTimeZone = marketHoursDatabase.GetDataTimeZone(market, request.Symbol, securityType);
-
-                            // Download the data
-                            var startUtc = request.Date.Date.Add(TimeSpan.FromHours(0)).ConvertToUtc(exchangeTimeZone);
-                            var endUtc = request.Date.Date.Add(TimeSpan.FromHours(20)).ConvertToUtc(exchangeTimeZone);
-                            var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution, startUtc, endUtc, request.TickType))
-                                .Select(x =>
+                                    // Mark the group for this request as having one more completed request
+                                    var groupKey = new DayGroupKey
+                                        { Date = request.Date, Underlying = underlying, TickType = request.TickType };
+                                    if (completedRequestsByGroup.ContainsKey(groupKey))
                                     {
-                                        x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);
-                                        return x;
+                                        var completed =
+                                            completedRequestsByGroup.AddOrUpdate(groupKey, 1, (k, v) => v + 1);
+                                        CheckAndWriteGroup(groupKey, completed, groupToRequests, downloadedDataByGroup,
+                                            processedSymbolsByGroup, writer, dataDirectory, resolution,
+                                            _diskDataCacheProvider);
                                     }
-                                ).ToList();
 
-                            var groupKeyFinal = new DayGroupKey { Date = request.Date, Underlying = underlying, TickType = request.TickType };
+                                    MaybeBulkFlush(ref completedRequests, ref lastBulkFlushAt, groupToRequests,
+                                        downloadedDataByGroup, processedSymbolsByGroup,
+                                        writers, dataDirectory, resolution, _diskDataCacheProvider, flushInterval);
 
-                            if (completedRequestsByGroup.ContainsKey(groupKeyFinal))
-                            {
-                                // Add data for this date to the group
-                                downloadedDataByGroup.GetOrAdd(groupKeyFinal, _ => new ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>())
-                                    .Add(new Tuple<Symbol, IEnumerable<BaseData>>(request.Symbol, data));
+                                    return;
+                                }
 
-                                // Track symbol
-                                processedSymbolsByGroup.GetOrAdd(groupKeyFinal, _ => new ConcurrentBag<Symbol>())
-                                    .Add(request.Symbol);
+                                // For the trade date, check if the file has any entries. If not, reload and overwrite if any data came back, otherwise skip.
+                                if (skipModifiedSince != null &&
+                                    (writer.EntryLastModified(request.Date, request.Symbol) ?? DateTime.MinValue) >=
+                                    skipModifiedSince)
+                                {
+                                    Interlocked.Increment(ref completedRequests);
 
-                                // Increment completed count for this group
-                                var completed = completedRequestsByGroup.AddOrUpdate(groupKeyFinal, 1, (k, v) => v + 1);
-                                CheckAndWriteGroup(groupKeyFinal, completed, groupToRequests, downloadedDataByGroup,
-                                    processedSymbolsByGroup, writer, dataDirectory, resolution, _diskDataCacheProvider);
-                            }
+                                    // Mark the group for this request as having one more completed request
+                                    var groupKey = new DayGroupKey
+                                        { Date = request.Date, Underlying = underlying, TickType = request.TickType };
+                                    if (completedRequestsByGroup.ContainsKey(groupKey))
+                                    {
+                                        var completed =
+                                            completedRequestsByGroup.AddOrUpdate(groupKey, 1, (k, v) => v + 1);
+                                        CheckAndWriteGroup(groupKey, completed, groupToRequests, downloadedDataByGroup,
+                                            processedSymbolsByGroup, writer, dataDirectory, resolution,
+                                            _diskDataCacheProvider);
+                                    }
 
-                            // Increment the completed requests counter using Interlocked.Increment
-                            Interlocked.Increment(ref completedRequests);
-                            double progressPercentage = 100 * (double)completedRequests / nRequests;
-                            // Check if the progress has increased by 0.2% or more
-                            if (progressPercentage - previousProgress >= 0.2)
-                            {
-                                Console.WriteLine(
-                                    $"Progress: {progressPercentage.ToString("0.00", CultureInfo.InvariantCulture)}%. Handled {completedRequests} / {nRequests} requests.");
-                                previousProgress = progressPercentage;
-                            }
+                                    MaybeBulkFlush(ref completedRequests, ref lastBulkFlushAt, groupToRequests,
+                                        downloadedDataByGroup, processedSymbolsByGroup,
+                                        writers, dataDirectory, resolution, _diskDataCacheProvider, flushInterval);
 
-                            MaybeBulkFlush(ref completedRequests, ref lastBulkFlushAt, groupToRequests,
-                                downloadedDataByGroup, processedSymbolsByGroup,
-                                writers, dataDirectory, resolution, _diskDataCacheProvider, flushInterval);
-                        });
+                                    return;
+                                }
+
+                                var securityExchangeHours =
+                                    marketHoursDatabase.GetExchangeHours(market, symbols.First(), securityType);
+                                var exchangeTimeZone = securityExchangeHours.TimeZone;
+                                var dataTimeZone =
+                                    marketHoursDatabase.GetDataTimeZone(market, request.Symbol, securityType);
+
+                                // Download the data
+                                var startUtc = request.Date.Date.Add(TimeSpan.FromHours(0))
+                                    .ConvertToUtc(exchangeTimeZone);
+                                var endUtc = request.Date.Date.Add(TimeSpan.FromHours(20))
+                                    .ConvertToUtc(exchangeTimeZone);
+                                var data = downloader.Get(new DataDownloaderGetParameters(request.Symbol, resolution,
+                                        startUtc, endUtc, request.TickType))
+                                    .Select(x =>
+                                        {
+                                            x.Time = x.Time.ConvertTo(exchangeTimeZone, dataTimeZone);
+                                            return x;
+                                        }
+                                    ).ToList();
+
+                                var groupKeyFinal = new DayGroupKey
+                                    { Date = request.Date, Underlying = underlying, TickType = request.TickType };
+
+                                if (completedRequestsByGroup.ContainsKey(groupKeyFinal))
+                                {
+                                    // Add data for this date to the group
+                                    downloadedDataByGroup.GetOrAdd(groupKeyFinal,
+                                            _ => new ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>())
+                                        .Add(new Tuple<Symbol, IEnumerable<BaseData>>(request.Symbol, data));
+
+                                    // Track symbol
+                                    processedSymbolsByGroup.GetOrAdd(groupKeyFinal, _ => new ConcurrentBag<Symbol>())
+                                        .Add(request.Symbol);
+
+                                    // Increment completed count for this group
+                                    var completed =
+                                        completedRequestsByGroup.AddOrUpdate(groupKeyFinal, 1, (k, v) => v + 1);
+                                    CheckAndWriteGroup(groupKeyFinal, completed, groupToRequests, downloadedDataByGroup,
+                                        processedSymbolsByGroup, writer, dataDirectory, resolution,
+                                        _diskDataCacheProvider);
+                                }
+
+                                // Increment the completed requests counter using Interlocked.Increment
+                                Interlocked.Increment(ref completedRequests);
+                                double progressPercentage = 100 * (double)completedRequests / nRequests;
+                                // Check if the progress has increased by 0.2% or more
+                                if (progressPercentage - previousProgress >= 0.2)
+                                {
+                                    Console.WriteLine(
+                                        $"Progress: {progressPercentage.ToString("0.00", CultureInfo.InvariantCulture)}%. Handled {completedRequests} / {nRequests} requests.");
+                                    previousProgress = progressPercentage;
+                                }
+
+                                MaybeBulkFlush(ref completedRequests, ref lastBulkFlushAt, groupToRequests,
+                                    downloadedDataByGroup, processedSymbolsByGroup,
+                                    writers, dataDirectory, resolution, _diskDataCacheProvider, flushInterval);
+                            });
 
                         // After all requests in the group finish, free the group's memory explicitly
                         downloadedDataByGroup.TryRemove(groupKey, out _);
@@ -385,7 +418,8 @@ namespace QuantConnect.ToolBox.Polygon
                     throw;
                 }
 
-                Console.WriteLine($"PolygonDownloader: Download completed. Wrote {groupToRequests.Count} groups to disk.");
+                Console.WriteLine(
+                    $"PolygonDownloader: Download completed. Wrote {groupToRequests.Count} groups to disk.");
                 Log.Trace("PolygonDownloader: All operations completed.");
             }
             catch (Exception err)
@@ -403,7 +437,8 @@ namespace QuantConnect.ToolBox.Polygon
             DayGroupKey groupKey,
             int completed,
             Dictionary<DayGroupKey, List<Request>> groupToRequests,
-            ConcurrentDictionary<DayGroupKey, ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>> downloadedDataByGroup,
+            ConcurrentDictionary<DayGroupKey, ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>>
+                downloadedDataByGroup,
             ConcurrentDictionary<DayGroupKey, ConcurrentBag<Symbol>> processedSymbolsByGroup,
             LeanDataWriter writer,
             string dataDirectory,
@@ -420,16 +455,19 @@ namespace QuantConnect.ToolBox.Polygon
 
             if (completed == totalForGroup)
             {
-                Log.Trace($"PolygonDownloader: Group {groupKey} completed ({completed}/{totalForGroup}). Writing to disk...");
+                Log.Trace($"PolygonDownloader: Group {groupKey} completed ({completed}/{totalForGroup}).");
 
                 var groupData = downloadedDataByGroup[groupKey].Where(t => t.Item2.Any()).Select(t => t.Item2).ToList();
+                var groupSymbols = processedSymbolsByGroup[groupKey].Distinct().ToHashSet();
+
                 if (groupData.Any())
                 {
+                    Log.Trace(
+                        $"PolygonDownloader: Writing fetched data to disk for: Group {groupKey}; date={groupKey.Date}; # groupData={groupData.Count}; # groupSymbols={groupSymbols.Count}");
                     writer.Write(groupData.Select(d => d.OrderBy(x => x.Time)));
                 }
 
                 // Write empty files for symbols that were processed but had no data
-                var groupSymbols = processedSymbolsByGroup[groupKey].Distinct().ToHashSet();
                 LeanData.WriteEmptyFileIfNotExists(dataDirectory, diskDataCacheProvider,
                     new[] { groupKey.Date }, groupSymbols, resolution, groupKey.TickType);
 
@@ -437,7 +475,8 @@ namespace QuantConnect.ToolBox.Polygon
                 downloadedDataByGroup.TryRemove(groupKey, out _);
                 processedSymbolsByGroup.TryRemove(groupKey, out _);
 
-                Log.Trace($"PolygonDownloader: Group {groupKey} write complete.");
+                Log.Trace(
+                    $"PolygonDownloader: Group {groupKey} write complete. date={groupKey.Date}; # groupData={groupData.Count}; # groupSymbols={groupSymbols.Count}");
             }
         }
 
@@ -449,15 +488,16 @@ namespace QuantConnect.ToolBox.Polygon
             ref int completedRequests,
             ref int lastBulkFlushAt,
             Dictionary<DayGroupKey, List<Request>> groupToRequests,
-            ConcurrentDictionary<DayGroupKey, ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>> downloadedDataByGroup,
+            ConcurrentDictionary<DayGroupKey, ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>>
+                downloadedDataByGroup,
             ConcurrentDictionary<DayGroupKey, ConcurrentBag<Symbol>> processedSymbolsByGroup,
             Dictionary<TickType, LeanDataWriter> writers,
             string dataDirectory,
             Resolution resolution,
             IDataCacheProvider diskDataCacheProvider,
-            int flushInterval = 1000)
+            int flushInterval = 1000
+            )
         {
-
             // Snap current values to avoid race-induced double-flush for the same threshold
             int current = completedRequests;
             int currentThreshold = (current / flushInterval) * flushInterval;
@@ -468,12 +508,14 @@ namespace QuantConnect.ToolBox.Polygon
             }
 
             // Use Interlocked.CompareExchange so only one thread performs the flush per threshold
-            if (Interlocked.CompareExchange(ref lastBulkFlushAt, currentThreshold, currentThreshold - flushInterval) != currentThreshold - flushInterval)
+            if (Interlocked.CompareExchange(ref lastBulkFlushAt, currentThreshold, currentThreshold - flushInterval) !=
+                currentThreshold - flushInterval)
             {
                 return; // another thread already took responsibility for this threshold
             }
 
-            Log.Trace($"PolygonDownloader: Bulk-flush triggered at {currentThreshold} completed requests. Flushing completed groups...");
+            Log.Trace(
+                $"PolygonDownloader: Bulk-flush triggered at {currentThreshold} completed requests. Flushing completed groups...");
 
             foreach (var kvp in groupToRequests)
             {
@@ -488,9 +530,10 @@ namespace QuantConnect.ToolBox.Polygon
                 {
                     continue;
                 }
-                
+
                 // Put a fresh bag back immediately so ongoing downloads can still add to this group
-                downloadedDataByGroup.GetOrAdd(groupKey, _ => new ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>());
+                downloadedDataByGroup.GetOrAdd(groupKey,
+                    _ => new ConcurrentBag<Tuple<Symbol, IEnumerable<BaseData>>>());
 
                 var writer = writers[groupKey.TickType];
 
@@ -504,7 +547,7 @@ namespace QuantConnect.ToolBox.Polygon
                 {
                     // Put a fresh bag back for future symbols in this group
                     processedSymbolsByGroup.GetOrAdd(groupKey, _ => new ConcurrentBag<Symbol>());
-                    
+
                     var groupSymbols = symbolsBag.Distinct().ToHashSet();
                     LeanData.WriteEmptyFileIfNotExists(dataDirectory, diskDataCacheProvider,
                         new[] { groupKey.Date }, groupSymbols, resolution, groupKey.TickType);
