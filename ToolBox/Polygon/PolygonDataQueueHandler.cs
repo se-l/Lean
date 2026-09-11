@@ -1205,7 +1205,7 @@ namespace QuantConnect.ToolBox.Polygon
         private (object, string?) DownloadAndParseData(Type type, string url, string jsonPropertyName = null)
         {
             string response = url.DownloadData(httpClient: httpClient);
-            if (response == null)
+            if (string.IsNullOrWhiteSpace(response))
             {
                 return (null, null);
             }

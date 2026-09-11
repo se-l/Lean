@@ -215,26 +215,62 @@ namespace QuantConnect.Data
                 var filePath = group.Key;
                 _synchronizer.Execute(filePath, singleExecution: false, () =>
                 {
-                    using (var zip = File.Exists(filePath) ? ZipFile.Read(filePath) : new ZipFile(filePath))
+                    // If a destination file can't be read as a zip (e.g. it exists on the mount but is
+                    // empty/partial/invalid yet), start from a fresh archive rather than throwing an invalid-zip
+                    // error. On networked/S3-backed mounts a write can be visible to File.Exists before its
+                    // bytes are fully synced, so this must be tolerated, not fatal.
+                    using var zip = TryReadZip(filePath) ?? new ZipFile();
+                    foreach (var entry in group)
                     {
-                        foreach (var entry in group)
+                        if (zip.ContainsEntry(entry.EntryName) && overrideEntry)
                         {
-                            if (zip.ContainsEntry(entry.EntryName) && overrideEntry)
-                            {
-                                zip.RemoveEntry(entry.EntryName);
-                                Log.Trace($"DiskDataCacheProvider.Store(): Override csv member: {filePath} @ {entry.EntryName}");
-                                zip.AddEntry(entry.EntryName, entry.Data);
-                            }
-                            else if (!zip.ContainsEntry(entry.EntryName))
-                            {
-                                Log.Trace($"DiskDataCacheProvider.Store(): Create csv member: {filePath} @ {entry.EntryName}");
-                                zip.AddEntry(entry.EntryName, entry.Data);
-                            }
+                            zip.RemoveEntry(entry.EntryName);
+                            Log.Trace($"DiskDataCacheProvider.Store(): Override csv member: {filePath} @ {entry.EntryName}");
+                            zip.AddEntry(entry.EntryName, entry.Data);
                         }
-                        zip.UseZip64WhenSaving = Zip64Option.Always;
-                        zip.Save();
+                        else if (zip.ContainsEntry(entry.EntryName))
+                        {
+                            // Keep existing entry unless overriding
+                            continue;
+                        }
+                        else
+                        {
+                            Log.Trace($"DiskDataCacheProvider.Store(): Create csv member: {filePath} @ {entry.EntryName}");
+                            zip.AddEntry(entry.EntryName, entry.Data);
+                        }
                     }
+
+                    zip.UseZip64WhenSaving = Zip64Option.Always;
+
+                    // Write to a temp file and atomically move it into place so a concurrent reader
+                    // (this downloader's own checks, or another process on the same mount) never observes
+                    // a partially-written zip.
+                    var tempFile = filePath + ".tmp";
+                    zip.Save(tempFile);
+                    File.Move(tempFile, filePath, overwrite: true);
                 });
+            }
+        }
+
+        /// <summary>
+        /// Attempts to open an existing file as a zip. Returns null when the file does not exist
+        /// or cannot currently be read as a valid zip, so callers can fall back to a fresh archive.
+        /// </summary>
+        private static ZipFile TryReadZip(string filePath)
+        {
+            if (!File.Exists(filePath))
+            {
+                return null;
+            }
+
+            try
+            {
+                return ZipFile.Read(filePath);
+            }
+            catch (Exception exception) when (exception is ZipException || exception is IOException)
+            {
+                Log.Debug($"DiskDataCacheProvider.Store(): Unable to read existing zip, starting fresh: {filePath} {exception.Message}");
+                return null;
             }
         }
 
@@ -245,8 +281,24 @@ namespace QuantConnect.Data
         {
             return _synchronizer.Execute(zipFile, () =>
             {
-                using var stream = new FileStream(FileExtension.ToNormalizedPath(zipFile), FileMode.Open, FileAccess.Read);
-                return Compression.GetZipEntryFileNames(stream).ToList();
+                try
+                {
+                    using var stream = new FileStream(FileExtension.ToNormalizedPath(zipFile), FileMode.Open, FileAccess.Read);
+                    // A placeholder/fresh file that exists on disk but has not been written as a
+                    // valid zip yet (e.g. an empty or interrupted write) is not readable as a zip.
+                    // Treat that as "no entries" so it isn't mistaken for a corrupt file. This is a
+                    // plain local-filesystem case; it is not specific to S3/networked mounts.
+                    if (stream.Length == 0)
+                    {
+                        return new List<string>();
+                    }
+                    return Compression.GetZipEntryFileNames(stream).ToList();
+                }
+                catch (Exception exception) when (exception is ZipException || exception is IOException)
+                {
+                    Log.Debug($"DiskDataCacheProvider.GetZipEntries(): Unable to read zip, treating as no entries: {zipFile} {exception.Message}");
+                    return new List<string>();
+                }
             });
         }
 
