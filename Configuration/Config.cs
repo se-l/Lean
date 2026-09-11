@@ -91,7 +91,7 @@ namespace QuantConnect.Configuration
                 {
                     {"algorithm-type-name", "BasicTemplateAlgorithm"},
                     {"live-mode", false},
-                    {"data-folder", "C:/repos/trade/data/"},
+                    {"data-folder", "../../../trade/data"},
                     {"messaging-handler", "QuantConnect.Messaging.Messaging"},
                     {"job-queue-handler", "QuantConnect.Queues.JobQueue"},
                     {"api-handler", "QuantConnect.Api.Api"},

@@ -76,7 +76,7 @@ namespace QuantConnect
         /// </summary>
         public static void Reset ()
         {
-            CacheDataFolder = DataFolder = Config.Get("data-folder", Config.Get("data-directory", "../../../Data/"));
+            CacheDataFolder = DataFolder = Config.Get("data-folder", "../../../trade/data");
 
             Version = Assembly.GetExecutingAssembly().GetName().Version.ToString();
             var versionid = Config.Get("version-id");
@@ -93,7 +93,7 @@ namespace QuantConnect
 
             LiveMode = Config.GetBool("live-mode");
 
-            AnalyticsFolder = Config.Get("analytics-folder", Config.Get("data-directory", "../../../trade/Analytics/"));
+            AnalyticsFolder = Config.Get("analytics-folder", "../../../trade/Analytics/");
             _pathAnalytics = null;
             ResultsDestinationFolder = Config.Get("results-destination-folder", Directory.GetCurrentDirectory());
         }
