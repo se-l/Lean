@@ -17,6 +17,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -89,6 +91,56 @@ namespace QuantConnect.ToolBox.Polygon
                 SecurityType.Equity => symbol,
                 _ => throw new NotImplementedException(),
             };
+        }
+
+        /// <summary>
+        /// Resolves the option contracts for the given underlyings at the given date.
+        /// First pathway: reads the locally available openinterest zip file
+        /// (<dataDirectory>/option/usa/tick/<underlying>/<yyyymmdd>_openinterest_american.zip),
+        /// whose contents are considered exhaustive.
+        /// Second pathway (fallback): queries Massive.com (Polygon) for the option contracts.
+        /// </summary>
+        public static IEnumerable<Symbol> GetOptionSymbols(
+            string dataDirectory,
+            string market,
+            string resolution,
+            PolygonDataDownloader downloader,
+            IEnumerable<Symbol> symbols,
+            DateTime dt)
+        {
+            var optionSymbols = new List<Symbol>();
+            var unresolvedSymbols = new List<Symbol>();
+
+            foreach (var sym in symbols)
+            {
+                var zipPath = Path.Combine(dataDirectory, "option", market, resolution,
+                    sym.Underlying.Value.ToLowerInvariant(),
+                    $"{dt:yyyyMMdd}_openinterest_american.zip");
+
+                if (File.Exists(zipPath))
+                {
+                    using var stream = File.OpenRead(zipPath);
+                    using var archive = new ZipArchive(stream);
+                    foreach (var entry in archive.Entries)
+                    {
+                        optionSymbols.Add(LeanData.ReadSymbolFromZipEntry(sym, Resolution.Tick, entry.FullName));
+                    }
+                }
+                else
+                {
+                    unresolvedSymbols.Add(sym);
+                }
+            }
+
+            if (unresolvedSymbols.Count > 0)
+            {
+                // Fallback: query Massive.com for underlyings without a local openinterest zip
+                optionSymbols.AddRange(unresolvedSymbols
+                    .Select(sym => downloader.GetOptionContracts(sym.Underlying, dt))
+                    .SelectMany(list => list));
+            }
+
+            return optionSymbols.OrderBy(s => s.ID.Date);
         }
 
         /// <summary>
@@ -172,9 +224,8 @@ namespace QuantConnect.ToolBox.Polygon
                     foreach (DateTime dt in tradeDates)
                     {
                         // Log.Trace($"Requesting {symbols.Count()} symbols for {dt}...");
-                        var optionSymbols = symbols.Select(sym => downloader.GetOptionContracts(sym.Underlying, dt))
-                            .SelectMany(list => list).OrderBy(s => s.ID.Date);
-                        Log.Trace($"{dt}: {optionSymbols.Count()} Contracts from {symbols.Count()} underlyings");
+                        var optionSymbols = GetOptionSymbols(dataDirectory, market, resolutionString, downloader, symbols, dt).ToList();
+                        Log.Trace($"{dt}: {optionSymbols.Count} Contracts from {symbols.Count()} underlyings");
                         foreach (var optionSymbol in optionSymbols)
                         {
                             if (!symbolDates.ContainsKey(optionSymbol))
