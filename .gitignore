@@ -42,7 +42,7 @@
 !research/run_docker_notebook.sh
 
 # QC Config Files:
-# config.json
+/Launcher/config.json
 
 # QC-C-Specific
 *Engine/bin/Debug/cache/data/*.zip
