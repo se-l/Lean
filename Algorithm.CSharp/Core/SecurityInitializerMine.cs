@@ -10,8 +10,6 @@ using QuantConnect.Data.Consolidators;
 using QuantConnect.Util;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Data;
-using System.Collections.Generic;
-using QuantConnect.Algorithm.CSharp.Core.Synchronizer;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
@@ -188,7 +186,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     _algo.SpreadBuffers[direction][symbol] = new(_algo, option, direction);
                 }
-                //_algo.PutCallRatios[option.Symbol] = new PutCallRatioIndicator(option, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
             }
 
             //var equityOptions = new HashSet<SecurityType>() { SecurityType.Option, SecurityType.Equity };
@@ -232,9 +229,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return _algo.StartDate;
             }
         }
-        /// <summary>
-        /// FIX ME: The stored historical volatilities were calculated at 0 yield. Need to adjust IV for configured yield term structure.
-        /// </summary>
+
         /// <param name="security"></param>
         public void WarmUpSecurity(Security security)
         {
@@ -254,9 +249,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 if (option.Underlying == null) return;
                 symbol = option.Symbol;
-                Symbol underlying = symbol.Underlying;
-                //_algo.IVSurfaceSSVIBid[option.Symbol.Underlying].RegisterSymbol(option);
-                //_algo.IVSurfaceSSVIAsk[option.Symbol.Underlying].RegisterSymbol(option);
 
                 if (_algo.Cfg.SkipWarmUpSecurity) return;
 
@@ -265,34 +257,35 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (volaSym != null)
                 {
                     DateTime end = HistoryRequestEndDate(security);
-                    //var historyFast = _algo.History<VolatilityBar>(volaSym, start, end, _algo.resolution, fillForward: false);  // Zero Warm Up here, because it's covered during OnData SetWarmUp().
-                    var historyFast = _algo.History<VolatilityQuoteBar>(volaSym, _algo.Periods(days: _algo.Cfg.WarmUpDays), _algo.resolution, fillForward: false);  // Zero Warm Up here, because it's covered during OnData SetWarmUp().
-                    var historySlow = _algo.History<VolatilityQuoteBar>(volaSym, _algo.Periods(Resolution.Daily, days: 60), Resolution.Daily, fillForward: false);
-                    // Need to synchronize the 2 histories. Otherwise fast day events update indicator before the slow second events, which would be ignore as no updates from past are processed by IVBid/Ask Indicator.
-                    //var history = historySlow;
-                    using var history = new SynchronizingVolatilityBarEnumerator(new List<IEnumerator<VolatilityQuoteBar>>() { historyFast.GetEnumerator(), historySlow.GetEnumerator() });
+                    // One request, not two. The daily series only ever fed IVSpreadSMA, and a daily bar is
+                    // stamped at the start of its day but enumerated at its end, so it can never be
+                    // appended to that forward-only series anyway: 672 extra 60-day requests per run for
+                    // nothing. Warm-up reads the warehouse through the R2 handler, so this is the whole cost
+                    // of the security initializer.
+                    var historyFast = _algo.History<VolatilityQuoteBar>(volaSym, _algo.Periods(days: _algo.Cfg.WarmUpDays), _algo.resolution, fillForward: false);
 
-                    // IV Bid Ask Indicators which produce events
-                    // Slow one must stop before Fast one kicks in, otherwise time updates will be ignored...
+                    // Hoisted: this loop runs once per volatility bar, millions of times per run.
+                    var ivBid = _algo.IvBids[symbol];
+                    var ivAsk = _algo.IvAsks[symbol];
+                    var ivSpreadSma = _algo.IVSpreadSMA[symbol];
+
                     int samples = 0;
-                    foreach (VolatilityQuoteBar volBar in Statics.ToIEnumerable(history))
+                    foreach (VolatilityQuoteBar volBar in historyFast)
                     {
-                        IVQuote bid;
-                        IVQuote ask;
-
                         // Data issue. empty row is loaded.
                         if (volBar.Ask.Close == 0 && volBar.Bid.Close == 0)
                         {
                             continue;
                         }
-                        // The UnderlyingPrice.Close here does not match MidPrice(Underlying)
-                        bid = new IVQuote(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceBid.Close, (double)volBar.Bid.Close);
-                        ask = new IVQuote(symbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceAsk.Close, (double)volBar.Ask.Close);
 
-
-                        _algo.IvBids[symbol].Update(bid);
-                        _algo.IvAsks[symbol].Update(ask);
-                        _algo.IVSpreadSMA[symbol].Update(new IndicatorDataPoint(volBar.Time, (decimal)(ask.IV - bid.IV)));
+                        // Past data served by the handler (R2 iceberg): feed the IVs straight in, no pricer.
+                        ivBid.Update(volBar.EndTime, (double)volBar.Bid.Close);
+                        ivAsk.Update(volBar.EndTime, (double)volBar.Ask.Close);
+                        // Spreads are intraday here: never append an out-of-order point to the SMA.
+                        if (volBar.Time > ivSpreadSma.Current.Time)
+                        {
+                            ivSpreadSma.Update(new IndicatorDataPoint(volBar.Time, (decimal)(volBar.Ask.Close - volBar.Bid.Close)));
+                        }
                         samples++;
                     }
                     if (samples == 0)
@@ -304,13 +297,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     _algo.Log($"SecurityInitializer.WarmUpSecurity: {symbol} No VolatilityQuoteBar found to warmup indicators with.");
                 }
-
-                // IV PutCall Ratios - Not relevant currently. Commenting to save CPU time.
-                //var historyFastTrades = _algo.History<TradeBar>(symbol, _algo.Periods(days: _algo.Cfg.PutCallRatioWarmUpDays + 1), _algo.resolution, fillForward: false);
-                //foreach (TradeBar bar in historyFastTrades)
-                //{
-                //    _algo.PutCallRatios[option.Symbol].Update(bar);
-                //}
             }
         }
     }

@@ -57,17 +57,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public Dictionary<int, IUtilityOrder> OrderTicket2UtilityOrder = new();
         public RiskScenarioHandler RiskScenarioHandler;
-
-        // Begin Used by ImpliedVolaExporter - To be moved over there....
-        // public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVBid = new();
-        // public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVAsk = new();
-        // public Dictionary<Symbol, IVTrade> IVTrades = new();
-        // public Dictionary<Symbol, RollingIVIndicator<IVQuote>> RollingIVTrade = new();
-        public Dictionary<Symbol, PutCallRatioIndicator> PutCallRatios = new();
+        
         public Dictionary<(Symbol, decimal), UnderlyingMovedX> UnderlyingMovedX = new();
-        //public Dictionary<Symbol, ConsecutiveTicksTrend> ConsecutiveTicksTrend = new();
-        public Dictionary<Symbol, IntradayIVDirectionIndicator> IntradayIvDirectionIndicators = new();
-        //public Dictionary<Symbol, AtmIVIndicator> AtmIVIndicators = new();
         public Dictionary<Equity, HashSet<MarketRegime>> ActiveRegimes = new();
         public ConcurrentDictionary<Symbol, List<PositionSnap>> PositionSnaps = new();
         public ConcurrentDictionary<Symbol, List<QuotePb>> MarketDataQuotes = new();
@@ -225,7 +216,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Logging events
             Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
             // Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), ExportPutCallRatios);
 
             // WARMUP
             // first digit ensure looking beyond past holidays. Second digit is days of trading days to warm up.
@@ -425,7 +415,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public override void OnData(Slice slice)
         {
             if (IsWarmingUp) return;
-            PaceBacktestNearRealtime();
+            //PaceBacktestNearRealtime();
             // Feed pre-calculated IVs from disk into IvBid/Ask indicators (backtest only),
             // bypassing the Julia pricer call that would otherwise be triggered by the consolidator.
             if (!LiveMode)
@@ -439,13 +429,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                     if (volBar.Bid.Close > 0)
                     {
-                        var bid = new IVQuote(optionSymbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceBid.Close, (double)volBar.Bid.Close);
-                        IvBids[optionSymbol].Update(bid);
+                        IvBids[optionSymbol].Update(volBar.EndTime, (double)volBar.Bid.Close);
                     }
                     if (volBar.Ask.Close > 0)
                     {
-                        var ask = new IVQuote(optionSymbol, volBar.EndTime, volBar.UnderlyingPrice.Close, volBar.PriceAsk.Close, (double)volBar.Ask.Close);
-                        IvAsks[optionSymbol].Update(ask);    
+                        IvAsks[optionSymbol].Update(volBar.EndTime, (double)volBar.Ask.Close);
                     }
                 }
             }
@@ -668,7 +656,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             RiskProfiles.Values.DoForEach(s => s.Dispose());
             UtilityWriters.Values.DoForEach(s => s.Dispose());
             OrderEventWriters.Values.DoForEach(s => s.Dispose());
-            PutCallRatios.Values.DoForEach(s => s.Dispose());
             RiskScenarioHandler.Writers.Values.DoForEach(s => s.writer.Dispose());
             TradeWriter.Dispose();
         }
@@ -713,6 +700,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             OnMarketOpen();
 
+            // The repeating schedules do nothing while warming up (the clock sweeps the span and would fire
+            // them hundreds of times for nothing), so run them once here: before trading, right after warm-up.
+            UpdateUniverseSubscriptions();
+            SetActiveMarketRegimes();
+            LogRiskSchedule();
+
             //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(IVSurfaceRelativeStrike.Status.Smoothings)));
             //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(IVSurfaceRelativeStrike.Status.Smoothings)));
 
@@ -742,11 +735,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             IvSurfaceSsviMid.Values.DoForEach(s => s.WriteCsvRows());
             //IVSurfaceSSVIBid.Values.Union(IVSurfaceSSVIAsk.Values).DoForEach(s => s.WriteCsvRows());
-        }
-        public void ExportPutCallRatios()
-        {
-            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
-            PutCallRatios.Where(kvp => kvp.Key.SecurityType == SecurityType.Equity).DoForEach(kvp => kvp.Value.Export());
         }
 
         public void HedgeDeltaFlat()
@@ -826,10 +814,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public double MidIV(Symbol symbol, double defaultSpread = 0.005)
         {
             if (symbol.SecurityType != SecurityType.Option) return double.NaN;
-
-            decimal bid = IvBids[symbol].IVBidAsk.Price;
-            decimal ask = IvAsks[symbol].IVBidAsk.Price;
-            decimal mid = (bid + ask) / 2;
+            decimal mid = MidPrice(symbol);
             return OptionContractWrap.E(this, (Option)Securities[symbol], Time.Date).IV(mid, MidPrice(Underlying(symbol)), 0.0001);
         }
 
@@ -2215,7 +2200,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void InitializePositionsFromPortfolioHoldings()
         {
-            // Setting internal positions from algo state.
+            // Setting internal positions from algo state. takes a min+ in debug
             Positions = new Dictionary<Symbol, Position>();
             foreach (var holding in Portfolio.Values.Where(x => securityTypeOptionEquity.Contains(x.Type)))
             {
@@ -2240,7 +2225,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             Symbol symbol = security.Symbol;
             if (
-                symbol.ID.Symbol.Contains(Statics.VolatilityBar)
+                symbol.ID.Symbol.Contains(Statics.Volatility)
                 || !HistoryRequestValid(symbol)
                 || HistoryProvider == null
                 )

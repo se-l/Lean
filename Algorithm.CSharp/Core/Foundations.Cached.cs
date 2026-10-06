@@ -108,25 +108,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
-        /// Adjust the target hedge risk by an amount corresponding to the put call ratio signal.
-        /// </summary>
-        /// <returns></returns>
-        public decimal TargetRiskPutCallRatio(Symbol underlying)
-        {
-            if (Cfg.PutCallRatioTargetRisks.ContainsKey(underlying.Value))
-            {
-                foreach (TargetRisk targetRisk in Cfg.PutCallRatioTargetRisks[underlying.Value])
-                {
-                    if (targetRisk.RangeLower <= PutCallRatios[underlying].Ratio() && PutCallRatios[underlying].Ratio() <= targetRisk.RangeUpper)
-                    {
-                        return targetRisk.Target100BpUSD;
-                    }
-                }
-            }
-            return 0;
-        }
-
-        /// <summary>
         /// Closely related to GedHedgeWithIndex, but hedges with the underlying instead of the index.
         /// To avoid dynamic over hedging, best used rarely. For example once per fill only.
         /// To be refactored with a more generic hedging function searching for the best hedge given the current portfolio.

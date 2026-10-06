@@ -22,8 +22,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (newBidAsk.Symbol.SecurityType == SecurityType.Option)
             {
-                IvBids[newBidAsk.Symbol].Update();
-                IvAsks[newBidAsk.Symbol].Update();
+                // In backtest the IVs arrive pre-computed on VolatilityQuoteBar through the R2 handler
+                // (Foundations.OnData / WarmUpSecurity push them into IvBids/IvAsks), so there is
+                // nothing to invert here. Live: warm-up is past data and comes from the handler too;
+                // only after warm-up does a fresh quote need the pricer to invert IV.
+                if (LiveMode && !IsWarmingUp)
+                {
+                    IvBids[newBidAsk.Symbol].Update();
+                    IvAsks[newBidAsk.Symbol].Update();
+                }
                 UpdateLimitPrice(newBidAsk.Symbol);
             }
             else if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)

@@ -64,6 +64,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuantConnect.DataSource.Pol
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuantConnect.IBAutomater", "..\IBAutomater\QuantConnect.IBAutomater\QuantConnect.IBAutomater.csproj", "{7D8C6A29-12F4-4594-8D60-CD9856D67FE6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuantConnect.Lean.DataSource.R2", "DataSource.R2\QuantConnect.Lean.DataSource.R2.csproj", "{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -389,6 +391,18 @@ Global
 		{7D8C6A29-12F4-4594-8D60-CD9856D67FE6}.Release|x64.Build.0 = Release|Any CPU
 		{7D8C6A29-12F4-4594-8D60-CD9856D67FE6}.Release|x86.ActiveCfg = Release|Any CPU
 		{7D8C6A29-12F4-4594-8D60-CD9856D67FE6}.Release|x86.Build.0 = Release|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Debug|x64.Build.0 = Debug|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Debug|x86.Build.0 = Debug|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Release|Any CPU.Build.0 = Release|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Release|x64.ActiveCfg = Release|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Release|x64.Build.0 = Release|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Release|x86.ActiveCfg = Release|Any CPU
+		{795FDC94-0DCD-40D2-A4F4-F43913D4EE40}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

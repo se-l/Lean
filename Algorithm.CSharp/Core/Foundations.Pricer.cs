@@ -16,6 +16,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
     {
         internal void SetPricingStrategies()
         {
+            if (IsWarmingUp) return;
             Cfg.Ticker.DoForEach(s => SetPricingStrategy(s));
         }
 
@@ -243,7 +244,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (!ivs.IsCalibrated || !ivs.HasParams(qr.Option)) return null;
 
             double modelIv = ivs.IV(qr.Option);
-            decimal ivMeanSpread = IVSpreadSMA[qr.Option.Symbol].Current.Value;
             OptionContractWrap ocw = OptionContractWrap.E(this, qr.Option, Time.Date);
             double kfPriceMid = qr.OrderDirection switch
             {
@@ -263,7 +263,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 OrderDirection.Sell => ocw.NPV(modelIv, null),
                 _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
             };
-            Log($"{Time} GetKalmanQuote(): direction={qr.OrderDirection} option={qr.Option}, kfPriceMid={kfPriceMid:0.0000}, kfModelIV={modelIv:0.00}, kfPriceWSpread={kfPriceWSpread:0.0000}, bidPrice={qr.Option.BidPrice}, bidIV={IvBids[qr.Option.Symbol].IVBidAsk.IV:0.00}, askPrice={qr.Option.AskPrice}, askIV={IvAsks[qr.Option.Symbol].IVBidAsk.IV:0.00}, IVMeanSpread={ivMeanSpread:0.00}, spot={MidPrice(qr.Option.Underlying.Symbol)}");
+            Log($"{Time} GetKalmanQuote(): direction={qr.OrderDirection} option={qr.Option}, kfPriceMid={kfPriceMid:0.0000}, kfModelIV={modelIv:0.00}, kfPriceWSpread={kfPriceWSpread:0.0000}, bidPrice={qr.Option.BidPrice}, bidIV={IvBids[qr.Option.Symbol].IVBidAsk.IV:0.00}, askPrice={qr.Option.AskPrice}, askIV={IvAsks[qr.Option.Symbol].IVBidAsk.IV:0.00}, spot={MidPrice(qr.Option.Underlying.Symbol)}");
             return (decimal?)kfPriceWSpread;
         }
 

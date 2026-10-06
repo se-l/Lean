@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    R2 data source plugin for Lean (backtesting only).
+
+    References the BUILT Lean assemblies rather than ProjectReferences, so this can be built on its
+    own and its output dropped beside them — the same shape the in-repo Polygon data source uses.
+
+    Target framework and output-path handling mirror the rest of the solution (net6.0,
+    AppendTargetFrameworkToOutputPath=false), so the plugin lands in the same folder as the engine.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Build straight into the Launcher's bin folder, like Lean's own projects: the plugin must sit
+         beside the engine for MEF discovery, and that placement belongs to the build, not to a
+         manual copy step. -->
+    <OutDir>../Launcher/bin/$(Configuration)/</OutDir>
+    <AssemblyName>QuantConnect.Lean.DataSource.R2</AssemblyName>
+    <RootNamespace>QuantConnect.Lean.DataSource.R2</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="QuantConnect.Common">
+      <HintPath>../Launcher/bin/Release/QuantConnect.Common.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="QuantConnect.Lean.Engine">
+      <HintPath>../Launcher/bin/Release/QuantConnect.Lean.Engine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Required transitively: TimeZones.NewYork returns a NodaTime DateTimeZone. -->
+    <Reference Include="NodaTime">
+      <HintPath>../Launcher/bin/Release/NodaTime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- MEF: InheritedExport on the IDataFeed implementation. -->
+    <Reference Include="System.ComponentModel.Composition">
+      <HintPath>../Launcher/bin/Release/System.ComponentModel.Composition.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- QuantConnect.Logging is its own assembly in Lean, not part of Common. -->
+    <Reference Include="QuantConnect.Logging">
+      <HintPath>../Launcher/bin/Release/QuantConnect.Logging.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- QuantConnect.Configuration: the plugin reads its settings from the cloudflare-r2 section. -->
+    <Reference Include="QuantConnect.Configuration">
+      <HintPath>../Launcher/bin/Release/QuantConnect.Configuration.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Python.Runtime: needed because the consolidator classes' public surface mentions PyObject
+         (overload resolution requires the assembly even though the feed never passes PyObject). -->
+    <Reference Include="Python.Runtime">
+      <HintPath>../Launcher/bin/Release/Python.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Configuration\QuantConnect.Configuration.csproj" />
+  </ItemGroup>
+
+</Project>

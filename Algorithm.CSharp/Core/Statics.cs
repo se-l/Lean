@@ -23,6 +23,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
     {
         public const string CfgDefault = AlgoConfig.CfgDefault;
         public const string VolatilityBar = "VolatilityBar";
+
+        // Common stem of the volatility series symbol values ("...VolatilityQuoteBar",
+        // "...VolatilityTradeBar"). VolatilityBar above does NOT match those: the value is
+        // "<contract>.VolatilityQuoteBar", which does not contain the literal "VolatilityBar".
+        public const string Volatility = "Volatility";
         public const string DtFmtISO = "yyyy-MM-dd";
         public const string DatetTmeFmtProto = "yyyy-MM-ddTHH:mm:ss";
         public static DateTime Trim(this DateTime date, long ticks)

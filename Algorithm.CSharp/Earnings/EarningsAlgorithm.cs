@@ -140,6 +140,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         public override void OnWarmupFinished()
         {
             base.OnWarmupFinished();
+
+            // Repeating schedules are skipped during warm-up; run them once here, before trading starts.
+            SetPricingStrategies();
+            FetchTargetPortfolios();
+            FetchPfRiskScenarios();
+            LogDifferenceTargetHoldingsOrderTickets();
+
             equities.DoForEach(symbol => RequestKalmanInit(ToEquity(symbol)));
 
             Cfg.Ticker.DoForEach(s => SetTargetHoldingsToZeroAfterEarnings(Securities[s].Symbol));
@@ -1444,6 +1451,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         private void FetchPfRiskScenarios()
         {
+            // Scheduled every 15 minutes; skipped during warm-up (see OnWarmupFinished, which calls it once).
+            if (IsWarmingUp) return;
             Cfg.Ticker.DoForEach(s => RequestPfRiskScenarios(Securities[s].Symbol));
         }
 

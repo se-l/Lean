@@ -6,7 +6,7 @@ using QuantConnect.Indicators;
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
     public class RollingIVIndicator<T> : IIndicatorWarmUpPeriodProvider
-        where T : IVQuote
+        where T : IIVQuote
     {
         public Symbol Symbol { get; }
         public T Current { get => GetCurrent(); }
@@ -22,13 +22,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Symbol = symbol;
         }
 
-        private T? GetCurrent()
+        private T GetCurrent()
         {
             return Window.Any() ? Window.Last() : default(T);
         }
         public void Update(T item)
         {
-            if (item == null || item.Time <= Last?.Time) return;
+            if (item.Time <= Last.Time) return;
             Add(item);
         }
 

@@ -54,7 +54,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             _side = side;
             _algo = algo;
             Option = option;
-            IVBidAsk = new IVQuote(Symbol, _algo.Time, 0, 0, 0);  // Default, in case referenced downstream before any successful update.
+            IVBidAsk = default(IVQuote);  // Default, in case referenced downstream before any successful update.
         }
 
         public void Update(DateTime time, decimal quote, decimal midPriceUnderlying, double? iv = null)
@@ -82,8 +82,33 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             MidPriceUnderlying = midPriceUnderlying;
             _samples += 1;
             
-            IVBidAsk = new IVQuote(Symbol, Time, this.MidPriceUnderlying, Price, IV);
-            Current = new IndicatorDataPoint(Time, (decimal)IVBidAsk.IV);
+            IVBidAsk = new IVQuote(Symbol, Time, IV);
+            Current = new IndicatorDataPoint(Time, (decimal)IV);
+        }
+
+        /// <summary>
+        /// IVs served pre-computed by the data feed (the R2 iceberg handler). No pricer round trip and
+        /// no input-diff bookkeeping: this is the backtest and warm-up path.
+        /// </summary>
+        public void Update(DateTime time, double iv)
+        {
+            if (time <= Time) return;
+
+            if (!CanConvertToDecimal(iv))
+            {
+                _algo.Log($"{_algo.Time} IVQuoteIndicator.Update: Invalid IV encountered for {Symbol}. IV={iv}");
+                return;
+            }
+
+            Time = time;
+            // Prices are not carried by the warehouse feed; make sure a later solver call sees the
+            // inputs as changed rather than reusing the previous quote's IV.
+            Price = 0;
+            MidPriceUnderlying = 0;
+            _samples += 1;
+
+            IVBidAsk = new IVQuote(Symbol, Time, iv);
+            Current = new IndicatorDataPoint(Time, (decimal)iv);
         }
         public void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null)
         {
@@ -99,7 +124,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public void Update(IVQuote bar)
         {
             if (bar.Time <= Time) return;
-            Update(bar.Time, bar.Price, bar.UnderlyingMidPrice, bar.IV);
+            Update(bar.Time, bar.IV);
         }
         public void Update()
         {
@@ -113,6 +138,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         }
         protected override decimal ComputeNextValue(IndicatorDataPoint input)
         {
+            if (!UseSolver) { return Current; }
             if (input.Time <= Time) { return Current; }
             Update(input.Time, input.Value, _algo.MidPrice(Symbol.Underlying));
             return CanConvertToDecimal(IVBidAsk.IV) ? (decimal)IVBidAsk.IV : Current.Value;
@@ -122,6 +148,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Update();
             return IVBidAsk;
         }
+
+        /// <summary>
+        /// The pricer is the IV source only when there is no pre-computed IV to read: live trading,
+        /// after warm-up. Warm-up history is past data and arrives through the feed (R2 handler), and
+        /// backtests read IVs from the warehouse — neither may spend a pricer round trip here.
+        /// Ad-hoc and risk calculations call <see cref="Refresh"/> or the contract wrap directly and
+        /// are unaffected by this gate.
+        /// </summary>
+        public bool UseSolver => _algo.LiveMode && !_algo.IsWarmingUp;
 
         protected bool HaveInputsChanged(decimal quote, decimal midPriceUnderlying, DateTime evalDate)
         {
