@@ -10,7 +10,6 @@ build name="" tag="latest":
         -f Dockerfile-{{name}} \
         --platform linux/amd64,linux/arm64 \
         -t {{registry}}/{{name}}:{{tag}} \
-        --push \
         .
     @echo "Build completed: {{name}}"
 

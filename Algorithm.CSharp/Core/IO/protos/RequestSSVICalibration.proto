@@ -40,4 +40,5 @@ message ResponseSSVICalibrationPb {
   string ts = 1;
   RequestSSVICalibrationPb request = 2;
   repeated SSVIParamsPb params = 3;
+  uint32 elapsed_ms = 4;
 }

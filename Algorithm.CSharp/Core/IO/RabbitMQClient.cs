@@ -7,6 +7,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Google.Protobuf;
+using QuantConnect.Scheduling;
 
 namespace QuantConnect.Algorithm.CSharp.Core.IO
 {
@@ -17,9 +18,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         // ── Fields ────────────────────────────────────────────────────
         private readonly Foundations _algo;
         private readonly Dictionary<ChannelPb, EventHandler<EventArgs>> _eventHandlers;
-        private readonly ConcurrentDictionary<string, byte> _activeRequests = new();
-        private DateTime? _algoTimeFirstActiveRequest;
-        private DateTime _systemTimeFirstActiveRequest;
+        // Per-request send timing: utcTime = algo clock at send, systemTime = wall clock at send
+        private readonly ConcurrentDictionary<string, DateTime> _activeRequests = new();
         private readonly SemaphoreSlim _connectLock = new(1, 1);
         private IConnection _connection;
         private IChannel _channel;
@@ -58,11 +58,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         }
 
         public bool HasActiveRequests() => !_activeRequests.IsEmpty;
-
-        public (DateTime? algoTime, DateTime systemTime) GetActiveRequestTiming()
-        {
-            return (_algoTimeFirstActiveRequest, _systemTimeFirstActiveRequest);
-        }
 
         // ── Connect ───────────────────────────────────────────────────
         public async Task ConnectAsync(
@@ -146,13 +141,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             };
 
             var body = msg.ToByteArray();
-            
-            if (_activeRequests.IsEmpty)
-            {
-                _algoTimeFirstActiveRequest = _algo.Time;
-                _systemTimeFirstActiveRequest = DateTime.UtcNow;
-            }
-            _activeRequests.TryAdd(msg.Id, 0);
+
+            _activeRequests[msg.Id] = _algo.Time;
 
             var props = new BasicProperties
             {
@@ -175,14 +165,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             {
                 using var ms = new MemoryStream(ea.Body.ToArray());
                 MessagePb msg = MessagePb.Parser.ParseFrom(ms);
-                
+
                 _algo.Log($"RabbitMqClient: Received response: {msg.Channel}.");
 
-                _activeRequests.TryRemove(msg.Id, out _);
-                if (_activeRequests.IsEmpty)
-                {
-                    _algoTimeFirstActiveRequest = null;
-                }
+                var requestSentTime = RemoveActiveRequest(msg.Id);
 
                 switch (msg.Channel)
                 {
@@ -190,37 +176,52 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                         _algo.Log("RabbitMqClient: Heartbeat received.");
                         break;
                     case ChannelPb.TargetPortfolio:
-                        _eventHandlers[msg.Channel]?.Invoke(this,
-                            new TargetPortfoliosEventArgs(ResponseTargetPortfoliosPb.Parser.ParseFrom(msg.Payload)));
+                    {
+                        var response = ResponseTargetPortfoliosPb.Parser.ParseFrom(msg.Payload);
+                        DispatchResponse(msg.Channel, requestSentTime, response.ElapsedMs,
+                            new TargetPortfoliosEventArgs(response));
                         break;
+                    }
                     case ChannelPb.StressTestDs:
-                        _eventHandlers[msg.Channel]?.Invoke(this,
-                            new ResultStressTestDsEventArgs(ResultStressTestDsPb.Parser.ParseFrom(msg.Payload)));
+                    {
+                        var response = ResultStressTestDsPb.Parser.ParseFrom(msg.Payload);
+                        DispatchResponse(msg.Channel, requestSentTime, response.ElapsedMs,
+                            new ResultStressTestDsEventArgs(response));
                         break;
+                    }
                     case ChannelPb.CmdFetchTargetPortfolio:
-                        _eventHandlers[msg.Channel]?.Invoke(this,
+                        DispatchResponse(msg.Channel, requestSentTime, 0,
                             new CmdFetchTargetPortfolioEventArgs(CmdFetchTargetPortfolio.Parser.ParseFrom(msg.Payload)));
                         break;
                     case ChannelPb.CmdCancelOid:
-                        _eventHandlers[msg.Channel]?.Invoke(this,
+                        DispatchResponse(msg.Channel, requestSentTime, 0,
                             new CmdCancelOIDEventArgs(CmdCancelOID.Parser.ParseFrom(msg.Payload)));
                         break;
                     case ChannelPb.CmdCfgOverride:
-                        _eventHandlers[msg.Channel]?.Invoke(this,
+                        DispatchResponse(msg.Channel, requestSentTime, 0,
                             new CmdCfgOverrideEventArgs(CmdCfgOverride.Parser.ParseFrom(msg.Payload)));
                         break;
                     case ChannelPb.KalmanInit:
-                        _eventHandlers[msg.Channel]?.Invoke(this,
-                            new ResponseKalmanInitEventArgs(ResponseKalmanInitPb.Parser.ParseFrom(msg.Payload)));
+                    {
+                        var response = ResponseKalmanInitPb.Parser.ParseFrom(msg.Payload);
+                        DispatchResponse(msg.Channel, requestSentTime, response.ElapsedMs,
+                            new ResponseKalmanInitEventArgs(response));
                         break;
+                    }
                     case ChannelPb.RequestSsviCalibration:
-                        _eventHandlers[msg.Channel]?.Invoke(this,
-                            new ResponseSSVICalibrationEventArgs(ResponseSSVICalibrationPb.Parser.ParseFrom(msg.Payload)));
+                    {
+                        var response = ResponseSSVICalibrationPb.Parser.ParseFrom(msg.Payload);
+                        DispatchResponse(msg.Channel, requestSentTime, response.ElapsedMs,
+                            new ResponseSSVICalibrationEventArgs(response));
                         break;
+                    }
                     case ChannelPb.RequestPfRiskScenarios:
-                        _eventHandlers[msg.Channel]?.Invoke(this,
-                            new ResponsePfRiskScenariosEventArgs(ResponsePfRiskScenariosPb.Parser.ParseFrom(msg.Payload)));
+                    {
+                        var response = ResponsePfRiskScenariosPb.Parser.ParseFrom(msg.Payload);
+                        DispatchResponse(msg.Channel, requestSentTime, response.ElapsedMs,
+                            new ResponsePfRiskScenariosEventArgs(response));
                         break;
+                    }
                     default:
                         _algo.Error($"RabbitMqClient: Unknown msg channel: {msg.Channel}");
                         break;
@@ -230,6 +231,49 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             {
                 _algo.Error($"RabbitMqClient.OnMessage: {ex}");
             }
+        }
+
+        private DateTime? RemoveActiveRequest(string id)
+        {
+            if (_activeRequests.TryRemove(id, out var sentTime))
+            {
+                return sentTime;
+            }
+            return null;
+        }
+
+        // Dispatches a parsed response to its registered handler. In backtests, when the calc engine
+        // computed the request faster than the backtest's algo clock advanced since send, the handler
+        // is deferred to utcSendTime + elapsedMs via a scheduled event instead of firing immediately.
+        private void DispatchResponse(
+            ChannelPb channel,
+            DateTime? requestSentTime,
+            uint elapsedMs,
+            EventArgs args
+            )
+        {
+            if (!_eventHandlers.TryGetValue(channel, out var handler) || handler == null)
+            {
+                return;
+            }
+
+            if (!_algo.LiveMode && requestSentTime.HasValue && elapsedMs > 0)
+            {
+                var targetTime = requestSentTime.Value + TimeSpan.FromMilliseconds(elapsedMs);
+                if (targetTime > _algo.Time)
+                {
+                    _algo.Log($"{_algo.Time} RabbitMqClient: {channel} computed in {elapsedMs/1000}s; scheduling callback at {targetTime} (backtest at {_algo.Time}).");
+                    _algo.Schedule.On(
+                        $"{nameof(RabbitMQClient)}.{channel}Callback",
+                        _algo.DateRules.Today,
+                        _algo.TimeRules.At(targetTime.TimeOfDay),
+                        () => handler(this, args)
+                        );
+                    return;
+                }
+            }
+
+            handler(this, args);
         }
 
         // ── Channel routing ───────────────────────────────────────────
@@ -267,11 +311,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     _connection = null;
                 }
 
-                _algo.Log("RabbitMqClient: Disconnected.");
+                _algo.Log($"{_algo.Time} RabbitMqClient: Disconnected.");
             }
             catch (Exception e)
             {
-                _algo.Error($"RabbitMqClient.DisconnectAsync(): {e}");
+                _algo.Error($"{_algo.Time} RabbitMqClient.DisconnectAsync(): {e}");
             }
             finally
             {

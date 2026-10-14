@@ -87,7 +87,9 @@ namespace QuantConnect.Lean.DataSource.R2
             _timeProvider = dataFeedTimeProvider.FrontierTimeProvider;
             _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
 
-            _catalog = new R2LocalCatalog();
+            // Shared with the history provider: one duckdb process, one day cache, one root cache
+            // (see R2LocalCatalog.Shared).
+            _catalog = R2LocalCatalog.Shared;
             _ticks = new R2TickReader(_catalog);
             _bars = new R2BarReader(_catalog);
             _iv = new R2IvReader(_catalog);

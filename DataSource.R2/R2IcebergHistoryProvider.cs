@@ -51,7 +51,9 @@ namespace QuantConnect.Lean.DataSource.R2
 
         public override void Initialize(HistoryProviderInitializeParameters parameters)
         {
-            _catalog = new R2LocalCatalog();
+            // Shared with the feed: one duckdb process, one day cache, one root cache
+            // (see R2LocalCatalog.Shared).
+            _catalog = R2LocalCatalog.Shared;
             _ticks = new R2TickReader(_catalog);
             _bars = new R2BarReader(_catalog);
             _iv = new R2IvReader(_catalog);
@@ -262,7 +264,7 @@ namespace QuantConnect.Lean.DataSource.R2
             }
 
             Log.Trace($"R2IcebergHistoryProvider: {request.Symbol} {request.Resolution} {request.TickType} " +
-                      $"{request.StartTimeUtc:yyyy-MM-dd}..{request.EndTimeUtc:yyyy-MM-dd} <- {table.Name}: " +
+                      $"{startEt:yyyy-MM-dd HH:mm:ss}..{endEt:yyyy-MM-dd HH:mm:ss} ET <- {table.Name}: " +
                       $"{read} points in {byTime.Count} slices");
 
             foreach (var entry in byTime)

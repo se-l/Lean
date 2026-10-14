@@ -2,6 +2,26 @@ FROM sebastianluen/lean:latest
 
 MAINTAINER Sebastian Lueneburg <sebastian.lueneburg@gmail.com>
 
+# duckdb CLI, baked in rather than mounted from the host.
+# The R2 plugin (DataSource.R2/R2DuckSession.cs) spawns it as one long-lived process per catalog
+# and speaks over stdin/stdout, and its preamble does `LOAD iceberg` — so the CLI *and* the
+# iceberg extension must be present. httpfs is required too: the iceberg ATTACH reaches an s3://
+# endpoint through it, and without it baked the attach downloads the extension from
+# extensions.duckdb.org at runtime (observed failing in a network-isolated container).
+# Baked at build time so the container needs no runtime download and no host path; the extension
+# cache lands in /root/.duckdb.
+# TARGETARCH keeps the multiarch buildx recipe in the justfile working (duckdb names its
+# assets linux-amd64 / linux-arm64, which match buildx's TARGETARCH), with amd64 as the
+# default for a plain `docker build`.
+ARG TARGETARCH=amd64
+ARG DUCKDB_VERSION=v1.5.6
+RUN curl -fsSL "https://github.com/duckdb/duckdb/releases/download/${DUCKDB_VERSION}/duckdb_cli-linux-${TARGETARCH}.zip" -o /tmp/duckdb.zip \
+ && unzip -o /tmp/duckdb.zip -d /usr/local/bin \
+ && rm -f /tmp/duckdb.zip \
+ && chmod +x /usr/local/bin/duckdb \
+ && /usr/local/bin/duckdb -c "INSTALL iceberg; LOAD iceberg; INSTALL httpfs; LOAD httpfs;" \
+ && /usr/local/bin/duckdb --version
+
 COPY ./Launcher/bin/Release/ /repos/quantconnect/Lean/Launcher/bin/Release/
 RUN rm -f /repos/quantconnect/Lean/Launcher/bin/Release/log.txt
 

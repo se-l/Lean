@@ -46,9 +46,26 @@ namespace QuantConnect.Lean.DataSource.R2
 {
     /// <summary>
     /// Reads warehouse tables through the local rclone mirror (route 1: allow_moved_paths).
+    ///
+    /// One instance serves BOTH handlers: the engine instantiates the feed and the history provider
+    /// independently (MEF), but they read the same tables, so they share one duckdb process, one day
+    /// cache and one root cache — a day materialised for warmup is reused by the feed's stream of
+    /// that session. Production code takes <see cref="Shared"/>; explicitly constructed instances
+    /// are test seams.
     /// </summary>
     public sealed class R2LocalCatalog
     {
+        /// <summary>
+        /// The shared instance, created from the configuration on first use. A configuration failure
+        /// (a Required setting missing) is remembered by the Lazy and rethrown on every access, the
+        /// same as a constructor throw in the unshared shape.
+        /// </summary>
+        private static readonly Lazy<R2LocalCatalog> SharedInstance =
+            new Lazy<R2LocalCatalog>(() => new R2LocalCatalog());
+
+        /// <summary>The process-wide catalog both handlers read through.</summary>
+        public static R2LocalCatalog Shared => SharedInstance.Value;
+
         private readonly string _mountRoot;
         private readonly string _duckdbPath;
         private readonly string _warehouse;
@@ -61,6 +78,13 @@ namespace QuantConnect.Lean.DataSource.R2
 
         /// <summary>The one duckdb process this catalog talks to (null when it could not be started).</summary>
         private R2DuckSession _session;
+
+        /// <summary>
+        /// The session in which an ATTACH to the remote iceberg catalog has already succeeded. duckdb
+        /// is not idempotent here (see AttachSql), and the marker has to be tied to the process, not
+        /// to this object: the same catalog outlives session restarts and the per-scan fallback.
+        /// </summary>
+        private R2DuckSession _attachedSession;
 
         /// <summary>Days materialised in that session, with the symbols each one holds.</summary>
         private readonly Dictionary<string, CachedDay> _days = new Dictionary<string, CachedDay>(StringComparer.Ordinal);
@@ -127,9 +151,9 @@ namespace QuantConnect.Lean.DataSource.R2
         // Table names are internal identifiers; this keeps them out of SQL injection territory.
         private static readonly Regex TableName = new Regex("^[a-z_][a-z0-9_]*$", RegexOptions.Compiled);
 
-        /// <summary>
-        /// Reads every setting from the <c>cloudflare-r2</c> section of the Lean configuration.
-        /// The arguments are test seams: pass nothing in production.
+/// <summary>
+        /// Reads every setting from the `cloudflare-r2` section of the Lean configuration.
+        /// Production code uses <see cref="Shared"/>; the arguments are test seams.
         /// </summary>
         public R2LocalCatalog(
             string mountRoot = null,
@@ -343,6 +367,10 @@ namespace QuantConnect.Lean.DataSource.R2
                     break;
                 }
             }
+            // The ATTACH in that statement holds for the life of the process. Remember it before
+            // anything else can throw, so the next table's resolve does not re-attach and kill it.
+            _attachedSession = _session;
+
             if (location == null)
             {
                 throw new InvalidOperationException($"R2LocalCatalog: no snapshot for {table}.");
@@ -509,8 +537,23 @@ namespace QuantConnect.Lean.DataSource.R2
             }
         }
 
+        /// <summary>
+        /// ATTACH statement for the remote catalog, or empty when the live session already has it
+        /// attached.
+        ///
+        /// duckdb's ATTACH is not idempotent: a second `ATTACH ... AS r2` in the same process fails
+        /// with "database with name \"r2\" already exists", and a failed statement is fatal to the
+        /// session (bail on error). With a cold table-root cache several tables resolve in a row, so
+        /// without this the second table's resolve would throw the session away and every later scan
+        /// would pay a process spawn.
+        /// </summary>
         private string AttachSql()
         {
+            if (CatalogAttached)
+            {
+                return string.Empty;
+            }
+
             if (string.IsNullOrEmpty(_catalogToken))
             {
                 throw new InvalidOperationException(
@@ -522,6 +565,13 @@ namespace QuantConnect.Lean.DataSource.R2
                    $"CREATE OR REPLACE SECRET r2_cat (TYPE ICEBERG, TOKEN '{tok}'); " +
                    $"ATTACH '{_warehouse}' AS r2 (TYPE ICEBERG, ENDPOINT '{_catalogUri}'); ";
         }
+
+        /// <summary>
+        /// True when the live session is the one an ATTACH already succeeded in. Keyed on the session
+        /// instance, so a recreated session — or the per-scan path, where there is no session at all —
+        /// attaches again.
+        /// </summary>
+        private bool CatalogAttached => _session != null && ReferenceEquals(_attachedSession, _session);
 
         /// <summary>Removes every credential (catalog token, S3 keys) from text that will be logged or thrown.</summary>
         private string Redact(string text)
@@ -675,7 +725,11 @@ namespace QuantConnect.Lean.DataSource.R2
             }
         }
 
-        /// <summary>Releases the session (and with it every cached day).</summary>
+        /// <summary>
+        /// Releases the session (and with it every cached day). On the shared instance this kills
+        /// the session for every consumer, so it is for tests and process shutdown only — the
+        /// duckdb child already exits with the engine through its own ProcessExit hook.
+        /// </summary>
         public void Dispose()
         {
             lock (_daysGate)

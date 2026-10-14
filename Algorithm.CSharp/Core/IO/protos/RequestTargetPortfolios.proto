@@ -29,10 +29,9 @@ message RequestTargetPortfoliosPb {
 }
 
 message ResponseTargetPortfoliosPb {
-
   string ts = 1;
   string underlying = 2;  
   repeated TargetPortfolioPb target_portfolios = 3;  
   bool is_last_transmission = 4;
+  uint32 elapsed_ms = 5;
 }
-

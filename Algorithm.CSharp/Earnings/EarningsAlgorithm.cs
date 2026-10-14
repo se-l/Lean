@@ -53,8 +53,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         // private readonly Dictionary<Symbol, bool> FetchingTargetPortfolio = new();
 
         public override bool HasActiveRequests() => rMQClient?.HasActiveRequests() ?? false;
-        public override (DateTime? algoTime, DateTime systemTime) GetActiveRequestTiming() => rMQClient?.GetActiveRequestTiming() ?? (null, default);
-
         public override void Initialize()
         {
             Cfg = JsonConvert.DeserializeObject<FoundationsConfig>(File.ReadAllText(FoundationsConfigFileName));
@@ -88,12 +86,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                         symbol)); // Not just at midnight, but on algo start and better keep this, dont overwrite dict.
             }
 
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, minutesAfterOpen: 4), FetchTargetPortfolios);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, minutesAfterOpen: 4), SetTargetHoldingsFromTargetPortfolios);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), SetPricingStrategies);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), LogDifferenceTargetHoldingsOrderTickets);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), FetchTargetPortfolios); // Only runs if marketRegime is matching. refactor
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), FetchPfRiskScenarios); // Only runs if marketRegime is matching. refactor
+            Schedule.On("FetchTargetPortfolios", DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, minutesAfterOpen: 4), FetchTargetPortfolios);
+            Schedule.On("SetTargetHoldingsFromTargetPortfolios", DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, minutesAfterOpen: 4), SetTargetHoldingsFromTargetPortfolios);
+            Schedule.On("SetPricingStrategies", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), SetPricingStrategies);
+            Schedule.On("LogDifferenceTargetHoldingsOrderTickets", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), LogDifferenceTargetHoldingsOrderTickets);
+            Schedule.On("FetchTargetPortfolios", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), FetchTargetPortfolios); // Only runs if marketRegime is matching. refactor
+            Schedule.On("FetchPfRiskScenarios", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), FetchPfRiskScenarios); // Only runs if marketRegime is matching. refactor
             ScheduleRegularRequestStressTestDs(startTime: new TimeSpan(0, 15, 50, 0), endTime: new TimeSpan(0, 16, 10, 0));
 
             foreach (string tickerStr in ticker)
@@ -579,7 +577,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             {
                 foreach (var kvp in targetPortfolio.Holdings)
                 {
-                    Symbol symbol = Securities[kvp.Key].Symbol;
+                    if (!SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol) || !Securities.ContainsKey(symbol))
+                    {
+                        Log($"{Time} SetEquiUtilitySweeperFromTargetPortfolios: Holding symbol '{kvp.Key}' not subscribed. Skipping.");
+                        continue;
+                    }
                     Symbol underlying = Underlying(symbol);
                     decimal quantity = (int)kvp.Value.Quantity;
                     double utility = CollectionExtensions.GetValueOrDefault(targetPortfolio.ResultStressTestDs.MarginalUtilityByHolding, kvp.Key, 0);
@@ -627,16 +629,25 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         {
             if (e.ResponseTargetPortfolios == null)
             {
-                Log($"{Time} OnTargetPortfolios: ResponseTargetPortfolios is null. Ignoring.");
+                Log($"{Time} OnTargetPortfolios: ResponseTargetPortfolios is null. Ignore.");
                 return;
             }
 
-            if (!IsMyMarketOpen(e.ResponseTargetPortfolios.Underlying))
+            string underlyingTicker = e.ResponseTargetPortfolios.Underlying;
+            if (string.IsNullOrEmpty(underlyingTicker) || !Securities.ContainsKey(underlyingTicker))
+            {
+                Log($"{Time} OnTargetPortfolios: Underlying '{underlyingTicker}' not subscribed. Ignore.");
+                return;
+            }
+
+            if (!IsMyMarketOpen(underlyingTicker))
+            {
+                Log($"{Time} OnTargetPortfolios: Underlying '{underlyingTicker}'. Market closed. Ignore.");
                 return; // Avoids Running Signals after warmup has finished and a test fetch is scheduled.
+            }
 
             var targetPfs = TargetPortfoliosWithoutOppositeQuantities(e.ResponseTargetPortfolios.TargetPortfolios).ToArray();
-            Log(
-                $"{Time} OnTargetPortfolios: {targetPfs.Length} portfolios received. IsLastTransmission: {e.ResponseTargetPortfolios.IsLastTransmission}");
+            Log($"{Time} OnTargetPortfolios: {targetPfs.Length} portfolios received. IsLastTransmission: {e.ResponseTargetPortfolios.IsLastTransmission}");
             if (!targetPfs.Any())
             {
                 if (e.ResponseTargetPortfolios.IsLastTransmission && !ExecuteScheduledTargetPortfolioFetch)
@@ -651,12 +662,16 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 return;
             }
 
-            Symbol underlying = Securities[targetPfs.First().Underlying].Symbol;
+            Symbol underlying = Securities[underlyingTicker].Symbol;
 
-            foreach (string _ in targetPfs.Select((p) => p.Underlying).Distinct())
+            foreach (string pfUnderlying in targetPfs.Select((p) => p.Underlying).Distinct())
             {
-                underlying = Securities[targetPfs.First().Underlying].Symbol;
-                TargetPortfolios[underlying] = new();
+                if (string.IsNullOrEmpty(pfUnderlying) || !Securities.ContainsKey(pfUnderlying))
+                {
+                    Log($"{Time} OnTargetPortfolios: Underlying '{pfUnderlying}' not subscribed. Skipping.");
+                    continue;
+                }
+                TargetPortfolios[Securities[pfUnderlying].Symbol] = new();
             }
 
             foreach (TargetPortfolioPb pf in targetPfs.OrderBy(pf => pf.Objective).Reverse())
@@ -683,7 +698,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     $"{Time} OnTargetPortfolios, Presumed Fill IVs:\n{string.Join("\n", pf.Ivs.Select(kvp => $"{kvp.Key}: {kvp.Value:0.000}"))}");
                 pf.Ivs.DoForEach(kvp =>
                 {
-                    if (SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol))
+                    if (SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol) && Securities.ContainsKey(symbol))
                     {
                         if (Securities[symbol].Type != SecurityType.Option) return;
                         Option option = (Option)Securities[symbol];
@@ -691,6 +706,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     }
                 });
 
+                if (string.IsNullOrEmpty(pf.Underlying) || !Securities.ContainsKey(pf.Underlying))
+                {
+                    Log($"{Time} OnTargetPortfolios: Underlying '{pf.Underlying}' not subscribed. Skipping portfolio: {Portfolio2String(pf)}");
+                    continue;
+                }
                 underlying = Securities[pf.Underlying].Symbol;
                 if (TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> list))
                 {
@@ -703,10 +723,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
                 foreach (var kvp in pf.ResultStressTestDs.MarginalUtilityByHolding) // Includes dNLV and a utility for going delta neutral (should split)
                 {
-                    if (SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol))
+                    if (SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol) &&
+                        pf.ResultStressTestDs.Holdings.TryGetValue(kvp.Key, out HoldingPb holdingPb))
                     {
                         // MarginalUtility can be for either adding or removing a symbol from the portfolio. Marginal is not just for adding. Done this way as utility is non-linear. Direction is chosen based on TargetPortfolio.
-                        Core.Holding holding = new(symbol, Math.Sign(pf.ResultStressTestDs.Holdings[symbol].Quantity));
+                        Core.Holding holding = new(symbol, Math.Sign(holdingPb.Quantity));
                         MarginalUtility[holding] = kvp.Value;
                         Log($"{Time} MarginalUtility for Quantity={holding.Quantity}, Symbol={holding.Symbol}, Val={kvp.Value:0.00}, Quantity={holding.Quantity}");
                     }
@@ -1160,7 +1181,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             TimeSpan currentTime = startTime;
             while (currentTime <= endTime)
             {
-                Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(currentTime), RequestStressTestDs);
+                Schedule.On("RequestStressTestDs", DateRules.EveryDay(symbolSubscribed), TimeRules.At(currentTime), RequestStressTestDs);
                 currentTime = currentTime.Add(new TimeSpan(0, 0, intervalSeconds));
             }
         }
@@ -1168,6 +1189,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         private void RequestStressTestDs(Symbol underlying)
         {
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed) || !IsPreparingEarningsRelease(underlying)) return;
+
+            // The SSVI filter is built lazily once calibration params arrive; until then there is
+            // nothing to send (this is what threw KeyNotFound for a contract with no filter yet).
+            var equity = ToEquity(underlying);
+            if (!KalmanFiltersSSVI.ContainsKey(equity)) return;
 
             Log($"{Time} RequestStressTestDs: {underlying}");
 

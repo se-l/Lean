@@ -28,19 +28,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "aXRobS5DU2hhcnAuQ29yZS5JTxoMQ29tbW9uLnByb3RvGhxSZXF1ZXN0U1NW",
             "SUNhbGlicmF0aW9uLnByb3RvImMKE1JlcXVlc3RLYWxtYW5Jbml0UGISEgoK",
             "dW5kZXJseWluZxgBIAEoCRIWCg5kYXRlX2ZpdF9zdGFydBgCIAEoCRIUCgxk",
-            "YXRlX2ZpdF9lbmQYAyABKAkSCgoCdHMYBCABKAkiiAIKFFJlc3BvbnNlS2Fs",
+            "YXRlX2ZpdF9lbmQYAyABKAkSCgoCdHMYBCABKAkinAIKFFJlc3BvbnNlS2Fs",
             "bWFuSW5pdFBiEgoKAnRzGAEgASgJEksKB3JlcXVlc3QYAiABKAsyOi5RdWFu",
             "dENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlJlcXVlc3RLYWxt",
             "YW5Jbml0UGISRwoKaW5pdF9zdGF0ZRgDIAMoCzIzLlF1YW50Q29ubmVjdC5B",
             "bGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uU1NWSVBhcmFtc1BiEk4KD2luaXRf",
             "Y292YXJpYW5jZRgEIAMoCzI1LlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1No",
-            "YXJwLkNvcmUuSU8uVmVjdG9yRG91YmxlUGJCKKoCJVF1YW50Q29ubmVjdC5B",
-            "bGdvcml0aG0uQ1NoYXJwLkNvcmUuSU9iBnByb3RvMw=="));
+            "YXJwLkNvcmUuSU8uVmVjdG9yRG91YmxlUGISEgoKZWxhcHNlZF9tcxgFIAEo",
+            "DUIoqgIlUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JT2IG",
+            "cHJvdG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInitPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestKalmanInitPb.Parser, new[]{ "Underlying", "DateFitStart", "DateFitEnd", "Ts" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInitPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInitPb.Parser, new[]{ "Ts", "Request", "InitState", "InitCovariance" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInitPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseKalmanInitPb.Parser, new[]{ "Ts", "Request", "InitState", "InitCovariance", "ElapsedMs" }, null, null, null, null)
           }));
     }
     #endregion
@@ -385,6 +386,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       request_ = other.request_ != null ? other.request_.Clone() : null;
       initState_ = other.initState_.Clone();
       initCovariance_ = other.initCovariance_.Clone();
+      elapsedMs_ = other.elapsedMs_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -440,6 +442,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       get { return initCovariance_; }
     }
 
+    /// <summary>Field number for the "elapsed_ms" field.</summary>
+    public const int ElapsedMsFieldNumber = 5;
+    private uint elapsedMs_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public uint ElapsedMs {
+      get { return elapsedMs_; }
+      set {
+        elapsedMs_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -459,6 +473,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (!object.Equals(Request, other.Request)) return false;
       if(!initState_.Equals(other.initState_)) return false;
       if(!initCovariance_.Equals(other.initCovariance_)) return false;
+      if (ElapsedMs != other.ElapsedMs) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -470,6 +485,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (request_ != null) hash ^= Request.GetHashCode();
       hash ^= initState_.GetHashCode();
       hash ^= initCovariance_.GetHashCode();
+      if (ElapsedMs != 0) hash ^= ElapsedMs.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -498,6 +514,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       initState_.WriteTo(output, _repeated_initState_codec);
       initCovariance_.WriteTo(output, _repeated_initCovariance_codec);
+      if (ElapsedMs != 0) {
+        output.WriteRawTag(40);
+        output.WriteUInt32(ElapsedMs);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -518,6 +538,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       initState_.WriteTo(ref output, _repeated_initState_codec);
       initCovariance_.WriteTo(ref output, _repeated_initCovariance_codec);
+      if (ElapsedMs != 0) {
+        output.WriteRawTag(40);
+        output.WriteUInt32(ElapsedMs);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -536,6 +560,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       size += initState_.CalculateSize(_repeated_initState_codec);
       size += initCovariance_.CalculateSize(_repeated_initCovariance_codec);
+      if (ElapsedMs != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeUInt32Size(ElapsedMs);
+      }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -559,6 +586,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       initState_.Add(other.initState_);
       initCovariance_.Add(other.initCovariance_);
+      if (other.ElapsedMs != 0) {
+        ElapsedMs = other.ElapsedMs;
+      }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -593,6 +623,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             initCovariance_.AddEntriesFrom(input, _repeated_initCovariance_codec);
             break;
           }
+          case 40: {
+            ElapsedMs = input.ReadUInt32();
+            break;
+          }
         }
       }
     #endif
@@ -625,6 +659,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           }
           case 34: {
             initCovariance_.AddEntriesFrom(ref input, _repeated_initCovariance_codec);
+            break;
+          }
+          case 40: {
+            ElapsedMs = input.ReadUInt32();
             break;
           }
         }

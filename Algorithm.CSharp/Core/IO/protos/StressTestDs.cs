@@ -35,7 +35,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "cxgFIAMoCzIzLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUu",
             "SU8uU1NWSVBhcmFtc1BiGmEKDUhvbGRpbmdzRW50cnkSCwoDa2V5GAEgASgJ",
             "Ej8KBXZhbHVlGAIgASgLMjAuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hh",
-            "cnAuQ29yZS5JTy5Ib2xkaW5nUGI6AjgBIv8GChRSZXN1bHRTdHJlc3NUZXN0",
+            "cnAuQ29yZS5JTy5Ib2xkaW5nUGI6AjgBIpMHChRSZXN1bHRTdHJlc3NUZXN0",
             "RHNQYhIKCgJ0cxgBIAEoCRISCgp1bmRlcmx5aW5nGAIgASgJElsKCGhvbGRp",
             "bmdzGAMgAygLMkkuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29y",
             "ZS5JTy5SZXN1bHRTdHJlc3NUZXN0RHNQYi5Ib2xkaW5nc0VudHJ5ElgKB2Rz",
@@ -49,19 +49,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "CiRtYXJnaW5hbF9zY2FsZWRfb2JqZWN0aXZlX2J5X2hvbGRpbmcYCiADKAsy",
             "YS5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlJlc3Vs",
             "dFN0cmVzc1Rlc3REc1BiLk1hcmdpbmFsU2NhbGVkT2JqZWN0aXZlQnlIb2xk",
-            "aW5nRW50cnkaYQoNSG9sZGluZ3NFbnRyeRILCgNrZXkYASABKAkSPwoFdmFs",
-            "dWUYAiABKAsyMC5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3Jl",
-            "LklPLkhvbGRpbmdQYjoCOAEaLQoLRHNEbmx2RW50cnkSCwoDa2V5GAEgASgJ",
-            "Eg0KBXZhbHVlGAIgASgBOgI4ARo/Ch1NYXJnaW5hbFV0aWxpdHlCeUhvbGRp",
-            "bmdFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBGkcKJU1h",
-            "cmdpbmFsU2NhbGVkT2JqZWN0aXZlQnlIb2xkaW5nRW50cnkSCwoDa2V5GAEg",
-            "ASgJEg0KBXZhbHVlGAIgASgBOgI4AUIoqgIlUXVhbnRDb25uZWN0LkFsZ29y",
-            "aXRobS5DU2hhcnAuQ29yZS5JT2IGcHJvdG8z"));
+            "aW5nRW50cnkSEgoKZWxhcHNlZF9tcxgLIAEoDRphCg1Ib2xkaW5nc0VudHJ5",
+            "EgsKA2tleRgBIAEoCRI/CgV2YWx1ZRgCIAEoCzIwLlF1YW50Q29ubmVjdC5B",
+            "bGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uSG9sZGluZ1BiOgI4ARotCgtEc0Ru",
+            "bHZFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBGj8KHU1h",
+            "cmdpbmFsVXRpbGl0eUJ5SG9sZGluZ0VudHJ5EgsKA2tleRgBIAEoCRINCgV2",
+            "YWx1ZRgCIAEoAToCOAEaRwolTWFyZ2luYWxTY2FsZWRPYmplY3RpdmVCeUhv",
+            "bGRpbmdFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBQiiq",
+            "AiVRdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPYgZwcm90",
+            "bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDsPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDsPb.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps", "Params" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDsPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDsPb.Parser, new[]{ "Ts", "Underlying", "Holdings", "DsDnlv", "DeltaTotal", "DeltaTotalAcrossDs", "WeightedDnlv", "MarginalUtilityByHolding", "TotalObjective", "MarginalScaledObjectiveByHolding" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, null, null, })
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDsPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDsPb.Parser, new[]{ "Ts", "Underlying", "Holdings", "DsDnlv", "DeltaTotal", "DeltaTotalAcrossDs", "WeightedDnlv", "MarginalUtilityByHolding", "TotalObjective", "MarginalScaledObjectiveByHolding", "ElapsedMs" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, null, null, })
           }));
     }
     #endregion
@@ -416,6 +417,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       marginalUtilityByHolding_ = other.marginalUtilityByHolding_.Clone();
       totalObjective_ = other.totalObjective_;
       marginalScaledObjectiveByHolding_ = other.marginalScaledObjectiveByHolding_.Clone();
+      elapsedMs_ = other.elapsedMs_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -541,6 +543,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       get { return marginalScaledObjectiveByHolding_; }
     }
 
+    /// <summary>Field number for the "elapsed_ms" field.</summary>
+    public const int ElapsedMsFieldNumber = 11;
+    private uint elapsedMs_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public uint ElapsedMs {
+      get { return elapsedMs_; }
+      set {
+        elapsedMs_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -566,6 +580,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (!MarginalUtilityByHolding.Equals(other.MarginalUtilityByHolding)) return false;
       if (!pbc::ProtobufEqualityComparers.BitwiseDoubleEqualityComparer.Equals(TotalObjective, other.TotalObjective)) return false;
       if (!MarginalScaledObjectiveByHolding.Equals(other.MarginalScaledObjectiveByHolding)) return false;
+      if (ElapsedMs != other.ElapsedMs) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -583,6 +598,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       hash ^= MarginalUtilityByHolding.GetHashCode();
       if (TotalObjective != 0D) hash ^= pbc::ProtobufEqualityComparers.BitwiseDoubleEqualityComparer.GetHashCode(TotalObjective);
       hash ^= MarginalScaledObjectiveByHolding.GetHashCode();
+      if (ElapsedMs != 0) hash ^= ElapsedMs.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -629,6 +645,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteDouble(TotalObjective);
       }
       marginalScaledObjectiveByHolding_.WriteTo(output, _map_marginalScaledObjectiveByHolding_codec);
+      if (ElapsedMs != 0) {
+        output.WriteRawTag(88);
+        output.WriteUInt32(ElapsedMs);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -667,6 +687,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteDouble(TotalObjective);
       }
       marginalScaledObjectiveByHolding_.WriteTo(ref output, _map_marginalScaledObjectiveByHolding_codec);
+      if (ElapsedMs != 0) {
+        output.WriteRawTag(88);
+        output.WriteUInt32(ElapsedMs);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -699,6 +723,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         size += 1 + 8;
       }
       size += marginalScaledObjectiveByHolding_.CalculateSize(_map_marginalScaledObjectiveByHolding_codec);
+      if (ElapsedMs != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeUInt32Size(ElapsedMs);
+      }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -733,6 +760,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         TotalObjective = other.TotalObjective;
       }
       marginalScaledObjectiveByHolding_.Add(other.marginalScaledObjectiveByHolding_);
+      if (other.ElapsedMs != 0) {
+        ElapsedMs = other.ElapsedMs;
+      }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -788,6 +818,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             marginalScaledObjectiveByHolding_.AddEntriesFrom(input, _map_marginalScaledObjectiveByHolding_codec);
             break;
           }
+          case 88: {
+            ElapsedMs = input.ReadUInt32();
+            break;
+          }
         }
       }
     #endif
@@ -841,6 +875,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           }
           case 82: {
             marginalScaledObjectiveByHolding_.AddEntriesFrom(ref input, _map_marginalScaledObjectiveByHolding_codec);
+            break;
+          }
+          case 88: {
+            ElapsedMs = input.ReadUInt32();
             break;
           }
         }

@@ -33,6 +33,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public SecurityInitializerMine securityInitializer;
         public JuliaPricingClient julia;
         internal Resolution resolution;
+
+        /// <summary>
+        /// Daily TradeBar series fetched by the seeder (GetLastKnownPricesTradeOrQuote), keyed by
+        /// symbol so SecurityInitializerMine's fill model can reuse them for the mean daily volume
+        /// instead of issuing a second daily request. Consumed (removed) by the initializer.
+        /// </summary>
+        public Dictionary<Symbol, List<TradeBar>> SeedDailyTradeBars = new();
+
         public Dictionary<Symbol, QuoteBarConsolidator> QuoteBarConsolidators = new();
         public Dictionary<Symbol, TradeBarConsolidator> TradeBarConsolidators = new();
         public List<OrderEvent> OrderEvents = new();
@@ -47,7 +55,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, SecurityCache> PriceCache = new();
 
         public virtual bool HasActiveRequests() => false;
-        public virtual (DateTime? algoTime, DateTime systemTime) GetActiveRequestTiming() => (null, default);
         public SecurityExchangeHours SecurityExchangeHours;
         private DateTime endOfDay;
 
@@ -202,19 +209,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
             PfRisk = PortfolioRisk.E(this);
 
             // SCHEDULED EVENTS
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, 120), ExerciseOnExpiryDate);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(TimeSpan.FromMinutes(0)), ClearNextMarketOpenClose);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), SetActiveMarketRegimes);  // make event driven. which event?
+            Schedule.On("OnMarketOpen", DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
+            Schedule.On("UpdateUniverseSubscriptions", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
+            Schedule.On("ExerciseOnExpiryDate", DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, 120), ExerciseOnExpiryDate);
+            Schedule.On("ClearNextMarketOpenClose", DateRules.EveryDay(symbolSubscribed), TimeRules.At(TimeSpan.FromMinutes(0)), ClearNextMarketOpenClose);
+            Schedule.On("SetActiveMarketRegimes", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), SetActiveMarketRegimes);  // make event driven. which event?
 
             // Before EOD - stop trading & overnight hedge
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Stop MM
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, Cfg.MinutesBeforeMarketCloseHedgeDeltaFlat), HedgeDeltaFlat);
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed), OnMarketClose);  // just some logging & cache clearing
+            Schedule.On("CancelOpenOptionTickets", DateRules.EveryDay(symbolSubscribed), TimeRules.At(mmWindow.End), CancelOpenOptionTickets);  // Stop MM
+            Schedule.On("HedgeDeltaFlat", DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed, Cfg.MinutesBeforeMarketCloseHedgeDeltaFlat), HedgeDeltaFlat);
+            Schedule.On("OnMarketClose", DateRules.EveryDay(symbolSubscribed), TimeRules.BeforeMarketClose(symbolSubscribed), OnMarketClose);  // just some logging & cache clearing
 
             // Logging events
-            Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
+            Schedule.On("LogRiskSchedule", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
             // Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
 
             // WARMUP
@@ -415,7 +422,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public override void OnData(Slice slice)
         {
             if (IsWarmingUp) return;
-            //PaceBacktestNearRealtime();
+            PaceBacktestNearRealtime();
             // Feed pre-calculated IVs from disk into IvBid/Ask indicators (backtest only),
             // bypassing the Julia pricer call that would otherwise be triggered by the consolidator.
             if (!LiveMode)
@@ -472,16 +479,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (!LiveMode && Cfg.BacktestNearRealtimePacingEnabled && HasActiveRequests())
             {
-                var timing = GetActiveRequestTiming();
-                if (timing.algoTime.HasValue)
+                // Block until all outstanding calc-engine requests have been answered. Delivery of
+                // each response at sentAtAlgoTime + elapsedMs is handled by the scheduler, so no
+                // wall-clock alignment is needed here.
+                var pacingSinceUtc = DateTime.UtcNow;
+                var lastLogUtc = pacingSinceUtc;
+                Log($"Pacing backtest near realtime: waiting for active calc-engine requests to complete.");
+                while (HasActiveRequests())
                 {
-                    var elapsedSystemTime = DateTime.UtcNow - timing.systemTime;
-                    var targetAlgoTime = timing.algoTime.Value + elapsedSystemTime;
-                    if (targetAlgoTime < Time)
+                    System.Threading.Thread.Sleep(100);
+                    if ((DateTime.UtcNow - lastLogUtc).TotalSeconds >= 5)
                     {
-                        var wait = Time - targetAlgoTime;
-                        Log($"Pacing backtest near realtime: waiting {wait.TotalMilliseconds}ms until {targetAlgoTime}");
-                        System.Threading.Thread.Sleep(wait);
+                        lastLogUtc = DateTime.UtcNow;
+                        Log($"Pacing backtest near realtime: still waiting, elapsed {(DateTime.UtcNow - pacingSinceUtc).TotalSeconds:F0}s");
                     }
                 }
             }
@@ -1161,13 +1171,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (!regimes.Any()) return false;
 
             return OptionIsTradeable(o)
-                &&
-                (
+                && (  // Exiting after earnings
                     regimes.Contains(MarketRegime.PostEarningsRelease) &&
                     !(o.Symbol.ID.Date <= Time.Date)
                     && Portfolio[o.Symbol].Quantity != 0  // Need to exit eventually
                 )
-                || ManualOrderInstructionBySymbol.ContainsKey(o.Symbol.Value)
+                || ManualOrderInstructionBySymbol.ContainsKey(o.Symbol.Value)  // from config
                 || (beforeEarnings.Intersect(regimes).Any() && TargetHoldings.ContainsKey(o.Symbol))
                 || (regimes.Contains(MarketRegime.PreEarningsReleaseBeforeMarketClose) && RiskScenarioHandler.TradableOptions.ContainsKey(equity) && RiskScenarioHandler.TradableOptions[equity].Contains(o));
         }
@@ -1254,9 +1263,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 .Where(s => s.Type == SecurityType.Option)
                 .Select(o => (Option)o)
                 .Where(o =>
-                    o.Underlying.Symbol == underlying &&
-                    ContractScopedForNewPosition(o) &&
-                    IvSurfaceSsviMid[equity].HasParams(o)
+                    o.Underlying.Symbol == underlying
+                    && ContractScopedForNewPosition(o) 
+                    // && IvSurfaceSsviMid[equity].HasParams(o)
             );
 
             List<Signal> signals = new();
@@ -2233,24 +2242,30 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return Enumerable.Empty<BaseData>();
             }
 
+            // Daily bars, irrespective of the subscription resolution: a day is one small row set
+            // per warehouse table (cheap to fetch; the R2 handler's day cache answers repeats from
+            // memory) and a daily close seeds the price for any resolution the contract runs at.
+            // The retry does not change resolution either, it only looks further back.
             var result = new Dictionary<TickType, BaseData>();
-            Resolution? resolution = null;
+            var dailyTradeBars = new Dictionary<DateTime, TradeBar>();
             Func<int, bool> requestData = period =>
             {
-                var historyRequests = CreateBarCountHistoryRequests(new[] { symbol }, period)
+                var historyRequests = CreateBarCountHistoryRequests(new[] { symbol }, period, Resolution.Daily)
                     .Select(request =>
                     {
-                        // For speed and memory usage, use Resolution.Minute as the minimum resolution
-                        //request.Resolution = (Resolution)Math.Max((int)Resolution.Minute, (int)request.Resolution);
                         // force no fill forward behavior
                         request.FillForwardResolution = null;
-
-                        resolution = request.Resolution;
                         return request;
                     })
                     // request only those tick types we didn't get the data we wanted
                     .Where(request => !result.ContainsKey(request.TickType))
                     .ToList();
+                if (historyRequests.Count == 0)
+                {
+                    // this shouldn't happen but just in case
+                    Error($"GetLastKnownPricesTradeOrQuote(): no history request was created for symbol {symbol} at {Time}");
+                    return true;
+                }
                 foreach (var slice in History(historyRequests))
                 {
                     for (var i = 0; i < historyRequests.Count; i++)
@@ -2260,7 +2275,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         if (data.ContainsKey(symbol))
                         {
                             // keep the last data point per tick type
-                            result[historyRequest.TickType] = (BaseData)data[symbol];
+                            var point = (BaseData)data[symbol];
+                            result[historyRequest.TickType] = point;
+
+                            // remember the whole daily trade series for the fill model's volume average
+                            if (point is TradeBar tradeBar)
+                            {
+                                dailyTradeBars[tradeBar.Time] = tradeBar;
+                            }
                         }
                     }
                 }
@@ -2268,22 +2290,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return historyRequests.All(request => result.ContainsKey(request.TickType));
             };
 
-            if (!requestData(Periods(Resolution.Minute, days: 1)))
+            // Last 7 tradeable days first; an illiquid contract retries further back, same resolution.
+            if (!requestData(7) && !requestData(30))
             {
-                if (resolution.HasValue)
-                {
-                    // If the first attempt to get the last know price returns null, it maybe the case of an illiquid security.
-                    // Use Quote data to return MidPrice
-                    var periods = Periods(Resolution.Minute, days: 5);
-                    requestData(periods);
-                }
-                else
-                {
-                    // this shouldn't happen but just in case
-                    Error($"QCAlgorithm.GetLastKnownPrices(): no history request was created for symbol {symbol} at {Time}");
-                    Log(Environment.StackTrace);
-                }
+                Log($"GetLastKnownPricesTradeOrQuote(): {symbol} no daily trade or quote point in the last 30 tradeable days.");
             }
+
+            // Hand the daily trade series to the initializer's fill model (mean daily volume): one
+            // fetch serves both the seed price and the volume average.
+            if (dailyTradeBars.Count > 0)
+            {
+                SeedDailyTradeBars[symbol] = dailyTradeBars.Values.OrderBy(bar => bar.Time).ToList();
+            }
+
             // return the data ordered by time ascending
             return result.Values.OrderBy(data => data.Time);
         }

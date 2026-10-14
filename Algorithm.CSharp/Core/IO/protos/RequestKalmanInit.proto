@@ -17,9 +17,9 @@ message RequestKalmanInitPb {
 }
 
 message ResponseKalmanInitPb {
-
   string ts = 1;
   RequestKalmanInitPb request = 2;  
   repeated SSVIParamsPb init_state = 3;
   repeated VectorDoublePb init_covariance = 4;
+  uint32 elapsed_ms = 5;
 }

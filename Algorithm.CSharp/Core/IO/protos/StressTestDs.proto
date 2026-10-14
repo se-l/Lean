@@ -20,26 +20,16 @@ message RequestStressTestDsPb {
 
 }
 
-message ResultStressTestDsPb {
-    
+message ResultStressTestDsPb {    
   string ts = 1;
-
-  string underlying = 2;
-  
-  map<string, HoldingPb> holdings = 3;
-  
+  string underlying = 2;  
+  map<string, HoldingPb> holdings = 3;  
   map<string, double> ds_dnlv = 4;
-
   double delta_total = 5;
-
   double delta_total_across_ds = 6;
-
   double weighted_dnlv = 7;
-
   map<string, double> marginal_utility_by_holding = 8;
-
   double total_objective = 9;
-
   map<string, double> marginal_scaled_objective_by_holding = 10;
-
+  uint32 elapsed_ms = 11;
 }

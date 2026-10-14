@@ -47,18 +47,19 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "dENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlNTVklQYXJhbXNQ",
             "YhIWCg5zY29wZWRfc3ltYm9scxgHIAMoCRphCg1Ib2xkaW5nc0VudHJ5EgsK",
             "A2tleRgBIAEoCRI/CgV2YWx1ZRgCIAEoCzIwLlF1YW50Q29ubmVjdC5BbGdv",
-            "cml0aG0uQ1NoYXJwLkNvcmUuSU8uSG9sZGluZ1BiOgI4ASKvAQoaUmVzcG9u",
+            "cml0aG0uQ1NoYXJwLkNvcmUuSU8uSG9sZGluZ1BiOgI4ASLDAQoaUmVzcG9u",
             "c2VUYXJnZXRQb3J0Zm9saW9zUGISCgoCdHMYASABKAkSEgoKdW5kZXJseWlu",
             "ZxgCIAEoCRJTChF0YXJnZXRfcG9ydGZvbGlvcxgDIAMoCzI4LlF1YW50Q29u",
             "bmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uVGFyZ2V0UG9ydGZvbGlv",
-            "UGISHAoUaXNfbGFzdF90cmFuc21pc3Npb24YBCABKAhCKKoCJVF1YW50Q29u",
-            "bmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU9iBnByb3RvMw=="));
+            "UGISHAoUaXNfbGFzdF90cmFuc21pc3Npb24YBCABKAgSEgoKZWxhcHNlZF9t",
+            "cxgFIAEoDUIoqgIlUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29y",
+            "ZS5JT2IGcHJvdG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.StressTestDsReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolioPb), global::QuantConnect.Algorithm.CSharp.Core.IO.TargetPortfolioPb.Parser, new[]{ "Underlying", "Holdings", "Objective", "Ivs", "ResultStressTestDs" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, }),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfoliosPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestTargetPortfoliosPb.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps", "NContracts", "Params", "ScopedSymbols" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseTargetPortfoliosPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseTargetPortfoliosPb.Parser, new[]{ "Ts", "Underlying", "TargetPortfolios", "IsLastTransmission" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseTargetPortfoliosPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseTargetPortfoliosPb.Parser, new[]{ "Ts", "Underlying", "TargetPortfolios", "IsLastTransmission", "ElapsedMs" }, null, null, null, null)
           }));
     }
     #endregion
@@ -794,6 +795,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       underlying_ = other.underlying_;
       targetPortfolios_ = other.targetPortfolios_.Clone();
       isLastTransmission_ = other.isLastTransmission_;
+      elapsedMs_ = other.elapsedMs_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -850,6 +852,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
     }
 
+    /// <summary>Field number for the "elapsed_ms" field.</summary>
+    public const int ElapsedMsFieldNumber = 5;
+    private uint elapsedMs_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public uint ElapsedMs {
+      get { return elapsedMs_; }
+      set {
+        elapsedMs_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -869,6 +883,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Underlying != other.Underlying) return false;
       if(!targetPortfolios_.Equals(other.targetPortfolios_)) return false;
       if (IsLastTransmission != other.IsLastTransmission) return false;
+      if (ElapsedMs != other.ElapsedMs) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -880,6 +895,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
       hash ^= targetPortfolios_.GetHashCode();
       if (IsLastTransmission != false) hash ^= IsLastTransmission.GetHashCode();
+      if (ElapsedMs != 0) hash ^= ElapsedMs.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -911,6 +927,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(32);
         output.WriteBool(IsLastTransmission);
       }
+      if (ElapsedMs != 0) {
+        output.WriteRawTag(40);
+        output.WriteUInt32(ElapsedMs);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -934,6 +954,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(32);
         output.WriteBool(IsLastTransmission);
       }
+      if (ElapsedMs != 0) {
+        output.WriteRawTag(40);
+        output.WriteUInt32(ElapsedMs);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -953,6 +977,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       size += targetPortfolios_.CalculateSize(_repeated_targetPortfolios_codec);
       if (IsLastTransmission != false) {
         size += 1 + 1;
+      }
+      if (ElapsedMs != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeUInt32Size(ElapsedMs);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -975,6 +1002,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       targetPortfolios_.Add(other.targetPortfolios_);
       if (other.IsLastTransmission != false) {
         IsLastTransmission = other.IsLastTransmission;
+      }
+      if (other.ElapsedMs != 0) {
+        ElapsedMs = other.ElapsedMs;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -1007,6 +1037,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             IsLastTransmission = input.ReadBool();
             break;
           }
+          case 40: {
+            ElapsedMs = input.ReadUInt32();
+            break;
+          }
         }
       }
     #endif
@@ -1036,6 +1070,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           }
           case 32: {
             IsLastTransmission = input.ReadBool();
+            break;
+          }
+          case 40: {
+            ElapsedMs = input.ReadUInt32();
             break;
           }
         }
