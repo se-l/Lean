@@ -31,19 +31,6 @@ public class DividendManager
         return Path.Combine(dir, $"{ticker.ToUpper()}.csv");
     }
 
-    private void WriteDividendsCsv(string ticker, List<MyDividend> dividends)
-    {
-        var path = GetDividendsCsvPath(ticker);
-        var lines = new List<string> { "ExDate,Amount,Ccy" };
-        
-        var sorted = dividends.OrderBy(d => d.ExDate);
-        foreach (var d in sorted)
-        {
-            lines.Add($"{d.ExDate:yyyyMMdd},{d.Amount:F6},USD");
-        }
-        File.WriteAllLines(path, lines);
-    }
-
     private List<MyDividend> ReadDividendsCsv(string ticker)
     {
         var path = GetDividendsCsvPath(ticker);

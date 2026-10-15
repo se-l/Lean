@@ -1,8 +1,11 @@
 ﻿using NetMQ;
 using NetMQ.Sockets;
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 {
@@ -61,6 +64,63 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             _socket = new RequestSocket();
             _socket.Connect(endpoint);
+        }
+
+        // ── Call statistics (cross-thread, cumulative) ──────────────────────
+        private static readonly object _statsLock = new object();
+        private static readonly long[] _statsCalls = new long[16];
+        private static readonly double[] _statsTotalMs = new double[16];
+        private static readonly double[] _statsMaxMs = new double[16];
+        public static Action<string> Logger;
+        public static double SlowCallThresholdMs = 50;
+
+        public static (long calls, double totalMs) Snapshot()
+        {
+            lock (_statsLock)
+            {
+                long calls = 0;
+                double totalMs = 0;
+                for (int i = 0; i < _statsCalls.Length; i++)
+                {
+                    calls += _statsCalls[i];
+                    totalMs += _statsTotalMs[i];
+                }
+                return (calls, totalMs);
+            }
+        }
+
+        public static (long calls, double totalMs) Delta(long callsBefore, double totalMsBefore)
+        {
+            var (calls, totalMs) = Snapshot();
+            return (calls - callsBefore, totalMs - totalMsBefore);
+        }
+
+        public static void ResetStats()
+        {
+            lock (_statsLock)
+            {
+                for (int i = 0; i < _statsCalls.Length; i++)
+                {
+                    _statsCalls[i] = 0;
+                    _statsTotalMs[i] = 0;
+                    _statsMaxMs[i] = 0;
+                }
+            }
+        }
+
+        public static string StatsSnapshot()
+        {
+            lock (_statsLock)
+            {
+                var parts = new List<string>();
+                for (int i = 0; i < _statsCalls.Length; i++)
+                {
+                    if (_statsCalls[i] == 0) continue;
+                    double avg = _statsTotalMs[i] / _statsCalls[i];
+                    parts.Add($"{(Command)i}:#{_statsCalls[i]},avg={avg:0.0}ms,max={_statsMaxMs[i]:0.0}ms,total={_statsTotalMs[i]:0}ms");
+                }
+                return string.Join("; ", parts);
+            }
         }
 
         /// <summary>
@@ -152,6 +212,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             WriteInt(timeSteps);
             WriteInt(spaceSteps);
 
+            var sw = Stopwatch.StartNew();
+            double result;
             lock (_lock)
             {
                 _socket.SendFrame(buf);
@@ -173,7 +235,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 {
                     case 0x02:
                     {
-                        return MemoryMarshal.Read<float>(payload);
+                        result = MemoryMarshal.Read<float>(payload);
+                        break;
                     }
                     case 0x03:
                     {
@@ -186,6 +249,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                         throw new InvalidOperationException($"Julia pricing: unexpected type {type}");
                 }
             }
+
+            double elapsedMs = sw.Elapsed.TotalMilliseconds;
+            int cmdIdx = (int)command;
+            lock (_statsLock)
+            {
+                _statsCalls[cmdIdx]++;
+                _statsTotalMs[cmdIdx] += elapsedMs;
+                if (elapsedMs > _statsMaxMs[cmdIdx])
+                {
+                    _statsMaxMs[cmdIdx] = elapsedMs;
+                }
+            }
+            if (Logger != null && elapsedMs >= SlowCallThresholdMs)
+            {
+                Logger($"JuliaPricing: cmd={command}, ticker={ticker}, ms={elapsedMs:0.0}");
+            }
+            return result;
         }
 
         // ── Core greeks ──────────────────────────────────────────────────────────

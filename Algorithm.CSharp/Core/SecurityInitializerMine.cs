@@ -285,8 +285,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         }
 
                         // Past data served by the handler (R2 iceberg): feed the IVs straight in, no pricer.
-                        ivBid.Update(volBar.EndTime, (double)volBar.Bid.Close);
-                        ivAsk.Update(volBar.EndTime, (double)volBar.Ask.Close);
+                        // iv_mid rides on the same timestamp as the sides' IVs; both indicators carry it.
+                        ivBid.Update(volBar.EndTime, (double)volBar.Bid.Close, (double)volBar.Mid.Close);
+                        ivAsk.Update(volBar.EndTime, (double)volBar.Ask.Close, (double)volBar.Mid.Close);
                         // Spreads are intraday here: never append an out-of-order point to the SMA.
                         if (volBar.Time > ivSpreadSma.Current.Time)
                         {

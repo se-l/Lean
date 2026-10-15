@@ -19,6 +19,7 @@ using QuantConnect.Util;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -436,11 +437,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                     if (volBar.Bid.Close > 0)
                     {
-                        IvBids[optionSymbol].Update(volBar.EndTime, (double)volBar.Bid.Close);
+                        // iv_mid rides on the same bar/timestamp as the sides' IVs, so both side
+                        // indicators carry it in their IVQuote (TryGetFeedIVMid reads it from there).
+                        IvBids[optionSymbol].Update(volBar.EndTime, (double)volBar.Bid.Close, (double)volBar.Mid.Close);
                     }
                     if (volBar.Ask.Close > 0)
                     {
-                        IvAsks[optionSymbol].Update(volBar.EndTime, (double)volBar.Ask.Close);
+                        IvAsks[optionSymbol].Update(volBar.EndTime, (double)volBar.Ask.Close, (double)volBar.Mid.Close);
                     }
                 }
             }
@@ -666,7 +669,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             RiskProfiles.Values.DoForEach(s => s.Dispose());
             UtilityWriters.Values.DoForEach(s => s.Dispose());
             OrderEventWriters.Values.DoForEach(s => s.Dispose());
-            RiskScenarioHandler.Writers.Values.DoForEach(s => s.writer.Dispose());
             TradeWriter.Dispose();
         }
 
@@ -816,14 +818,89 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
+        /// Feed-first IV lookup: the R2 iceberg feed publishes pre-computed bid/ask IVs — with
+        /// iv_mid riding along on the same timestamp (see <see cref="TryGetFeedIVMid"/>) — covering
+        /// nearly every second of the trading day, so consumers read them instead of round-tripping
+        /// the pricer. Returns false when no current feed IV exists; the caller then falls back to
+        /// the pricer solver.
+        /// </summary>
+        public bool TryGetFeedIV(Symbol optionSymbol, QuoteSide side, out double iv, double maxAgeSeconds = 5)
+        {
+            iv = 0;
+            var indicators = side == QuoteSide.Bid ? IvBids : IvAsks;
+            if (!indicators.TryGetValue(optionSymbol, out IVQuoteIndicator indicator) ||
+                indicator.IVBidAsk.IV <= 0 ||
+                !double.IsFinite(indicator.IVBidAsk.IV))
+            {
+                return false;
+            }
+            if (Time - indicator.IVBidAsk.Time > TimeSpan.FromSeconds(maxAgeSeconds))
+            {
+                return false;
+            }
+            iv = indicator.IVBidAsk.IV;
+            return true;
+        }
+
+        /// <summary>
+        /// Feed-first mid IV lookup: the R2 iceberg feed publishes iv_mid — the IV of the option's
+        /// mid price, not half of the bid/ask IVs, therefore the more stable estimate — alongside
+        /// iv_bid/iv_ask on the same timestamp, and both side indicators carry it in their IVQuote.
+        /// Returns false when no current feed mid IV exists; the caller then falls back to averaging
+        /// the sides or the pricer solver.
+        /// </summary>
+        public bool TryGetFeedIVMid(Symbol optionSymbol, out double ivMid, double maxAgeSeconds = 5)
+        {
+            if ((IvBids.TryGetValue(optionSymbol, out IVQuoteIndicator indicator) && TryGetFeedIVMid(indicator, out ivMid, maxAgeSeconds)) ||
+                (IvAsks.TryGetValue(optionSymbol, out indicator) && TryGetFeedIVMid(indicator, out ivMid, maxAgeSeconds)))
+            {
+                return true;
+            }
+            ivMid = 0;
+            return false;
+        }
+
+        private bool TryGetFeedIVMid(IVQuoteIndicator indicator, out double ivMid, double maxAgeSeconds)
+        {
+            IVQuote quote = indicator.IVBidAsk;
+            if (quote.IVMid <= 0 || !double.IsFinite(quote.IVMid) ||
+                Time - quote.Time > TimeSpan.FromSeconds(maxAgeSeconds))
+            {
+                ivMid = 0;
+                return false;
+            }
+            ivMid = quote.IVMid;
+            return true;
+        }
+
+        private DateTime _midIvSolverFallbackLog = DateTime.MinValue;
+
+        /// <summary>
         /// Mid IV is bad - Always convert from MidPrice
         /// </summary>
         /// <param name="symbol"></param>
         /// <param name="defaultSpread"></param>
         /// <returns></returns>
-        public double MidIV(Symbol symbol, double defaultSpread = 0.005)
+        public double MidIV(Symbol symbol)
         {
             if (symbol.SecurityType != SecurityType.Option) return double.NaN;
+            // iv_mid is the IV of the mid price, not the average of the bid/ask IVs, and therefore
+            // the more stable feed estimate: prefer it before averaging the sides.
+            if (TryGetFeedIVMid(symbol, out double midIv))
+            {
+                return midIv;
+            }
+            // Days written before the warehouse carried iv_mid (the column reads NULL there): the
+            // sides' average is the best feed estimate available and beats a pricer round trip.
+            if (TryGetFeedIV(symbol, QuoteSide.Bid, out double bidIv) && TryGetFeedIV(symbol, QuoteSide.Ask, out double askIv))
+            {
+                return (bidIv + askIv) / 2;
+            }
+            if (Time - _midIvSolverFallbackLog > TimeSpan.FromMinutes(1))
+            {
+                _midIvSolverFallbackLog = Time;
+                Log($"{Time} MidIV: No current feed IV for {symbol}; falling back to pricer solver.");
+            }
             decimal mid = MidPrice(symbol);
             return OptionContractWrap.E(this, (Option)Securities[symbol], Time.Date).IV(mid, MidPrice(Underlying(symbol)), 0.0001);
         }
@@ -836,7 +913,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Equity equity = (Equity)option.Underlying;
             if (!IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface ivSurface) || ivSurface is not IVSurfaceSSVI ssviSurface || !ssviSurface.IsCalibrated || !ssviSurface.HasParams(option))
             {
-                return MidIV(symbol, defaultSpread);
+                return MidIV(symbol);
             }
 
             return ssviSurface.IV(option);
@@ -901,7 +978,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 if (_signalQueue.TryDequeue(out Signal signal))
                 {
+                    var sw = Stopwatch.StartNew();
                     SubmitSignal(signal);
+                    Log($"{Time} ConsumeSignal. SubmitSignal {signal?.Symbol} took {sw.ElapsedMilliseconds}ms.");
                     ConsumeSignal();
                 }
             }
@@ -1269,8 +1348,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             );
 
             List<Signal> signals = new();
+            var sw = Stopwatch.StartNew();
+            int optionCount = 0;
             foreach (Option option in scopedOptions)
             {
+                optionCount++;
                 // BuySell Distinction is insufficient. Scenario: We are delta short, gamma long. Would only want to buy/sell options reducing both, unless the utility is calculated better to compare weight 
                 // beneficial risk and detrimental risk against each other. That's what the RiskDiscounts are for.
 
@@ -1296,6 +1378,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     signals.Add(new Signal(symbol, OrderDirection.Buy, utilBuy));
                 }
             }
+
+            Log($"{Time} GetDesiredOrders: {underlying}. Utility loop over {optionCount} options took {sw.ElapsedMilliseconds}ms.");
+
+            Log($"{Time} GetDesiredOrders: {underlying}. JuliaPricing stats this run: {JuliaPricingClient.StatsSnapshot()}");
 
             decimal targetMarginAsFractionOfNLV = Cfg.TargetMarginAsFractionOfNLV.TryGetValue(underlying.Value, out targetMarginAsFractionOfNLV) ? targetMarginAsFractionOfNLV : Cfg.TargetMarginAsFractionOfNLV[CfgDefault];
             decimal marginExcessTarget = Math.Max(0, InitialMargin() - Portfolio.TotalPortfolioValue * targetMarginAsFractionOfNLV);
@@ -1466,9 +1552,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             IsSignalsRunning[underlying] = true;  // if refactored as task, more elegant? Just run 1 task at a time...
             bool skipRunSignals = Cfg.SkipRunSignals.TryGetValue(underlying.Value, out skipRunSignals) ? skipRunSignals : Cfg.SkipRunSignals[CfgDefault];
+            var sw = Stopwatch.StartNew();
             if (!skipRunSignals)
             {
-                HandleDesiredOrders(GetDesiredOrders(underlying));
+                List<Signal> signals = GetDesiredOrders(underlying);
+                Log($"{Time} RunSignals. underlying={underlying}. GetDesiredOrders took {sw.ElapsedMilliseconds}ms. #Signals={signals.Count}");
+                HandleDesiredOrders(signals);
+                Log($"{Time} RunSignals. underlying={underlying}. HandleDesiredOrders took {sw.ElapsedMilliseconds}ms total.");
             }
             IsSignalsRunning[underlying] = false;
             SignalsLastRun[underlying] = Time;

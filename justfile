@@ -2,10 +2,10 @@ set shell := ["bash", "-c"]
 set windows-shell := ["pwsh", "-c"]
 
 registry := "sebastianluen"
-tag := "latest"
+tag := "dev"
 
 # Build an image: just build vastmind/vastmindbase/zmqpricer prd/mind dev
-build name="" tag="latest":
+build name="" tag="dev":
     docker buildx build \
         -f Dockerfile-{{name}} \
         --platform linux/amd64,linux/arm64 \
@@ -40,5 +40,5 @@ tag name tagfrom tagto:
     docker tag {{registry}}/{{name}}:{{tagfrom}} {{registry}}/{{name}}:{{tagto}}
 
 # Push: just push mind
-push name tag="latest":
+push name tag="dev":
     docker push {{registry}}/{{name}}:{{tag}}

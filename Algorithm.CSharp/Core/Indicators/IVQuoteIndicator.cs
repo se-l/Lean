@@ -57,13 +57,31 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             IVBidAsk = default(IVQuote);  // Default, in case referenced downstream before any successful update.
         }
 
+        private DateTime _lastSolverFallbackLog = DateTime.MinValue;
+
         public void Update(DateTime time, decimal quote, decimal midPriceUnderlying, double? iv = null)
         {
             if (time <= Time || quote == 0) return;
-            
+
+            double feedMidIv = 0;
             if (HaveInputsChanged(quote, midPriceUnderlying, time.Date) && iv == null)
             {
-                IV = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
+                if (_algo.TryGetFeedIV(Symbol, Side, out double feedIv))
+                {
+                    IV = feedIv;
+                    // iv_mid rides on the same timestamp as the side IVs (see TryGetFeedIVMid);
+                    // carry it through so MidIV can prefer it over averaging the sides.
+                    _algo.TryGetFeedIVMid(Symbol, out feedMidIv);
+                }
+                else
+                {
+                    if (_algo.Time - _lastSolverFallbackLog > TimeSpan.FromMinutes(1))
+                    {
+                        _lastSolverFallbackLog = _algo.Time;
+                        _algo.Log($"{_algo.Time} IVQuoteIndicator.Update: No current feed IV for {Symbol} at {time}; falling back to pricer solver.");
+                    }
+                    IV = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
+                }
             }
 
             if (iv != null)
@@ -82,15 +100,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             MidPriceUnderlying = midPriceUnderlying;
             _samples += 1;
             
-            IVBidAsk = new IVQuote(Symbol, Time, IV);
+            IVBidAsk = new IVQuote(Symbol, Time, IV, feedMidIv);
             Current = new IndicatorDataPoint(Time, (decimal)IV);
         }
 
         /// <summary>
         /// IVs served pre-computed by the data feed (the R2 iceberg handler). No pricer round trip and
-        /// no input-diff bookkeeping: this is the backtest and warm-up path.
+        /// no input-diff bookkeeping: this is the backtest and warm-up path. iv_mid arrives on the
+        /// same timestamp as iv and is carried along in <see cref="IVBidAsk.IVMid"/>; 0 means absent.
         /// </summary>
-        public void Update(DateTime time, double iv)
+        public void Update(DateTime time, double iv, double ivMid = 0)
         {
             if (time <= Time) return;
 
@@ -107,7 +126,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             MidPriceUnderlying = 0;
             _samples += 1;
 
-            IVBidAsk = new IVQuote(Symbol, Time, iv);
+            IVBidAsk = new IVQuote(Symbol, Time, iv, ivMid);
             Current = new IndicatorDataPoint(Time, (decimal)iv);
         }
         public void Update(QuoteBar quoteBar, decimal? underlyingMidPrice = null)
@@ -124,7 +143,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public void Update(IVQuote bar)
         {
             if (bar.Time <= Time) return;
-            Update(bar.Time, bar.IV);
+            Update(bar.Time, bar.IV, bar.IVMid);
         }
         public void Update()
         {

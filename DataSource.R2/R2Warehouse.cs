@@ -98,7 +98,7 @@ namespace QuantConnect.Lean.DataSource.R2
         /// <summary>Table name, <c>features</c> today.</summary>
         public string Name { get; }
 
-        /// <summary>True for a VolatilityQuoteBar (iv_bid/iv_ask), false for a VolatilityTradeBar (iv_trade).</summary>
+        /// <summary>True for a VolatilityQuoteBar (iv_bid/iv_ask/iv_mid), false for a VolatilityTradeBar (iv_trade).</summary>
         public bool IsQuote { get; }
 
         public string QuoteOrTrade => IsQuote ? "quote" : "trade";
@@ -221,10 +221,11 @@ namespace QuantConnect.Lean.DataSource.R2
 
         /// <summary>
         /// The one derived feature table. Currently the IV conversion: one row per (symbol, ET
-        /// second) per tick flavour, `iv_bid`/`iv_ask` from the second's first quote tick and
-        /// `iv_trade` from its first trade tick. The IVs are decimals (0.2516 = 25.16%), NOT basis
-        /// points, and only those three columns are read — the table's price columns are not part
-        /// of the plugin's contract.
+        /// second) per tick flavour, `iv_bid`/`iv_ask`/`iv_mid` from the second's first quote tick
+        /// and `iv_trade` from its first trade tick. The IVs are decimals (0.2516 = 25.16%), NOT
+        /// basis points, and only those four columns are read — the table's price columns are not
+        /// part of the plugin's contract. iv_mid is the IV of the mid price, not half of the
+        /// bid/ask IVs, and shares the row's timestamp with them by design.
         /// </summary>
         public const string FeaturesTable = "features";
 

@@ -4,17 +4,18 @@
  * WHY THIS READER EXISTS AT ALL: the twenty tick/bar tables are grain-aligned with a subscription
  * (one table per tick kind and resolution), so their reader hands rows over untouched. `features`
  * is not: it holds the IV conversion at ONE native grain — one row per (symbol, ET second) per
- * flavour, iv_bid/iv_ask from that second's first quote tick, iv_trade from its first trade tick
- * (see Fino's Catalog.jl). A subscription can ask for any resolution, so this is the one place in
- * the plugin that CONSOLIDATES, and it consolidates in SQL, using the same recipe the loader uses
+ * flavour, iv_bid/iv_ask/iv_mid from that second's first quote tick, iv_trade from its first trade
+ * tick (see Fino's Catalog.jl). A subscription can ask for any resolution, so this is the one place
+ * in the plugin that CONSOLIDATES, and it consolidates in SQL, using the same recipe the loader uses
  * for its own bar tables (Fino's Resampler): bucket the ET wall clock, then hand back the bucket
  * start as a UTC epoch-ns instant. That is why the buckets line up with the warehouse's bars.
  *
  * Flavours are two disjoint row sets, selected rather than merged: a quote row carries
- * iv_bid/iv_ask, a trade row carries iv_trade. A subscription asks for exactly one of the two
- * types, so it sees exactly one flavour.
+ * iv_bid/iv_ask/iv_mid, a trade row carries iv_trade. A subscription asks for exactly one of the two
+ * types, so it sees exactly one flavour. iv_mid is the IV of the mid price, not half of the bid/ask
+ * IVs, and shares the row's timestamp by design, so it is tagged onto the same bar object.
  *
- * Columns: ONLY the IV columns are read (iv_bid, iv_ask, iv_trade). The table's price columns are
+ * Columns: ONLY the IV columns are read (iv_bid, iv_ask, iv_mid, iv_trade). The table's price columns are
  * not part of this reader's contract — every price bar on VolatilityQuoteBar
  * (PriceBid/PriceAsk/UnderlyingPrice) and VolatilityTradeBar's Price/UnderlyingMidPrice is ZERO,
  * never null: the fork's own initializer dereferences them unconditionally. The IVs are decimals
@@ -54,11 +55,14 @@ namespace QuantConnect.Lean.DataSource.R2
             "arg_min(iv_bid, ts) FILTER (WHERE iv_bid IS NOT NULL) AS bid_open, max(iv_bid) AS bid_high, " +
             "min(iv_bid) AS bid_low, arg_max(iv_bid, ts) FILTER (WHERE iv_bid IS NOT NULL) AS bid_close, " +
             "arg_min(iv_ask, ts) FILTER (WHERE iv_ask IS NOT NULL) AS ask_open, max(iv_ask) AS ask_high, " +
-            "min(iv_ask) AS ask_low, arg_max(iv_ask, ts) FILTER (WHERE iv_ask IS NOT NULL) AS ask_close";
+            "min(iv_ask) AS ask_low, arg_max(iv_ask, ts) FILTER (WHERE iv_ask IS NOT NULL) AS ask_close, " +
+            "arg_min(iv_mid, ts) FILTER (WHERE iv_mid IS NOT NULL) AS mid_open, max(iv_mid) AS mid_high, " +
+            "min(iv_mid) AS mid_low, arg_max(iv_mid, ts) FILTER (WHERE iv_mid IS NOT NULL) AS mid_close";
 
         private const string QuoteRowColumns =
             "{0} AS bucket, iv_bid AS bid_open, iv_bid AS bid_high, iv_bid AS bid_low, iv_bid AS bid_close, " +
-            "iv_ask AS ask_open, iv_ask AS ask_high, iv_ask AS ask_low, iv_ask AS ask_close";
+            "iv_ask AS ask_open, iv_ask AS ask_high, iv_ask AS ask_low, iv_ask AS ask_close, " +
+            "iv_mid AS mid_open, iv_mid AS mid_high, iv_mid AS mid_low, iv_mid AS mid_close";
 
         private const string TradeColumns =
             "{0} AS bucket, arg_max(iv_trade, ts) FILTER (WHERE iv_trade IS NOT NULL) AS iv";
@@ -99,7 +103,7 @@ namespace QuantConnect.Lean.DataSource.R2
 
             foreach (var row in Rows(table, ticker, dayUtc, resolution, columns, QuotePredicate))
             {
-                if (row.Length < 9 || !R2Warehouse.TryLong(row[0], out var ns))
+                if (row.Length < 13 || !R2Warehouse.TryLong(row[0], out var ns))
                 {
                     continue;
                 }
@@ -115,6 +119,7 @@ namespace QuantConnect.Lean.DataSource.R2
                     symbol,
                     IvBar(row[1], row[2], row[3], row[4]),
                     IvBar(row[5], row[6], row[7], row[8]),
+                    IvBar(row[9], row[10], row[11], row[12]),
                     NoPriceBar(),
                     NoPriceBar(),
                     NoPriceBar(),

@@ -1,6 +1,7 @@
 using Google.Protobuf.Collections;
 using NodaTime;
 using QuantConnect.Algorithm.CSharp.Core.IO;
+using QuantConnect.Data.Market;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Option;
@@ -8,7 +9,7 @@ using QuantConnect.Util;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
+using System.Diagnostics;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
@@ -41,8 +42,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private Dictionary<Equity, PfRiskScenarioPb> BestScenario { get; set; }        
         private Dictionary<Equity, DateTime> SweepStart { get; set; }
         private Dictionary<Equity, TimeSpan> SweepDuration { get; set; }
-        public ConcurrentDictionary<Equity, (StreamWriter writer, object lockObj)> Writers { get; }
         private ConcurrentDictionary<Equity, List<SweepSchedule>> _schedules = new();
+        private DateTime _lastEntryIvSolverFallbackLog = DateTime.MinValue;
         public RiskScenarioHandler(Foundations algo)
         {
             PfRiskScenarios = new();
@@ -55,7 +56,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             SweepStart = new();
             SweepDuration = new();
             _algo = algo;
-            Writers = new();
         }
         private bool IsSweepScheduled(Equity equity, OrderDirection direction)
         {
@@ -117,18 +117,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// <returns></returns>
         internal double? SweepIv(Option option, OrderDirection direction)
         {
-            Write(option, direction);
+            var sw = Stopwatch.StartNew();
+            var (juliaCallsBefore, juliaMsBefore) = JuliaPricingClient.Snapshot();
 
+            double? iv;
             if (IsSweepScheduled(_algo.ToEquity(option.Underlying.Symbol), direction)) {
-                double? iv = GetEquiUtilityIv(option, direction);
+                iv = GetEquiUtilityIv(option, direction);
                 _algo.Log($"{_algo.Time} RiskScenarioHandler.SweepIV(): Sweeping {option.Symbol.Value}, direction={direction}, iv={iv:0.000}");
-                return iv;
             }
             else
             {
+                iv = null;
                 _algo.Log($"{_algo.Time} RiskScenarioHandler.SweepIV(): Sweep not scheduled hence return null IV - {option.Symbol.Value}, direction={direction}, iv=");
-                return null;
             }
+
+            var (juliaCalls, juliaMs) = JuliaPricingClient.Delta(juliaCallsBefore, juliaMsBefore);
+            _algo.Log($"{_algo.Time} RiskScenarioHandler.SweepIvTiming: {option.Symbol.Value}, {direction}, total={sw.ElapsedMilliseconds}ms, juliaCalls={juliaCalls}, juliaMs={juliaMs:0}");
+            return iv;
         }
 
         internal void ClearScenarios(Equity equity)
@@ -385,10 +390,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 _algo.Error($"{_algo.Time} RiskScenarioHandler.GetEntryIv(): No ScenarioEntryIVs found for {option.Symbol.Value} in direction {direction}");
                 return null;
             }
-            decimal currentBBPrice = direction == OrderDirection.Buy 
-                ? _algo.Securities[option.Symbol].BidPrice 
-                : _algo.Securities[option.Symbol].AskPrice;
-            double entryIv = OptionContractWrap.E(_algo, option, _algo.Time.Date).IV(currentBBPrice, _algo.MidPrice(Underlying(option)), 0.001);
+            QuoteSide side = direction == OrderDirection.Buy ? QuoteSide.Bid : QuoteSide.Ask;
+            double entryIv;
+            if (_algo.TryGetFeedIV(option.Symbol, side, out double feedIv))
+            {
+                entryIv = feedIv;
+            }
+            else
+            {
+                if (_algo.Time - _lastEntryIvSolverFallbackLog > TimeSpan.FromMinutes(1))
+                {
+                    _lastEntryIvSolverFallbackLog = _algo.Time;
+                    _algo.Log($"{_algo.Time} RiskScenarioHandler.GetEntryIv(): No current feed IV for {option.Symbol.Value} ({side}); falling back to pricer solver.");
+                }
+                decimal currentBBPrice = direction == OrderDirection.Buy
+                    ? _algo.Securities[option.Symbol].BidPrice
+                    : _algo.Securities[option.Symbol].AskPrice;
+                entryIv = OptionContractWrap.E(_algo, option, _algo.Time.Date).IV(currentBBPrice, _algo.MidPrice(Underlying(option)), 0.001);
+            }
             return direction == OrderDirection.Buy
                 ? Math.Min(scenarioEntryIv, entryIv)
                 : Math.Max(scenarioEntryIv, entryIv);
@@ -439,61 +458,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 }
             }
             return null;
-        }
-
-        private List<string> _header = new()
-        {
-            "Time", "Option", "Direction", "IV", "PriceOfIV", "PriceUnderlying", "Vega", "ScenarioFillIV", "MarketEntryIV", "ScenarioUtility", "Utility", "BestOption", 
-            "BestOptionIV", "BestOptionUtility", "UtilitySwept"
-        };
-
-        private (StreamWriter writer, object lockObj) GetStreamWriter(Equity equity)
-        {
-            if (!Writers.TryGetValue(equity, out var entry))
-            {
-                var path = Path.Combine(Globals.PathAnalytics, equity.Symbol.Value, "RiskScenarioHandler.csv");
-                _algo.Log($"{_algo.Time} RiskScenarioHandler.GetStreamWriter(): Creating path {path}");
-                Directory.CreateDirectory(Path.GetDirectoryName(path) ?? string.Empty);
-                entry = (new StreamWriter(path, true), new object());
-                Writers[equity] = entry;
-                Writers[equity].writer.WriteLine(string.Join(",", _header));
-            }
-            return entry;
-        }
-
-        private void Write(Option option, OrderDirection direction)
-        {
-            Equity equity = _algo.ToEquity(Underlying(option.Symbol));
-
-            double? iv = GetEquiUtilityIv(option, direction);
-            double npvRaw = (iv == null || !double.IsFinite(iv.Value))
-                ? double.NaN
-                : OptionContractWrap.E(_algo, option, _algo.Time.Date).NPV(iv.Value, _algo.MidPrice(option.Underlying.Symbol));
-            
-            (StreamWriter writer, object lockObj) = GetStreamWriter(equity);
-            lock (lockObj)
-            {
-                // Need to put a file lock here because access is concurrent.
-                writer.WriteLine(string.Join(",",
-                    _algo.Time,
-                    option.Symbol.Value,
-                    direction,
-                    iv,
-                    npvRaw,
-                    _algo.MidPrice(equity.Symbol),
-                    Vega(option),
-                    CollectionExtensions.GetValueOrDefault(ScenarioEntryIVs, Tuple.Create(option, direction), 0),
-                    GetEntryIv(option, direction),
-                    CollectionExtensions.GetValueOrDefault(ScenarioUtilities, Tuple.Create(option, direction), 0),
-                    GetEquiUtility(option, direction),
-                    BestOrder.TryGetValue(equity, out var tup) ? tup.Item1.Symbol.Value : "",
-                    BestOrderSweepIv(equity),
-                    BestOrder.ContainsKey(equity) ? GetEquiUtility(BestOrder[equity].Item1, BestOrder[equity].Item2) : "",
-                    UtilitySwept(equity)
-                    )
-                );
-            }
-            
         }
     }
 }

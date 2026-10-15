@@ -1,4 +1,5 @@
 using Fasterflect;
+using QuantConnect.Data.Market;
 using QuantConnect.Orders;
 using QuantConnect.Securities.Option;
 using System;
@@ -34,6 +35,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             OCW = OptionContractWrap.E(_algo, Option, _algo.Time.Date);
             WorstIV = InitWorstIV();
         }
+        private DateTime _lastSolverFallbackLog = DateTime.MinValue;
+        private double IVFromFeedOrSolver(QuoteSide side, decimal price)
+        {
+            if (_algo.TryGetFeedIV(Symbol, side, out double iv))
+            {
+                return iv;
+            }
+            if (_algo.Time - _lastSolverFallbackLog > TimeSpan.FromMinutes(1))
+            {
+                _lastSolverFallbackLog = _algo.Time;
+                _algo.Log($"{_algo.Time} SpreadBuffer: No current feed IV for {Symbol} ({side}); falling back to pricer solver.");
+            }
+            return OCW.IV(price, Spot, OptionContractWrap.Accuracy);
+        }
         private decimal NBBO => Direction == OrderDirection.Buy ? Option.BidPrice : Option.AskPrice;
         private decimal Spot => _algo.MidPrice(Underlying(Option.Symbol));
         public decimal Spread => _algo.Spread(Symbol);
@@ -58,7 +73,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             if (_algo.IsWarmingUp) return 0;
 
-            return OCW.IV(NBBO, Spot, OptionContractWrap.Accuracy);
+            return Direction == OrderDirection.Buy ? BidIV : AskIV;
         }
         public Symbol Symbol => Option.Symbol;
         /// Issue here. Date from ticket is potentially in UTC.
@@ -110,8 +125,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             WorstIV = (BidIV + AskIV) / 2;
         }
 
-        private double AskIV => OCW.IV(Option.AskPrice, Spot, OptionContractWrap.Accuracy);
-        private double BidIV => OCW.IV(Option.BidPrice, Spot, OptionContractWrap.Accuracy);
+        private double AskIV => IVFromFeedOrSolver(QuoteSide.Ask, Option.AskPrice);
+        private double BidIV => IVFromFeedOrSolver(QuoteSide.Bid, Option.BidPrice);
         private double WorseIV => Direction switch
         {
             OrderDirection.Buy => Math.Min(WorstIV + RatioSpreadTolerance * SpreadIV, (BidIV + AskIV) / 2),

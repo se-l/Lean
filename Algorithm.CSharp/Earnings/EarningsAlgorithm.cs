@@ -67,6 +67,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 ? $"ipc://{CfgAlgo.PricerHost}.{CfgAlgo.PricerPort}"
                 : $"{CfgAlgo.PricerProtocol}://{CfgAlgo.PricerHost}:{CfgAlgo.PricerPort}";
             julia = new JuliaPricingClient(pricerUri);
+            JuliaPricingClient.Logger = msg => Log(msg);
             Log($"Connecting to JuliaPricer: {pricerUri} ...");
 
             rMQClient = new(this);

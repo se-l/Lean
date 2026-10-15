@@ -18,8 +18,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         // ── Fields ────────────────────────────────────────────────────
         private readonly Foundations _algo;
         private readonly Dictionary<ChannelPb, EventHandler<EventArgs>> _eventHandlers;
-        // Per-request send timing: utcTime = algo clock at send, systemTime = wall clock at send
-        private readonly ConcurrentDictionary<string, DateTime> _activeRequests = new();
+        // Unanswered requests: id -> (channel, algo clock at send). Every submission is tracked
+        // until its response arrives, so any response — including the request the recipient is
+        // still processing — can compute its scheduled callback time as tsSent + elapsedMs
+        // (DispatchResponse). The recipient consumes each channel LIFO: buried submissions (an
+        // older queued message displaced by a newer one before being dequeued) are never answered
+        // and are pruned when the channel's next response proves them dead; the request currently
+        // being processed is invisible from here but does answer, so its entry is kept.
+        private readonly ConcurrentDictionary<string, (ChannelPb Channel, DateTime Sent)> _activeRequests = new();
+
+        // Per channel, the newest submission's id — the only one guaranteed a response (it is
+        // either the latest queued message or already being processed), and therefore the only
+        // one near-realtime pacing may wait on. Awaiting every submission stalled
+        // PaceBacktestNearRealtime on buried ids whose responses can never come.
+        private readonly ConcurrentDictionary<ChannelPb, string> _lastSentIds = new();
         private readonly SemaphoreSlim _connectLock = new(1, 1);
         private IConnection _connection;
         private IChannel _channel;
@@ -57,7 +69,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             };
         }
 
-        public bool HasActiveRequests() => !_activeRequests.IsEmpty;
+        /// <summary>
+        /// True while at least one submission still awaits a response that can actually arrive:
+        /// the last request sent per channel. Buried (superseded) submissions stay in
+        /// <see cref="_activeRequests"/> for send-time bookkeeping but never gate pacing — the
+        /// LIFO recipient ignores them, so waiting on them stalled the backtest.
+        /// </summary>
+        public bool HasActiveRequests()
+        {
+            foreach (var (_, id) in _lastSentIds)
+            {
+                if (_activeRequests.ContainsKey(id))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         // ── Connect ───────────────────────────────────────────────────
         public async Task ConnectAsync(
@@ -142,7 +170,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
             var body = msg.ToByteArray();
 
-            _activeRequests[msg.Id] = _algo.Time;
+            // Every submission is timed for tsSent + elapsedMs scheduling; the newest per channel
+            // additionally gates pacing, the only one the LIFO recipient is guaranteed to answer.
+            // Older submissions stay timed but ungated: the currently-processed one (invisible
+            // from here) may still answer, buried ones are pruned when the channel's next
+            // response arrives.
+            _activeRequests[msg.Id] = (rabbitChannel, _algo.Time);
+            _lastSentIds[rabbitChannel] = msg.Id;
 
             var props = new BasicProperties
             {
@@ -150,12 +184,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 CorrelationId = msg.Id
             };
 
-            await _channel.BasicPublishAsync(
-                exchange: ExchangeIn,
-                routingKey: RoutingKeyPrefix + rabbitChannel.ToString().ToLowerInvariant(), // e.g. "calc.targetportfolio"
-                mandatory: false,
-                basicProperties: props,
-                body: body);
+            try
+            {
+                await _channel.BasicPublishAsync(
+                    exchange: ExchangeIn,
+                    routingKey: RoutingKeyPrefix + rabbitChannel.ToString().ToLowerInvariant(), // e.g. "calc.targetportfolio"
+                    mandatory: false,
+                    basicProperties: props,
+                    body: body);
+            }
+            catch
+            {
+                // A send that never reached the broker can never be answered; forgetting it keeps
+                // pacing from waiting on a response that will not come.
+                _activeRequests.TryRemove(msg.Id, out _);
+                _lastSentIds.TryRemove(new KeyValuePair<ChannelPb, string>(rabbitChannel, msg.Id));
+                throw;
+            }
         }
 
         // ── Receive ───────────────────────────────────────────────────
@@ -169,6 +214,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 _algo.Log($"RabbitMqClient: Received response: {msg.Channel}.");
 
                 var requestSentTime = RemoveActiveRequest(msg.Id);
+                // The recipient works channel by channel: a response for this channel retires
+                // every earlier unanswered submission on it (buried in the LIFO queue, or its
+                // result dropped when superseded). They will never send a response of their own.
+                PruneSuperseded(msg.Channel);
 
                 switch (msg.Channel)
                 {
@@ -235,11 +284,31 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
         private DateTime? RemoveActiveRequest(string id)
         {
-            if (_activeRequests.TryRemove(id, out var sentTime))
+            if (_activeRequests.TryRemove(id, out var entry))
             {
-                return sentTime;
+                return entry.Sent;
             }
             return null;
+        }
+
+        /// <summary>
+        /// Drops every unanswered submission on a channel except the newest one sent
+        /// (<see cref="_lastSentIds"/>). Called on receive: a response proves the recipient moved
+        /// past this channel's older messages, so whatever was buried in the LIFO queue will never
+        /// be answered. The newest submission is preserved regardless — it is the next one the
+        /// recipient will process, and its tsSent must stay available for tsSent + elapsedMs
+        /// scheduling.
+        /// </summary>
+        private void PruneSuperseded(ChannelPb channel)
+        {
+            _lastSentIds.TryGetValue(channel, out var keepId);
+            foreach (var (id, entry) in _activeRequests)
+            {
+                if (entry.Channel == channel && id != keepId)
+                {
+                    _activeRequests.TryRemove(id, out _);
+                }
+            }
         }
 
         // Dispatches a parsed response to its registered handler. In backtests, when the calc engine
