@@ -45,6 +45,11 @@ namespace QuantConnect.Lean.Engine.Setup
         public static TimeSpan AlgorithmCreationTimeout { get; } = TimeSpan.FromSeconds(Config.GetDouble("algorithm-creation-timeout", 90));
 
         /// <summary>
+        /// Get the maximum time that the initialization of an algorithm can take
+        /// </summary>
+        public static TimeSpan AlgorithmInitializationTimeout { get; } = TimeSpan.FromSeconds(Config.GetDouble("algorithm-initialization-timeout", 300));
+
+        /// <summary>
         /// Will first check and add all the required conversion rate securities
         /// and later will seed an initial value to them.
         /// </summary>
