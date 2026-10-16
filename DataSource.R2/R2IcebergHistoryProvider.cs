@@ -1,6 +1,7 @@
 /*
- * R2IcebergHistoryProvider — History() and indicator warmup served from the R2 warehouse through the
- * local rclone mount, over the SAME table registry as the feed (R2Warehouse).
+ * R2IcebergHistoryProvider — History() and indicator warmup served from the R2 warehouse through
+ * R2LocalCatalog, over the SAME table registry as the feed (R2Warehouse) and the SAME routes
+ * (rclone mount or direct CloudFlare; see R2Route.cs).
  *
  * This is the piece that serves both modes: in a backtest it feeds warmup and every History() call,
  * and in live it still answers History()/warmup while the stream itself comes from Polygon. That is
@@ -58,7 +59,7 @@ namespace QuantConnect.Lean.DataSource.R2
             _bars = new R2BarReader(_catalog);
             _iv = new R2IvReader(_catalog);
 
-            Log.Trace($"R2IcebergHistoryProvider: route-1 reads via {_catalog.MountRoot} " +
+            Log.Trace($"R2IcebergHistoryProvider: {_catalog.DescribeRoutes()}. " +
                       $"({R2Warehouse.AllTables.Count} tables: tick tables for tick requests, " +
                       "bar tables for second/minute/hour/daily requests)");
         }

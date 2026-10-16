@@ -1,6 +1,7 @@
 /*
- * R2IcebergDataFeed — backtest data feed fed by the local rclone mount of the R2 warehouse
- * (route 1: allow_moved_paths; see R2LocalCatalog and the two readers).
+ * R2IcebergDataFeed — backtest data feed over the R2 warehouse, through R2LocalCatalog: whose
+ * transport behind it is configurable per class of request (rclone mount vs direct CloudFlare;
+ * see R2Route.cs for the R2_METADATA_ROUTE / R2_DATA_ROUTE / R2_READ_ROUTE toggles).
  *
  * EVERY (asset class, tick kind, resolution) IS SERVED FROM ITS OWN WAREHOUSE TABLE. The
  * subscription shape is translated once, by R2Warehouse, into one of the twenty tables:
@@ -24,8 +25,8 @@
  *   it the universe subscription ends immediately and the added security never gets a data
  *   subscription at all — the engine logs no feed, only a skipped run.
  *
- * - No cache, no staging: reads go through the mount; rclone serves cached files and fetches
- *   missing ones. The earlier "materialize a session before running" contract is gone.
+ * - No cache, no staging: reads go through the route's own source (mount or CloudFlare direct).
+ *   The earlier "materialize a session before running" contract is gone.
  *
  * A session with no rows is silent: bars are sparse by construction and the warehouse may simply
  * not carry that symbol-day. A symbol the warehouse does not carry ends its subscription with a
@@ -53,7 +54,8 @@ using QuantConnect.Securities;
 namespace QuantConnect.Lean.DataSource.R2
 {
     /// <summary>
-    /// Serves Lean subscriptions out of the R2 warehouse through the local rclone mount.
+    /// Serves Lean subscriptions out of the R2 warehouse, on the routes R2LocalCatalog is
+    /// configured with (local rclone mirror or direct CloudFlare).
     /// </summary>
     [InheritedExport(typeof(IDataFeed))]
     public class R2IcebergDataFeed : IDataFeed
@@ -94,8 +96,7 @@ namespace QuantConnect.Lean.DataSource.R2
             _bars = new R2BarReader(_catalog);
             _iv = new R2IvReader(_catalog);
 
-            Log.Trace($"R2IcebergDataFeed: route-1 reads via {_catalog.MountRoot} " +
-                      $"(iceberg metadata + daily parquet; rclone serves cached, fetches missing). " +
+            Log.Trace($"R2IcebergDataFeed: {_catalog.DescribeRoutes()}. " +
                       $"Tables: {R2Warehouse.AllTables.Count} " +
                       $"({string.Join(", ", R2Warehouse.AllTables)}) + {R2Warehouse.FeaturesTable} " +
                       "for volatility subscriptions");

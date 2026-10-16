@@ -1,17 +1,19 @@
 /*
- * Route-1 tick reader: ticks for one symbol/session straight out of the local rclone mount of the
- * R2 warehouse — Iceberg metadata first, then the daily Parquet data files, all with
- * allow_moved_paths := true (see R2LocalCatalog for the recipe and rationale).
+ * Tick reader: ticks for one symbol/session out of the R2 warehouse, through R2LocalCatalog —
+ * Iceberg metadata first, then the daily Parquet data files, all with
+ * allow_moved_paths := true on the catalog data route, or the catalog-attached table read
+ * straight from CloudFlare on the cloudflare data route (see R2Route.cs for the toggles).
  *
  * Tables are NOT chosen here. The caller passes the R2Table it resolved through R2Warehouse, so
  * this reader serves any of the four tick tables (equity/option x trade/quote) with one code path:
  * the column list follows the table's kind, and the option tables' extra `sequence_number` (BIGINT)
  * says nothing to Lean but is part of the total order.
  *
- * There is NO cache and NO materialization step: the mount IS the "present locally, otherwise
- * fetch" layer. rclone serves cached bytes and transparently fetches anything missing, so a
- * backtest reuses whatever the mount already holds and only pays the network for genuinely
- * missing files.
+ * On the catalog route there is NO cache and NO materialization step at this level: the mount IS
+ * the "present locally, otherwise fetch" layer. rclone serves cached bytes and transparently
+ * fetches anything missing, so a backtest reuses whatever the mount already holds and only pays
+ * the network for genuinely missing files. The day cache lives one layer down, in R2LocalCatalog,
+ * and only when the read route allows it.
  *
  * Session grain: the scan filter is the UTC day of sip_timestamp — the warehouse partitions on
  * day(sip_timestamp). For the sessions loaded so far this is exactly one ET session per UTC day
@@ -36,7 +38,7 @@ using QuantConnect.Data.Market;
 namespace QuantConnect.Lean.DataSource.R2
 {
     /// <summary>
-    /// Reads ticks through the local rclone mirror and emits <see cref="Tick"/> objects in
+    /// Reads ticks through R2LocalCatalog's route and emits <see cref="Tick"/> objects in
     /// exchange time.
     /// </summary>
     public sealed class R2TickReader
@@ -50,7 +52,7 @@ namespace QuantConnect.Lean.DataSource.R2
 
         private readonly R2LocalCatalog _catalog;
 
-        /// <param name="catalog">Route-1 catalog helper (mount root, table roots, duckdb plumbing).</param>
+        /// <param name="catalog">Route-aware catalog helper (scan source, table roots, duckdb plumbing).</param>
         public R2TickReader(R2LocalCatalog catalog)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));

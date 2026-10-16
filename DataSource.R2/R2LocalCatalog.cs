@@ -1,6 +1,8 @@
 /*
- * Route-1 local reads for the Lean plugin: read warehouse tables through the rclone mount
- * instead of the R2 catalog.
+ * The Lean plugin's warehouse reader, with the transport behind it configurable per class of
+ * request — see R2Route.cs for the R2_METADATA_ROUTE / R2_DATA_ROUTE / R2_READ_ROUTE toggles.
+ * What follows are the route-1 (catalog) decisions this class was built on; the cloudflare route
+ * deliberately steps around the ones that live on this host.
  *
  * Fino's Catalog.local_table_root / Catalog.scan_local do the same on the Julia side; this class
  * mirrors them so the plugin can serve Lean data from the local mirror. The catalog stays
@@ -10,14 +12,18 @@
  *
  * - The table root is resolved from the CATALOG (name -> uuid directory: storage paths never carry
  *   the table name) and is re-resolved on every call. A drop-then-load REPLACES a table with a new
- *   uuid directory, so a cached root would quietly keep reading the replaced table's files.
+ *   uuid directory, so a cached root would quietly keep reading the replaced table's files. The
+ *   cloudflare metadata route makes that literal: every call asks the remote catalog and the root
+ *   caches below are never consulted. The catalog route keeps them, because the alternative
+ *   measured 10.3 s per resolve.
  *   `iceberg_snapshots('r2.market.<table>')` is the SQL route on this DuckDB build; the
  *   `<table>$snapshots` metadata-table syntax does NOT exist for catalog-attached tables here.
  *
  * - allow_moved_paths := true + unsafe_enable_version_guessing = true is the route-1 recipe:
  *   Iceberg metadata stores ABSOLUTE s3:// URIs, so the scanner must be told the files were
  *   relocated; version guessing supplies the version because a catalog-written table has no
- *   version-hint file on disk.
+ *   version-hint file on disk. The cloudflare data route needs neither: its scans run against the
+ *   attached catalog, whose manifests carry the real URIs and the current snapshot.
  *
  * - SQL is fed to duckdb on STDIN, never argv, so the catalog token cannot leak into `ps`.
  *   duckdb stderr is captured and REDACTED with the token before it is ever logged or thrown:
@@ -45,7 +51,8 @@ using QuantConnect.Logging;
 namespace QuantConnect.Lean.DataSource.R2
 {
     /// <summary>
-    /// Reads warehouse tables through the local rclone mirror (route 1: allow_moved_paths).
+    /// Reads warehouse tables — through the local rclone mirror (route 1: allow_moved_paths) or
+    /// straight from CloudFlare, per the R2Routing toggles the instance is built with.
     ///
     /// One instance serves BOTH handlers: the engine instantiates the feed and the history provider
     /// independently (MEF), but they read the same tables, so they share one duckdb process, one day
@@ -75,6 +82,7 @@ namespace QuantConnect.Lean.DataSource.R2
         private readonly string _s3AccessKey;
         private readonly string _s3SecretKey;
         private readonly string _rootCachePath;
+        private readonly R2Routing _routing;
 
         /// <summary>The one duckdb process this catalog talks to (null when it could not be started).</summary>
         private R2DuckSession _session;
@@ -160,7 +168,8 @@ namespace QuantConnect.Lean.DataSource.R2
             string duckdbPath = null,
             string warehouse = null,
             string catalogUri = null,
-            string s3Endpoint = null)
+            string s3Endpoint = null,
+            R2Routing routes = null)
         {
             _mountRoot = Required(mountRoot, "mount-root");
             _duckdbPath = Required(duckdbPath, "duckdb-path");
@@ -168,9 +177,14 @@ namespace QuantConnect.Lean.DataSource.R2
             _catalogUri = Required(catalogUri, "catalog-uri");
             _s3Endpoint = Required(s3Endpoint, "s3-endpoint");
 
+            // Which transport serves what: metadata, data files, and what a read may keep
+            // in-process. Defaults to the catalog route everywhere when nothing is configured.
+            _routing = routes ?? R2Routing.FromConfiguration();
+
             // Credentials are optional here and validated where they are used: the catalog token is
             // required only when a table root has to be resolved from the catalog, and the S3 pair
-            // only when a scan meets a deletion vector.
+            // only when a scan meets a deletion vector — or when the cloudflare data route makes a
+            // table scan itself, which always goes over that endpoint (ScanPreamble).
             _catalogToken = Setting("catalog-token");
             _s3AccessKey = Setting("s3-access-key");
             _s3SecretKey = Setting("s3-secret-access-key");
@@ -193,13 +207,39 @@ namespace QuantConnect.Lean.DataSource.R2
             try
             {
                 _session = new R2DuckSession(_duckdbPath, ScanPreamble(), Redact);
+
+                if (_routing.Data == R2Route.CloudFlare)
+                {
+                    // Every data-file scan on this route is `iceberg_scan('r2.market.<table>')`
+                    // against the attached Iceberg REST catalog: attach once, here, so no scan ever
+                    // pays for it and no caller has to think about it. A failed attach kills the
+                    // session (bail-on-error), and the catch below puts the catalog on the
+                    // per-scan path, which attaches inside its one-shot process instead.
+                    AttachSession(_session);
+                }
             }
             catch (R2SessionException error)
             {
                 Log.Trace("R2LocalCatalog: no persistent duckdb session, one process per scan: " + error.Message);
                 _session = null;
+                _attachedSession = null;
             }
         }
+
+        /// <summary>The routes this instance serves with, as configured.</summary>
+        public R2Routing Routing => _routing;
+
+        /// <summary>
+        /// The routes, spelled out with what each one does here — the one line a run log needs to
+        /// answer "where did this read come from".
+        /// </summary>
+        public string DescribeRoutes() =>
+            $"routes: metadata {RouteWord(_routing.Metadata, "resolved from the catalog on every call", "memoised roots + on-disk cache")}, " +
+            $"data {RouteWord(_routing.Data, "read straight from CloudFlare through the attached catalog", $"read through the rclone mount ({_mountRoot})")}, " +
+            $"read {RouteWord(_routing.Read, "per request, nothing materialised", "day cache materialised in-process")}";
+
+        private static string RouteWord(R2Route route, string cloudflare, string catalog) =>
+            route == R2Route.CloudFlare ? $"cloudflare ({cloudflare})" : $"catalog ({catalog})";
 
         /// <summary>
         /// Reads a setting from the `cloudflare-r2` section, tolerating both shapes Lean configs use:
@@ -208,7 +248,7 @@ namespace QuantConnect.Lean.DataSource.R2
         /// syntax because Config.Get hands the string to JToken.SelectToken, where '.' separates
         /// path segments).
         /// </summary>
-        private static string Setting(string name)
+        internal static string Setting(string name)
         {
             var path = Prefix + name;
             var value = Config.Get(path, string.Empty);
@@ -270,10 +310,21 @@ namespace QuantConnect.Lean.DataSource.R2
         /// that follows it. Paying that per scan is what made a warmup die on Lean's five-minute
         /// Isolator budget. The disk cache means a cold process does not pay it once per table
         /// either; a drop-then-load that replaces the uuid directory is handled by ForgetRoots().
+        ///
+        /// The cloudflare metadata route takes neither shortcut: every call puts the question to
+        /// the remote catalog and nothing local is read or written. The memo's whole business case
+        /// is not paying the round trip — on a route that has promised to ask the source every
+        /// time, the memo would be a lie about freshness.
         /// </summary>
         public string TableRoot(string table)
         {
             RequireTable(table);
+
+            if (_routing.Metadata == R2Route.CloudFlare)
+            {
+                return ResolveRootFromCatalog(table);
+            }
+
             if (_roots.TryGetValue(table, out var known) && Usable(known))
             {
                 return known;
@@ -305,7 +356,8 @@ namespace QuantConnect.Lean.DataSource.R2
         /// 1970-01-01, so "does the warehouse hold this day" is a local directory listing of the
         /// mount: no duckdb process, no catalog, no network. Warmup lookbacks over a table holding a
         /// handful of loaded days are mostly days that are NOT held, and each of those used to cost
-        /// a process spawn plus a 10 s catalog round trip to answer "no rows".
+        /// a process spawn plus a 10 s catalog round trip to answer "no rows" — the catalog route's
+        /// cheap answer; the cloudflare metadata route defers the question to the scan itself.
         ///
         /// Answers true whenever the listing cannot be read or understood: a listing problem must
         /// never turn into silently missing data.
@@ -313,6 +365,16 @@ namespace QuantConnect.Lean.DataSource.R2
         public bool HoldsDay(string table, DateTime dayUtc)
         {
             RequireTable(table);
+
+            if (_routing.Metadata == R2Route.CloudFlare)
+            {
+                // Nothing local to list on this route — and "cannot tell" must stay an attempt,
+                // never a silence: the scan itself answers whether the warehouse holds the day
+                // (its manifest stats prune the partitions), and for a day the warehouse does not
+                // carry that answer is "no rows", not an error.
+                return true;
+            }
+
             var wanted = (dayUtc.Date - DateTime.UnixEpoch).Days;
             try
             {
@@ -352,12 +414,11 @@ namespace QuantConnect.Lean.DataSource.R2
         /// <summary>The name -> uuid resolution: the one step that needs the remote catalog.</summary>
         private string ResolveRootFromCatalog(string table)
         {
-            var sql = AttachSql() +
-                $"SELECT manifest_list FROM iceberg_snapshots('r2.market.{table}') " +
-                "ORDER BY timestamp_ms DESC LIMIT 1;";
-
+            // ensureAttach: the catalog must be attached for that query — on the live session or,
+            // on the per-scan path, inside the one-shot process it spawns. Run owns the attach
+            // bookkeeping; by the time rows are read the session that served them holds it.
             string location = null;
-            foreach (var row in Run(sql))
+            foreach (var row in Run(RootSnapshotSql(table), ensureAttach: true))
             {
                 // The manifest path is the only s3:// row this statement can produce; anything
                 // else (stray statement-result rows) must not be mistaken for it.
@@ -367,9 +428,6 @@ namespace QuantConnect.Lean.DataSource.R2
                     break;
                 }
             }
-            // The ATTACH in that statement holds for the life of the process. Remember it before
-            // anything else can throw, so the next table's resolve does not re-attach and kill it.
-            _attachedSession = _session;
 
             if (location == null)
             {
@@ -381,6 +439,10 @@ namespace QuantConnect.Lean.DataSource.R2
             key = Regex.Replace(key, "/metadata/.*$", string.Empty);
             return Path.Combine(_mountRoot, key);
         }
+
+        private static string RootSnapshotSql(string table) =>
+            "SELECT manifest_list FROM iceberg_snapshots('r2.market." + table + "') " +
+            "ORDER BY timestamp_ms DESC LIMIT 1;";
 
         private Dictionary<string, string> ReadRootCache()
         {
@@ -422,13 +484,13 @@ namespace QuantConnect.Lean.DataSource.R2
         }
 
         /// <summary>
-        /// The warehouse ticker for a vendor ticker, validated against the tick table that will
-        /// serve it — the authoritative "does the warehouse carry this symbol" list for that
-        /// dataset; dim_symbol is the contract REGISTRY and lags reality. Null when the warehouse
-        /// does not carry it.
+        /// The warehouse ticker for a vendor ticker, validated against the table that will serve
+        /// it — the authoritative "does the warehouse carry this symbol" list for that dataset;
+        /// dim_symbol is the contract REGISTRY and lags reality. Null when the warehouse does not
+        /// carry it.
         /// </summary>
         /// <param name="ticker">Vendor ticker as stored (equity: <c>CRWD</c>; option: <c>O:CRWD261002P00262500</c>).</param>
-        /// <param name="table">The tick table to validate against, e.g. <c>option_trade_tick</c>.</param>
+        /// <param name="table">The table to validate against, e.g. <c>equity_trade_tick</c>.</param>
         public string ResolveSymbol(string ticker, string table = "equity_trade_tick")
         {
             if (string.IsNullOrEmpty(ticker))
@@ -440,20 +502,19 @@ namespace QuantConnect.Lean.DataSource.R2
             // The empty string marks "the warehouse does not carry it", so a negative answer is
             // memoised too: Lean resolves the same contract several times per warmup (subscription,
             // seeding, history), and each check used to re-attach the remote catalog and scan the
-            // tick table over the network.
+            // tick table over the network. The cloudflare metadata route does not memoise — its
+            // whole identity is that every question is put to the source.
             var key = table + "\n" + ticker;
-            if (_symbols.TryGetValue(key, out var known))
+            if (_routing.Metadata == R2Route.Catalog && _symbols.TryGetValue(key, out var known))
             {
                 return known.Length == 0 ? null : known;
             }
 
-            // Read through the local table root, like every other scan (no catalog attach here).
-            var root = TableRoot(table).Replace("'", "''");
             var sql = ScanPreamble() +
-                $"SELECT symbol FROM iceberg_scan('{root}', allow_moved_paths := true) " +
+                $"SELECT symbol FROM {DataFrom(table)} " +
                 $"WHERE symbol = '{ticker.Replace("'", "''")}' LIMIT 1;";
             var found = string.Empty;
-            foreach (var row in Run(sql))
+            foreach (var row in Rows(sql))
             {
                 if (row.Length > 0 && !string.IsNullOrEmpty(row[0]))
                 {
@@ -461,20 +522,23 @@ namespace QuantConnect.Lean.DataSource.R2
                     break;
                 }
             }
-            _symbols[key] = found;
+            if (_routing.Metadata == R2Route.Catalog)
+            {
+                _symbols[key] = found;
+            }
             return found.Length == 0 ? null : found;
         }
 
         /// <summary>
-        /// Rows of <paramref name="table"/> read from the local mirror, as string arrays.
+        /// Rows of <paramref name="table"/> read from the route's source, as string arrays.
         /// </summary>
         public IEnumerable<string[]> Scan(string table, string columns = "*", string where = null)
         {
             RequireTable(table);
-            return Run(BuildScanSql(table, columns, where));
+            return Run(BuildScanSql(table, columns, where), _routing.Data == R2Route.CloudFlare);
         }
 
-        /// <summary>SQL of the route-1 scan, for callers that build on it (e.g. adding ORDER BY).</summary>
+        /// <summary>SQL of the scan, for callers that build on it (e.g. adding ORDER BY).</summary>
         public string ScanSql(string table, string columns = "*", string where = null)
         {
             RequireTable(table);
@@ -483,15 +547,15 @@ namespace QuantConnect.Lean.DataSource.R2
 
         /// <summary>
         /// Runs arbitrary SQL through the stdin/CSV plumbing (same contract as Scan). Used by the
-        /// tick reader, which needs its own WHERE/ORDER BY around a route-1 scan of a known table.
+        /// readers, which need their own WHERE/ORDER BY around a scan of a known table. On the
+        /// cloudflare data route the FROM is the attached catalog's table, so the ATTACH is ensured
+        /// exactly here, the one place every row-level read passes through.
         /// </summary>
-        public IEnumerable<string[]> Rows(string sql) => Run(sql);
+        public IEnumerable<string[]> Rows(string sql) => Run(sql, _routing.Data == R2Route.CloudFlare);
 
         private string BuildScanSql(string table, string columns, string where)
         {
-            var root = TableRoot(table).Replace("'", "''");
-            var sql = ScanPreamble() +
-                $"SELECT {columns} FROM iceberg_scan('{root}', allow_moved_paths := true)";
+            var sql = ScanPreamble() + $"SELECT {columns} FROM {DataFrom(table)}";
             if (!string.IsNullOrEmpty(where))
             {
                 // The WHERE is assembled by internal callers from validated identifiers and
@@ -502,32 +566,70 @@ namespace QuantConnect.Lean.DataSource.R2
         }
 
         /// <summary>
-        /// SQL preamble for route-1 scans.
+        /// The FROM clause for scanning <paramref name="table"/>, per the data route: the table's
+        /// local root under the rclone mount (catalog), or the catalog-attached table whose
+        /// manifests and data files duckdb reads straight from CloudFlare over the S3 endpoint
+        /// (cloudflare). Nothing in the readers is aware of which one applies.
+        /// </summary>
+        private string DataFrom(string table)
+        {
+            RequireTable(table);
+
+            if (_routing.Data == R2Route.CloudFlare)
+            {
+                return $"iceberg_scan('r2.market.{table}')";
+            }
+
+            var root = TableRoot(table).Replace("'", "''");
+            return $"iceberg_scan('{root}', allow_moved_paths := true)";
+        }
+
+        /// <summary>
+        /// SQL preamble for scans.
         ///
-        /// unsafe_enable_version_guessing: a catalog-written table has no version-hint file on
-        /// disk, so the scanner must pick the latest metadata version itself.
+        /// Catalog data route: unsafe_enable_version_guessing — a catalog-written table has no
+        /// version-hint file on disk, so the scanner must pick the latest metadata version itself.
         ///
-        /// The s3 client settings exist for ONE case: Iceberg v3 deletion vectors. duckdb's
-        /// allow_moved_paths rewrites data-file paths to the local root, but delete files
-        /// (*-deletes.puffin) are still opened through their original s3:// URI (v1.5.5
-        /// behaviour, verified), so without these settings a scan of a table carrying a deletion
-        /// vector dies with "Could not resolve hostname ... trade.s3.auto.amazonaws.com". With
-        /// them, the tiny delete file is fetched from the R2 S3 endpoint while every data file
-        /// and all metadata still come from the local mount.
+        /// The s3 client settings exist for TWO cases. The deliberate one: Iceberg v3 deletion
+        /// vectors — duckdb's allow_moved_paths rewrites data-file paths to the local root, but
+        /// delete files (*-deletes.puffin) are still opened through their original s3:// URI
+        /// (v1.5.5 behaviour, verified), so without these settings a scan of a table carrying a
+        /// deletion vector dies with "Could not resolve hostname ... trade.s3.auto.amazonaws.com".
+        /// With them, the tiny delete file is fetched from the R2 S3 endpoint while every data
+        /// file and all metadata still come from the local mount. And the enforced one: the
+        /// cloudflare data route — its scans are catalog-attached iceberg_scan over absolute s3://
+        /// URIs, so httpfs MUST be configured for the R2 endpoint or every read dies on the
+        /// hostname error; the route therefore refuses to run without the credentials rather than
+        /// surfacing duckdb's message.
         /// </summary>
         public string ScanPreamble()
         {
+            if (_routing.Data == R2Route.CloudFlare)
+            {
+                if (string.IsNullOrEmpty(_s3AccessKey) || string.IsNullOrEmpty(_s3SecretKey))
+                {
+                    throw new InvalidOperationException(
+                        "R2LocalCatalog: the cloudflare data route reads data files through the " +
+                        "R2 S3 endpoint, so 'cloudflare-r2.s3-access-key' and " +
+                        "'cloudflare-r2.s3-secret-access-key' are required in the configuration " +
+                        "(no local mount exists for it to fall back to).");
+                }
+                return S3SettingsSql();
+            }
+
             var sql = "SET unsafe_enable_version_guessing = true; ";
             if (!string.IsNullOrEmpty(_s3AccessKey) && !string.IsNullOrEmpty(_s3SecretKey))
             {
-                sql +=
-                    "SET s3_region = 'auto'; " +
-                    $"SET s3_endpoint = '{_s3Endpoint.Replace("'", "''")}'; SET s3_url_style = 'path'; " +
-                    $"SET s3_access_key_id = '{_s3AccessKey.Replace("'", "''")}'; " +
-                    $"SET s3_secret_access_key = '{_s3SecretKey.Replace("'", "''")}'; ";
+                sql += S3SettingsSql();
             }
             return sql;
         }
+
+        private string S3SettingsSql() =>
+            "SET s3_region = 'auto'; " +
+            $"SET s3_endpoint = '{_s3Endpoint.Replace("'", "''")}'; SET s3_url_style = 'path'; " +
+            $"SET s3_access_key_id = '{_s3AccessKey.Replace("'", "''")}'; " +
+            $"SET s3_secret_access_key = '{_s3SecretKey.Replace("'", "''")}'; ";
 
         private static void RequireTable(string table)
         {
@@ -602,12 +704,22 @@ namespace QuantConnect.Lean.DataSource.R2
         /// Runs SQL through the persistent session, falling back to a process per scan when no
         /// session is available. A failed query throws (from the session or from the process exit
         /// code) — an empty result always means the query ran and matched nothing.
+        ///
+        /// <paramref name="ensureAttach"/>: the SQL speaks to the attached warehouse catalog
+        /// (iceberg_snapshots for root resolution, iceberg_scan('r2.market.<table>') on the
+        /// cloudflare data route). The ATTACH is applied exactly here, before the SQL, so no caller
+        /// has to know whether the live session already carries it or a fresh one-shot process has
+        /// to be brought up with it.
         /// </summary>
-        private IEnumerable<string[]> Run(string sql)
+        private IEnumerable<string[]> Run(string sql, bool ensureAttach)
         {
             var session = _session;
             if (session != null && session.IsAlive)
             {
+                if (ensureAttach && !CatalogAttached)
+                {
+                    AttachSession(session);
+                }
                 return session.Query(sql);
             }
             if (session != null)
@@ -618,7 +730,19 @@ namespace QuantConnect.Lean.DataSource.R2
                 Log.Trace("R2LocalCatalog: duckdb session is gone; one process per scan from here on.");
                 _session = null;
             }
-            return RunOnce(sql);
+            var attach = ensureAttach && !CatalogAttached ? AttachSql() : string.Empty;
+            return RunOnce(attach + sql);
+        }
+
+        /// <summary>
+        /// Applies the catalog ATTACH to <paramref name="session"/> once and remembers it. A failed
+        /// statement has already killed the session (bail-on-error), so the marker is only set for
+        /// statements that actually ran — the same invariant the old in-line assignment kept.
+        /// </summary>
+        private void AttachSession(R2DuckSession session)
+        {
+            session.Query(AttachSql());
+            _attachedSession = session;
         }
 
         /// <summary>
@@ -626,17 +750,24 @@ namespace QuantConnect.Lean.DataSource.R2
         /// it into the session (one read of that day's data file); every later question about the same
         /// day — other contracts, other resolutions, other windows — is answered from memory. Days too
         /// large to hold are served by the Iceberg scan as before.
+        ///
+        /// The read route decides whether any of that happens: cloudflare means nothing is ever
+        /// materialised and every question is put to the day's source as-is.
         /// </summary>
         public string DaySource(string table, DateTime dayUtc)
         {
             RequireTable(table);
-            var root = TableRoot(table).Replace("'", "''");
-            var scan = $"iceberg_scan('{root}', allow_moved_paths := true)";
+            var from = DataFrom(table);
+
+            if (_routing.Read == R2Route.CloudFlare)
+            {
+                return from;
+            }
 
             var session = _session;
             if (session == null || !session.IsAlive || _cacheMaxEntries <= 0)
             {
-                return scan;
+                return from;
             }
 
             var key = DayKey(table, dayUtc);
@@ -655,13 +786,13 @@ namespace QuantConnect.Lean.DataSource.R2
                 if (!_touched.ContainsKey(key))
                 {
                     _touched[key] = 1;
-                    return scan;
+                    return from;
                 }
                 _touched.Remove(key);
 
                 _cacheMisses++;
-                var built = TryMaterialiseDay(session, table, dayUtc, root, key);
-                return built?.TableName ?? scan;
+                var built = TryMaterialiseDay(session, table, dayUtc, from, key);
+                return built?.TableName ?? from;
             }
         }
 
@@ -752,14 +883,14 @@ namespace QuantConnect.Lean.DataSource.R2
         /// Reads one day of one table into a temp table and indexes the symbols it holds. Returns null
         /// (leaving the caller on the Iceberg scan) when the day is too large to hold or when duckdb
         /// refuses; a refused read is a failed statement, so it throws rather than being silently
-        /// treated as an empty day.
+        /// treated as an empty day. <paramref name="from"/> is the scan the day is read from — local
+        /// root or catalog-attached table, per the data route.
         /// </summary>
-        private CachedDay TryMaterialiseDay(R2DuckSession session, string table, DateTime dayUtc, string root, string key)
+        private CachedDay TryMaterialiseDay(R2DuckSession session, string table, DateTime dayUtc, string from, string key)
         {
             var day = (dayUtc.Date - DateTime.UnixEpoch).Days;
             var time = TimeColumn(table);
             R2Warehouse.UtcDayBoundsNs(dayUtc.Date, out var lo, out var hi);
-            var from = $"iceberg_scan('{root}', allow_moved_paths := true)";
             var window = $"WHERE {time} >= make_timestamp_ns({lo}) AND {time} < make_timestamp_ns({hi})";
 
             var rows = 0L;

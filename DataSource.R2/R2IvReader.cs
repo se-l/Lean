@@ -77,7 +77,7 @@ namespace QuantConnect.Lean.DataSource.R2
 
         private readonly R2LocalCatalog _catalog;
 
-        /// <param name="catalog">Route-1 catalog helper (mount root, table roots, duckdb plumbing).</param>
+        /// <param name="catalog">Route-aware catalog helper (scan source, table roots, duckdb plumbing).</param>
         public R2IvReader(R2LocalCatalog catalog)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -189,9 +189,10 @@ namespace QuantConnect.Lean.DataSource.R2
         private IEnumerable<string[]> Rows(R2IvTable table, string ticker, DateTime dayUtc, Resolution resolution,
             string columns, string flavourPredicate)
         {
-            // Days the warehouse does not hold are answered from a local directory listing: no duckdb
-            // process, no catalog, no network. Warmup lookbacks run over weeks while a freshly loaded
-            // table holds a handful of days, so most of these calls have nothing to read.
+            // Days the warehouse does not hold are answered without a query on the catalog route — a local
+            // directory listing, no duckdb process, no network. Warmup lookbacks run over weeks while a
+            // freshly loaded table holds a handful of days, so most of these calls have nothing to
+            // read. The cloudflare metadata route answers true here and lets the scan prune instead.
             if (!_catalog.HoldsDay(table.Name, dayUtc) || !_catalog.HoldsSymbol(table.Name, dayUtc, ticker))
             {
                 return Array.Empty<string[]>();

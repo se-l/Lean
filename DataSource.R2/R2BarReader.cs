@@ -1,6 +1,8 @@
 /*
- * R2BarReader — pre-aggregated bars for one symbol/session straight out of the local rclone mount
- * of the R2 warehouse (route 1: allow_moved_paths; see R2LocalCatalog).
+ * R2BarReader — pre-aggregated bars for one symbol/session out of the R2 warehouse, through
+ * R2LocalCatalog (see R2Route.cs for the route toggles; the catalog data route reads the local
+ * rclone mount with allow_moved_paths, the cloudflare data route reads the attached table
+ * directly).
  *
  * Sibling of R2TickReader and deliberately the same shape: Iceberg metadata first, then the Parquet
  * data files, day-bounded predicate on the time column so manifest and row-group stats can prune.
@@ -35,7 +37,7 @@ using QuantConnect.Data.Market;
 namespace QuantConnect.Lean.DataSource.R2
 {
     /// <summary>
-    /// Reads pre-aggregated trade/quote bars through the local rclone mirror and emits
+    /// Reads pre-aggregated trade/quote bars through R2LocalCatalog's route and emits
     /// <see cref="TradeBar"/>/<see cref="QuoteBar"/> objects in exchange time.
     /// </summary>
     public sealed class R2BarReader
@@ -49,7 +51,7 @@ namespace QuantConnect.Lean.DataSource.R2
 
         private readonly R2LocalCatalog _catalog;
 
-        /// <param name="catalog">Route-1 catalog helper (mount root, table roots, duckdb plumbing).</param>
+        /// <param name="catalog">Route-aware catalog helper (scan source, table roots, duckdb plumbing).</param>
         public R2BarReader(R2LocalCatalog catalog)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
