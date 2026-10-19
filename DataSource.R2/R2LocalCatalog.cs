@@ -559,6 +559,23 @@ namespace QuantConnect.Lean.DataSource.R2
                 return known.Length == 0 ? null : known;
             }
 
+            // Prefetched (session, underlying) batch: on the cloudflare metadata route the
+            // per-contract check below costs a ~2.5 s catalog round trip EACH; the ledger-sourced
+            // batch answers for all contracts of the underlying across every option table in one
+            // query. Only consulted when a prefetch exists for this ticker's underlying.
+            if (ticker.StartsWith("O:", StringComparison.Ordinal))
+            {
+                var root = UnderlyingOf(ticker);
+                if (root != null)
+                {
+                    var carries = R2SessionPrefetch.CarriesSymbol(root, table, ticker);
+                    if (carries.HasValue)
+                    {
+                        return carries.Value ? ticker : null;
+                    }
+                }
+            }
+
             var sql = ScanPreamble() +
                 $"SELECT symbol FROM {DataFrom(table)} " +
                 $"WHERE symbol = '{ticker.Replace("'", "''")}' LIMIT 1;";
@@ -576,6 +593,19 @@ namespace QuantConnect.Lean.DataSource.R2
                 _symbols[key] = found;
             }
             return found.Length == 0 ? null : found;
+        }
+
+        /// <summary>
+        /// OSI root: the leading alpha run of the vendor ticker's body (O:GE260619C00130000 -> GE).
+        /// Cheap, deterministic; a wrong split merely misses the cache and falls back to the
+        /// per-contract path.
+        /// </summary>
+        private static string UnderlyingOf(string ticker)
+        {
+            var body = ticker.Substring(2);
+            var n = 0;
+            while (n < body.Length && !char.IsDigit(body[n])) n++;
+            return n == 0 ? null : body.Substring(0, n);
         }
 
         /// <summary>
@@ -608,6 +638,34 @@ namespace QuantConnect.Lean.DataSource.R2
         /// mount-routable data table, so the ATTACH is ensured unconditionally.
         /// </summary>
         public IEnumerable<string[]> CatalogRows(string sql) => Run(sql, ensureAttach: true);
+
+        /// <summary>
+        /// The distinct vendor symbols a table holds for ONE underlying on ONE day, read through the
+        /// attached catalog (cloudflare data route) or the local scan (catalog route). Diagnostic /
+        /// ad-hoc use — the per-contract fast path goes through the ledger-sourced
+        /// R2SessionPrefetch instead. Empty = the warehouse holds nothing here (a real answer).
+        /// </summary>
+        public IReadOnlyList<string> DistinctSymbols(string table, DateTime dayUtc, string underlying)
+        {
+            RequireTable(table);
+            var und = underlying.Replace("'", "''");
+            R2Warehouse.UtcDayBoundsNs(dayUtc, out var lo, out var hi);
+            var timeColumn = table.Contains("_tick") ? "sip_timestamp" : "ts";
+            var sql =
+                ScanPreamble() +
+                $"SELECT DISTINCT symbol FROM {DataFrom(table)} " +
+                $"WHERE {timeColumn} >= make_timestamp_ns({lo}) AND {timeColumn} < make_timestamp_ns({hi}) " +
+                $"AND symbol LIKE 'O:{und}%';";
+            var result = new List<string>();
+            foreach (var row in Run(sql, _routing.Data == R2Route.CloudFlare))
+            {
+                if (row.Length > 0 && !string.IsNullOrEmpty(row[0]))
+                {
+                    result.Add(row[0]);
+                }
+            }
+            return result;
+        }
 
         private string BuildScanSql(string table, string columns, string where)
         {
@@ -1036,6 +1094,7 @@ namespace QuantConnect.Lean.DataSource.R2
             }
 
             var key = DayKey(table, dayUtc);
+            var materialise = System.Diagnostics.Stopwatch.StartNew();
             lock (_daysGate)
             {
                 if (_days.TryGetValue(key, out var cached))
@@ -1057,7 +1116,17 @@ namespace QuantConnect.Lean.DataSource.R2
 
                 _cacheMisses++;
                 var built = TryMaterialiseDay(session, table, dayUtc, from, key);
-                return built?.TableName ?? from;
+                if (built == null)
+                {
+                    return from;
+                }
+                // Slow-materialise probe: anything over 5 s is a stall (FUSE, lock, pipe), not work.
+                if (materialise.ElapsedMilliseconds > 5000)
+                {
+                    Log.Trace($"R2LocalCatalog: SLOW materialise {key} took {materialise.ElapsedMilliseconds} ms " +
+                              $"({built.Rows} rows) — investigate mount/session health if this recurs.");
+                }
+                return built.TableName;
             }
         }
 

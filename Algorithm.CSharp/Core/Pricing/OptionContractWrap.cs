@@ -108,7 +108,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         public double MoneynessFwd(decimal? s = null)
         {
-            return _algo.julia.MnyFwd((double)(s ?? _algo.MidPrice(UnderlyingSymbol)), k, T(), GetCalcTimeUtc(), UnderlyingSymbol.Value);
+            double _s = (double)(s ?? _algo.MidPrice(UnderlyingSymbol));
+            var calcTime = GetCalcTimeUtc();
+            var tenor = T();
+
+            // Local replica of the pricer's get_mny_fwd (PricerZMQ.jl:255-282): the same curve and
+            // dividend enrichment, float32 math. One reconciliation probe per (ticker, calc date)
+            // keeps the replica honest; once trusted, no RPC at all — the 118k-calls/157s line
+            // this removes was pure round-trip latency for a value computable in ~10 FLOPs.
+            return MoneynessForward.MnyFwd(UnderlyingSymbol.Value, _s, k, tenor, calcTime,
+                rpcProbe: () => _algo.julia.MnyFwd(_s, k, tenor, calcTime, UnderlyingSymbol.Value));
         }
 
         public double MoneynessFwdLn() => Math.Log(MoneynessFwd());

@@ -57,8 +57,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             IVBidAsk = default(IVQuote);  // Default, in case referenced downstream before any successful update.
         }
 
-        private DateTime _lastSolverFallbackLog = DateTime.MinValue;
-
         public void Update(DateTime time, decimal quote, decimal midPriceUnderlying, double? iv = null)
         {
             if (time <= Time || quote == 0) return;
@@ -75,11 +73,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 }
                 else
                 {
-                    if (_algo.Time - _lastSolverFallbackLog > TimeSpan.FromMinutes(1))
-                    {
-                        _lastSolverFallbackLog = _algo.Time;
-                        _algo.Log($"{_algo.Time} IVQuoteIndicator.Update: No current feed IV for {Symbol} at {time}; falling back to pricer solver.");
-                    }
+                    // Expected in live mode: there is no precomputed feed IV by design — the
+                    // pricer solver IS the source. Not logged; it fired per contract per minute.
                     IV = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
                 }
             }

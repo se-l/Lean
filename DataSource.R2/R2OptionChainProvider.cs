@@ -60,11 +60,18 @@ namespace QuantConnect.Lean.DataSource.R2
 
         /// <summary>
         /// Contracts of <paramref name="symbol"/>'s underlying that were live AND loaded on <paramref name="date"/>.
+        /// First call for (underlying, date) also PREFETCHES the session batch: one catalog query
+        /// per table replaces the per-contract round trips that follow.
         /// </summary>
         public IEnumerable<Symbol> GetOptionContractList(Symbol symbol, DateTime date)
         {
             var underlying = symbol.SecurityType.IsOption() ? symbol.Underlying.Value : symbol.Value;
             var day = date.Date;
+
+            // The (session, underlying) batch: serves ResolveSymbol/HoldsDay for every contract of
+            // this underlying for the TTL window (live setup asks per contract; on the cloudflare
+            // metadata route each ask was a ~2.5 s catalog round trip).
+            R2SessionPrefetch.Ensure(underlying, day, _catalog);
 
             lock (_cacheGate)
             {
@@ -87,6 +94,8 @@ namespace QuantConnect.Lean.DataSource.R2
         {
             var und = underlying.Replace("'", "''");
             var day = $"DATE '{date:yyyy-MM-dd}'";
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
 
             // (1) Registry: registered at some as_of <= date, expiry strictly after date. One row
             // per contract: expiry/strike/right are contract properties (max() over duplicates).
@@ -112,19 +121,31 @@ namespace QuantConnect.Lean.DataSource.R2
                 // Registry integer strike is OSI * 10_000 (O:GE260619C00130000 -> 130000 -> 13.0).
                 registered[row[0]] = (expiry, strikeInt / 10_000m, IsTrue(row[3]));
             }
+            var registryMs = sw.ElapsedMilliseconds;
 
-            // (2) Ledger: tick sessions actually loaded for this underlying on this date.
-            var ledgerSql =
-                "SELECT DISTINCT symbol FROM r2.market." + LedgerTable + " " +
-                $"WHERE scope = 'option' AND underlying = '{und}' AND session_date = {day} " +
-                "AND table_name IN ('option_trade_tick', 'option_quote_tick');";
+            // (2) Ledger: tick sessions actually loaded. The REQUESTED session may legitimately
+            // have no data yet (live: the loader writes during/after the session), so walk back up
+            // to 7 calendar days to the most recent session WITH data — that session's contract
+            // set is what warmup can actually serve. Liveness still comes from the registry at the
+            // requested date; the walk-back only relaxes the data-presence half.
             var loaded = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var row in _catalog.CatalogRows(ledgerSql))
+            DateTime referenceDay = date;
+            for (var back = 0; back <= 7; back++)
             {
-                if (row.Length > 0 && !string.IsNullOrEmpty(row[0]))
+                var probe = date.AddDays(-back);
+                loaded = LedgerSymbols(und, probe);
+                if (loaded.Count > 0)
                 {
-                    loaded.Add(row[0]);
+                    referenceDay = probe;
+                    break;
                 }
+            }
+            var ledgerMs = sw.ElapsedMilliseconds - registryMs;
+
+            if (referenceDay != date)
+            {
+                Log.Trace($"R2OptionChainProvider: {underlying} {date:yyyy-MM-dd}: no ledger data for the session — " +
+                          $"using {referenceDay:yyyy-MM-dd}'s contract set ({loaded.Count} contracts).");
             }
 
             var symbols = new List<Symbol>();
@@ -149,8 +170,26 @@ namespace QuantConnect.Lean.DataSource.R2
             }
 
             Log.Trace($"R2OptionChainProvider: {underlying} {date:yyyy-MM-dd}: {registered.Count} registered, " +
-                      $"{symbols.Count} loaded & alive -> offered.");
+                      $"{symbols.Count} loaded & alive -> offered. (registry {registryMs} ms, ledger walk {ledgerMs} ms, total {sw.ElapsedMilliseconds} ms)");
             return symbols;
+        }
+
+        /// <summary>Distinct loaded symbols for one probe day, unioned over both option tick tables.</summary>
+        private HashSet<string> LedgerSymbols(string und, DateTime probe)
+        {
+            var ledgerSql =
+                "SELECT DISTINCT symbol FROM r2.market." + LedgerTable + " " +
+                $"WHERE scope = 'option' AND underlying = '{und}' AND session_date = DATE '{probe:yyyy-MM-dd}' " +
+                "AND table_name IN ('option_trade_tick', 'option_quote_tick');";
+            var loaded = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var row in _catalog.CatalogRows(ledgerSql))
+            {
+                if (row.Length > 0 && !string.IsNullOrEmpty(row[0]))
+                {
+                    loaded.Add(row[0]);
+                }
+            }
+            return loaded;
         }
 
         private static bool IsTrue(string value) =>
