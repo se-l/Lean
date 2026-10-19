@@ -44,10 +44,11 @@ namespace QuantConnect.Lean.DataSource.R2
     {
         // Column lists mirror Fino's Catalog.bar_columns: trade bars carry OHLC + Σ size, quote bars
         // carry the bid and ask OHLC plus the CLOSING quote's sizes (Lean's LastBidSize/LastAskSize).
+        // Schema 2026-10-19: closing sizes are `bid_size_close` / `ask_size_close` (was bid_size/ask_size).
         private const string TradeColumns = "epoch_ns(ts), open, high, low, close, volume";
         private const string QuoteColumns =
-            "epoch_ns(ts), bid_open, bid_high, bid_low, bid_close, bid_size, " +
-            "ask_open, ask_high, ask_low, ask_close, ask_size";
+            "epoch_ns(ts), bid_open, bid_high, bid_low, bid_close, bid_size_close, " +
+            "ask_open, ask_high, ask_low, ask_close, ask_size_close";
 
         private readonly R2LocalCatalog _catalog;
 

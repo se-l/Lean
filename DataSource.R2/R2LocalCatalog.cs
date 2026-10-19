@@ -33,8 +33,21 @@
  *   (a boolean statement result, verified on v1.5.5). Run() drops bare true/false rows and any
  *   line starting with '-'; statement results are not data.
  *
+ * - Transient failures are retried, briefly: the REST catalog answering 5xx/429 and connection
+ *   errors cost a fresh duckdb process and a 1 s/2 s backoff, not the live deployment (a 502 from
+ *   catalog.cloudflarestorage.com used to kill algorithm initialization mid-warmup). Auth and
+ *   "not found" fail on the first attempt — no amount of retrying turns a bad token into a success.
+ *
  * - The mount's freshness is maintained by the r2-events service (vfs/forget + vfs/refresh on
- *   every object event), not by rclone itself.
+ *   every object event), not by rclone itself. That is the first line of defence; the second is
+ *   here, active only on error: a 404 on a mount-served catalog-metadata file
+ *   (__r2_data_catalog/&lt;uuid&gt;/metadata/...) is a STALE VIEW, not missing data — the reader's cached
+ *   snapshot was expired by a writer-side commit while the mount still served it. Recovery
+ *   (RecoverFromStaleView) refreshes the VFS view over the RC socket, forgets the memoised root
+ *   and re-resolves the head from the REST catalog, then reruns — bounded, idempotent. A 404 on
+ *   a direct s3:// read is NOT this: no cache sits in front of it, so a live snapshot referencing
+ *   a missing file is an integrity breach (R2-STALE-VIEW-UNRESOLVED alert). Classification in
+ *   R2StaleView, RC calls in R2RcloneRC.
  */
 
 using System;
@@ -45,6 +58,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using QuantConnect.Configuration;
 using QuantConnect.Logging;
 
@@ -83,6 +97,13 @@ namespace QuantConnect.Lean.DataSource.R2
         private readonly string _s3SecretKey;
         private readonly string _rootCachePath;
         private readonly R2Routing _routing;
+
+        /// <summary>
+        /// How many times a transient duckdb failure — the catalog answering 5xx/429, a connection
+        /// error — is retried (see <see cref="RunOnce"/>). The default rides out a Cloudflare blip
+        /// with a 1 s then 2 s backoff without meaningfully delaying warmup.
+        /// </summary>
+        private readonly int _catalogRetries;
 
         /// <summary>The one duckdb process this catalog talks to (null when it could not be started).</summary>
         private R2DuckSession _session;
@@ -139,6 +160,24 @@ namespace QuantConnect.Lean.DataSource.R2
         private readonly object _resolveLock = new object();
 
         /// <summary>
+        /// The snapshot id each table's root was resolved from, so stale-view recovery can tell
+        /// "the head moved, rerun against the new snapshot" from "the head stands, this is mount
+        /// listing lag". Filled by ResolveRootFromCatalog, dropped with the root on ForgetRoots.
+        /// </summary>
+        private readonly ConcurrentDictionary<string, string> _heads = new ConcurrentDictionary<string, string>();
+
+        /// <summary>
+        /// The stale-view attempt budget and backoff (tighter than the catalog route's 1 s/2 s —
+        /// the defect here is a local cache, not a Cloudflare blip). The query is fully
+        /// re-runnable by contract, so each attempt starts from scratch on a fresh process.
+        /// </summary>
+        private const int StaleViewAttempts = 3;
+        private static readonly TimeSpan[] StaleViewBackoff =
+        {
+            TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)
+        };
+
+        /// <summary>
         /// On-disk copy of the table-root map, so a cold start does not pay a catalog round trip per
         /// table. Path comes from cloudflare-r2.roots-cache; a drop-then-load does replace a table's
         /// uuid directory, which is what ForgetRoots() is for (a read through a stale root fails
@@ -158,6 +197,13 @@ namespace QuantConnect.Lean.DataSource.R2
 
         // Table names are internal identifiers; this keeps them out of SQL injection territory.
         private static readonly Regex TableName = new Regex("^[a-z_][a-z0-9_]*$", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Matches the status code duckdb reports for a catalog request answered non-200:
+        /// "returned a non-200 status code (BadGateway_502), with reason: Bad Gateway".
+        /// </summary>
+        private static readonly Regex Non200Status = new Regex(
+            "returned a non-200 status code \\((?:[A-Za-z]+_)?(?<code>[0-9]{3})\\)", RegexOptions.Compiled);
 
 /// <summary>
         /// Reads every setting from the `cloudflare-r2` section of the Lean configuration.
@@ -191,6 +237,7 @@ namespace QuantConnect.Lean.DataSource.R2
 
             _rootCachePath = Setting("roots-cache", DefaultRootCachePath);
             _cacheMaxEntries = Setting("cache-max-entries", 64);
+            _catalogRetries = Setting("catalog-retries", 2);
 
             // The working set is the days the warehouse holds, not a number of days: a single
             // features day is ~458k rows and an option_quote_bar_second day ~445k, so a handful of
@@ -421,10 +468,12 @@ namespace QuantConnect.Lean.DataSource.R2
             foreach (var row in Run(RootSnapshotSql(table), ensureAttach: true))
             {
                 // The manifest path is the only s3:// row this statement can produce; anything
-                // else (stray statement-result rows) must not be mistaken for it.
-                if (row.Length > 0 && row[0].StartsWith("s3://", StringComparison.Ordinal))
+                // else (stray statement-result rows) must not be mistaken for it. The snapshot id
+                // rides along: stale-view recovery compares it against the re-resolved head.
+                if (row.Length > 1 && row[1].StartsWith("s3://", StringComparison.Ordinal))
                 {
-                    location = row[0];
+                    _heads[table] = row[0];
+                    location = row[1];
                     break;
                 }
             }
@@ -441,7 +490,7 @@ namespace QuantConnect.Lean.DataSource.R2
         }
 
         private static string RootSnapshotSql(string table) =>
-            "SELECT manifest_list FROM iceberg_snapshots('r2.market." + table + "') " +
+            "SELECT snapshot_id, manifest_list FROM iceberg_snapshots('r2.market." + table + "') " +
             "ORDER BY timestamp_ms DESC LIMIT 1;";
 
         private Dictionary<string, string> ReadRootCache()
@@ -553,6 +602,13 @@ namespace QuantConnect.Lean.DataSource.R2
         /// </summary>
         public IEnumerable<string[]> Rows(string sql) => Run(sql, _routing.Data == R2Route.CloudFlare);
 
+        /// <summary>
+        /// Rows of a CATALOG-SIDE table (dim/registry/ledger: option_contract_live,
+        /// loaded_symbol_sessions, …) that exists only in the attached warehouse catalog — never a
+        /// mount-routable data table, so the ATTACH is ensured unconditionally.
+        /// </summary>
+        public IEnumerable<string[]> CatalogRows(string sql) => Run(sql, ensureAttach: true);
+
         private string BuildScanSql(string table, string columns, string where)
         {
             var sql = ScanPreamble() + $"SELECT {columns} FROM {DataFrom(table)}";
@@ -651,11 +707,16 @@ namespace QuantConnect.Lean.DataSource.R2
         /// </summary>
         private string AttachSql()
         {
-            if (CatalogAttached)
-            {
-                return string.Empty;
-            }
+            return CatalogAttached ? string.Empty : AttachSqlForNewProcess();
+        }
 
+        /// <summary>
+        /// The full ATTACH block, unconditionally — for a process known to carry no attach yet,
+        /// such as the one-shot processes of stale-view recovery and head re-resolution (their
+        /// liveness cannot be read off CatalogAttached, which is keyed on the live session).
+        /// </summary>
+        private string AttachSqlForNewProcess()
+        {
             if (string.IsNullOrEmpty(_catalogToken))
             {
                 throw new InvalidOperationException(
@@ -714,22 +775,46 @@ namespace QuantConnect.Lean.DataSource.R2
         private IEnumerable<string[]> Run(string sql, bool ensureAttach)
         {
             var session = _session;
-            if (session != null && session.IsAlive)
-            {
-                if (ensureAttach && !CatalogAttached)
-                {
-                    AttachSession(session);
-                }
-                return session.Query(sql);
-            }
-            if (session != null)
+            if (session != null && !session.IsAlive)
             {
                 // bail-on-error kills the session on a failed statement, and that failure has already
                 // been thrown to the caller. Keep answering, one process per scan, rather than
                 // letting later calls read empty results.
                 Log.Trace("R2LocalCatalog: duckdb session is gone; one process per scan from here on.");
                 _session = null;
+                _attachedSession = null;
+                session = null;
             }
+
+            if (session != null)
+            {
+                try
+                {
+                    if (ensureAttach && !CatalogAttached)
+                    {
+                        AttachSession(session);
+                    }
+                    return session.Query(sql);
+                }
+                catch (R2SessionException error) when (R2StaleView.Matches(sql, error.Message, _mountRoot))
+                {
+                    // A mount-served metadata file 404ed: the reader's cached view is stale, the
+                    // bucket is not. Never retried blind — the cached resolution would 404
+                    // forever; the recovery invalidates the view, re-resolves the head and reruns.
+                    return RecoverFromStaleView(sql, ensureAttach, error.Message);
+                }
+                catch (R2SessionException error) when (IsTransient(error.Message))
+                {
+                    // The failed statement has already killed the session (bail-on-error). A
+                    // transient failure is retried below on the one-shot path, whose fresh process
+                    // re-attaches from scratch and carries its own retry budget.
+                    Log.Trace("R2LocalCatalog: transient duckdb failure; answering from a fresh process: " +
+                              error.Message);
+                    _session = null;
+                    _attachedSession = null;
+                }
+            }
+
             var attach = ensureAttach && !CatalogAttached ? AttachSql() : string.Empty;
             return RunOnce(attach + sql);
         }
@@ -743,6 +828,186 @@ namespace QuantConnect.Lean.DataSource.R2
         {
             session.Query(AttachSql());
             _attachedSession = session;
+        }
+
+        /// <summary>
+        /// Stale-view recovery, the second line of defence (r2-events' vfs/refresh on object
+        /// events is the first; this runs only after a read already failed). Bounded and
+        /// idempotent — every step is safe to repeat, and the budget is 3 attempts on a
+        /// 500 ms/2 s/5 s backoff, a fresh process per attempt:
+        ///
+        /// 1. vfs/refresh the table's catalog subtree over the RC socket (drop the VFS/dir cache
+        ///    entries the bucket no longer has);
+        /// 2. forget the memoised root, head and days of the table (they pin the expired snapshot);
+        /// 3. re-resolve the head from the REST catalog — one-shot duckdb with a fresh ATTACH, so
+        ///    the FUSE mount is bypassed entirely — and log whether it moved;
+        /// 4. rerun the statement. A moved head is a valid, point-in-time-consistent superset
+        ///    (append-only ticks/bars); an unmoved head is mount listing lag and gets one retry.
+        ///
+        /// Exhaustion alerts (R2-STALE-VIEW-UNRESOLVED) and rethrows: a live snapshot's file must
+        /// never be missing, and an error must never be read as "no rows".
+        /// </summary>
+        private IEnumerable<string[]> RecoverFromStaleView(string sql, bool ensureAttach, string failedMessage)
+        {
+            var table = TableFor(sql);
+            var dir = MountRelativeDir(sql);
+
+            for (var attempt = 1; attempt <= StaleViewAttempts; attempt++)
+            {
+                Thread.Sleep(StaleViewBackoff[attempt - 1]);
+                if (dir != null)
+                {
+                    R2RcloneRC.RefreshDirectory(dir);
+                }
+                if (table != null)
+                {
+                    ForgetRoots(table);
+                    CompareHead(table);
+                }
+
+                try
+                {
+                    return RunStaleViewAttempt(sql, ensureAttach);
+                }
+                catch (Exception error) when (R2StaleView.Matches(sql, error.Message, _mountRoot))
+                {
+                    if (attempt < StaleViewAttempts)
+                    {
+                        Log.Trace($"R2LocalCatalog: stale-view attempt {attempt} of {StaleViewAttempts} " +
+                                  $"failed again: {error.Message}");
+                        continue;
+                    }
+                    Log.Error($"R2-STALE-VIEW-UNRESOLVED: a live snapshot's file is still unreadable " +
+                              $"after {StaleViewAttempts} refresh/re-resolve attempts" +
+                              (table == null ? string.Empty : $" for {table}") +
+                              "; the bucket and the reader now disagree: " + error.Message);
+                    throw new R2SessionException(
+                        $"R2LocalCatalog: stale catalog view did not recover in {StaleViewAttempts} " +
+                        $"attempts: {error.Message}");
+                }
+            }
+
+            // Unreachable: the loop either returns or throws.
+            throw new R2SessionException("R2LocalCatalog: stale catalog view recovery exited its loop.");
+        }
+
+        /// <summary>
+        /// One rerun of a stale-view recovery: the persistent session is restarted in place when
+        /// there is one (the point of "restart the duckdb process between attempts"), otherwise
+        /// the one-shot process serves the attempt. The killed process took its temp tables with
+        /// it, so the day cache is discarded around the restart.
+        /// </summary>
+        private IEnumerable<string[]> RunStaleViewAttempt(string sql, bool ensureAttach)
+        {
+            if (_session != null)
+            {
+                _session.Restart();
+                _attachedSession = null;
+                DiscardSessionDays();
+                if (ensureAttach)
+                {
+                    AttachSession(_session);
+                }
+                return _session.Query(sql);
+            }
+
+            var attach = ensureAttach ? AttachSqlForNewProcess() : string.Empty;
+            return RunOnceCore(attach + sql);
+        }
+
+        /// <summary>
+        /// Re-resolves the table's head from the authoritative source — a one-shot duckdb with a
+        /// fresh ATTACH to the REST catalog; nothing here touches the mount — and records how it
+        /// moved against the snapshot the failed scan was resolved from.
+        /// </summary>
+        private void CompareHead(string table)
+        {
+            try
+            {
+                var head = TryResolveHead(table);
+                if (head == null)
+                {
+                    Log.Trace($"R2LocalCatalog: could not re-resolve the head of {table}; rerunning anyway.");
+                    return;
+                }
+                if (_heads.TryGetValue(table, out var previous) && previous != head)
+                {
+                    Log.Trace($"R2LocalCatalog: {table} head moved {previous} -> {head}; " +
+                              "rerunning against the new snapshot.");
+                }
+                else
+                {
+                    Log.Trace($"R2LocalCatalog: {table} head unchanged ({head}); " +
+                              "treating the failure as mount listing lag.");
+                }
+                _heads[table] = head;
+            }
+            catch (Exception error)
+            {
+                // The re-resolve is diagnosis, not a gate: the bounded rerun below answers
+                // regardless, and its failure surfaces on its own.
+                Log.Trace($"R2LocalCatalog: head comparison for {table} failed: {error.Message}");
+            }
+        }
+
+        /// <summary>The current snapshot id of <paramref name="table"/>, or null when unavailable.</summary>
+        private string TryResolveHead(string table)
+        {
+            foreach (var row in RunOnceCore(AttachSqlForNewProcess() + RootSnapshotSql(table)))
+            {
+                if (row.Length > 1 && row[1].StartsWith("s3://", StringComparison.Ordinal))
+                {
+                    return row[0];
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// The warehouse table a failing statement was about, when the statement names it: the
+        /// attached-catalog spelling carries r2.market.&lt;table&gt;, a mount-rooted scan does not —
+        /// for those the memoised roots give the reverse lookup (the scan root IS the memo value).
+        /// </summary>
+        private string TableFor(string sql)
+        {
+            var named = Regex.Match(sql, @"r2\.market\.([a-z_][a-z0-9_]*)");
+            if (named.Success)
+            {
+                return named.Groups[1].Value;
+            }
+            foreach (var entry in _roots)
+            {
+                if (!string.IsNullOrEmpty(entry.Value) &&
+                    sql.Contains(entry.Value, StringComparison.Ordinal))
+                {
+                    return entry.Key;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// The mount-relative catalog subtree a failing statement reads, for vfs/refresh — e.g.
+        /// <c>__r2_data_catalog/&lt;uuid&gt;</c>; null when the statement names no catalog subtree.
+        /// </summary>
+        private static string MountRelativeDir(string sql)
+        {
+            var match = Regex.Match(sql, @"__r2_data_catalog[^'"";\s]*");
+            return match.Success ? match.Value.TrimEnd('/') : null;
+        }
+
+        /// <summary>
+        /// The killed process took its temp tables with it; the day cache must not go on answering
+        /// from names that no longer exist anywhere.
+        /// </summary>
+        private void DiscardSessionDays()
+        {
+            lock (_daysGate)
+            {
+                _days.Clear();
+                _touched.Clear();
+                _cachedRows = 0;
+            }
         }
 
         /// <summary>
@@ -853,6 +1118,60 @@ namespace QuantConnect.Lean.DataSource.R2
                 _days.Clear();
                 _touched.Clear();
                 _cachedRows = 0;
+            }
+        }
+
+        /// <summary>
+        /// Forgets ONE table's memoised root, resolved head, symbols and cached days, and drops
+        /// its entry from the on-disk root cache — stale-view recovery's step 2. The memoised
+        /// values pin the expired snapshot's uuid directory; without this, the rerun would be
+        /// handed the same dead root by <see cref="TableRoot"/> and 404 forever.
+        /// </summary>
+        public void ForgetRoots(string table)
+        {
+            RequireTable(table);
+            _roots.TryRemove(table, out _);
+            _heads.TryRemove(table, out _);
+            _symbols.Clear();
+            ForgetPersistedRoot(table);
+            lock (_daysGate)
+            {
+                // Keyed on the day key (table + day), not the temp-table name: a table whose name
+                // is a prefix of another's must not capture its days.
+                var victims = _days.Values
+                    .Where(day => day.Key.StartsWith(table + "\n", StringComparison.Ordinal))
+                    .ToList();
+                foreach (var day in victims)
+                {
+                    try
+                    {
+                        _session?.Query($"DROP TABLE IF EXISTS {day.TableName};");
+                    }
+                    catch (R2SessionException)
+                    {
+                        // A session that already failed lost its temp tables with the process.
+                    }
+                    _days.Remove(day.Key);
+                    _cachedRows -= day.Rows;
+                }
+            }
+        }
+
+        /// <summary>Removes one table's entry from the on-disk root cache; a loss there only costs a catalog round trip.</summary>
+        private void ForgetPersistedRoot(string table)
+        {
+            try
+            {
+                var map = ReadRootCache();
+                if (map.Remove(table))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(_rootCachePath));
+                    File.WriteAllLines(_rootCachePath, map.Select(entry => entry.Key + "\t" + entry.Value).ToArray());
+                }
+            }
+            catch
+            {
+                // An unwritable cache is self-healing: the next resolve overwrites it.
             }
         }
 
@@ -992,9 +1311,39 @@ namespace QuantConnect.Lean.DataSource.R2
         /// <summary>
         /// Runs duckdb in CSV mode with the SQL written to stdin (never argv — the token is in it).
         /// Non-zero exit throws with the (redacted) stderr, so "no rows" can never masquerade as
-        /// "no data".
+        /// "no data". A transient failure — the remote catalog answering 5xx/429, a connection
+        /// error — is retried with a short backoff, each attempt a fresh process re-attaching from
+        /// scratch: a Cloudflare blip must not be able to kill a live deployment mid-warmup. The
+        /// whole result is read before it is handed over, so a retried attempt can never present a
+        /// partial answer, and auth or "not found" failures cost no retry at all.
         /// </summary>
         private IEnumerable<string[]> RunOnce(string sql)
+        {
+            var attempts = 1 + Math.Max(0, _catalogRetries);
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    return RunOnceCore(sql);
+                }
+                catch (InvalidOperationException error) when (R2StaleView.Matches(sql, error.Message, _mountRoot))
+                {
+                    // Same defect as on the session path, different transport: the one-shot
+                    // process read the stale view through the mount. Recovery reruns through the
+                    // same one-shot plumbing (sql already carries the attach prefix).
+                    return RecoverFromStaleView(sql, ensureAttach: false, error.Message);
+                }
+                catch (InvalidOperationException error) when (attempt < attempts && IsTransient(error.Message))
+                {
+                    var delay = TimeSpan.FromSeconds(attempt);
+                    Log.Trace($"R2LocalCatalog: transient duckdb failure (attempt {attempt} of {attempts}), " +
+                              $"retrying in {delay.TotalSeconds:0.#}s: {error.Message}");
+                    Thread.Sleep(delay);
+                }
+            }
+        }
+
+        private List<string[]> RunOnceCore(string sql)
         {
             var psi = new ProcessStartInfo(_duckdbPath)
             {
@@ -1013,6 +1362,7 @@ namespace QuantConnect.Lean.DataSource.R2
             // Read stderr concurrently (drained, so the child can never block on a full pipe).
             var stderrTask = process.StandardError.ReadToEndAsync();
 
+            var rows = new List<string[]>();
             using (var reader = process.StandardOutput)
             {
                 string line;
@@ -1020,7 +1370,7 @@ namespace QuantConnect.Lean.DataSource.R2
                 {
                     if (IsDataLine(line))
                     {
-                        yield return line.Split(',');
+                        rows.Add(line.Split(','));
                     }
                 }
             }
@@ -1032,6 +1382,33 @@ namespace QuantConnect.Lean.DataSource.R2
                 throw new InvalidOperationException(
                     $"R2LocalCatalog: duckdb exited {process.ExitCode}: {Redact(stderr).Trim()}");
             }
+            return rows;
+        }
+
+        /// <summary>
+        /// True when a duckdb failure is the remote endpoint having a moment rather than a
+        /// configuration problem: the REST catalog's server-side codes (5xx, 429) and connection
+        /// errors. 401/403/404 are not retried — no amount of retrying turns a bad token or a
+        /// missing table into a success.
+        /// </summary>
+        private static bool IsTransient(string message)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                return false;
+            }
+
+            var match = Non200Status.Match(message);
+            if (match.Success)
+            {
+                var code = int.Parse(match.Groups["code"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture);
+                return code == 429 || code >= 500;
+            }
+
+            message = message.ToLowerInvariant();
+            return message.Contains("could not connect") || message.Contains("connection refused") ||
+                   message.Contains("connection reset") || message.Contains("timed out") ||
+                   message.Contains("timeout") || message.Contains("temporarily unavailable");
         }
     }
 }

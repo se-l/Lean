@@ -170,6 +170,24 @@ namespace QuantConnect.Algorithm.CSharp.Core
             AssignCachedFunctions();
             RiskScenarioHandler = new(this);
 
+            // Option chain from the R2 warehouse — registry (option_contract_live) ∩ loaded ledger
+            // (loaded_symbol_sessions) for the requested date, never the QC zip/map-file layout
+            // (the trade mount carries no chain files). BacktestingSetupHandler installed the
+            // zip-based provider before Initialize; swap it here, before the subscription loop's
+            // AddOptionIfScoped resolves any chain. The provider caches per (underlying, date).
+            // Fail loudly rather than silently continuing on the zip provider: without the R2
+            // assembly in the catalog, every chain request would come back empty and the run
+            // would "succeed" without options.
+            var r2ChainProvider = Composer.Instance.GetExportedValueByTypeName<QuantConnect.Interfaces.IOptionChainProvider>(
+                "QuantConnect.Lean.DataSource.R2.R2OptionChainProvider");
+            if (r2ChainProvider == null)
+            {
+                throw new InvalidOperationException(
+                    "Foundations: R2OptionChainProvider not found in the composition catalog — " +
+                    "the QuantConnect.Lean.DataSource.R2 assembly is missing from the deployment.");
+            }
+            SetOptionChainProvider(r2ChainProvider);
+
 
             // Subscriptions
             optionTicker = Cfg.Ticker;

@@ -43,7 +43,8 @@ namespace QuantConnect.Lean.DataSource.R2
         private readonly Func<string, string> _redact;
         private readonly object _gate = new object();
         private readonly StringBuilder _stderr = new StringBuilder();
-        private readonly Thread _pump;
+        // Not readonly: Start() assigns it, and Restart() runs Start() again for a fresh process.
+        private Thread _pump;
 
         private Process _process;
         private StreamWriter _stdin;
@@ -66,8 +67,6 @@ namespace QuantConnect.Lean.DataSource.R2
             _redact = redact ?? (text => text);
 
             Start();
-            _pump = new Thread(DrainStderr) { IsBackground = true, Name = "r2-duckdb-stderr" };
-            _pump.Start();
 
             // A killed engine (tmux kill-session sends SIGHUP) never closes our stdin, so the child
             // would linger idle after its parent is gone; take it down with the process. SIGKILL
@@ -193,11 +192,13 @@ namespace QuantConnect.Lean.DataSource.R2
             }
             catch (Exception error)
             {
+                _dead = true;
                 throw new R2SessionException(
                     $"R2LocalCatalog: could not start {_duckdbPath}: {error.Message}");
             }
             if (_process == null)
             {
+                _dead = true;
                 throw new R2SessionException($"R2LocalCatalog: could not start {_duckdbPath}.");
             }
 
@@ -225,6 +226,11 @@ namespace QuantConnect.Lean.DataSource.R2
             {
                 if (line == probe)
                 {
+                    // The stderr pump belongs to the process, so it is (re)started here rather
+                    // than in the constructor — a Restart brings a fresh pump up with its fresh
+                    // process.
+                    _pump = new Thread(DrainStderr) { IsBackground = true, Name = "r2-duckdb-stderr" };
+                    _pump.Start();
                     return;
                 }
             }
@@ -233,6 +239,43 @@ namespace QuantConnect.Lean.DataSource.R2
             _dead = true;
             throw new R2SessionException(
                 $"R2LocalCatalog: duckdb session did not start: {detail}");
+        }
+
+        /// <summary>
+        /// Brings the session back after bail-on-error killed it: fresh duckdb, preamble
+        /// re-applied, probe answered — the same conventions the constructor used. Used by the
+        /// stale-view recovery path (R2LocalCatalog.RecoverFromStaleView), where restarting the
+        /// process between attempts is the point; the temp tables of the killed process are gone
+        /// with it, so the caller drops its day cache around this call.
+        /// </summary>
+        public void Restart()
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    throw new R2SessionException("R2LocalCatalog: the duckdb session is disposed.");
+                }
+                try
+                {
+                    if (_process != null && !SafeHasExited(_process))
+                    {
+                        _process.Kill();
+                    }
+                }
+                catch
+                {
+                    // The child is going away regardless.
+                }
+                _process?.Dispose();
+                _dead = false;
+                _sequence = 0;
+                lock (_stderr)
+                {
+                    _stderr.Clear();
+                }
+                Start();
+            }
         }
 
         private void DrainStderr()
