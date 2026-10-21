@@ -71,6 +71,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private static readonly long[] _statsCalls = new long[16];
         private static readonly double[] _statsTotalMs = new double[16];
         private static readonly double[] _statsMaxMs = new double[16];
+        private static readonly long[] _lastCalls = new long[16];
+        private static readonly double[] _lastTotalMs = new double[16];
+        private static readonly double[] _intervalMaxMs = new double[16];
+        private static long _lastSnapshotTicks;
         public static Action<string> Logger;
         public static double SlowCallThresholdMs = 50;
 
@@ -120,6 +124,45 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                     parts.Add($"{(Command)i}:#{_statsCalls[i]},avg={avg:0.0}ms,max={_statsMaxMs[i]:0.0}ms,total={_statsTotalMs[i]:0}ms");
                 }
                 return string.Join("; ", parts);
+            }
+        }
+
+        /// <summary>
+        /// Per-command breakdown for the interval SINCE THE LAST CALL, with the run total in
+        /// brackets: <c>IV:#123(8195) avg=17.5(19.1)ms max=193(7293)ms tot=2.15(156.71)s</c>.
+        ///
+        /// The cumulative form read as a per-report delta and was actively misleading: two
+        /// identical lines looked like "nothing is being priced" while the run totals never
+        /// distinguished an idle interval from one served entirely by the cache. A silent
+        /// interval now shows #0 explicitly, and the interval's own average/max/total are the
+        /// numbers to judge a slowdown by.
+        /// </summary>
+        public static string StatsSinceLast()
+        {
+            lock (_statsLock)
+            {
+                var now = Environment.TickCount64;
+                var since = _lastSnapshotTicks == 0 ? 0d : (now - _lastSnapshotTicks) / 1000d;
+                _lastSnapshotTicks = now;
+
+                var parts = new List<string>();
+                for (int i = 0; i < _statsCalls.Length; i++)
+                {
+                    var dCalls = _statsCalls[i] - _lastCalls[i];
+                    var dTotal = _statsTotalMs[i] - _lastTotalMs[i];
+                    var intervalMax = _intervalMaxMs[i];
+                    _lastCalls[i] = _statsCalls[i];
+                    _lastTotalMs[i] = _statsTotalMs[i];
+                    _intervalMaxMs[i] = 0;
+                    if (dCalls == 0 && _statsCalls[i] == 0) continue;
+                    var avg = dCalls > 0 ? dTotal / dCalls : 0d;
+                    var runAvg = _statsCalls[i] > 0 ? _statsTotalMs[i] / _statsCalls[i] : 0d;
+                    parts.Add($"{(Command)i}:#{dCalls}({_statsCalls[i]}) " +
+                              $"avg={avg:0.0}({runAvg:0.0})ms max={intervalMax:0.0}({_statsMaxMs[i]:0.0})ms " +
+                              $"tot={dTotal / 1000d:0.00}({_statsTotalMs[i] / 1000d:0.00})s");
+                }
+                return $"[{since:0.0}s since last] " +
+                       (parts.Count > 0 ? string.Join("; ", parts) : "no pricing calls");
             }
         }
 
@@ -259,6 +302,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 if (elapsedMs > _statsMaxMs[cmdIdx])
                 {
                     _statsMaxMs[cmdIdx] = elapsedMs;
+                }
+                if (elapsedMs > _intervalMaxMs[cmdIdx])
+                {
+                    _intervalMaxMs[cmdIdx] = elapsedMs;
                 }
             }
             if (Logger != null && elapsedMs >= SlowCallThresholdMs)

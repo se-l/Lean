@@ -39,7 +39,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             Contract = contract;
             UnderlyingSymbol = contract.Underlying.Symbol;
 
-            IV            = Cache((decimal? p, decimal? s, double accuracy) => JuliaIV(p, s),        (p, s, accuracy) => (p, s, accuracy));
+            IV            = Cache((decimal? p, decimal? s, double accuracy) => { PricingCallSite.Count("IV"); return JuliaIV(p, s); }, (p, s, accuracy) => (p, s, accuracy));
             DeltaCached    = Cache((double iv, decimal s, decimal p) => JuliaDelta(iv, s, p),         (iv, s, p) => (iv, s, p));
             GammaCached    = Cache((double iv, decimal s, decimal p) => JuliaGamma(iv, s, p),         (iv, s, p) => (iv, s, p));
             ThetaCached    = Cache((double iv, decimal s, decimal p) => JuliaTheta(iv, s, p),         (iv, s, p) => (iv, s, p));
@@ -296,6 +296,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// </summary>
         private double GreekViaCache(string metric, Func<double> zmqCall, double sigma)
         {
+            PricingCallSite.Count(metric);
             var cache = (_algo as Earnings.EarningsAlgorithm)?.PricerCache;
             if (cache == null)
             {
@@ -315,8 +316,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             return zmqCall();
         }
 
-        public double Delta(double volatility, decimal spot) =>
-            DeltaCached(volatility, spot, EffectiveContractPrice(null));
+        public double Delta(double volatility, decimal spot)
+        {
+            PricingCallSite.Count(nameof(Delta));
+            return DeltaCached(volatility, spot, EffectiveContractPrice(null));
+        }
 
         public double Delta(double volatility) =>
             GreekViaCache(nameof(Delta), () => DeltaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
@@ -324,14 +328,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double DeltaXBpUSD(double volatility, decimal dS = 100) =>
             Delta(volatility) * (double)(EffectiveSpot(null) * dS * BP) * Multiplier;
 
-        public double Gamma(double volatility, decimal spot) =>
-            GammaCached(volatility, spot, EffectiveContractPrice(null));
+        public double Gamma(double volatility, decimal spot)
+        {
+            PricingCallSite.Count(nameof(Gamma));
+            return GammaCached(volatility, spot, EffectiveContractPrice(null));
+        }
 
         public double Gamma(double volatility) =>
             GreekViaCache(nameof(Gamma), () => GammaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
 
-        public double Theta(double volatility, decimal spot) =>
-            ThetaCached(volatility, spot, EffectiveContractPrice(null));
+        public double Theta(double volatility, decimal spot)
+        {
+            PricingCallSite.Count(nameof(Theta));
+            return ThetaCached(volatility, spot, EffectiveContractPrice(null));
+        }
 
         public double Theta(double volatility) =>
             GreekViaCache(nameof(Theta), () => ThetaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
@@ -345,29 +355,49 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double DS3(double volatility) =>
             SpeedCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
 
-        public double Speed(double volatility) => DS3(volatility);
+        public double Speed(double volatility)
+        {
+            PricingCallSite.Count(nameof(Speed));
+            return DS3(volatility);
+        }
 
         /// <summary>dGamma/dt</summary>
-        public double GammaDecay(double volatility) =>
-            GammaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+        public double GammaDecay(double volatility)
+        {
+            PricingCallSite.Count(nameof(GammaDecay));
+            return GammaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+        }
 
         /// <summary>dGamma/dSigma</summary>
-        public double DS2dIV(double volatility) =>
-            GammaVolCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+        public double DS2dIV(double volatility)
+        {
+            PricingCallSite.Count("GammaVol");
+            return GammaVolCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+        }
 
         /// <summary>dTheta/dt</summary>
-        public double ThetaDecay(double volatility) =>
-            ThetaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+        public double ThetaDecay(double volatility)
+        {
+            PricingCallSite.Count(nameof(ThetaDecay));
+            return ThetaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+        }
 
         /// <summary>dVega/dt (Veta)</summary>
-        public double VegaDecay(double volatility) =>
-            VegaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+        public double VegaDecay(double volatility)
+        {
+            PricingCallSite.Count(nameof(VegaDecay));
+            return VegaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+        }
 
         /// <summary>dDelta/dSigma (Vanna)</summary>
         public double DDeltadIV(double volatility) =>
             VannaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
 
-        public double Vanna(double volatility) => DDeltadIV(volatility);
+        public double Vanna(double volatility)
+        {
+            PricingCallSite.Count(nameof(Vanna));
+            return DDeltadIV(volatility);
+        }
 
         /// <summary>dVega/dSigma (Volga / Vomma)</summary>
         public double DIV2(double volatility) =>

@@ -84,7 +84,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 {
                     // Expected in live mode: there is no precomputed feed IV by design — the
                     // pricer solver IS the source. Not logged; it fired per contract per minute.
-                    IV = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
+                    using (PricingCallSite.Scope("IVQuote"))
+                    {
+                        IV = OptionContractWrap.E(_algo, Option, time.Date).IV(quote, midPriceUnderlying, 0.001);
+                    }
                 }
             }
 

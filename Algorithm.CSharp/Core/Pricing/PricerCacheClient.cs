@@ -111,7 +111,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             public long Exact;
             public long SigmaMismatch;
             public long Miss;
+            public long Lookups;   // last-snapshot total for StatsByKindSinceLast
         }
+
+        /// <summary>Per-kind counters as of the previous StatsByKindSinceLast call.</summary>
+        private readonly Dictionary<GreekKind, KindCounters> _lastByKind = new();
 
         public PricerCacheClient(Foundations algo, string host, int port, string vhost, string user, string pass)
         {
@@ -797,6 +801,47 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                               $"sigmamiss={kvp.Value.SigmaMismatch},miss={kvp.Value.Miss}");
                 }
                 return parts.Count > 0 ? string.Join("; ", parts) : "no cache lookups yet";
+            }
+        }
+
+        /// <summary>
+        /// Per-kind hit/miss for the interval since the last call, run totals in brackets:
+        /// <c>Iv:#123(8216) hit=45(0) sig=0(0) miss=78(8216)</c>. Same reason as
+        /// <see cref="JuliaPricingClient.StatsSinceLast"/>: the cumulative line repeated verbatim
+        /// across reports and could not tell an idle interval from a cache-served one.
+        /// </summary>
+        public string StatsByKindSinceLast()
+        {
+            lock (_bookLock)
+            {
+                var parts = new List<string>();
+                foreach (var kvp in _byKind.OrderBy(k => k.Key))
+                {
+                    // First report for a kind: the previous snapshot does not exist yet, so the
+                    // interval delta is the run total (KindCounters is a class — a missing entry is
+                    // null, not a zeroed struct).
+                    if (!_lastByKind.TryGetValue(kvp.Key, out var last))
+                    {
+                        last = new KindCounters();
+                        _lastByKind[kvp.Key] = last;
+                    }
+                    var lookups = kvp.Value.Exact + kvp.Value.SigmaMismatch + kvp.Value.Miss;
+                    var dLookups = lookups - last.Lookups;
+                    var dHit = kvp.Value.Exact - last.Exact;
+                    var dSigma = kvp.Value.SigmaMismatch - last.SigmaMismatch;
+                    var dMiss = kvp.Value.Miss - last.Miss;
+                    _lastByKind[kvp.Key] = new KindCounters
+                    {
+                        Exact = kvp.Value.Exact,
+                        SigmaMismatch = kvp.Value.SigmaMismatch,
+                        Miss = kvp.Value.Miss,
+                        Lookups = lookups
+                    };
+                    if (dLookups == 0 && lookups == 0) continue;
+                    parts.Add($"{kvp.Key}:#{dLookups}({lookups}) hit={dHit}({kvp.Value.Exact}) " +
+                              $"sig={dSigma}({kvp.Value.SigmaMismatch}) miss={dMiss}({kvp.Value.Miss})");
+                }
+                return parts.Count > 0 ? string.Join("; ", parts) : "no cache lookups in this interval";
             }
         }
 

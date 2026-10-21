@@ -185,9 +185,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 int ivSpreadSMAPeriod = _algo.Cfg.IVSpreadSMAPeriod.TryGetValue(symbol, out int period) ? period : _algo.Cfg.IVSpreadSMAPeriod[CfgDefault];
                 _algo.IVSpreadSMA[symbol] = new SimpleMovingAverage(ivSpreadSMAPeriod);
 
-                //_algo.IVBids[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceSSVIBid[option.Symbol.Underlying].ScheduleUpdate();
-                //_algo.IvAsks[symbol].Updated += (object sender, IndicatorDataPoint _) => _algo.IVSurfaceSSVIAsk[option.Symbol.Underlying].ScheduleUpdate();
-
                 foreach (OrderDirection direction in new[] { OrderDirection.Buy, OrderDirection.Sell })
                 {
                     _algo.SpreadBuffers[direction][symbol] = new(_algo, option, direction);

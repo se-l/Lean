@@ -110,6 +110,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public HashSet<OrderStatus> orderCanceledOrPending = new() { OrderStatus.CancelPending, OrderStatus.Canceled };
         public HashSet<OrderStatus> orderFilledCanceledInvalid = new() { OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.Invalid };
         public HashSet<OrderStatus> orderFilledCanceledCancelPendingInvalid = new() { OrderStatus.Filled, OrderStatus.Canceled, OrderStatus.CancelPending, OrderStatus.Invalid };
+
+        /// <summary>Per-symbol cap on retained OrderTickets (see <see cref="PruneOrderTickets"/>).</summary>
+        private const int MaxTicketsPerSymbol = 2_000;
         public HashSet<OrderStatus> orderPartialFilledCanceledPendingInvalid = new() { OrderStatus.PartiallyFilled, OrderStatus.Filled, OrderStatus.CancelPending, OrderStatus.Canceled, OrderStatus.Invalid };
         public HashSet<OrderStatus> orderSubmittedPartialFilledUpdated = new() { OrderStatus.PartiallyFilled, OrderStatus.Submitted, OrderStatus.UpdateSubmitted };
         public HashSet<OrderStatus> orderNewSubmittedPartialFilledUpdated = new() { OrderStatus.New, OrderStatus.PartiallyFilled, OrderStatus.Submitted, OrderStatus.UpdateSubmitted };
@@ -1399,6 +1402,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             List<Signal> signals = new();
             var sw = Stopwatch.StartNew();
             int optionCount = 0;
+            using (PricingCallSite.Scope("UtilityLoop"))
             foreach (Option option in scopedOptions)
             {
                 optionCount++;
@@ -1430,7 +1434,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             Log($"{Time} GetDesiredOrders: {underlying}. Utility loop over {optionCount} options took {sw.ElapsedMilliseconds}ms.");
 
-            Log($"{Time} GetDesiredOrders: {underlying}. JuliaPricing stats this run: {JuliaPricingClient.StatsSnapshot()}");
+            Log($"{Time} GetDesiredOrders: {underlying}. JuliaPricing since last report (run totals in brackets): {JuliaPricingClient.StatsSinceLast()}");
 
             // The cache-plane counterpart: per-greek hit/miss of the pricer cache (Iv/Delta/Theta/
             // Vega/Volga), to be read next to the JuliaPricing round-trip stats above — hits here
@@ -1439,7 +1443,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             var pricerCache = (this as Earnings.EarningsAlgorithm)?.PricerCache;
             if (pricerCache != null)
             {
-                Log($"{Time} GetDesiredOrders: {underlying}. PricerCache by kind: {pricerCache.StatsByKind()}");
+                Log($"{Time} GetDesiredOrders: {underlying}. PricerCache since last report (run totals in brackets): {pricerCache.StatsByKindSinceLast()}");
+                Log($"{Time} GetDesiredOrders: {underlying}. Pricing by caller since last report (run totals in brackets): {PricingCallSite.StatsSinceLast()}");
             }
 
             decimal targetMarginAsFractionOfNLV = Cfg.TargetMarginAsFractionOfNLV.TryGetValue(underlying.Value, out targetMarginAsFractionOfNLV) ? targetMarginAsFractionOfNLV : Cfg.TargetMarginAsFractionOfNLV[CfgDefault];
@@ -1527,10 +1532,41 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
+        /// Bounds the per-symbol order-ticket lists.
+        ///
+        /// Terminal tickets are history (the order-event writers persist them), but `orderTickets`
+        /// was never pruned: a multi-hour run accumulated every ticket it ever submitted — 7.8 GB
+        /// RSS measured on 2026-10-21 — and the cancel tag built from the still-live ones grew with
+        /// it until StreamWriter.WriteLine threw OverflowException. Keep the newest
+        /// <see cref="MaxTicketsPerSymbol"/> tickets per symbol, always keeping live ones.
+        /// </summary>
+        private void PruneOrderTickets()
+        {
+            lock (orderTickets)
+            {
+                foreach (var kvp in orderTickets)
+                {
+                    var list = kvp.Value;
+                    if (list.Count <= MaxTicketsPerSymbol) continue;
+                    var live = list.Where(t => !orderFilledCanceledCancelPendingInvalid.Contains(t.Status)).ToList();
+                    var terminalRoom = Math.Max(0, MaxTicketsPerSymbol - live.Count);
+                    var terminal = list
+                        .Where(t => orderFilledCanceledCancelPendingInvalid.Contains(t.Status))
+                        .OrderByDescending(t => t.Time)
+                        .Take(terminalRoom);
+                    var kept = live.Concat(terminal).OrderBy(t => t.Time).ToList();
+                    list.Clear();
+                    list.AddRange(kept);
+                }
+            }
+        }
+
+        /// <summary>
         /// Cancels undesired orders, places desired orders. In a separate thread, because would only want to place new orders, once all cancelations have been confirmed and order placement will be done in batches to not have tickets dangling in processing/unprocessed state.
         /// </summary>
         public void HandleDesiredOrders(IEnumerable<Signal> signals)
         {
+            PruneOrderTickets();
             foreach (var group in signals.GroupBy(s => s.Symbol.Underlying))
             {
                 // Cancel any undesired option ticket.
@@ -1546,7 +1582,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var ticketsToCancel = liveTickets.Where(t => !symbolDirectionToOrder.Contains((t.Symbol, Num2Direction(t.Quantity)))).ToList();
                 if (ticketsToCancel.Any())
                 {
-                    var orderIDs = string.Join(", ", ticketsToCancel.Select(t => t.OrderId).ToList());
+                    // The tag goes into a log line: cap the id list. Building it from every live
+                    // ticket made the line grow with the run until StreamWriter.WriteLine threw
+                    // OverflowException (2026-10-21, a multi-hour run with an unpruned ticket list).
+                    const int maxIdsInTag = 20;
+                    var ids = ticketsToCancel.Select(t => t.OrderId).ToList();
+                    var orderIDs = string.Join(", ", ids.Take(maxIdsInTag));
+                    if (ids.Count > maxIdsInTag)
+                    {
+                        orderIDs += $", …(+{ids.Count - maxIdsInTag} more)";
+                    }
                     string tag = $"HandleDesiredOrders. Canceling {ticketsToCancel.Count} tickets: {orderIDs}";
                     ticketsToCancel.ForEach(t => Cancel(t, tag));
                 }
@@ -1554,6 +1599,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 // Sort the signals. Risk reducing first, then risk accepting. Can be done based on their UtilMargin. The larger the safer.
                 IEnumerable<Signal> signalByUnderlying = group.OrderByDescending(g => g.UtilityOrder.UtilityMargin);
+                // Pick only the n best orders because othrewise too risky
+                signalByUnderlying = signalByUnderlying.Take(20);
 
                 // Ignore signal where there is already an active order ticket.
                 IEnumerable<Symbol> remainingLiveSymbols = liveTickets.Select(t => t.Symbol);
