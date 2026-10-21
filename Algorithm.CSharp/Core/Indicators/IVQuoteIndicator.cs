@@ -4,6 +4,7 @@ using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
+using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
@@ -64,7 +65,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             double feedMidIv = 0;
             if (HaveInputsChanged(quote, midPriceUnderlying, time.Date) && iv == null)
             {
-                if (_algo.TryGetFeedIV(Symbol, Side, out double feedIv))
+                if (_algo.PricerCacheEnabled && TryCacheIV(quote, midPriceUnderlying, time))
+                {
+                    // Cache hit — takes priority over the feed IV when the cache plane is on:
+                    // that is the path under test (the feeder's solved IV is what the greeks are
+                    // computed at, so serving the greeks from the same node requires this IV).
+                    // During warmup TryCacheIV publishes-only and returns false, falling through.
+                    _algo.TryGetFeedIVMid(Symbol, out feedMidIv);
+                }
+                else if (_algo.TryGetFeedIV(Symbol, Side, out double feedIv))
                 {
                     IV = feedIv;
                     // iv_mid rides on the same timestamp as the side IVs (see TryGetFeedIVMid);
@@ -157,6 +166,38 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             Update(input.Time, input.Value, _algo.MidPrice(Symbol.Underlying));
             return CanConvertToDecimal(IVBidAsk.IV) ? (decimal)IVBidAsk.IV : Current.Value;
         }
+
+        /// <summary>
+        /// The pricer-cache plane lookup: serve the side IV from the MQ-fed greek book; on a miss,
+        /// publish the request so the feeder warms that node — the same request is a cache hit
+        /// next time. The ZMQ fallback below (the existing solver call) stays the source of truth
+        /// whenever the book cannot answer.
+        /// </summary>
+        private bool TryCacheIV(decimal quote, decimal midPriceUnderlying, DateTime time)
+        {
+            var cache = (_algo as Earnings.EarningsAlgorithm)?.PricerCache;
+            if (cache == null) return false;
+
+            var calcTimeUtc = new DateTimeOffset(time.Date.AddHours(9.5), TimeSpan.Zero).ToUnixTimeSeconds();
+
+            var t = ToTenor(Option.Expiry, time);   // same tenor base as OptionContractWrap
+            var iv = cache.TryLookupIV(
+                Underlying.Value, Option.Right == OptionRight.Call,
+                (double)Option.StrikePrice, t,
+                (double)midPriceUnderlying, (double)quote);
+            if (iv.HasValue)
+            {
+                IV = iv.Value;
+                return true;
+            }
+
+            // Miss → warm the feeder (non-blocking; never blocks a Lean call on MQ).
+            cache.PublishRequest(
+                Underlying.Value, Option.Right == OptionRight.Call,
+                (double)Option.StrikePrice, t,
+                (double)midPriceUnderlying, (double)quote, calcTimeUtc);
+            return false;
+        }
         public IVQuote Refresh()
         {
             Update();
@@ -164,11 +205,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         }
 
         /// <summary>
-        /// The pricer is the IV source only when there is no pre-computed IV to read: live trading,
-        /// after warm-up. Warm-up history is past data and arrives through the feed (R2 handler), and
-        /// backtests read IVs from the warehouse — neither may spend a pricer round trip here.
-        /// Ad-hoc and risk calculations call <see cref="Refresh"/> or the contract wrap directly and
-        /// are unaffected by this gate.
+        /// The pricer is the IV source only when there is no pre-computed IV to read: after warm-up
+        /// in EITHER mode when the pricer cache misses (or is disabled). Warm-up history is past
+        /// data and arrives through the feed (R2 handler), and backtests read IVs from the
+        /// warehouse — neither may spend a ZMQ round trip for a served IV. Note this gate is
+        /// deliberately live-only for the SOLVER fallback (backtest post-warmup uses the ZMQ
+        /// solver only via the explicit cache-miss path, or feed IVs); the pricer-CACHE gate is
+        /// warmup-based, not mode-based. Ad-hoc and risk calculations call <see cref="Refresh"/>
+        /// or the contract wrap directly and are unaffected by this gate.
         /// </summary>
         public bool UseSolver => _algo.LiveMode && !_algo.IsWarmingUp;
 

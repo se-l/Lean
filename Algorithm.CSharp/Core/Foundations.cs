@@ -56,6 +56,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, SecurityCache> PriceCache = new();
 
         public virtual bool HasActiveRequests() => false;
+
+        /// <summary>True when the pricer-cache plane runs (set by the algorithm's Initialize).
+        /// The IV indicator reads this to decide whether a cache lookup precedes the feed IV.</summary>
+        public bool PricerCacheEnabled;
         public SecurityExchangeHours SecurityExchangeHours;
         private DateTime endOfDay;
 
@@ -630,8 +634,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     decimal lastClose = historyUnderlying.Last().Close;
                     if (optionInSsviParams || ContractScopedForSubscription(symbol, lastClose, Cfg.ScopeContractStrikeOverUnderlyingMargin))
                     {
-                        var item = AddData<VolatilityQuoteBar>(symbol, resolution: Resolution.Second, fillForward: false);
-                        item.IsTradable = false;
+                        // var item = AddData<VolatilityQuoteBar>(symbol, resolution: Resolution.Second, fillForward: false);
+                        // item.IsTradable = false;
 
                         // This line requests quite a bit of past data. Minute and second resolution for a whole month into past.
                         AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false, extendedMarketHours: true);
@@ -658,14 +662,41 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
 
+            var universeWatch = Stopwatch.StartNew();
+            var securitiesBefore = Securities.Count;
+
             // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
             Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
             {
                 RemoveUniverseSecurity(sec);
             });
 
-            // Add options that have moved into scope
-            options.DoForEach(s => AddOptionIfScoped(s));
+            // Add options that have moved into scope — one chain at a time. This is the phase that
+            // runs at the day boundary and re-subscribes every chain: it can take minutes, and the
+            // overnight gap used to be silent while it ran, so each chain reports progress with a
+            // percentage and an ETA.
+            var chains = options.ToList();
+            var total = chains.Count;
+            var lastReport = TimeSpan.Zero;
+            for (var i = 0; i < total; i++)
+            {
+                AddOptionIfScoped(chains[i]);
+
+                var done = i + 1;
+                if (done == 1 || done == total || done % Math.Max(1, total / 20) == 0 ||
+                    universeWatch.Elapsed - lastReport >= TimeSpan.FromSeconds(10))
+                {
+                    var frac = (double)done / total;
+                    var eta = frac > 0 ? universeWatch.Elapsed.TotalSeconds * (1 - frac) / frac : 0;
+                    Log($"Universe update: {done}/{total} chains ({frac:P1}), " +
+                        $"securities {securitiesBefore} -> {Securities.Count}, " +
+                        $"elapsed {universeWatch.Elapsed.TotalSeconds:0.0}s, eta {eta:0}s");
+                    lastReport = universeWatch.Elapsed;
+                }
+            }
+
+            Log($"Universe update: done in {universeWatch.Elapsed.TotalSeconds:0.0}s; " +
+                $"securities {securitiesBefore} -> {Securities.Count}.");
         }
 
         public override void OnEndOfDay(Symbol symbol)
@@ -1400,6 +1431,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Log($"{Time} GetDesiredOrders: {underlying}. Utility loop over {optionCount} options took {sw.ElapsedMilliseconds}ms.");
 
             Log($"{Time} GetDesiredOrders: {underlying}. JuliaPricing stats this run: {JuliaPricingClient.StatsSnapshot()}");
+
+            // The cache-plane counterpart: per-greek hit/miss of the pricer cache (Iv/Delta/Theta/
+            // Vega/Volga), to be read next to the JuliaPricing round-trip stats above — hits here
+            // are round trips avoided; misses (incl. sigma mismatches) are what got published to
+            // the feeder for warming.
+            var pricerCache = (this as Earnings.EarningsAlgorithm)?.PricerCache;
+            if (pricerCache != null)
+            {
+                Log($"{Time} GetDesiredOrders: {underlying}. PricerCache by kind: {pricerCache.StatsByKind()}");
+            }
 
             decimal targetMarginAsFractionOfNLV = Cfg.TargetMarginAsFractionOfNLV.TryGetValue(underlying.Value, out targetMarginAsFractionOfNLV) ? targetMarginAsFractionOfNLV : Cfg.TargetMarginAsFractionOfNLV[CfgDefault];
             decimal marginExcessTarget = Math.Max(0, InitialMargin() - Portfolio.TotalPortfolioValue * targetMarginAsFractionOfNLV);

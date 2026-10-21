@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading;
+using QuantConnect.Logging;
 
 namespace QuantConnect.Lean.DataSource.R2
 {
@@ -31,6 +33,14 @@ namespace QuantConnect.Lean.DataSource.R2
     /// process, so stdout ends instead of quietly printing nothing — the error is then read off
     /// stderr and thrown, never swallowed.
     ///
+    /// Every statement is bounded by a timeout and reports progress while it runs. duckdb's own
+    /// network reads have no client-side deadline: a catalog connection that goes away mid-scan
+    /// (observed: a CLOSE-WAIT socket to catalog.cloudflarestorage.com with unread bytes) leaves
+    /// the engine waiting on a reply that never comes, and a framework without a deadline would
+    /// wait with it — silently, because nothing above this class logs while a scan runs. The
+    /// timeout kills the process, which is what re-arms the catalog's one-process-per-scan fallback
+    /// and its retry budget, and the heartbeat line names the wait while it lasts.
+    ///
     /// The SQL never reaches argv (the catalog token is in the preamble), and the child holds the
     /// read end of our stdin, so it exits when the engine does.
     /// </summary>
@@ -38,17 +48,24 @@ namespace QuantConnect.Lean.DataSource.R2
     {
         private const string SentinelPrefix = "<<r2-session:";
 
+        private static readonly TimeSpan Poll = TimeSpan.FromMilliseconds(500);
+        private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(10);
+
         private readonly string _duckdbPath;
         private readonly string _preamble;
         private readonly Func<string, string> _redact;
+        private readonly TimeSpan _queryTimeout;
+        private readonly TimeSpan _startupTimeout;
         private readonly object _gate = new object();
         private readonly StringBuilder _stderr = new StringBuilder();
         // Not readonly: Start() assigns it, and Restart() runs Start() again for a fresh process.
         private Thread _pump;
+        private Thread _reader;
 
         private Process _process;
         private StreamWriter _stdin;
         private StreamReader _stdout;
+        private BlockingCollection<string> _lines;
         private int _sequence;
         private bool _dead;
         private bool _disposed;
@@ -60,11 +77,15 @@ namespace QuantConnect.Lean.DataSource.R2
         /// <param name="duckdbPath">Path to the duckdb executable.</param>
         /// <param name="preamble">Statements applied once (SET/LOAD); may be empty.</param>
         /// <param name="redact">Removes credentials from any text that will be thrown.</param>
-        public R2DuckSession(string duckdbPath, string preamble, Func<string, string> redact)
+        /// <param name="queryTimeout">Deadline for one statement; a scan past it is killed.</param>
+        public R2DuckSession(string duckdbPath, string preamble, Func<string, string> redact,
+            TimeSpan? queryTimeout = null)
         {
             _duckdbPath = duckdbPath;
             _preamble = preamble ?? string.Empty;
             _redact = redact ?? (text => text);
+            _queryTimeout = queryTimeout ?? TimeSpan.FromSeconds(180);
+            _startupTimeout = TimeSpan.FromSeconds(30);
 
             Start();
 
@@ -89,7 +110,9 @@ namespace QuantConnect.Lean.DataSource.R2
 
         /// <summary>
         /// Runs <paramref name="sql"/> (any number of statements) and returns the rows they printed.
-        /// Throws <see cref="R2SessionException"/> when duckdb reports an error or the process dies.
+        /// Throws <see cref="R2SessionException"/> when duckdb reports an error, the process dies,
+        /// or the statement runs past the timeout (the message says "timed out", which the catalog
+        /// treats as transient and retries on a fresh process).
         /// </summary>
         public IReadOnlyList<string[]> Query(string sql)
         {
@@ -116,22 +139,43 @@ namespace QuantConnect.Lean.DataSource.R2
                 _stdin.Flush();
 
                 var rows = new List<string[]>();
-                string line;
-                while ((line = _stdout.ReadLine()) != null)
+                var startedAt = DateTime.UtcNow;
+                var lastBeat = startedAt;
+                var lines = _lines;
+                while (true)
                 {
-                    if (line == sentinel)
+                    if (lines != null && lines.TryTake(out var line, (int)Poll.TotalMilliseconds))
                     {
-                        return rows;
+                        if (line == sentinel)
+                        {
+                            return rows;
+                        }
+                        if (IsDataLine(line))
+                        {
+                            rows.Add(line.Split('|'));
+                        }
+                        continue;
                     }
-                    if (IsDataLine(line))
+
+                    if (lines == null || lines.IsCompleted)
                     {
-                        rows.Add(line.Split('|'));
+                        // No sentinel: bail-on-error killed duckdb, so the statements above failed.
+                        Fail("duckdb exited while running a statement");
+                    }
+
+                    var elapsed = DateTime.UtcNow - startedAt;
+                    if (elapsed >= _queryTimeout)
+                    {
+                        TimedOut(elapsed, rows.Count);
+                    }
+                    if (DateTime.UtcNow - lastBeat >= HeartbeatInterval)
+                    {
+                        Log.Trace($"R2LocalCatalog: duckdb statement still running " +
+                                  $"({elapsed.TotalSeconds:0}s, {rows.Count} rows, pid {Pid()}) — bounded by " +
+                                  $"scan-timeout {_queryTimeout.TotalSeconds:0}s.");
+                        lastBeat = DateTime.UtcNow;
                     }
                 }
-
-                // No sentinel: bail-on-error killed duckdb, so the statements above failed.
-                Fail("duckdb exited while running a statement");
-                return rows;
             }
         }
 
@@ -153,17 +197,7 @@ namespace QuantConnect.Lean.DataSource.R2
                 {
                     // The child is going away regardless.
                 }
-                try
-                {
-                    if (_process != null && !SafeHasExited(_process))
-                    {
-                        _process.Kill();
-                    }
-                }
-                catch
-                {
-                    // Already gone.
-                }
+                Kill();
                 _process?.Dispose();
                 _dead = true;
             }
@@ -204,6 +238,12 @@ namespace QuantConnect.Lean.DataSource.R2
 
             _stdin = _process.StandardInput;
             _stdout = _process.StandardOutput;
+            _lines = null;
+
+            // Every stdout read goes through one pump thread: a blocking ReadLine cannot be given a
+            // deadline, but a line taken from a queue with a deadline can. The pump ends (and marks
+            // the queue complete) as soon as the child closes stdout.
+            StartReader();
 
             // list mode: pipe separated, no quoting or padding, so a row is a line split on '|' and
             // the only columns we read are timestamps, tickers and numbers.
@@ -217,21 +257,49 @@ namespace QuantConnect.Lean.DataSource.R2
             _stdin.Flush();
 
             // The preamble itself can fail (a bad SET or a missing extension). Prove the session
-            // answers before the caller relies on it.
+            // answers before the caller relies on it — with the same deadline and heartbeat as a
+            // scan, because the preamble's ATTACH goes to the network too.
             var probe = SentinelPrefix + "start>>";
             _stdin.Write($"SELECT '{probe}';\n");
             _stdin.Flush();
-            string line;
-            while ((line = _stdout.ReadLine()) != null)
+
+            var startedAt = DateTime.UtcNow;
+            var lastBeat = startedAt;
+            while (true)
             {
-                if (line == probe)
+                if (_lines != null && _lines.TryTake(out var line, (int)Poll.TotalMilliseconds))
                 {
-                    // The stderr pump belongs to the process, so it is (re)started here rather
-                    // than in the constructor — a Restart brings a fresh pump up with its fresh
-                    // process.
-                    _pump = new Thread(DrainStderr) { IsBackground = true, Name = "r2-duckdb-stderr" };
-                    _pump.Start();
-                    return;
+                    if (line == probe)
+                    {
+                        // The stderr pump belongs to the process, so it is (re)started here rather
+                        // than in the constructor — a Restart brings a fresh pump up with its fresh
+                        // process.
+                        _pump = new Thread(DrainStderr) { IsBackground = true, Name = "r2-duckdb-stderr" };
+                        _pump.Start();
+                        return;
+                    }
+                    continue;
+                }
+
+                if (_lines == null || _lines.IsCompleted)
+                {
+                    break;
+                }
+
+                var elapsed = DateTime.UtcNow - startedAt;
+                if (elapsed >= _startupTimeout)
+                {
+                    Kill();
+                    _dead = true;
+                    throw new R2SessionException(
+                        $"R2LocalCatalog: duckdb session did not start within {elapsed.TotalSeconds:0}s " +
+                        "(preamble/attach did not answer); the process was killed.");
+                }
+                if (DateTime.UtcNow - lastBeat >= HeartbeatInterval)
+                {
+                    Log.Trace($"R2LocalCatalog: duckdb session starting ({elapsed.TotalSeconds:0}s, " +
+                              $"preamble/attach) — bounded by {_startupTimeout.TotalSeconds:0}s.");
+                    lastBeat = DateTime.UtcNow;
                 }
             }
 
@@ -256,18 +324,12 @@ namespace QuantConnect.Lean.DataSource.R2
                 {
                     throw new R2SessionException("R2LocalCatalog: the duckdb session is disposed.");
                 }
-                try
-                {
-                    if (_process != null && !SafeHasExited(_process))
-                    {
-                        _process.Kill();
-                    }
-                }
-                catch
-                {
-                    // The child is going away regardless.
-                }
+                Kill();
                 _process?.Dispose();
+                _process = null;
+                _stdin = null;
+                _stdout = null;
+                _lines = null;
                 _dead = false;
                 _sequence = 0;
                 lock (_stderr)
@@ -276,6 +338,45 @@ namespace QuantConnect.Lean.DataSource.R2
                 }
                 Start();
             }
+        }
+
+        /// <summary>One pump thread per process: reads stdout into the queue Query takes from.</summary>
+        private void StartReader()
+        {
+            var lines = new BlockingCollection<string>(new ConcurrentQueue<string>());
+            _lines = lines;
+            var stdout = _stdout;
+            _reader = new Thread(() =>
+            {
+                try
+                {
+                    string line;
+                    while ((line = stdout.ReadLine()) != null)
+                    {
+                        lines.Add(line);
+                    }
+                }
+                catch
+                {
+                    // A torn-down pipe is the process going away; CompleteAdding is the signal.
+                }
+                finally
+                {
+                    try
+                    {
+                        lines.CompleteAdding();
+                    }
+                    catch
+                    {
+                        // Already completed by a racing reader teardown.
+                    }
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "r2-duckdb-stdout"
+            };
+            _reader.Start();
         }
 
         private void DrainStderr()
@@ -318,11 +419,52 @@ namespace QuantConnect.Lean.DataSource.R2
             }
         }
 
+        /// <summary>
+        /// A statement that ran past the deadline: kill the engine (which is what frees the caller
+        /// and re-arms the fresh-process retry) and throw with a message the catalog reads as
+        /// transient. The text says "timed out" on purpose — IsTransient keys on it.
+        /// </summary>
+        private void TimedOut(TimeSpan elapsed, int rows)
+        {
+            Kill();
+            _dead = true;
+            throw new R2SessionException(
+                $"R2LocalCatalog: duckdb statement timed out after {elapsed.TotalSeconds:0}s " +
+                $"({rows} rows read); the session was killed and answers from a fresh process.");
+        }
+
         /// <summary>Marks the session dead and throws with the (redacted) duckdb error.</summary>
         private void Fail(string what)
         {
             _dead = true;
             throw new R2SessionException($"R2LocalCatalog: {what}: {ReadStderrNow()}");
+        }
+
+        private void Kill()
+        {
+            try
+            {
+                if (_process != null && !SafeHasExited(_process))
+                {
+                    _process.Kill();
+                }
+            }
+            catch
+            {
+                // Already gone.
+            }
+        }
+
+        private string Pid()
+        {
+            try
+            {
+                return _process?.Id.ToString() ?? "-";
+            }
+            catch
+            {
+                return "-";
+            }
         }
 
         private static bool SafeHasExited(Process process)

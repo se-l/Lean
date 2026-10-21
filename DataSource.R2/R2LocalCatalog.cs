@@ -99,6 +99,15 @@ namespace QuantConnect.Lean.DataSource.R2
         private readonly R2Routing _routing;
 
         /// <summary>
+        /// Deadline for one duckdb statement (a day materialisation, a catalog lookup). duckdb
+        /// gives its own S3/catalog reads no client-side deadline, so a connection that dies
+        /// mid-scan — observed as a CLOSE-WAIT socket to catalog.cloudflarestorage.com with unread
+        /// bytes — leaves the engine waiting forever. Past this deadline the process is killed and
+        /// the scan is retried on a fresh one; "timed out" is in IsTransient for exactly that.
+        /// </summary>
+        private readonly TimeSpan _scanTimeout;
+
+        /// <summary>
         /// How many times a transient duckdb failure — the catalog answering 5xx/429, a connection
         /// error — is retried (see <see cref="RunOnce"/>). The default rides out a Cloudflare blip
         /// with a 1 s then 2 s backoff without meaningfully delaying warmup.
@@ -238,6 +247,7 @@ namespace QuantConnect.Lean.DataSource.R2
             _rootCachePath = Setting("roots-cache", DefaultRootCachePath);
             _cacheMaxEntries = Setting("cache-max-entries", 64);
             _catalogRetries = Setting("catalog-retries", 2);
+            _scanTimeout = TimeSpan.FromSeconds(Setting("scan-timeout-s", 180));
 
             // The working set is the days the warehouse holds, not a number of days: a single
             // features day is ~458k rows and an option_quote_bar_second day ~445k, so a handful of
@@ -253,7 +263,7 @@ namespace QuantConnect.Lean.DataSource.R2
             // the process-per-scan path in place.
             try
             {
-                _session = new R2DuckSession(_duckdbPath, ScanPreamble(), Redact);
+                _session = new R2DuckSession(_duckdbPath, ScanPreamble(), Redact, _scanTimeout);
 
                 if (_routing.Data == R2Route.CloudFlare)
                 {
@@ -1115,6 +1125,8 @@ namespace QuantConnect.Lean.DataSource.R2
                 _touched.Remove(key);
 
                 _cacheMisses++;
+                Log.Trace($"R2LocalCatalog: day cache: materialising {key} " +
+                          $"(route read {_routing.Read}; bounded by scan-timeout {_scanTimeout.TotalSeconds:0}s).");
                 var built = TryMaterialiseDay(session, table, dayUtc, from, key);
                 if (built == null)
                 {
@@ -1431,16 +1443,86 @@ namespace QuantConnect.Lean.DataSource.R2
             // Read stderr concurrently (drained, so the child can never block on a full pipe).
             var stderrTask = process.StandardError.ReadToEndAsync();
 
-            var rows = new List<string[]>();
-            using (var reader = process.StandardOutput)
+            // stdout is pumped into a queue so the read carries a deadline: a blocking ReadLine
+            // cannot be abandoned, and the whole point here is that a dead catalog connection must
+            // not be able to hold a caller forever (see _scanTimeout).
+            var stdout = process.StandardOutput;
+            var lines = new BlockingCollection<string>(new ConcurrentQueue<string>());
+            var pump = new Thread(() =>
             {
-                string line;
-                while ((line = reader.ReadLine()) != null)
+                try
+                {
+                    string line;
+                    while ((line = stdout.ReadLine()) != null)
+                    {
+                        lines.Add(line);
+                    }
+                }
+                catch
+                {
+                    // The process went away; CompleteAdding below is the signal.
+                }
+                finally
+                {
+                    try
+                    {
+                        lines.CompleteAdding();
+                    }
+                    catch
+                    {
+                        // Already completed.
+                    }
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "r2-duckdb-scan-stdout"
+            };
+            pump.Start();
+
+            var rows = new List<string[]>();
+            var startedAt = DateTime.UtcNow;
+            var lastBeat = startedAt;
+            while (true)
+            {
+                if (lines.TryTake(out var line, 500))
                 {
                     if (IsDataLine(line))
                     {
                         rows.Add(line.Split(','));
                     }
+                    continue;
+                }
+
+                if (lines.IsCompleted)
+                {
+                    break;
+                }
+
+                var elapsed = DateTime.UtcNow - startedAt;
+                if (elapsed >= _scanTimeout)
+                {
+                    try
+                    {
+                        if (!process.HasExited)
+                        {
+                            process.Kill();
+                        }
+                    }
+                    catch
+                    {
+                        // Already gone.
+                    }
+                    throw new InvalidOperationException(
+                        $"R2LocalCatalog: duckdb scan timed out after {elapsed.TotalSeconds:0}s " +
+                        $"({rows.Count} rows read); the process was killed.");
+                }
+                if (DateTime.UtcNow - lastBeat >= TimeSpan.FromSeconds(10))
+                {
+                    Log.Trace($"R2LocalCatalog: duckdb scan still running " +
+                              $"({elapsed.TotalSeconds:0}s, {rows.Count} rows, pid {process.Id}) — bounded by " +
+                              $"scan-timeout {_scanTimeout.TotalSeconds:0}s.");
+                    lastBeat = DateTime.UtcNow;
                 }
             }
 

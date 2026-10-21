@@ -152,6 +152,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             double _s = (double)(s ?? _algo.MidPrice(UnderlyingSymbol));
             double _p = (double)(p ?? _algo.MidPrice(Contract.Symbol));
+
+            // Pricer-cache first (the IV is the plane's primary product): serves the feeder's
+            // solved IV for this exact node; on miss the request is published (non-blocking) and
+            // the ZMQ solver answers below. The warmup gate is warmup-based, not mode-based —
+            // backtests train the feeder on the sim data through the same path.
+            var cache = (_algo as Earnings.EarningsAlgorithm)?.PricerCache;
+            if (cache != null)
+            {
+                var served = cache.TryLookupIV(UnderlyingSymbol.Value, isCall, k, T(), _s, _p);
+                if (served.HasValue)
+                {
+                    return served.Value;
+                }
+                cache.PublishRequest(UnderlyingSymbol.Value, isCall, k, T(), _s, _p, GetCalcTimeUtc());
+            }
+
             return InvalidInputs(_p, _s) ? double.NaN : _algo.julia.IV(isCall, _s, k, T(), _p, GetCalcTimeUtc(), UnderlyingSymbol.Value, yieldCurve);
         }
 
@@ -269,11 +285,41 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         // ── First-order greeks ───────────────────────────────────────────────────
 
+        /// <summary>
+        /// The pricer-cache plane, consulted before every ZMQ greek call: greeks are served only
+        /// from the EXACT node (the feeder solves greeks at the node's IV, so the requested sigma
+        /// must be that node's IV — the sigma gate). The mode distinction is WARMUP, not live-vs-
+        /// backtest: while warming up, lookups only PUBLISH (training the feeder on the data that
+        /// is about to matter — sim dates included; each date gets its own env-hash book) and the
+        /// ZMQ path answers; after warmup completes, the book serves. In both modes the publish is
+        /// non-blocking and Lean's own OCW value caches keep filling as before.
+        /// </summary>
+        private double GreekViaCache(string metric, Func<double> zmqCall, double sigma)
+        {
+            var cache = (_algo as Earnings.EarningsAlgorithm)?.PricerCache;
+            if (cache == null)
+            {
+                return zmqCall();
+            }
+            if (!Enum.TryParse<PricerCacheClient.GreekKind>(metric, ignoreCase: true, out var kind))
+            {
+                return zmqCall();   // higher-order greeks the feeder doesn't publish (v1)
+            }
+            var served = cache.TryLookupGreek(kind, UnderlyingSymbol.Value, isCall, k, T(),
+                S(), P(), sigma, GetCalcTimeUtc());
+            if (served.HasValue)
+            {
+                return served.Value;
+            }
+            cache.PublishRequest(UnderlyingSymbol.Value, isCall, k, T(), S(), P(), GetCalcTimeUtc());
+            return zmqCall();
+        }
+
         public double Delta(double volatility, decimal spot) =>
             DeltaCached(volatility, spot, EffectiveContractPrice(null));
 
         public double Delta(double volatility) =>
-            DeltaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            GreekViaCache(nameof(Delta), () => DeltaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
 
         public double DeltaXBpUSD(double volatility, decimal dS = 100) =>
             Delta(volatility) * (double)(EffectiveSpot(null) * dS * BP) * Multiplier;
@@ -282,16 +328,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             GammaCached(volatility, spot, EffectiveContractPrice(null));
 
         public double Gamma(double volatility) =>
-            GammaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            GreekViaCache(nameof(Gamma), () => GammaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
 
         public double Theta(double volatility, decimal spot) =>
             ThetaCached(volatility, spot, EffectiveContractPrice(null));
 
         public double Theta(double volatility) =>
-            ThetaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            GreekViaCache(nameof(Theta), () => ThetaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
 
         public double Vega(double volatility) =>
-            VegaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            GreekViaCache(nameof(Vega), () => VegaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
 
         // ── Higher-order greeks ──────────────────────────────────────────────────
 
@@ -327,7 +373,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double DIV2(double volatility) =>
             VolgaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
 
-        public double Volga(double volatility) => DIV2(volatility);
+        public double Volga(double volatility) =>
+            GreekViaCache(nameof(Volga), () => DIV2(volatility), volatility);
 
         // ── Misc ─────────────────────────────────────────────────────────────────
 

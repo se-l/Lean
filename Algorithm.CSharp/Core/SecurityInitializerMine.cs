@@ -209,7 +209,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 security.SetDataFilter(new OptionTickDataFilter(_algo));
             }
 
-            WarmUpSecurity(security);
+            // WarmUpSecurity(security);
         }
 
         private void InitializeIVSurfaces(Equity underlying)

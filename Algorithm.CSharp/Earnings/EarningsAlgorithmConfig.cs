@@ -17,6 +17,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         public string MQVirtualHost { get; set; }
         public string MQUser { get; set; }
         public string MQPass { get; set; }
+        // Pricer-cache plane (vhost defaults to MQVirtualHost when null/empty).
+        public bool PricerCacheEnabled { get; set; } = true;
+        public string PricerCacheVHost { get; set; }
         public Dictionary<string, List<int>> EarningsEntryStartTime { get; set; }
 
     }

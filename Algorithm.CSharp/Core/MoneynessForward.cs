@@ -140,6 +140,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return (curve.Times, curve.Rates, divs);
         }
 
+        /// <summary>
+        /// Internal access for PricerEnvProvider — the SAME curve resolution the reconciled
+        /// mny-fwd path uses (calibrated walk-back, generic treasury fallback), so the env
+        /// bundle cannot disagree with the ZMQ pricer's own enrichment for this (ticker, date).
+        /// </summary>
+        internal static (float[] times, float[] rates) CurveForEnv(string ticker, DateTime calcDate)
+        {
+            var upper = ticker.ToUpperInvariant();
+            var curve = CurveCache.GetOrAdd($"curve:{upper}:{calcDate:yyyyMMdd}", _ => LoadCurve(upper, calcDate));
+            return (curve.Times, curve.Rates);
+        }
+
         /// <summary>get_last_zero_curve: calibrated per-ticker curve within the -14d window, else generic treasury.</summary>
         private static Curve LoadCurve(string ticker, DateTime calcDate)
         {

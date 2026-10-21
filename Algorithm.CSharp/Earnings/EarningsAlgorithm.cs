@@ -51,6 +51,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         private bool ExecuteScheduledTargetPortfolioFetch = true;
         private readonly Dictionary<Symbol, IEnumerable<MarketDataSnapByUnderlyingPb>> MarketDataSnaps = new();
         // private readonly Dictionary<Symbol, bool> FetchingTargetPortfolio = new();
+        // Local pricer-cache plane agent (spec: Fino.jl/docs/pricer-cache-dotnet-agent-spec.md):
+        // serves IVs from the MQ-fed greek book, falls back to the ZMQ JuliaPricer on miss.
+        public PricerCacheClient PricerCache;
 
         public override bool HasActiveRequests() => rMQClient?.HasActiveRequests() ?? false;
         public override void Initialize()
@@ -73,6 +76,22 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             rMQClient = new(this);
             rMQClient.ConnectAsync(CfgAlgo.MQHost, CfgAlgo.MQPort, CfgAlgo.MQUser, CfgAlgo.MQPass, CfgAlgo.MQVirtualHost);
             Log($"Connecting to RabbitMQ: {CfgAlgo.MQHost}:{CfgAlgo.MQPort} VHost: {CfgAlgo.MQVirtualHost} ...");
+
+            if (CfgAlgo.PricerCacheEnabled)
+            {
+                // The pricer-cache plane is mode-agnostic: it runs in backtests too (that is how
+                // it gets tested). The env bundle rides inside every request and the env hash
+                // encodes (ticker, calc date), so historical sim requests train the feeder with
+                // per-date books — no cross-date contamination. Warmup publishes (train) without
+                // serving; serving starts at warmup completion (see OptionContractWrap).
+                // Never let a broker hiccup kill Initialize: Start() fails open into
+                // ZMQ-fallback-only mode on its own.
+                PricerCacheEnabled = true;
+                PricerCache = new PricerCacheClient(this, CfgAlgo.MQHost, CfgAlgo.MQPort,
+                    CfgAlgo.PricerCacheVHost ?? CfgAlgo.MQVirtualHost, CfgAlgo.MQUser, CfgAlgo.MQPass);
+                PricerCache.Start();
+                Log($"PricerCacheClient: starting pricer-cache agent (liveMode={LiveMode}).");
+            }
 
             UtilityOrderFactory utilityOrderFactory = new (typeof(UtilityOrderEarnings));
             InitializeAlgo(utilityOrderFactory);
