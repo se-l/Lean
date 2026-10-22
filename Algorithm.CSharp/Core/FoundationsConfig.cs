@@ -85,5 +85,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int MinutesBeforeCloseIsPreEarningsReleaseEOD { get; set; }
         public Dictionary<string, int> EquityHedgeMode { get; set; }
         public Dictionary<string, int> IVSpreadSMAPeriod { get; set; }
+        public int MaxDesiredOrders { get; set; }
     }
 }

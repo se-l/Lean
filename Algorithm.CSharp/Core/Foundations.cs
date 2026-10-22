@@ -1600,7 +1600,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // Sort the signals. Risk reducing first, then risk accepting. Can be done based on their UtilMargin. The larger the safer.
                 IEnumerable<Signal> signalByUnderlying = group.OrderByDescending(g => g.UtilityOrder.UtilityMargin);
                 // Pick only the n best orders because othrewise too risky
-                signalByUnderlying = signalByUnderlying.Take(20);
+                signalByUnderlying = signalByUnderlying.Take(Cfg.MaxDesiredOrders);
 
                 // Ignore signal where there is already an active order ticket.
                 IEnumerable<Symbol> remainingLiveSymbols = liveTickets.Select(t => t.Symbol);

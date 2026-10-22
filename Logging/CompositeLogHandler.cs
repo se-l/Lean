@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Collections.Generic;
 
 namespace QuantConnect.Logging
 {
@@ -25,11 +26,30 @@ namespace QuantConnect.Logging
         private readonly ILogHandler[] _handlers;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CompositeLogHandler"/> that pipes log messages to the console and log.txt
+        /// Initializes a new instance of the <see cref="CompositeLogHandler"/> that pipes log messages to the console and log.txt,
+        /// plus OTLP when an OpenTelemetry endpoint is configured (see <see cref="OpenTelemetryLogHandler"/>)
         /// </summary>
         public CompositeLogHandler()
-            : this(new ConsoleLogHandler(), new FileLogHandler())
+            : this(DefaultHandlers())
         {
+        }
+
+        /// <summary>
+        /// The stock console + file handlers, with OTLP shipping appended only when configured
+        /// </summary>
+        private static ILogHandler[] DefaultHandlers()
+        {
+            var handlers = new List<ILogHandler> { new ConsoleLogHandler(), new FileLogHandler() };
+
+            // Opt-in: TryCreate returns null unless LEAN_OTEL_* / OTEL_* env vars point at a collector,
+            // so an unconfigured Lean keeps exactly the historical console + log.txt behaviour.
+            var otel = OpenTelemetryLogHandler.TryCreate();
+            if (otel != null)
+            {
+                handlers.Add(otel);
+            }
+
+            return handlers.ToArray();
         }
 
         /// <summary>
