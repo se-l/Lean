@@ -41,7 +41,7 @@ namespace QuantConnect.Logging
         {
             var handlers = new List<ILogHandler> { new ConsoleLogHandler(), new FileLogHandler() };
 
-            // Opt-in: TryCreate returns null unless LEAN_OTEL_* / OTEL_* env vars point at a collector,
+            // Opt-in: TryCreate returns null unless OTEL_* env vars point at a collector,
             // so an unconfigured Lean keeps exactly the historical console + log.txt behaviour.
             var otel = OpenTelemetryLogHandler.TryCreate();
             if (otel != null)

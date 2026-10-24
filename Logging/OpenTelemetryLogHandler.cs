@@ -57,11 +57,11 @@ namespace QuantConnect.Logging
     /// the environment (the Logging assembly cannot reference QuantConnect.Configuration without a
     /// circular project reference):
     ///
-    ///   LEAN_OTEL_ENDPOINT / OTEL_EXPORTER_OTLP_LOGS_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT
+    ///   OTEL_ENDPOINT / OTEL_EXPORTER_OTLP_LOGS_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT
     ///       collector URL, e.g. http://127.0.0.1:4318 (the /v1/logs path is appended when absent).
     ///       Port 4318 is the OTLP/HTTP listener; 4317 is gRPC and will not accept these posts.
-    ///   LEAN_OTEL_ENABLED         true/1/yes to enable with the default endpoint, false/0/no to disable.
-    ///   LEAN_OTEL_SERVICE_NAME / OTEL_SERVICE_NAME   service.name (default "lean").
+    ///   OTEL_ENABLED         true/1/yes to enable with the default endpoint, false/0/no to disable.
+    ///   OTEL_SERVICE_NAME   service.name (default "lean").
     ///   LEAN_HOSTNAME             host.name override (default: the machine name).
     ///   OTEL_RESOURCE_ATTRIBUTES  standard k=v,k=v pairs, added to the resource.
     /// </remarks>
@@ -89,7 +89,7 @@ namespace QuantConnect.Logging
         private static readonly long UnixEpochTicks = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks;
 
         private static readonly string ServiceName =
-            FirstNonEmpty(GetSetting("LEAN_OTEL_SERVICE_NAME"), GetSetting("OTEL_SERVICE_NAME")) ?? "lean";
+            FirstNonEmpty(GetSetting("OTEL_SERVICE_NAME")) ?? "lean";
 
         // Identity: resolved once. Mirrors Fino.jl's src/shared/Log.jl so both stacks are filters
         // in SigNoz with the same attribute names.
@@ -524,11 +524,11 @@ namespace QuantConnect.Logging
 
         private static Uri ResolveEndpoint()
         {
-            var enabledSetting = GetSetting("LEAN_OTEL_ENABLED");
+            var enabledSetting = GetSetting("OTEL_ENABLED");
             var enabled = ParseBool(enabledSetting);
 
             var raw = FirstNonEmpty(
-                GetSetting("LEAN_OTEL_ENDPOINT"),
+                GetSetting("OTEL_ENDPOINT"),
                 GetSetting("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"),
                 GetSetting("OTEL_EXPORTER_OTLP_ENDPOINT"));
 

@@ -56,6 +56,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         private static readonly ConcurrentDictionary<string, Curve> CurveCache = new();
         private static readonly ConcurrentDictionary<(string ticker, DateTime date), List<Div>> DivCache = new();
 
+        /// <summary>Tickers for which a non-market calc date has already been reported (with a stack).</summary>
+        private static readonly ConcurrentDictionary<string, bool> NonMarketDateReported = new();
+
         private sealed class Curve
         {
             public float[] Times = Array.Empty<float>();
@@ -86,6 +89,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (t <= 0 || s <= 0 || k <= 0) return double.NaN;
 
             var calcDate = UnixToUtcDate(calcTimeUtc);
+
+            // A non-market date (1970-01-01, or year 1) means the caller passed an unset clock, not
+            // that the warehouse lacks a curve: there is no curve ±180d from 1970 and the old
+            // ERROR line was noise that looked like a data problem. Report the CALLER once per
+            // ticker (stack included) and return NaN without touching the curve/dividend caches.
+            if (calcDate.Year < 1990)
+            {
+                if (NonMarketDateReported.TryAdd(ticker.ToUpperInvariant(), true))
+                {
+                    Log.Error($"MoneynessForward: non-market calc date {calcDate:yyyy-MM-dd} for {ticker} " +
+                              $"(calcTimeUtc={calcTimeUtc}) — the caller passes an unset clock; returning NaN. Caller: " +
+                              new System.Diagnostics.StackTrace(true));
+                }
+                return double.NaN;
+            }
+
             var key = (ticker.ToUpperInvariant(), calcDate);
 
             var (times, rates, divs) = Enrichment(ticker, calcDate);

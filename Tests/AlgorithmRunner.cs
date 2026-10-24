@@ -114,7 +114,7 @@ namespace QuantConnect.Tests
                 var newLogHandlers = new List<ILogHandler>() { MaintainLogHandlerAttribute.LogHandler };
 
                 // Opt-in OTLP shipping to the host-local collector (same env-var gate as the default
-                // composite); TryCreate returns null when LEAN_OTEL_* / OTEL_* is not configured.
+                // composite); TryCreate returns null when OTEL_* is not configured.
                 var otelLogHandler = OpenTelemetryLogHandler.TryCreate();
                 if (otelLogHandler != null)
                 {

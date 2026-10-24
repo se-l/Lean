@@ -12,12 +12,12 @@ same two resource attributes so both stacks are filterable the same way in SigNo
 ## Enabling
 
 The handler is opt-in. Nothing changes unless an endpoint is configured — with no
-`LEAN_OTEL_*` / `OTEL_*` variables set, Lean logs to the console and `log.txt`
+`OTEL_*` variables set, Lean logs to the console and `log.txt`
 exactly as before.
 
 ```bash
-export LEAN_OTEL_ENDPOINT=http://127.0.0.1:4318     # the /v1/logs path is appended
-export LEAN_OTEL_SERVICE_NAME=lean-backtest          # default "lean"
+export OTEL_ENDPOINT=http://127.0.0.1:4318     # the /v1/logs path is appended
+export OTEL_SERVICE_NAME=lean-backtest          # default "lean"
 ```
 
 Run a backtest as usual (`Launcher/bin/Release/QuantConnect.Lean.Launcher`, or the
@@ -28,10 +28,10 @@ constructor and by the composite that `Tests/AlgorithmRunner.cs` builds per run.
 
 | Variable | Meaning |
 | --- | --- |
-| `LEAN_OTEL_ENDPOINT` | Collector URL. Used first, then `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`. |
+| `OTEL_ENDPOINT` | Collector URL. Used first, then `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`. |
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` / `OTEL_EXPORTER_OTLP_ENDPOINT` | Standard OTel names, honoured as fallbacks. |
-| `LEAN_OTEL_ENABLED` | `true/1/yes` enables with the default endpoint (`http://127.0.0.1:4318/v1/logs`); `false/0/no` disables even when an endpoint is set. |
-| `LEAN_OTEL_SERVICE_NAME` / `OTEL_SERVICE_NAME` | `service.name` resource attribute (default `lean`). |
+| `OTEL_ENABLED` | `true/1/yes` enables with the default endpoint (`http://127.0.0.1:4318/v1/logs`); `false/0/no` disables even when an endpoint is set. |
+| `OTEL_SERVICE_NAME` | `service.name` resource attribute (default `lean`). |
 | `LEAN_HOSTNAME` | `host.name` override (default: the machine name, recovered from the network identity inside a container). |
 | `CONTAINER_NAME` | `container.name` resource attribute (Lean's compose files already set it per service). |
 | `OTEL_RESOURCE_ATTRIBUTES` | Standard `k=v,k=v` pairs, added to the resource. |
@@ -45,9 +45,9 @@ Endpoint normalisation: a bare `host:port` gets `http://`; a URL without a port 
 **docker bridge gateway**, because `127.0.0.1` inside a container is the container:
 
 ```yaml
-- LEAN_OTEL_ENDPOINT=http://${HOST_BRIDGE:-172.17.0.1}:4318
-- LEAN_OTEL_ENABLED=${FINO_OTEL_ENABLED:-0}
-- LEAN_OTEL_SERVICE_NAME=trader.sit.1
+- OTEL_ENDPOINT=http://${HOST_BRIDGE:-172.17.0.1}:4318
+- OTEL_ENABLED=${FINO_OTEL_ENABLED:-0}
+- OTEL_SERVICE_NAME=trader.1
 - LEAN_HOSTNAME=${LEAN_HOSTNAME:-}
 ```
 
@@ -66,7 +66,7 @@ a warning at startup.
 Resource attributes on every record — identical names to Fino.jl's `src/shared/Log.jl`, so
 both stacks answer the same SigNoz filters:
 
-- `service.name` — from `LEAN_OTEL_SERVICE_NAME` / `OTEL_SERVICE_NAME`, default `lean`
+- `service.name` — from `OTEL_SERVICE_NAME`, default `lean`
 - `host.name` — machine name, or `LEAN_HOSTNAME`; inside a container, the machine name
   recovered from the network identity (falls back to the container id when that fails,
   and the collector's `transform/hostname` rewrites it to the real machine name)
