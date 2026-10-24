@@ -4,14 +4,20 @@ set windows-shell := ["pwsh", "-c"]
 registry := "sebastianluen"
 tag := "dev"
 
-# Build an image: just build vastmind/vastmindbase/zmqpricer prd/mind dev
-build name="" tag="dev":
+# Build an image: just build lean
+build-amm tag="dev":
     docker buildx build \
-        -f Dockerfile-{{name}} \
-        --platform linux/amd64,linux/arm64 \
-        -t {{registry}}/{{name}}:{{tag}} \
+        -f Dockerfile-amm \
+        -t {{registry}}/amm:{{tag}} \
         .
-    @echo "Build completed: {{name}}"
+    @echo "Build completed: amm"
+ 
+build-lean tag="latest":
+    docker buildx build \
+        -f Dockerfile-lean \
+        -t {{registry}}/lean:{{tag}} \
+        .
+    @echo "Build completed: lean"
 
 build-toolbox tag="prd":
     docker buildx build \

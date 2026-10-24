@@ -32,7 +32,7 @@ constructor and by the composite that `Tests/AlgorithmRunner.cs` builds per run.
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` / `OTEL_EXPORTER_OTLP_ENDPOINT` | Standard OTel names, honoured as fallbacks. |
 | `OTEL_ENABLED` | `true/1/yes` enables with the default endpoint (`http://127.0.0.1:4318/v1/logs`); `false/0/no` disables even when an endpoint is set. |
 | `OTEL_SERVICE_NAME` | `service.name` resource attribute (default `lean`). |
-| `LEAN_HOSTNAME` | `host.name` override (default: the machine name, recovered from the network identity inside a container). |
+| `OTEL_HOSTNAME` | `host.name` override (default: the machine name, recovered from the network identity inside a container). |
 | `CONTAINER_NAME` | `container.name` resource attribute (Lean's compose files already set it per service). |
 | `OTEL_RESOURCE_ATTRIBUTES` | Standard `k=v,k=v` pairs, added to the resource. |
 
@@ -48,7 +48,7 @@ Endpoint normalisation: a bare `host:port` gets `http://`; a URL without a port 
 - OTEL_ENDPOINT=http://${HOST_BRIDGE:-172.17.0.1}:4318
 - OTEL_ENABLED=${FINO_OTEL_ENABLED:-0}
 - OTEL_SERVICE_NAME=trader.1
-- LEAN_HOSTNAME=${LEAN_HOSTNAME:-}
+- OTEL_HOSTNAME=${OTEL_HOSTNAME:-}
 ```
 
 `FINO_OTEL_ENDPOINT` is deliberately **not** reused: Fino's Julia sink speaks gRPC on
@@ -67,7 +67,7 @@ Resource attributes on every record — identical names to Fino.jl's `src/shared
 both stacks answer the same SigNoz filters:
 
 - `service.name` — from `OTEL_SERVICE_NAME`, default `lean`
-- `host.name` — machine name, or `LEAN_HOSTNAME`; inside a container, the machine name
+- `host.name` — machine name, or `OTEL_HOSTNAME`; inside a container, the machine name
   recovered from the network identity (falls back to the container id when that fails,
   and the collector's `transform/hostname` rewrites it to the real machine name)
 - `host.ip` — primary non-loopback IPv4 address
@@ -108,7 +108,7 @@ The message body is the raw Lean log text, so filters like
   references Logging, so the reverse reference would be circular). Configuration is
   therefore environment-only — put the variables in the shell, the systemd unit, or
   the container environment; `Launcher/config.json` cannot carry them.
-- In a container `Environment.MachineName` is the container id. Set `LEAN_HOSTNAME`
+- In a container `Environment.MachineName` is the container id. Set `OTEL_HOSTNAME`
   in the compose file to the physical host so `host.name` stays filterable.
 - `MaintainLogHandlerAttribute` in the test suite may already build a composite from
   `-log-handler`; if that handler is itself a `CompositeLogHandler` **and** the OTel

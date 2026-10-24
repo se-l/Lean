@@ -62,7 +62,7 @@ namespace QuantConnect.Logging
     ///       Port 4318 is the OTLP/HTTP listener; 4317 is gRPC and will not accept these posts.
     ///   OTEL_ENABLED         true/1/yes to enable with the default endpoint, false/0/no to disable.
     ///   OTEL_SERVICE_NAME   service.name (default "lean").
-    ///   LEAN_HOSTNAME             host.name override (default: the machine name).
+    ///   OTEL_HOSTNAME             host.name override (default: the machine name).
     ///   OTEL_RESOURCE_ATTRIBUTES  standard k=v,k=v pairs, added to the resource.
     /// </remarks>
     public class OpenTelemetryLogHandler : ILogHandler
@@ -611,13 +611,13 @@ namespace QuantConnect.Logging
         }
 
         /// <summary>
-        /// Resolve <c>host.name</c>: <c>LEAN_HOSTNAME</c> wins, then the machine name, and inside a
+        /// Resolve <c>host.name</c>: <c>OTEL_HOSTNAME</c> wins, then the machine name, and inside a
         /// container the machine name is recovered from the network identity because Docker defaults
         /// the UTS hostname to the container's short id (which shows up downstream as a bare hash).
         /// </summary>
         private static string ResolveHostName()
         {
-            var overrideValue = FirstNonEmpty(GetSetting("LEAN_HOSTNAME"));
+            var overrideValue = FirstNonEmpty(GetSetting("OTEL_HOSTNAME"));
             if (overrideValue != null)
             {
                 return overrideValue;
