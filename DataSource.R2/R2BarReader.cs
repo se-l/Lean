@@ -130,6 +130,16 @@ namespace QuantConnect.Lean.DataSource.R2
             }
 
             R2Warehouse.UtcDayBoundsNs(dayUtc, out var lo, out var hi);
+
+            // One read serves the whole chain: the first contract's question loads the underlying's
+            // day (all its contracts), every other contract answers from memory. Null for equities
+            // and on a failed batch, which keeps the per-symbol path below.
+            var batch = _catalog.RowsByUnderlying(table.Name, dayUtc, ticker, columns, orderBy: "2");
+            if (batch != null)
+            {
+                return batch.TryGetValue(ticker, out var symbolRows) ? symbolRows : Array.Empty<string[]>();
+            }
+
             // The day, read once: a materialised day answers every later question about it from memory.
             var source = _catalog.DaySource(table.Name, dayUtc);
 
@@ -140,7 +150,22 @@ namespace QuantConnect.Lean.DataSource.R2
                 $"AND ts >= make_timestamp_ns({lo}) AND ts < make_timestamp_ns({hi}) " +
                 "ORDER BY ts;";
 
-            return _catalog.Rows(sql);
+            // A slow read names its source: temp table (materialised, indexed) or Iceberg scan.
+            // Without that split we could not tell why an index on the temp table changed nothing.
+            var readWatch = System.Diagnostics.Stopwatch.StartNew();
+            var materialised = new System.Collections.Generic.List<string[]>();
+            foreach (var row in _catalog.Rows(sql))
+            {
+                materialised.Add(row);
+            }
+            var readMs = readWatch.ElapsedMilliseconds;
+            if (readMs >= 50)
+            {
+                QuantConnect.Logging.Log.Trace($"R2LocalCatalog: read {table.Name} {ticker} {dayUtc:yyyy-MM-dd}: " +
+                                               $"{materialised.Count} rows in {readMs} ms " +
+                                               $"({(_catalog.DayIsMaterialised(table.Name, dayUtc) ? "temp table" : "iceberg scan")})");
+            }
+            return materialised;
         }
 
         private static void RequireBar(R2Table table, TickType expected)

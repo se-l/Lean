@@ -66,7 +66,12 @@ namespace QuantConnect.Lean.DataSource.R2
         /// </summary>
         /// <param name="symbol">Lean symbol.</param>
         /// <param name="table">Tick table the subscription will read, used for the lookup.</param>
-        public string ResolveSymbol(Symbol symbol, R2Table table)
+        /// <summary>
+        /// The warehouse ticker for <paramref name="symbol"/>, or null when the table does not carry
+        /// it. <paramref name="dayUtc"/> lets the catalog answer from its per-(table, day) symbol
+        /// index — one query for the whole chain instead of one table scan per contract.
+        /// </summary>
+        public string ResolveSymbol(Symbol symbol, R2Table table, DateTime? dayUtc = null)
         {
             if (table == null)
             {
@@ -89,7 +94,7 @@ namespace QuantConnect.Lean.DataSource.R2
                     return null;
             }
 
-            return _catalog.ResolveSymbol(vendorTicker, table.Name);
+            return _catalog.ResolveSymbol(vendorTicker, table.Name, dayUtc);
         }
 
         /// <summary>Trade ticks for one symbol and one UTC day, ordered by (sip_timestamp, sequence_number).</summary>

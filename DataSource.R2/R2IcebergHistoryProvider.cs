@@ -83,6 +83,11 @@ namespace QuantConnect.Lean.DataSource.R2
         /// </summary>
         private IEnumerable<Slice> GetSlices(HistoryRequest request)
         {
+            // Attribution for the per-request log line: how long the read took and whether the
+            // chain batch answered it from memory or this request paid for the read.
+            var requestWatch = System.Diagnostics.Stopwatch.StartNew();
+            var batchHitsBefore = _catalog.BatchHits;
+            var batchMissesBefore = _catalog.BatchMisses;
             // Open interest first — before the custom-data guard as well, because
             // AddData<OpenInterest> creates a custom-data subscription and would otherwise be
             // refused as custom data rather than answered. See R2OpenInterest.
@@ -195,7 +200,10 @@ namespace QuantConnect.Lean.DataSource.R2
                 yield break;
             }
 
-            var ticker = _ticks.ResolveSymbol(request.Symbol, table);
+            // Day-scoped so the symbol index answers from one query per (table, day) rather than a
+            // scan per contract; a miss still falls through to the authoritative per-symbol scan.
+            var ticker = _ticks.ResolveSymbol(request.Symbol, table,
+                request.StartTimeUtc.ConvertFromUtc(TimeZones.NewYork).Date);
             if (ticker == null)
             {
                 Log.Error($"R2IcebergHistoryProvider: {request.Symbol} not carried by {table.Name} — " +
@@ -266,7 +274,9 @@ namespace QuantConnect.Lean.DataSource.R2
 
             Log.Trace($"R2IcebergHistoryProvider: {request.Symbol} {request.Resolution} {request.TickType} " +
                       $"{startEt:yyyy-MM-dd HH:mm:ss}..{endEt:yyyy-MM-dd HH:mm:ss} ET <- {table.Name}: " +
-                      $"{read} points in {byTime.Count} slices");
+                      $"{read} points in {byTime.Count} slices " +
+                      $"[{(_catalog.BatchHits > batchHitsBefore ? "batch hit" : _catalog.BatchMisses > batchMissesBefore ? "batch built" : "no batch")}, " +
+                      $"{requestWatch.ElapsedMilliseconds} ms read]");
 
             foreach (var entry in byTime)
             {

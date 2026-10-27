@@ -131,10 +131,20 @@ namespace QuantConnect.Lean.DataSource.R2
             // requested resolution. The feed sees a SecurityType.Base custom data symbol whose
             // Underlying is the option contract (AddData<VolatilityQuoteBar>(contract, resolution));
             // a history request carries the contract itself. Both key the table by the contract.
+            // The day the subscription starts on, in ET: the day-scoped symbol index answers every
+            // contract of the chain from one query instead of one scan per contract.
+            var startDayEt = request.StartTimeUtc.ConvertFromUtc(TimeZones.NewYork).Date;
+            // Per-subscription timing: 2,000 second-resolution subscriptions took 7 minutes in one
+            // run (~206 ms each) with almost no warehouse lines — so the cost is per-subscription
+            // work, not scans. The label splits the ticker resolve from the rest, which points at
+            // the enumerator setup when the resolve is fast.
+            var subscribeWatch = System.Diagnostics.Stopwatch.StartNew();
+            long resolveMs = 0;
+
             if (R2Warehouse.TryResolveIvTable(config.Type, out var iv))
             {
                 var ivTicker = R2Warehouse.VendorOptionTicker(R2Warehouse.IvUnderlying(config.Symbol));
-                if (ivTicker == null || _catalog.ResolveSymbol(ivTicker, iv.Name) == null)
+                if (ivTicker == null || _catalog.ResolveSymbol(ivTicker, iv.Name, startDayEt) == null)
                 {
                     Log.Error($"R2IcebergDataFeed: {config.Symbol} {config.Type.Name}: " +
                               (ivTicker == null
@@ -168,7 +178,8 @@ namespace QuantConnect.Lean.DataSource.R2
 
             // Resolved once per subscription. Throws on transport failure (fail fast, loudly);
             // null means "the warehouse does not carry this symbol" (e.g. the SPY benchmark).
-            var ticker = _ticks.ResolveSymbol(config.Symbol, table);
+            var ticker = _ticks.ResolveSymbol(config.Symbol, table, startDayEt);
+            resolveMs = subscribeWatch.ElapsedMilliseconds;
             if (ticker == null)
             {
                 Log.Error($"R2IcebergDataFeed: {config.Symbol} not carried by {table.Name} — " +
@@ -178,12 +189,17 @@ namespace QuantConnect.Lean.DataSource.R2
             }
 
             Log.Trace($"R2IcebergDataFeed: {config.Symbol} {config.Resolution} {config.Type.Name} " +
-                      $"-> {table.Name} as ticker {ticker}");
+                      $"-> {table.Name} as ticker {ticker} [resolve {resolveMs} ms, " +
+                      $"total {subscribeWatch.ElapsedMilliseconds} ms]");
 
-            var enumerator = GetEnumerator(request, table.Name,
+                 var enumerator = GetEnumerator(request, table.Name,
                 day => Read(config.Symbol, ticker, table, day)).GetEnumerator();
-            return SubscriptionUtils.CreateAndScheduleWorker(request, enumerator, _factorFileProvider, true,
+            var worker = SubscriptionUtils.CreateAndScheduleWorker(request, enumerator, _factorFileProvider, true,
                 _algorithm.Settings.DailyStrictEndTimeEnabled);
+            Log.Trace($"R2IcebergDataFeed: {config.Symbol} {table.Name} subscribed in " +
+                      $"{subscribeWatch.ElapsedMilliseconds} ms (enumerator+worker " +
+                      $"{subscribeWatch.ElapsedMilliseconds - resolveMs} ms)");
+            return worker;
         }
 
         private Subscription CreateUniverseSubscription(SubscriptionRequest request)
@@ -236,6 +252,13 @@ namespace QuantConnect.Lean.DataSource.R2
             var startEt = request.StartTimeUtc.ConvertFromUtc(TimeZones.NewYork);
             var endEt = request.EndTimeUtc.ConvertFromUtc(TimeZones.NewYork);
 
+            // Time-to-first-point: the subscription label measures creation only (the worker just
+            // builds this enumerator), so the cost you see as "a second per symbol" lands here, on
+            // the first MoveNext that yields data. This records it per subscription and names the
+            // day it came from.
+            var firstReadWatch = System.Diagnostics.Stopwatch.StartNew();
+            var firstReadLogged = false;
+
             for (var day = startEt.Date; day <= endEt.Date; day = day.AddDays(1))
             {
                 // Weekends carry no sessions; the loader does no discovery for them either.
@@ -268,6 +291,13 @@ namespace QuantConnect.Lean.DataSource.R2
                         if (point.Time < startEt || point.Time > endEt)
                         {
                             continue;
+                        }
+
+                        if (!firstReadLogged)
+                        {
+                            firstReadLogged = true;
+                            Log.Trace($"R2IcebergDataFeed: {config.Symbol} {source} first point after " +
+                                      $"{firstReadWatch.ElapsedMilliseconds} ms ({day:yyyy-MM-dd})");
                         }
 
                         yield return point;

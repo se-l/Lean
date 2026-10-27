@@ -71,7 +71,7 @@ namespace QuantConnect.Lean.DataSource.R2
             // The (session, underlying) batch: serves ResolveSymbol/HoldsDay for every contract of
             // this underlying for the TTL window (live setup asks per contract; on the cloudflare
             // metadata route each ask was a ~2.5 s catalog round trip).
-            R2SessionPrefetch.Ensure(underlying, day, _catalog);
+            // R2SessionPrefetch.Ensure(underlying, day, _catalog);
 
             lock (_cacheGate)
             {
@@ -97,8 +97,8 @@ namespace QuantConnect.Lean.DataSource.R2
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
-            // (1) Registry: registered at some as_of <= date, expiry strictly after date. One row
-            // per contract: expiry/strike/right are contract properties (max() over duplicates).
+            // No ledger data at all (live: the loader writes during/after the session): the
+            // registry is the only source of not-yet-loaded contracts.
             var registrySql =
                 "SELECT symbol, max(expiry), max(strike), max(is_call) FROM r2.market." + RegistryTable + " " +
                 $"WHERE underlying = '{und}' AND as_of <= {day} AND expiry > {day} " +
@@ -123,34 +123,9 @@ namespace QuantConnect.Lean.DataSource.R2
             }
             var registryMs = sw.ElapsedMilliseconds;
 
-            // (2) Ledger: tick sessions actually loaded. The REQUESTED session may legitimately
-            // have no data yet (live: the loader writes during/after the session), so walk back up
-            // to 7 calendar days to the most recent session WITH data — that session's contract
-            // set is what warmup can actually serve. Liveness still comes from the registry at the
-            // requested date; the walk-back only relaxes the data-presence half.
-            var loaded = new HashSet<string>(StringComparer.Ordinal);
-            DateTime referenceDay = date;
-            for (var back = 0; back <= 7; back++)
-            {
-                var probe = date.AddDays(-back);
-                loaded = LedgerSymbols(und, probe);
-                if (loaded.Count > 0)
-                {
-                    referenceDay = probe;
-                    break;
-                }
-            }
-            var ledgerMs = sw.ElapsedMilliseconds - registryMs;
-
-            if (referenceDay != date)
-            {
-                Log.Trace($"R2OptionChainProvider: {underlying} {date:yyyy-MM-dd}: no ledger data for the session — " +
-                          $"using {referenceDay:yyyy-MM-dd}'s contract set ({loaded.Count} contracts).");
-            }
-
             var symbols = new List<Symbol>();
             foreach (var (ticker, (expiry, strike, isCall)) in registered
-                         .Where(entry => loaded.Contains(entry.Key))
+                         // .Where(entry => loaded.Contains(entry.Key))
                          .OrderBy(entry => entry.Key, StringComparer.Ordinal))
             {
                 try
@@ -170,7 +145,8 @@ namespace QuantConnect.Lean.DataSource.R2
             }
 
             Log.Trace($"R2OptionChainProvider: {underlying} {date:yyyy-MM-dd}: {registered.Count} registered, " +
-                      $"{symbols.Count} loaded & alive -> offered. (registry {registryMs} ms, ledger walk {ledgerMs} ms, total {sw.ElapsedMilliseconds} ms)");
+                      $"{symbols.Count} loaded & alive -> offered. (registry {registryMs} ms, total {sw.ElapsedMilliseconds} ms)");
+                      // $"{symbols.Count} loaded & alive -> offered. (registry {registryMs} ms, ledger walk {ledgerMs} ms, total {sw.ElapsedMilliseconds} ms)");
             return symbols;
         }
 
@@ -190,6 +166,55 @@ namespace QuantConnect.Lean.DataSource.R2
                 }
             }
             return loaded;
+        }
+
+        /// <summary>
+        /// Vendor ticker -> Lean Symbol without the registry. Ledger rows are <c>O:ROOT + yyMMdd +
+        /// C|P + 8-digit strike (thousandths)</c>; the OSI string is rebuilt from those fields so
+        /// Lean's own parser constructs the Symbol exactly as everywhere else.
+        /// </summary>
+        private static bool TrySymbolFromLedgerTicker(string ticker, out Symbol symbol)
+        {
+            symbol = null;
+            if (string.IsNullOrEmpty(ticker))
+            {
+                return false;
+            }
+            var body = ticker.StartsWith("O:", StringComparison.Ordinal) ? ticker.Substring(2) : ticker;
+            if (body.Length < 17)
+            {
+                return false;
+            }
+
+            var suffix = body.Substring(body.Length - 15);
+            var root = body.Substring(0, body.Length - 15);
+            if (!DateTime.TryParseExact(suffix.Substring(0, 6), "yyMMdd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out var expiry))
+            {
+                return false;
+            }
+
+            var rightChar = suffix[6];
+            if (rightChar != 'C' && rightChar != 'P')
+            {
+                return false;
+            }
+            if (!long.TryParse(suffix.Substring(7), NumberStyles.Integer, CultureInfo.InvariantCulture, out var strikeThousandths))
+            {
+                return false;
+            }
+
+            try
+            {
+                var tickerOsi = SymbolRepresentation.GenerateOptionTickerOSI(root,
+                    rightChar == 'C' ? OptionRight.Call : OptionRight.Put, strikeThousandths / 1000m, expiry);
+                symbol = SymbolRepresentation.ParseOptionTickerOSI(tickerOsi);
+                return symbol != null;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool IsTrue(string value) =>

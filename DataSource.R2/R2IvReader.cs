@@ -199,6 +199,18 @@ namespace QuantConnect.Lean.DataSource.R2
             }
 
             R2Warehouse.UtcDayBoundsNs(dayUtc, out var lo, out var hi);
+
+            // One read serves the whole chain (see R2LocalCatalog.RowsByUnderlying): the first
+            // contract of an underlying loads that day's features for all of them. The projection
+            // is (symbol, ts, …), so the bucket groups on 1,2 and orders on 2.
+            var batchGrouping = R2Warehouse.BucketInterval(resolution) == null ? string.Empty : "GROUP BY 1, 2 ";
+            var batch = _catalog.RowsByUnderlying(table.Name, dayUtc, ticker, columns, flavourPredicate,
+                batchGrouping, "2");
+            if (batch != null)
+            {
+                return batch.TryGetValue(ticker, out var symbolRows) ? symbolRows : Array.Empty<string[]>();
+            }
+
             // The day, read once: a materialised day answers every later question about it from memory.
             var source = _catalog.DaySource(table.Name, dayUtc);
 

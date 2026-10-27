@@ -126,6 +126,28 @@ namespace QuantConnect.Lean.DataSource.R2
 
         /// <summary>Days materialised in that session, with the symbols each one holds.</summary>
         private readonly Dictionary<string, CachedDay> _days = new Dictionary<string, CachedDay>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Per-(table, day) symbol sets (see <see cref="SymbolsFor"/>): the batching that turns a
+        /// chain subscription's per-contract symbol checks from one table scan each into a hash
+        /// lookup. Separate from the day cache because it answers presence only — no rows.
+        /// </summary>
+        private readonly Dictionary<string, HashSet<string>> _daySymbols = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Per-(table, day, underlying) row batches (see <see cref="RowsByUnderlying"/>): the first
+        /// contract's history request loads the whole chain's day, the rest are served from here.
+        /// Bounded: a day of option rows is large, and a run only revisits a handful of days.
+        /// </summary>
+        private readonly Dictionary<string, Dictionary<string, List<string[]>>> _dayBatches = new Dictionary<string, Dictionary<string, List<string[]>>>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Chain-batch counters, read by the history provider to label each request as
+        /// served-from-memory or paid-for: a request that hits is cheap by construction, so a slow
+        /// log line with a hit delta points at Lean's per-request plumbing, not the warehouse.
+        /// </summary>
+        public int BatchHits;
+        public int BatchMisses;
         private readonly object _daysGate = new object();
         private readonly int _cacheMaxEntries;
         private readonly long _cacheMaxRows;
@@ -550,7 +572,7 @@ namespace QuantConnect.Lean.DataSource.R2
         /// </summary>
         /// <param name="ticker">Vendor ticker as stored (equity: <c>CRWD</c>; option: <c>O:CRWD261002P00262500</c>).</param>
         /// <param name="table">The table to validate against, e.g. <c>equity_trade_tick</c>.</param>
-        public string ResolveSymbol(string ticker, string table = "equity_trade_tick")
+        public string ResolveSymbol(string ticker, string table = "equity_trade_tick", DateTime? dayUtc = null)
         {
             if (string.IsNullOrEmpty(ticker))
             {
@@ -567,6 +589,24 @@ namespace QuantConnect.Lean.DataSource.R2
             if (_routing.Metadata == R2Route.Catalog && _symbols.TryGetValue(key, out var known))
             {
                 return known.Length == 0 ? null : known;
+            }
+
+            // Day-scoped answer first: one DISTINCT-symbol query per (table, day) answers every
+            // contract of that day, instead of the per-symbol scan below (~73 ms per contract
+            // measured during a chain subscription: 1,636 contracts took 119 s). A positive answer
+            // is authoritative for the run; a miss falls through to the per-symbol scan, because a
+            // contract absent on the window's first day may still be carried later in it.
+            if (dayUtc.HasValue)
+            {
+                var daySymbols = SymbolsFor(table, dayUtc.Value);
+                if (daySymbols != null && daySymbols.Contains(ticker))
+                {
+                    if (_routing.Metadata == R2Route.Catalog)
+                    {
+                        _symbols[key] = ticker;
+                    }
+                    return ticker;
+                }
             }
 
             // Prefetched (session, underlying) batch: on the cloudflare metadata route the
@@ -606,6 +646,188 @@ namespace QuantConnect.Lean.DataSource.R2
         }
 
         /// <summary>
+        /// One day of a table for EVERY contract of <paramref name="ticker"/>'s underlying, grouped
+        /// by symbol with the symbol column stripped (each row keeps the caller's own projection).
+        ///
+        /// Warmup asks history once per contract — about 3,100 requests during Initialize — and
+        /// without batching each one is its own scan of the day. The loader writes an underlying's
+        /// contracts together, so one read answers the whole chain: the first contract pays for the
+        /// day, every other contract of that underlying (table, day) is served from memory.
+        ///
+        /// The OSI shape is matched exactly (<c>^O:ROOT\d{6}[CP]\d{8}$</c>) so a root that is a
+        /// prefix of another (BA vs BAC) cannot leak contracts between chains.
+        ///
+        /// Null when the ticker is not an option (no shared prefix) or the batch could not be built;
+        /// the caller then keeps its per-symbol path.
+        /// </summary>
+        public Dictionary<string, List<string[]>> RowsByUnderlying(string table, DateTime dayUtc, string ticker,
+            string columns, string predicate = "", string grouping = "", string orderBy = "1")
+        {
+            var root = ticker.StartsWith("O:", StringComparison.Ordinal) ? UnderlyingOf(ticker) : null;
+            if (string.IsNullOrEmpty(root))
+            {
+                return null;
+            }
+
+            // Intraday tables are millions of rows per chain-day (measured: option_quote_bar_second
+            // 2026-07-28 = 3,465,706 rows, 43-60 s to materialise) — a chain batch there is far more
+            // expensive than the per-symbol read it replaces, and it would sit in memory besides.
+            // Only day-resolution tables are batched; everything intraday keeps the per-symbol path.
+            if (table.IndexOf("_second", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                table.IndexOf("_minute", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                table.IndexOf("_tick", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return null;
+            }
+
+            var key = table + "\n" + dayUtc.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "\n" + root;
+            lock (_daysGate)
+            {
+                if (_dayBatches.TryGetValue(key, out var cached))
+                {
+                    BatchHits++;
+                    return cached;
+                }
+            }
+
+            if (!HoldsDay(table, dayUtc))
+            {
+                var empty = new Dictionary<string, List<string[]>>(StringComparer.Ordinal);
+                lock (_daysGate)
+                {
+                    if (_dayBatches.Count >= 8)
+                    {
+                        _dayBatches.Clear();
+                    }
+                    _dayBatches[key] = empty;
+                }
+                return empty;
+            }
+
+            try
+            {
+                var time = TimeColumn(table);
+                R2Warehouse.UtcDayBoundsNs(dayUtc, out var lo, out var hi);
+                var source = DaySource(table, dayUtc);
+                var pattern = "^O:" + root.Replace("'", "''") + "[0-9]{6}[CP][0-9]{8}$";
+                // LIKE prunes row groups on the symbol stats; regexp_matches keeps the OSI shape
+                // exact (a root that prefixes another, BA vs BAC, would otherwise leak contracts).
+                var prefix = "O:" + root.Replace("'", "''");
+                var sql = ScanPreamble() +
+                          $"SELECT symbol, {columns} FROM {source} " +
+                          $"WHERE symbol LIKE '{prefix}%' AND regexp_matches(symbol, '{pattern}') {predicate} " +
+                          $"AND {time} >= make_timestamp_ns({lo}) AND {time} < make_timestamp_ns({hi}) " +
+                          $"{grouping}ORDER BY symbol, {orderBy};";
+
+                var started = Stopwatch.StartNew();
+                BatchMisses++;
+                var grouped = new Dictionary<string, List<string[]>>(StringComparer.Ordinal);
+                foreach (var row in Rows(sql))
+                {
+                    if (row.Length < 2 || string.IsNullOrEmpty(row[0]))
+                    {
+                        continue;
+                    }
+                    var rest = new string[row.Length - 1];
+                    Array.Copy(row, 1, rest, 0, rest.Length);
+                    if (!grouped.TryGetValue(row[0], out var list))
+                    {
+                        grouped[row[0]] = list = new List<string[]>();
+                    }
+                    list.Add(rest);
+                }
+
+                // Safety net: a day table that turns out huge is not worth holding in memory either
+                // — drop it and let the caller read per symbol.
+                if (grouped.Sum(pair => pair.Value.Count) > 250_000)
+                {
+                    Log.Trace($"R2LocalCatalog: chain batch {table} {dayUtc:yyyy-MM-dd} {root} too large " +
+                              $"({grouped.Sum(pair => pair.Value.Count)} rows, {started.ElapsedMilliseconds} ms) — not cached.");
+                    return null;
+                }
+
+                lock (_daysGate)
+                {
+                    if (_dayBatches.Count >= 8)
+                    {
+                        _dayBatches.Clear();
+                    }
+                    _dayBatches[key] = grouped;
+                }
+                Log.Trace($"R2LocalCatalog: chain batch {table} {dayUtc:yyyy-MM-dd} {root}: " +
+                          $"{grouped.Count} symbols, {grouped.Sum(p => p.Value.Count)} rows in " +
+                          $"{started.ElapsedMilliseconds} ms.");
+                return grouped;
+            }
+            catch (Exception error)
+            {
+                Log.Error($"R2LocalCatalog: batched read of {table} {dayUtc:yyyy-MM-dd} for {root} failed — " +
+                          $"falling back to per-contract reads: {error.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Every symbol one table holds on one UTC day, built with a single
+        /// <c>SELECT DISTINCT symbol</c> over that day's window and memoised.
+        ///
+        /// This is the batching that makes a chain subscription O(1) per contract: Lean asks
+        /// <see cref="ResolveSymbol"/> once per contract per table while subscribing (and again for
+        /// history), and each answer used to be its own scan of the whole table. Null when the
+        /// query could not answer (the caller then falls back to the per-symbol scan).
+        /// </summary>
+        public HashSet<string> SymbolsFor(string table, DateTime dayUtc)
+        {
+            RequireTable(table);
+            var key = DayKey(table, dayUtc);
+            lock (_daysGate)
+            {
+                if (_days.TryGetValue(key, out var cached))
+                {
+                    cached.LastUsed = ++_dayClock;
+                    return cached.Symbols;
+                }
+                if (_daySymbols.TryGetValue(key, out var known))
+                {
+                    return known;
+                }
+            }
+
+            try
+            {
+                var time = TimeColumn(table);
+                R2Warehouse.UtcDayBoundsNs(dayUtc.Date, out var lo, out var hi);
+                var sql = ScanPreamble() +
+                          $"SELECT DISTINCT symbol FROM {DataFrom(table)} " +
+                          $"WHERE {time} >= make_timestamp_ns({lo}) AND {time} < make_timestamp_ns({hi});";
+                var symbols = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var row in Rows(sql))
+                {
+                    if (row.Length > 0 && !string.IsNullOrEmpty(row[0]))
+                    {
+                        symbols.Add(row[0]);
+                    }
+                }
+                lock (_daysGate)
+                {
+                    if (_daySymbols.Count >= 256)
+                    {
+                        // Bounded: the days a run touches are few, but a long backtest walks many.
+                        _daySymbols.Clear();
+                    }
+                    _daySymbols[key] = symbols;
+                }
+                return symbols;
+            }
+            catch (Exception error)
+            {
+                Log.Error($"R2LocalCatalog: symbol index for {table} {dayUtc:yyyy-MM-dd} failed — " +
+                          $"falling back to per-symbol checks: {error.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
         /// OSI root: the leading alpha run of the vendor ticker's body (O:GE260619C00130000 -> GE).
         /// Cheap, deterministic; a wrong split merely misses the cache and falls back to the
         /// per-contract path.
@@ -640,6 +862,18 @@ namespace QuantConnect.Lean.DataSource.R2
         /// cloudflare data route the FROM is the attached catalog's table, so the ATTACH is ensured
         /// exactly here, the one place every row-level read passes through.
         /// </summary>
+        /// <summary>
+        /// True when this (table, day) is held in memory as a materialised temp table — the caller
+        /// uses it to say whether a slow read was a temp-table scan or an Iceberg scan.
+        /// </summary>
+        public bool DayIsMaterialised(string table, DateTime dayUtc)
+        {
+            lock (_daysGate)
+            {
+                return _days.ContainsKey(DayKey(table, dayUtc));
+            }
+        }
+
         public IEnumerable<string[]> Rows(string sql) => Run(sql, _routing.Data == R2Route.CloudFlare);
 
         /// <summary>
@@ -1313,7 +1547,35 @@ namespace QuantConnect.Lean.DataSource.R2
             // warehouse partitions by, but as a temp-table suffix it reads like a typo (20726 is
             // 2026-09-30, not July).
             var name = $"r2_day_{table}_{dayUtc.Date:yyyyMMdd}";
-            session.Query($"CREATE OR REPLACE TEMP TABLE {name} AS SELECT * FROM {from} {window};");
+            // Sorted by (symbol, ts): the day is then asked for one contract at a time, and rows for
+            // a contract sit together — zone maps skip every other row group without touching it.
+            // Measured before this: 3.5-7.6 M row chain-days took a full scan per contract,
+            // 262 ms median across ~1,500 subscriptions (~6.5 min per simulated day).
+            try
+            {
+                session.Query($"CREATE OR REPLACE TEMP TABLE {name} AS SELECT * FROM {from} {window} " +
+                              $"ORDER BY symbol, {time};");
+            }
+            catch (Exception orderError)
+            {
+                // A table without a symbol column (or a duckdb that refuses the sort) still gets the
+                // day; it just loses the pruning and keeps the previous behaviour.
+                Log.Trace($"R2LocalCatalog: {table} {dayUtc:yyyy-MM-dd} cannot be sorted by symbol " +
+                          $"({orderError.Message}) — materialising unsorted.");
+                session.Query($"CREATE OR REPLACE TEMP TABLE {name} AS SELECT * FROM {from} {window};");
+            }
+
+            // Equality lookup on symbol is the whole access pattern; an ART index makes it O(log n)
+            // instead of a scan. Built once per materialised day (~1-2 s on 5 M rows).
+            try
+            {
+                session.Query($"CREATE INDEX {name}_sym ON {name} (symbol);");
+            }
+            catch (Exception indexError)
+            {
+                Log.Trace($"R2LocalCatalog: {table} {dayUtc:yyyy-MM-dd} could not index symbol " +
+                          $"({indexError.Message}) — continuing without it.");
+            }
 
             var symbols = new HashSet<string>(StringComparer.Ordinal);
             foreach (var row in session.Query($"SELECT DISTINCT symbol FROM {name};"))
