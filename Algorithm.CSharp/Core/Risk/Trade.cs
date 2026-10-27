@@ -172,10 +172,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             Bid0Underlying = SecurityUnderlying.BidPrice;
             Ask0Underlying = SecurityUnderlying.AskPrice;
 
-
             PriceFillAvg = _algo.MidPrice(Symbol);  // holding.AveragePrice;
             FirstFillTime = algo.Time;
-            Snap();
+            if (Quantity != 0) Snap();
             Tag = "Simulated Fill derived from existing Portfolio Holding.";
         }
 
