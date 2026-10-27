@@ -77,6 +77,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             rMQClient.ConnectAsync(CfgAlgo.MQHost, CfgAlgo.MQPort, CfgAlgo.MQUser, CfgAlgo.MQPass, CfgAlgo.MQVirtualHost);
             Log($"Connecting to RabbitMQ: {CfgAlgo.MQHost}:{CfgAlgo.MQPort} VHost: {CfgAlgo.MQVirtualHost} ...");
 
+            // Live config deltas: its own connection (the client above owns the catch-all reply
+            // queue). Fails open — a broker hiccup must never block Initialize.
+            ConfigUpdates = new ConfigUpdateChannel(this);
+            ConfigUpdates.Start(CfgAlgo.MQHost, CfgAlgo.MQPort, CfgAlgo.MQUser, CfgAlgo.MQPass, CfgAlgo.MQVirtualHost);
+
             if (CfgAlgo.PricerCacheEnabled)
             {
                 // The pricer-cache plane is mode-agnostic: it runs in backtests too (that is how

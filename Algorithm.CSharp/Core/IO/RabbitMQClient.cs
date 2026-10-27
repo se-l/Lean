@@ -1,4 +1,4 @@
-﻿using RabbitMQ.Client;
+using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System;
 using System.Collections.Generic;
@@ -7,6 +7,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Google.Protobuf;
+using QuantConnect.Configuration;
 using QuantConnect.Scheduling;
 
 namespace QuantConnect.Algorithm.CSharp.Core.IO
@@ -18,20 +19,41 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         // ── Fields ────────────────────────────────────────────────────
         private readonly Foundations _algo;
         private readonly Dictionary<ChannelPb, EventHandler<EventArgs>> _eventHandlers;
-        // Unanswered requests: id -> (channel, algo clock at send). Every submission is tracked
-        // until its response arrives, so any response — including the request the recipient is
-        // still processing — can compute its scheduled callback time as tsSent + elapsedMs
-        // (DispatchResponse). The recipient consumes each channel LIFO: buried submissions (an
-        // older queued message displaced by a newer one before being dequeued) are never answered
-        // and are pruned when the channel's next response proves them dead; the request currently
-        // being processed is invisible from here but does answer, so its entry is kept.
-        private readonly ConcurrentDictionary<string, (ChannelPb Channel, DateTime Sent)> _activeRequests = new();
+        // Unanswered requests: id -> (channel, algo clock at send, wall clock at send). Every
+        // submission is tracked until its response arrives, so any response — including the request
+        // the recipient is still processing — can compute its scheduled callback time as
+        // tsSent + elapsedMs (DispatchResponse). The wall clock is what ExpireUnansweredRequests
+        // measures: the recipient conflates channels (MQMsgBroker.jl "latest-wins"), so an
+        // overwritten request is never answered and without a deadline it would gate pacing
+        // forever.
+        private readonly ConcurrentDictionary<string, (ChannelPb Channel, DateTime Sent, DateTime SentUtc)> _activeRequests = new();
 
-        // Per channel, the newest submission's id — the only one guaranteed a response (it is
-        // either the latest queued message or already being processed), and therefore the only
-        // one near-realtime pacing may wait on. Awaiting every submission stalled
-        // PaceBacktestNearRealtime on buried ids whose responses can never come.
+        // Per channel, the id of the single in-flight submission. One at a time is what makes every
+        // sent request answerable: the recipient drops overwritten messages, so a second send while
+        // one is computing buys a response that can never arrive. The newest payload of a
+        // coalesced send waits here and is published when the outstanding response lands.
         private readonly ConcurrentDictionary<ChannelPb, string> _lastSentIds = new();
+        private readonly ConcurrentDictionary<ChannelPb, PendingRequest> _pending = new();
+        private readonly object _sendGate = new();
+
+        /// <summary>
+        /// Deadline for one request (<c>mq-response-timeout-s</c>, default 300 s). A conflated or
+        /// lost request is never answered; past this the wait is dropped and pacing continues.
+        /// </summary>
+        private readonly int _responseTimeoutSeconds;
+
+        /// <summary>A coalesced request body waiting for the channel's in-flight response.</summary>
+        private sealed class PendingRequest
+        {
+            public PendingRequest(string id, byte[] body)
+            {
+                Id = id;
+                Body = body;
+            }
+
+            public string Id { get; }
+            public byte[] Body { get; }
+        }
         private readonly SemaphoreSlim _connectLock = new(1, 1);
         private IConnection _connection;
         private IChannel _channel;
@@ -47,6 +69,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         {
             _algo = algo;
             _eventHandlers = new Dictionary<ChannelPb, EventHandler<EventArgs>>();
+            _responseTimeoutSeconds = Math.Max(1, int.Parse(Config.Get("mq-response-timeout-s", "400"),
+                System.Globalization.CultureInfo.InvariantCulture));
         }
 
         // ── Register event handlers ───────────────────────────────────
@@ -70,13 +94,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         }
 
         /// <summary>
-        /// True while at least one submission still awaits a response that can actually arrive:
-        /// the last request sent per channel. Buried (superseded) submissions stay in
-        /// <see cref="_activeRequests"/> for send-time bookkeeping but never gate pacing — the
-        /// LIFO recipient ignores them, so waiting on them stalled the backtest.
+        /// True while a channel's in-flight submission still awaits a response. With one request
+        /// in flight per channel (see <see cref="SendMessageAsync{T}"/>) this is at most one per
+        /// channel, and every id it can name is one the recipient was actually given a chance to
+        /// answer. Requests older than <c>mq-response-timeout-s</c> are expired first, so a
+        /// conflated or lost response can never gate pacing indefinitely.
         /// </summary>
         public bool HasActiveRequests()
         {
+            ExpireUnansweredRequests();
             foreach (var (_, id) in _lastSentIds)
             {
                 if (_activeRequests.ContainsKey(id))
@@ -85,6 +111,42 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// Drops submissions older than <see cref="_responseTimeoutSeconds"/>.
+        ///
+        /// The recipient conflates: a newer message on a conflating channel overwrites the pending
+        /// one and the overwritten request is never answered (MQMsgBroker.jl acks conflating
+        /// channels on receipt precisely because they may be dropped). Without this bound one lost
+        /// response stalls <c>PaceBacktestNearRealtime</c> forever — observed 2026-10-22: a 1,197 s
+        /// wait on a single timestep, killed by Lean's 20-minute Isolator. Dropping the wait does
+        /// not fabricate a response: the handler simply never fires for that request, pacing moves
+        /// on, and the newest coalesced payload for the channel is sent instead.
+        /// </summary>
+        private void ExpireUnansweredRequests()
+        {
+            var now = DateTime.UtcNow;
+            foreach (var (id, entry) in _activeRequests)
+            {
+                var age = (now - entry.SentUtc).TotalSeconds;
+                if (age < _responseTimeoutSeconds)
+                {
+                    continue;
+                }
+                if (!_activeRequests.TryRemove(id, out var expired))
+                {
+                    continue;
+                }
+                _algo.Error($"{_algo.Time} RabbitMqClient: no response for {expired.Channel} id={id} after " +
+                            $"{age:F0}s (mq-response-timeout-s={_responseTimeoutSeconds}) — dropping the wait; " +
+                            "pacing continues.");
+                if (_lastSentIds.TryGetValue(expired.Channel, out var last) && last == id)
+                {
+                    _lastSentIds.TryRemove(new KeyValuePair<ChannelPb, string>(expired.Channel, id));
+                    TryPublishPending(expired.Channel);
+                }
+            }
         }
 
         // ── Connect ───────────────────────────────────────────────────
@@ -170,18 +232,34 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
             var body = msg.ToByteArray();
 
-            // Every submission is timed for tsSent + elapsedMs scheduling; the newest per channel
-            // additionally gates pacing, the only one the LIFO recipient is guaranteed to answer.
-            // Older submissions stay timed but ungated: the currently-processed one (invisible
-            // from here) may still answer, buried ones are pruned when the channel's next
-            // response arrives.
-            _activeRequests[msg.Id] = (rabbitChannel, _algo.Time);
-            _lastSentIds[rabbitChannel] = msg.Id;
+            // One request in flight per channel. The recipient conflates (MQMsgBroker.jl
+            // "latest-wins": conflating channels ack on receipt because the pending message may be
+            // overwritten), so a request sent while another is still computing is exactly the one
+            // that never answers — and it stretches the pacing wait by a full compute. Keep the
+            // newest payload here; it is published as soon as the outstanding response lands.
+            lock (_sendGate)
+            {
+                if (HasOutstandingRequest(rabbitChannel))
+                {
+                    _pending[rabbitChannel] = new PendingRequest(msg.Id, body);
+                    _algo.Log($"{_algo.Time} RabbitMqClient: {rabbitChannel} request coalesced " +
+                              "(one already in flight) — newest payload kept.");
+                    return;
+                }
+                _activeRequests[msg.Id] = (rabbitChannel, _algo.Time, DateTime.UtcNow);
+                _lastSentIds[rabbitChannel] = msg.Id;
+            }
 
+            await PublishAsync(rabbitChannel, msg.Id, body);
+        }
+
+        /// <summary>Publishes a request already registered as in flight; forgets it if the send fails.</summary>
+        private async Task PublishAsync(ChannelPb rabbitChannel, string id, byte[] body)
+        {
             var props = new BasicProperties
             {
                 ReplyTo = _replyQueueName,
-                CorrelationId = msg.Id
+                CorrelationId = id
             };
 
             try
@@ -197,10 +275,50 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             {
                 // A send that never reached the broker can never be answered; forgetting it keeps
                 // pacing from waiting on a response that will not come.
-                _activeRequests.TryRemove(msg.Id, out _);
-                _lastSentIds.TryRemove(new KeyValuePair<ChannelPb, string>(rabbitChannel, msg.Id));
+                _activeRequests.TryRemove(id, out _);
+                _lastSentIds.TryRemove(new KeyValuePair<ChannelPb, string>(rabbitChannel, id));
                 throw;
             }
+        }
+
+        /// <summary>True while the channel's in-flight submission still awaits its response.</summary>
+        private bool HasOutstandingRequest(ChannelPb channel) =>
+            _lastSentIds.TryGetValue(channel, out var id) && _activeRequests.ContainsKey(id);
+
+        /// <summary>
+        /// Publishes the newest coalesced payload for a channel, if one is waiting. Called when a
+        /// response retires the in-flight request (OnMessageReceived) or when that request expires.
+        /// </summary>
+        private void TryPublishPending(ChannelPb channel)
+        {
+            if (!_pending.TryRemove(channel, out var pending))
+            {
+                return;
+            }
+
+            lock (_sendGate)
+            {
+                if (HasOutstandingRequest(channel))
+                {
+                    // Lost a race with a direct send: keep the payload queued behind it.
+                    _pending[channel] = pending;
+                    return;
+                }
+                _activeRequests[pending.Id] = (channel, _algo.Time, DateTime.UtcNow);
+                _lastSentIds[channel] = pending.Id;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await PublishAsync(channel, pending.Id, pending.Body);
+                }
+                catch (Exception error)
+                {
+                    _algo.Error($"{_algo.Time} RabbitMqClient: coalesced {channel} publish failed: {error.Message}");
+                }
+            });
         }
 
         // ── Receive ───────────────────────────────────────────────────
@@ -215,9 +333,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
                 var requestSentTime = RemoveActiveRequest(msg.Id);
                 // The recipient works channel by channel: a response for this channel retires
-                // every earlier unanswered submission on it (buried in the LIFO queue, or its
+                // every earlier unanswered submission on it (overwritten while conflating, or its
                 // result dropped when superseded). They will never send a response of their own.
                 PruneSuperseded(msg.Channel);
+                // The channel is free again: send the newest payload that was coalesced while this
+                // request was in flight.
+                TryPublishPending(msg.Channel);
 
                 switch (msg.Channel)
                 {

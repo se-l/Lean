@@ -37,9 +37,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
     /// </summary>
     public sealed class JuliaPricingClient : IDisposable
     {
-        private readonly RequestSocket _socket;
+        // Not readonly: a REQ socket that timed out is unusable (the REQ/REP state machine is
+        // broken until it is recreated), so ResetSocket() replaces it.
+        private RequestSocket _socket;
+        private readonly string _endpoint;
         private static readonly Action<string> _log = Console.WriteLine;
         private readonly object _lock = new object();
+
+        /// <summary>
+        /// Deadline for one send+receive. A REQ socket has no deadline of its own: with nothing
+        /// listening on the endpoint (observed 2026-10-25 — the pricer moved to 8103 while the
+        /// algorithm config still said 8102) every call waited forever and the timestep was killed
+        /// by Lean's 20-minute Isolator with no log line. 30 s turns that into one readable
+        /// TimeoutException naming the endpoint.
+        /// </summary>
+        private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(30);
 
         public enum Command : byte
         {
@@ -62,8 +74,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public JuliaPricingClient(string endpoint)
         // public JuliaPricingClient(string endpoint = "ipc:///tmp/julia_pricer")
         {
+            _endpoint = endpoint;
             _socket = new RequestSocket();
             _socket.Connect(endpoint);
+        }
+
+        /// <summary>Recreates the socket after a timeout (a timed-out REQ socket cannot be reused).</summary>
+        private void ResetSocket()
+        {
+            try
+            {
+                _socket.Dispose();
+            }
+            catch
+            {
+                // The old socket is unusable either way.
+            }
+            _socket = new RequestSocket();
+            _socket.Connect(_endpoint);
         }
 
         // ── Call statistics (cross-thread, cumulative) ──────────────────────
@@ -261,7 +289,32 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             {
                 _socket.SendFrame(buf);
 
-                byte[] reply = _socket.ReceiveFrameBytes();
+                // A REQ socket blocks forever when nothing answers (NetMQ 4.0 has no socket-level
+                // receive timeout), which is how a wrong PricerPort turned into a silent 20-minute
+                // timestep. TryReceive with a deadline bounds it.
+                // NetMQ 4's Msg starts UNINITIALISED: Recv throws "passed an uninitialised Msg"
+                // unless InitEmpty() ran first, and Close() on a never-received Msg throws too.
+                var msg = new Msg();
+                msg.InitEmpty();
+                byte[] reply;
+                try
+                {
+                    if (!_socket.TryReceive(ref msg, CallTimeout))
+                    {
+                        ResetSocket();
+                        _log($"[JuliaPricing] TIMEOUT after {CallTimeout.TotalSeconds:0}s on {_endpoint} " +
+                             $"for {command} {ticker} — the pricer is not answering (wrong PricerPort or " +
+                             "a wedged server).");
+                        throw new TimeoutException(
+                            $"Julia pricing: no reply from {_endpoint} within {CallTimeout.TotalSeconds:0}s " +
+                            $"for {command} {ticker}.");
+                    }
+                    reply = msg.CloneData();
+                }
+                finally
+                {
+                    msg.Close();
+                }
                 // sw.Stop();
                 // _log($"[JuliaPricing] {command} | {sw.ElapsedMilliseconds} ms");
                 // IV takes 25-120 ms

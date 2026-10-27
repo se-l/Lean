@@ -1,7 +1,7 @@
 {
-  "StartDate": "2026-08-05",
-  "EndDate": "2026-08-06",
-  "Ticker": [ "WDC" ],
+  "StartDate": "2026-07-27",
+  "EndDate": "2026-07-28",
+  "Ticker": [ "BA" ],
   "MQHost": "127.0.0.1",
   "MQPort": 5672,
   "MQVirtualHost": "dev",
@@ -9,7 +9,7 @@
   "MQPass": "MHO6N5BFmNGFbD587",
   "PricerProtocol": "tcp",
   "PricerHost": "127.0.0.1",
-  "PricerPort": 8102,
+  "PricerPort": 8103,
   "PricerCacheEnabled": true,
   "PricerCacheVHost": "dev",
   "EarningsEntryStartTime": {

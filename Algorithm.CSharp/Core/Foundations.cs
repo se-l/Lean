@@ -91,6 +91,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, ManualOrderInstruction> ManualOrderInstructionBySymbol;
         public Dictionary<string, EarningsAnnouncement[]> EarningsBySymbol;
         public FoundationsConfig Cfg;
+
+        /// <summary>
+        /// Live configuration deltas (RabbitMQ "config.#"). Started in Initialize; applied on the
+        /// algorithm thread at the top of OnData, so settings never change mid-cycle.
+        /// </summary>
+        public ConfigUpdateChannel ConfigUpdates;
         public string FoundationsConfigFileName = "FoundationsConfig.json";
 
         public Dictionary<Symbol, RiskDiscount> AbsoluteDiscounts = new();
@@ -447,6 +453,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public override void OnData(Slice slice)
         {
+            // Live config deltas land here, on the algorithm thread: a settings object read by this
+            // cycle never changes underneath it. Applied during warm-up too — a knob changed before
+            // the session opens should be in force at the open.
+            ConfigUpdates?.ApplyPending();
+
             if (IsWarmingUp) return;
             PaceBacktestNearRealtime();
             // Feed pre-calculated IVs from disk into IvBid/Ask indicators (backtest only),
@@ -1062,6 +1073,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return Transactions.OcaGroupStatus.TryGetValue(ocaGroup, out OrderStatus status) ? status : OrderStatus.None;
             }
         }
+        /// <summary>
+        /// A ticket is live only if its own status is open AND its OCA group is still open.
+        ///
+        /// Lean learns ticket status only from the broker's order events, and IB cancels OCA
+        /// siblings server-side when one leg fills — those events can be missed for a given order,
+        /// leaving its ticket "Submitted" forever. The group status is updated by whichever event
+        /// does arrive, so it is the reliable half: once a group is Filled/Canceled, every ticket
+        /// still carrying it is dead, whatever its own status says.
+        /// </summary>
+        private bool IsLiveTicket(OrderTicket ticket) =>
+            !orderFilledCanceledCancelPendingInvalid.Contains(ticket.Status)
+            && !orderFilledCanceledCancelPendingInvalid.Contains(OcaGroupStatus(ticket.OcaGroup));
+
         public void SubmitSignal(Signal signal)
         {
             if (signal == null)
@@ -1070,26 +1094,27 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return;
             }
             // Order desired tickets
-            bool anyTickets = orderTickets.TryGetValue(signal?.Symbol, out List<OrderTicket> tickets) && tickets.Any();
-            if (anyTickets || orderPartialFilledCanceledPendingInvalid.Contains(OcaGroupStatus(signal.OcaGroup)))
+            bool anyTickets = orderTickets.TryGetValue(signal?.Symbol, out List<OrderTicket> tickets) && tickets.Any(IsLiveTicket);
+            if (anyTickets)
             {
-                if (anyTickets)
-                {
-                    Log($"{Time} SubmitSignal: Not submitting signal={signal}, symbol={signal.Symbol} because ticketsCnt={tickets.Count}, tickets={string.Join(",", tickets)}, OcaGroupStatus={OcaGroupStatus(signal.OcaGroup)}");
-                }
-                else
-                {
-                    Log($"{Time} SubmitSignal: Not submitting signal={signal}, symbol={signal.Symbol} because OcaGroupStatus={OcaGroupStatus(signal.OcaGroup)}");
-                }
-                // Either already have a ticket. No problem / ok.
-
-                // Or cancelation pending. In this case. register a callback to order the desired ticket, once canceled, comes as orderEvent.
-                // EventDriven : On Cancelation, place opposite direction order if any in Signals.
-                // TBCoded
-
-                // Or OCA group has already been canceled
+                Log($"{Time} SubmitSignal: Not submitting signal={signal}, symbol={signal.Symbol} because ticketsCnt={tickets.Count}, tickets={string.Join(",", tickets.Where(IsLiveTicket))}, OcaGroupStatus={OcaGroupStatus(signal.OcaGroup)}");
+                // Already have a ticket. No problem / ok.
                 return;
             }
+
+            // A closed OCA group is not a reason to drop the signal: the id is dead for the run, so
+            // the signal inherits a veto that never lifts. Give it a fresh group and place the order.
+            // Only a genuinely closed group is reassigned — a partially filled group is alive and
+            // keeps its id, so new orders still join it.
+            var inheritedStatus = OcaGroupStatus(signal.OcaGroup);
+            if (orderFilledCanceledCancelPendingInvalid.Contains(inheritedStatus))
+            {
+                var staleGroup = signal.OcaGroup;
+                signal.AssignOcaGroup(NewOcaGroupId());
+                Log($"{Time} SubmitSignal: signal={signal}, symbol={signal.Symbol} inherited closed " +
+                    $"OcaGroup={staleGroup} (status={inheritedStatus}); reassigned {signal.OcaGroup}.");
+            }
+
             OrderOptionContract(signal, OrderType.Limit);
         }
 
@@ -1503,6 +1528,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
             foreach (OrderTicket t in ticketsWithOCAGroupsToReuse)
             {
                 Symbol ticketUnderlying = Underlying(t.Symbol);
+
+                // Never adopt a ticket whose group is closed, and never adopt a dead ticket: once
+                // Lean marks a group Canceled/Filled the id is dead for the rest of the run, so
+                // seeding from a ticket that still carries it poisons every later signal — one
+                // stuck ticket blocked BA for a whole session with "because OcaGroupStatus=Canceled".
+                // A live group (including a partially filled one) still donates its id, which is the
+                // whole point of the OCA: new orders on the same underlying and delta sign join it.
+                if (!IsLiveTicket(t))
+                {
+                    continue;
+                }
+
                 decimal spot = MidPrice(ticketUnderlying);
 
                 if (ocaGroupByUnderlyingDelta.ContainsKey((ticketUnderlying, 1)) || ocaGroupByUnderlyingDelta.ContainsKey((ticketUnderlying, -1)))
@@ -1576,7 +1613,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 List<OrderTicket> liveTickets = orderTickets.ToList().
                     Where(kvp => kvp.Key.SecurityType == SecurityType.Option && kvp.Key.Underlying == underlying).
                     SelectMany(kvp => kvp.Value).
-                    Where(t => !orderFilledCanceledCancelPendingInvalid.Contains(t.Status)).
+                    Where(IsLiveTicket).
                     ToList();
 
                 var ticketsToCancel = liveTickets.Where(t => !symbolDirectionToOrder.Contains((t.Symbol, Num2Direction(t.Quantity)))).ToList();
@@ -2487,7 +2524,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
 
             // Last 7 tradeable days first; an illiquid contract retries further back, same resolution.
-            if (!requestData(7) && !requestData(30))
+            if (!requestData(1))
             {
                 Log($"GetLastKnownPricesTradeOrQuote(): {symbol} no daily trade or quote point in the last 30 tradeable days.");
             }
