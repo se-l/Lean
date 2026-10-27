@@ -46,11 +46,27 @@ namespace QuantConnect.Logging
         }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="FileLogHandler"/> class using 'log.txt' for the filepath.
+        /// Initializes a new instance of the <see cref="FileLogHandler"/> class using
+        /// <see cref="Log.FilePath"/>, with the process start time appended to the file name
+        /// (<c>log-20261027-111532.txt</c>) so every run writes its own file. A run that is killed
+        /// can no longer be confused with the next one, and each file stays greppable on its own.
+        /// <see cref="Log.FilePath"/> is updated to the resolved path, so everything that copies or
+        /// reports the log (Engine's analytics copy, tooling) finds the real file.
         /// </summary>
         public FileLogHandler()
-            : this(Log.FilePath)
+            : this(TimestampedPath(Log.FilePath))
         {
+        }
+
+        private static string TimestampedPath(string path)
+        {
+            var directory = Path.GetDirectoryName(path);
+            var name = Path.GetFileNameWithoutExtension(path);
+            var extension = Path.GetExtension(path);
+            var stamped = Path.Combine(directory ?? string.Empty,
+                $"{name}-{DateTime.Now:yyyyMMdd-HHmmss}{extension}");
+            Log.FilePath = stamped;
+            return stamped;
         }
 
         /// <summary>

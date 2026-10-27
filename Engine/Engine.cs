@@ -440,7 +440,22 @@ namespace QuantConnect.Lean.Engine
             }
             finally
             {
-                File.Copy("./log.txt", Path.Combine(Globals.PathAnalytics, "log.txt"));
+                // Copy the run's own log (log-YYYYMMDD-HHMMSS.txt) to the analytics directory. The
+                // old code copied a fixed "./log.txt", which no longer exists; it also threw inside
+                // this finally block when the file was missing, masking the real error.
+                try
+                {
+                    var runLog = Log.FilePath;
+                    if (File.Exists(runLog))
+                    {
+                        File.Copy(runLog, Path.Combine(Globals.PathAnalytics, Path.GetFileName(runLog)),
+                            overwrite: true);
+                    }
+                }
+                catch (Exception copyError)
+                {
+                    Log.Error(copyError, "Engine.Run(): could not copy the run log to the analytics directory.");
+                }
 
                 //No matter what for live mode; make sure we've set algorithm status in the API for "not running" conditions:
                 if (_liveMode && algorithmManager.State != AlgorithmStatus.Running && algorithmManager.State != AlgorithmStatus.RuntimeError)
