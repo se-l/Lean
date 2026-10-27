@@ -1547,35 +1547,7 @@ namespace QuantConnect.Lean.DataSource.R2
             // warehouse partitions by, but as a temp-table suffix it reads like a typo (20726 is
             // 2026-09-30, not July).
             var name = $"r2_day_{table}_{dayUtc.Date:yyyyMMdd}";
-            // Sorted by (symbol, ts): the day is then asked for one contract at a time, and rows for
-            // a contract sit together — zone maps skip every other row group without touching it.
-            // Measured before this: 3.5-7.6 M row chain-days took a full scan per contract,
-            // 262 ms median across ~1,500 subscriptions (~6.5 min per simulated day).
-            try
-            {
-                session.Query($"CREATE OR REPLACE TEMP TABLE {name} AS SELECT * FROM {from} {window} " +
-                              $"ORDER BY symbol, {time};");
-            }
-            catch (Exception orderError)
-            {
-                // A table without a symbol column (or a duckdb that refuses the sort) still gets the
-                // day; it just loses the pruning and keeps the previous behaviour.
-                Log.Trace($"R2LocalCatalog: {table} {dayUtc:yyyy-MM-dd} cannot be sorted by symbol " +
-                          $"({orderError.Message}) — materialising unsorted.");
-                session.Query($"CREATE OR REPLACE TEMP TABLE {name} AS SELECT * FROM {from} {window};");
-            }
-
-            // Equality lookup on symbol is the whole access pattern; an ART index makes it O(log n)
-            // instead of a scan. Built once per materialised day (~1-2 s on 5 M rows).
-            try
-            {
-                session.Query($"CREATE INDEX {name}_sym ON {name} (symbol);");
-            }
-            catch (Exception indexError)
-            {
-                Log.Trace($"R2LocalCatalog: {table} {dayUtc:yyyy-MM-dd} could not index symbol " +
-                          $"({indexError.Message}) — continuing without it.");
-            }
+            session.Query($"CREATE OR REPLACE TEMP TABLE {name} AS SELECT * FROM {from} {window};");
 
             var symbols = new HashSet<string>(StringComparer.Ordinal);
             foreach (var row in session.Query($"SELECT DISTINCT symbol FROM {name};"))
