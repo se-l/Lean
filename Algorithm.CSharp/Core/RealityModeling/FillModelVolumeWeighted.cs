@@ -2,7 +2,6 @@ using NodaTime;
 using QuantConnect.Orders;
 using System;
 using QuantConnect.Securities;
-using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
 {

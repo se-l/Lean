@@ -57,17 +57,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (!_algo.LiveMode && security.Type == SecurityType.Option)
             {
-                // Option Probabilistic Fill Model.
-                // The seeder (GetLastKnownPricesTradeOrQuote) already fetched this contract's daily
-                // trade series for the price seed; reuse it for the volume average instead of a
-                // second daily request. Fallback covers securities the seeder skipped.
-                if (!_algo.SeedDailyTradeBars.Remove(security.Symbol, out var dailyBars) || dailyBars.Count == 0)
-                {
-                    dailyBars = _algo.History<TradeBar>(security.Symbol, _algo.Periods(Resolution.Daily, days: 7), Resolution.Daily, fillForward: false).ToList();
-                }
-                decimal meanDailyVolume = dailyBars.Count > 0 ? dailyBars.Average(bar => bar.Volume) : 0;
-                _algo.Log($"SecurityInitializer.Initialize FillModelVolumeWeighted: {symbol} MeanDailyVolume={meanDailyVolume}.");
-                security.SetFillModel(new FillModelVolumeWeighted(meanDailyVolume, 100, 2.0, new StaticLiquiditySurface()));
+                // Vega-weighted probabilistic fill model: pFill = 1 - exp(-vega * weight * spreadTerm),
+                // with vega from the contract's previous-day quote (OptionContractWrap, cached once per
+                // contract per day).
+                _algo.SeedDailyTradeBars.Remove(security.Symbol);
+                security.SetFillModel(FillModelVega.FromConfig(_algo));
+                _algo.Log($"SecurityInitializer.Initialize FillModelVega: {symbol}.");
             }
             else if(!_algo.LiveMode)
             {
