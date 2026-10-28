@@ -59,6 +59,9 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
+
+using Newtonsoft.Json.Linq;
+
 using QuantConnect.Configuration;
 using QuantConnect.Logging;
 
@@ -139,10 +142,33 @@ namespace QuantConnect.Lean.DataSource.R2
 
         /// <summary>
         /// Per-(table, day, underlying) row batches (see <see cref="RowsByUnderlying"/>): the first
-        /// contract's history request loads the whole chain's day, the rest are served from here.
-        /// Bounded: a day of option rows is large, and a run only revisits a handful of days.
+        /// contract's request loads the whole chain's day, and every other contract of that
+        /// (table, day, underlying) is answered from memory, keyed by contract symbol.
+        /// Applies to every option table — bars and ticks — with a per-batch row budget.
         /// </summary>
-        private readonly Dictionary<string, Dictionary<string, List<string[]>>> _dayBatches = new Dictionary<string, Dictionary<string, List<string[]>>>(StringComparer.Ordinal);
+        private sealed class BatchEntry
+        {
+            /// <summary>TRow[] — every row of the chain-day in one array (null when oversize).</summary>
+            public Array Flat;
+            /// <summary>Per-contract slices into <see cref="Flat"/>; null when oversize.</summary>
+            public Dictionary<string, (int Offset, int Count)> Slices;
+            public long RowCount;
+            public long LastUsed;
+        }
+
+        /// <summary>One cached (table, day, symbol) read — the per-contract fallback path.</summary>
+        private sealed class SymbolEntry
+        {
+            public object Rows;
+            public long RowCount;
+            public long LastUsed;
+        }
+
+        private readonly Dictionary<string, BatchEntry> _dayBatches = new Dictionary<string, BatchEntry>(StringComparer.Ordinal);
+        private readonly Dictionary<string, object> _batchGates = new Dictionary<string, object>(StringComparer.Ordinal);
+        private readonly Dictionary<string, SymbolEntry> _symbolRows = new Dictionary<string, SymbolEntry>(StringComparer.Ordinal);
+        private long _batchRows;
+        private long _symbolRowCount;
 
         /// <summary>
         /// Chain-batch counters, read by the history provider to label each request as
@@ -154,6 +180,9 @@ namespace QuantConnect.Lean.DataSource.R2
         private readonly object _daysGate = new object();
         private readonly int _cacheMaxEntries;
         private readonly long _cacheMaxRows;
+        private readonly long _batchMaxRows;
+        private readonly long _batchCacheMaxRows;
+        private readonly long _symbolCacheMaxRows;
         private long _cachedRows;
         private long _dayClock;
         private long _cacheHits;
@@ -279,6 +308,12 @@ namespace QuantConnect.Lean.DataSource.R2
                 _catalogRetries = Setting("catalog-retries", 2);
                 _scanTimeout = TimeSpan.FromSeconds(Setting("trino-timeout-s", 600));
                 _cacheMaxRows = Setting("cache-max-rows", 30_000_000L);
+                // Per chain-day budget. Measured: option_quote_bar_day ~4.6k rows, but
+                // option_quote_bar_second 7,369,009 rows for one underlying-day; the batch is
+                // gated by a pre-flight count(*) and abandoned above this budget.
+                _batchMaxRows = Setting("batch-max-rows", 12_000_000L);
+                _batchCacheMaxRows = Setting("batch-cache-max-rows", 12_000_000L);
+                _symbolCacheMaxRows = Setting("symbol-cache-max-rows", 8_000_000L);
                 _trino = new TrinoSession(
                     trinoUrl,
                     trinoCatalog,
@@ -321,6 +356,9 @@ namespace QuantConnect.Lean.DataSource.R2
             // spills temp tables past its own memory limit, so a generous row budget is safer than
             // a tight one that guarantees thrash.
             _cacheMaxRows = Setting("cache-max-rows", 30_000_000L);
+            _batchMaxRows = Setting("batch-max-rows", 12_000_000L);
+            _batchCacheMaxRows = Setting("batch-cache-max-rows", 12_000_000L);
+            _symbolCacheMaxRows = Setting("symbol-cache-max-rows", 8_000_000L);
 
             // One duckdb process for the life of the catalog: the preamble (SET/LOAD iceberg) is
             // applied once here rather than before every scan. A session that cannot start leaves
@@ -629,6 +667,17 @@ namespace QuantConnect.Lean.DataSource.R2
             }
             RequireTable(table);
 
+            // Option contracts are NOT existence-checked here. The chain registry (option_contract_live)
+            // is a superset of the bar/tick tables, so thousands of contracts legitimately have no
+            // rows for a given day/table; scanning per contract to prove that was the largest
+            // remaining source of per-contract queries. Existence is answered by the
+            // (table, day, underlying) chain batch — cached, already paid for by the rest of the
+            // chain — and an absent contract simply reads as an empty slice.
+            if (ticker.StartsWith("O:", StringComparison.Ordinal))
+            {
+                return ticker;
+            }
+
             // The empty string marks "the warehouse does not carry it", so a negative answer is
             // memoised too: Lean resolves the same contract several times per warmup (subscription,
             // seeding, history), and each check used to re-attach the remote catalog and scan the
@@ -695,22 +744,50 @@ namespace QuantConnect.Lean.DataSource.R2
         }
 
         /// <summary>
-        /// One day of a table for EVERY contract of <paramref name="ticker"/>'s underlying, grouped
-        /// by symbol with the symbol column stripped (each row keeps the caller's own projection).
-        ///
-        /// Warmup asks history once per contract — about 3,100 requests during Initialize — and
-        /// without batching each one is its own scan of the day. The loader writes an underlying's
-        /// contracts together, so one read answers the whole chain: the first contract pays for the
-        /// day, every other contract of that underlying (table, day) is served from memory.
-        ///
-        /// The OSI shape is matched exactly (<c>^O:ROOT\d{6}[CP]\d{8}$</c>) so a root that is a
-        /// prefix of another (BA vs BAC) cannot leak contracts between chains.
-        ///
-        /// Null when the ticker is not an option (no shared prefix) or the batch could not be built;
-        /// the caller then keeps its per-symbol path.
+        /// String-row overload for callers that predate the typed caches — currently the IV reader,
+        /// whose projection is consolidated in SQL and consumed as text.
         /// </summary>
-        public Dictionary<string, List<string[]>> RowsByUnderlying(string table, DateTime dayUtc, string ticker,
-            string columns, string predicate = "", string grouping = "", string orderBy = "1")
+        public R2Batch<string[]>? RowsByUnderlying(string table, DateTime dayUtc, string ticker, string columns,
+            string predicate = "", string grouping = "", string orderBy = "1")
+        {
+            return RowsByUnderlying<string[]>(table, dayUtc, ticker, columns, IdentityParser, predicate, grouping,
+                orderBy, IdentityCellParser);
+        }
+
+        private static bool IdentityParser(string[] row, out string[] value)
+        {
+            value = row;
+            return true;
+        }
+
+        private static bool IdentityCellParser(JsonCell[] cells, int count, out string symbol, out string[] value)
+        {
+            symbol = count > 0 && cells[0].Kind == JsonCell.String ? cells[0].Text : null;
+            value = new string[count > 0 ? count - 1 : 0];
+            for (var i = 1; i < count; i++)
+            {
+                value[i - 1] = R2CellParser.Text(cells[i]);
+            }
+            return !string.IsNullOrEmpty(symbol);
+        }
+
+        /// <summary>
+        /// One day of a table for EVERY contract of <paramref name="ticker"/>'s underlying.
+        ///
+        /// Stored as ONE flat array plus (offset, count) slices per contract: the batch SQL orders by
+        /// symbol first, so a contract's rows are contiguous by construction. Per-contract
+        /// List&lt;TRow&gt; growth doubled its capacity (~2x the payload in allocations) and every buffer
+        /// past 85 KB landed on the LOH, which is collected only in gen2 and never compacted by
+        /// default — that was the real reason a 7.4M-row chain-day peaked at several GB while holding
+        /// ~350 MB of rows.
+        ///
+        /// The array length comes from a preflight `SELECT symbol, count(*) ... GROUP BY symbol`, so it
+        /// is allocated exactly once. If the data shifts between the two queries the batch aborts and
+        /// the caller keeps the per-contract path.
+        /// </summary>
+        public R2Batch<TRow>? RowsByUnderlying<TRow>(string table, DateTime dayUtc, string ticker,
+            string columns, RowParser<TRow> parse, string predicate = "", string grouping = "", string orderBy = "1",
+            CellRowParser<TRow> cellParse = null)
         {
             var root = ticker.StartsWith("O:", StringComparison.Ordinal) ? UnderlyingOf(ticker) : null;
             if (string.IsNullOrEmpty(root))
@@ -718,101 +795,355 @@ namespace QuantConnect.Lean.DataSource.R2
                 return null;
             }
 
-            // Intraday tables are millions of rows per chain-day (measured: option_quote_bar_second
-            // 2026-07-28 = 3,465,706 rows, 43-60 s to materialise) — a chain batch there is far more
-            // expensive than the per-symbol read it replaces, and it would sit in memory besides.
-            // Only day-resolution tables are batched; everything intraday keeps the per-symbol path.
-            if (table.IndexOf("_second", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                table.IndexOf("_minute", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                table.IndexOf("_tick", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return null;
-            }
+            var day = dayUtc.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var key = table + "\n" + day + "\n" + root;
 
-            var key = table + "\n" + dayUtc.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "\n" + root;
             lock (_daysGate)
             {
                 if (_dayBatches.TryGetValue(key, out var cached))
                 {
+                    cached.LastUsed = ++_dayClock;
                     BatchHits++;
-                    return cached;
+                    // null slices = this chain-day exceeded the batch budget; the caller keeps the
+                    // per-contract path and the negative entry stops repeated scans.
+                    return Cached<TRow>(cached);
                 }
             }
 
-            if (!HoldsDay(table, dayUtc))
+            // Single flight per (table, day, underlying): the contracts of one chain warm up
+            // concurrently, and without this every thread would scan the same day before any of
+            // them had a chance to store the batch.
+            object gate;
+            lock (_daysGate)
             {
-                var empty = new Dictionary<string, List<string[]>>(StringComparer.Ordinal);
+                if (!_batchGates.TryGetValue(key, out gate))
+                {
+                    _batchGates[key] = gate = new object();
+                }
+            }
+
+            lock (gate)
+            {
                 lock (_daysGate)
                 {
-                    if (_dayBatches.Count >= 8)
+                    if (_dayBatches.TryGetValue(key, out var raced))
                     {
-                        _dayBatches.Clear();
+                        raced.LastUsed = ++_dayClock;
+                        BatchHits++;
+                        return Cached<TRow>(raced);
                     }
-                    _dayBatches[key] = empty;
-                }
-                return empty;
-            }
-
-            try
-            {
-                var time = TimeColumn(table);
-                R2Warehouse.UtcDayBoundsNs(dayUtc, out var lo, out var hi);
-                var source = DaySource(table, dayUtc);
-                var pattern = "^O:" + root.Replace("'", "''") + "[0-9]{6}[CP][0-9]{8}$";
-                // LIKE prunes row groups on the symbol stats; regexp_matches keeps the OSI shape
-                // exact (a root that prefixes another, BA vs BAC, would otherwise leak contracts).
-                var prefix = "O:" + root.Replace("'", "''");
-                var sql = ScanPreamble() +
-                          $"SELECT symbol, {columns} FROM {source} " +
-                          $"WHERE symbol LIKE '{prefix}%' AND regexp_matches(symbol, '{pattern}') {predicate} " +
-                          $"AND {time} >= make_timestamp_ns({lo}) AND {time} < make_timestamp_ns({hi}) " +
-                          $"{grouping}ORDER BY symbol, {orderBy};";
-
-                var started = Stopwatch.StartNew();
-                BatchMisses++;
-                var grouped = new Dictionary<string, List<string[]>>(StringComparer.Ordinal);
-                foreach (var row in Rows(sql))
-                {
-                    if (row.Length < 2 || string.IsNullOrEmpty(row[0]))
-                    {
-                        continue;
-                    }
-                    var rest = new string[row.Length - 1];
-                    Array.Copy(row, 1, rest, 0, rest.Length);
-                    if (!grouped.TryGetValue(row[0], out var list))
-                    {
-                        grouped[row[0]] = list = new List<string[]>();
-                    }
-                    list.Add(rest);
                 }
 
-                // Safety net: a day table that turns out huge is not worth holding in memory either
-                // — drop it and let the caller read per symbol.
-                if (grouped.Sum(pair => pair.Value.Count) > 250_000)
+                if (!HoldsDay(table, dayUtc))
                 {
-                    Log.Trace($"R2LocalCatalog: chain batch {table} {dayUtc:yyyy-MM-dd} {root} too large " +
-                              $"({grouped.Sum(pair => pair.Value.Count)} rows, {started.ElapsedMilliseconds} ms) — not cached.");
+                    var none = new R2Batch<TRow>(Array.Empty<TRow>(),
+                        new Dictionary<string, (int Offset, int Count)>(StringComparer.Ordinal));
+                    StoreBatch(key, none.FlatArray, none.Slices, 0);
+                    return none;
+                }
+
+                try
+                {
+                    var time = TimeColumn(table);
+                    R2Warehouse.UtcDayBoundsNs(dayUtc, out var lo, out var hi);
+                    var source = DaySource(table, dayUtc);
+                    var pattern = "^O:" + root.Replace("'", "''") + "[0-9]{6}[CP][0-9]{8}$";
+                    // LIKE prunes row groups on the symbol stats; regexp_matches keeps the OSI shape
+                    // exact (a root that prefixes another, BA vs BAC, would otherwise leak contracts).
+                    var prefix = "O:" + root.Replace("'", "''");
+                    var where =
+                        $"symbol LIKE '{prefix}%' AND regexp_matches(symbol, '{pattern}') {predicate} " +
+                        $"AND {time} >= make_timestamp_ns({lo}) AND {time} < make_timestamp_ns({hi})";
+
+                    var started = Stopwatch.StartNew();
+                    BatchMisses++;
+
+                    // Exact per-contract counts: size the flat array once, no growth copies. Iceberg
+                    // answers this from metadata in ~1 s even for a 7.4M-row chain-day (measured).
+                    var capacities = new Dictionary<string, int>(StringComparer.Ordinal);
+                    long total = 0;
+                    foreach (var row in Rows(ScanPreamble() +
+                                             $"SELECT symbol, count(*) FROM {source} WHERE {where} GROUP BY symbol;"))
+                    {
+                        if (row.Length < 2 || string.IsNullOrEmpty(row[0]) ||
+                            !int.TryParse(row[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var n))
+                        {
+                            continue;
+                        }
+                        capacities[row[0]] = n;
+                        total += n;
+                    }
+
+                    if (total > _batchMaxRows)
+                    {
+                        Log.Trace($"R2LocalCatalog: chain batch {table} {day} {root} estimated " +
+                                  $"{total} rows (> {_batchMaxRows}) — not cached, reads stay per contract.");
+                        StoreBatch(key, null, null, 0);
+                        return null;
+                    }
+
+                    if (total == 0)
+                    {
+                        var empty = new R2Batch<TRow>(Array.Empty<TRow>(),
+                            new Dictionary<string, (int Offset, int Count)>(StringComparer.Ordinal));
+                        StoreBatch(key, empty.FlatArray, empty.Slices, 0);
+                        return empty;
+                    }
+
+                    var flat = new TRow[total];
+                    var slices = new Dictionary<string, (int Offset, int Count)>(capacities.Count,
+                        StringComparer.Ordinal);
+                    var write = 0;
+                    string current = null;
+                    var start = 0;
+                    var rejected = 0L;
+
+                    void CloseContract()
+                    {
+                        if (current == null)
+                        {
+                            return;
+                        }
+                        if (slices.ContainsKey(current))
+                        {
+                            throw new InvalidOperationException($"rows for {current} are not contiguous");
+                        }
+                        slices[current] = (start, write - start);
+                    }
+
+                    void Add(string symbol, TRow value)
+                    {
+                        if (!string.Equals(symbol, current, StringComparison.Ordinal))
+                        {
+                            CloseContract();
+                            current = symbol;
+                            start = write;
+                        }
+                        if (write >= flat.Length)
+                        {
+                            throw new InvalidOperationException(
+                                $"batch carries more rows than the preflight counted ({flat.Length})");
+                        }
+                        flat[write++] = value;
+                        if (write % 1_000_000 == 0)
+                        {
+                            Log.Trace($"R2LocalCatalog: chain batch {table} {day} {root} progress " +
+                                      $"{write} rows, managed {GC.GetTotalMemory(false) / (1024 * 1024)} MB, " +
+                                      $"rss {Environment.WorkingSet / (1024 * 1024)} MB");
+                        }
+                    }
+
+                    var sql = ScanPreamble() +
+                              $"SELECT symbol, {columns} FROM {source} WHERE {where} " +
+                              $"{grouping}ORDER BY symbol, {orderBy};";
+
+                    if (_trino != null && cellParse != null)
+                    {
+                        // Straight from the page's JSON into the struct: no string[] and no JValue
+                        // objects per row, only the reused cell buffer.
+                        _trino.Execute(sql, (cells, count) =>
+                        {
+                            if (cellParse(cells, count, out var symbol, out var value))
+                            {
+                                Add(symbol, value);
+                            }
+                        });
+                    }
+                    else
+                    {
+                        foreach (var row in Rows(sql))
+                        {
+                            if (row.Length < 2 || string.IsNullOrEmpty(row[0]))
+                            {
+                                continue;
+                            }
+                            var rest = new string[row.Length - 1];
+                            Array.Copy(row, 1, rest, 0, rest.Length);
+                            if (!parse(rest, out var value))
+                            {
+                                rejected++;
+                                continue;
+                            }
+                            Add(row[0], value);
+                        }
+                    }
+                    CloseContract();
+
+                    if (write != flat.Length)
+                    {
+                        Log.Trace($"R2LocalCatalog: chain batch {table} {day} {root} preflight counted " +
+                                  $"{total} rows, read {write} — trimming.");
+                        Array.Resize(ref flat, write);
+                    }
+
+                    if (write >= 1_000_000)
+                    {
+                        // Kill the page buffers and any parse garbage in one compacting collect, so
+                        // RSS reflects the retained flat array rather than ingest churn.
+                        System.Runtime.GCSettings.LargeObjectHeapCompactionMode =
+                            System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+                        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+                    }
+
+                    StoreBatch(key, flat, slices, write);
+                    Log.Trace($"R2LocalCatalog: chain batch {table} {day} {root}: " +
+                              $"{slices.Count} symbols, {write} rows" +
+                              $"{(rejected > 0 ? $" ({rejected} unparseable)" : string.Empty)} in " +
+                              $"{started.ElapsedMilliseconds} ms ({_dayBatches.Count} chain-days cached, " +
+                              $"{_batchRows} rows).");
+                    return new R2Batch<TRow>(flat, slices);
+                }
+                catch (OutOfMemoryException)
+                {
+                    // Passed the estimate but still does not fit: remember it as oversize so the rest
+                    // of the run reads per contract instead of retrying.
+                    Log.Trace($"R2LocalCatalog: chain batch {table} {day} {root} ran out of memory — " +
+                              "not cached, reads stay per contract.");
+                    StoreBatch(key, null, null, 0);
+                    GC.Collect();
                     return null;
                 }
-
-                lock (_daysGate)
+                catch (Exception error)
                 {
-                    if (_dayBatches.Count >= 8)
-                    {
-                        _dayBatches.Clear();
-                    }
-                    _dayBatches[key] = grouped;
+                    // Deliberately not negative-cached: a transport failure must be retryable, and a
+                    // count/data mismatch must be able to heal when the day's files settle.
+                    Log.Error($"R2LocalCatalog: batched read of {table} {day} for {root} failed — " +
+                              $"falling back to per-contract reads: {error.Message}");
+                    return null;
                 }
-                Log.Trace($"R2LocalCatalog: chain batch {table} {dayUtc:yyyy-MM-dd} {root}: " +
-                          $"{grouped.Count} symbols, {grouped.Sum(p => p.Value.Count)} rows in " +
-                          $"{started.ElapsedMilliseconds} ms.");
-                return grouped;
             }
-            catch (Exception error)
+        }
+
+        private static R2Batch<TRow>? Cached<TRow>(BatchEntry entry)
+        {
+            return entry.Slices == null
+                ? (R2Batch<TRow>?)null
+                : new R2Batch<TRow>((TRow[])entry.Flat, entry.Slices);
+        }
+
+        /// <summary>
+        /// One (table, day, symbol) read held in process, keyed by table/day/symbol/variant. This is
+        /// what the per-contract fallback answers from: equities, chains larger than the batch
+        /// budget, and any batch that failed. Without it a repeated question about the same
+        /// contract-day would re-scan the warehouse.
+        /// </summary>
+        public List<TRow> RowsForSymbol<TRow>(string table, DateTime dayUtc, string ticker, string variant,
+            Func<IEnumerable<string[]>> read, RowParser<TRow> parse, out bool cached)
+        {
+            var key = table + "\n" +
+                      dayUtc.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "\n" +
+                      ticker + "\n" + variant;
+
+            lock (_daysGate)
             {
-                Log.Error($"R2LocalCatalog: batched read of {table} {dayUtc:yyyy-MM-dd} for {root} failed — " +
-                          $"falling back to per-contract reads: {error.Message}");
-                return null;
+                if (_symbolRows.TryGetValue(key, out var hit))
+                {
+                    hit.LastUsed = ++_dayClock;
+                    cached = true;
+                    return (List<TRow>)hit.Rows;
+                }
+            }
+
+            var rows = new List<TRow>();
+            foreach (var raw in read())
+            {
+                if (parse(raw, out var value))
+                {
+                    rows.Add(value);
+                }
+            }
+
+            lock (_daysGate)
+            {
+                if (_symbolRows.TryGetValue(key, out var raced))
+                {
+                    raced.LastUsed = ++_dayClock;
+                    cached = true;
+                    return (List<TRow>)raced.Rows;
+                }
+                _symbolRows[key] = new SymbolEntry { Rows = rows, RowCount = rows.Count, LastUsed = ++_dayClock };
+                _symbolRowCount += rows.Count;
+                EvictSymbolRowsLocked();
+            }
+
+            cached = false;
+            return rows;
+        }
+
+        private void StoreBatch(string key, Array flat,
+            Dictionary<string, (int Offset, int Count)> slices, long rowCount)
+        {
+            lock (_daysGate)
+            {
+                if (_dayBatches.TryGetValue(key, out var existing))
+                {
+                    _batchRows -= existing.RowCount;
+                }
+                _dayBatches[key] = new BatchEntry
+                {
+                    Flat = flat,
+                    Slices = slices,
+                    RowCount = rowCount,
+                    LastUsed = ++_dayClock
+                };
+                _batchRows += rowCount;
+                EvictBatchesLocked();
+            }
+        }
+
+        /// <summary>LRU over chain-days on the shared entry/row budgets.</summary>
+        private void EvictBatchesLocked()
+        {
+            const int protectedRecent = 8;
+            while (_dayBatches.Count > _cacheMaxEntries || _batchRows > _batchCacheMaxRows)
+            {
+                var cutoff = _dayClock - protectedRecent;
+                string victimKey = null;
+                BatchEntry victim = null;
+                foreach (var pair in _dayBatches)
+                {
+                    if (pair.Value.LastUsed <= cutoff && (victim == null || pair.Value.LastUsed < victim.LastUsed))
+                    {
+                        victim = pair.Value;
+                        victimKey = pair.Key;
+                    }
+                }
+                if (victim == null)
+                {
+                    return;
+                }
+                _dayBatches.Remove(victimKey);
+                _batchRows -= victim.RowCount;
+                _evictions++;
+                Log.Trace($"R2LocalCatalog: evicted chain batch {victimKey.Replace('\n', '/')} " +
+                          $"({_dayBatches.Count} chain-days, {_batchRows} rows left)");
+            }
+        }
+
+        /// <summary>LRU over per-contract reads on the symbol-cache budget.</summary>
+        private void EvictSymbolRowsLocked()
+        {
+            const int protectedRecent = 8;
+            while (_symbolRows.Count > _cacheMaxEntries || _symbolRowCount > _symbolCacheMaxRows)
+            {
+                var cutoff = _dayClock - protectedRecent;
+                string victimKey = null;
+                SymbolEntry victim = null;
+                foreach (var pair in _symbolRows)
+                {
+                    if (pair.Value.LastUsed <= cutoff && (victim == null || pair.Value.LastUsed < victim.LastUsed))
+                    {
+                        victim = pair.Value;
+                        victimKey = pair.Key;
+                    }
+                }
+                if (victim == null)
+                {
+                    return;
+                }
+                _symbolRows.Remove(victimKey);
+                _symbolRowCount -= victim.RowCount;
+                _evictions++;
             }
         }
 

@@ -415,8 +415,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     {
                         LastDeltaAcrossDsOptionsOnly.Remove(Underlying(orderEvent.Symbol));
 
-                        ClearTargetPortfolios(underlying);
                         ClearTargetHoldings(underlying);
+                        ReduceTargetPortfolios(underlying);
                         SetTargetHoldingsFromTargetPortfolios(underlying); // After earnings
                         CancelOrdersNotAlignedWithTargetPortfolio();
                         RequestTargetPortfolios(underlying); // Before earnings
@@ -979,33 +979,86 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// <returns></returns>
         internal bool IsTargetPortfolioCompatibleWithHoldings(TargetPortfolioPb portfolio)
         {
-            return true;
-            Symbol underlying = Securities[portfolio.Underlying].Symbol;
-            var options = Portfolio
-                .Where(kvp =>
-                    kvp.Key.SecurityType == SecurityType.Option && kvp.Value.Quantity != 0 &&
-                    kvp.Key.Underlying == underlying).Select(kvp => kvp.Key).ToList();
-
-            foreach (var option in options)
+            // A portfolio is still reachable from the current book when, for EVERY option it holds,
+            // the algo's position is either already equal (nothing left to trade) or on the same side
+            // and smaller in absolute size (the remaining quantity is the order). If the algo holds an
+            // option the portfolio does not list, the portfolio does not describe the book any more.
+            //
+            // Portfolios are keyed by symbol string in the response; resolve through SymbolCache and
+            // fall back to the raw text so a padded/OSI variant does not silently drop every holding.
+            var bySymbol = new Dictionary<Symbol, float>();
+            var byText = new Dictionary<string, float>(StringComparer.Ordinal);
+            foreach (var holding in portfolio.Holdings.Values)
             {
-                var holdings = portfolio.Holdings.Values.Where(h => h.Symbol == option.Value).FirstOrDefault();
-                if (holdings != null) continue;
-                Log($"{Time} Removing TargetPortfolio. Symbol={option.Value}, No Quantity in Target Portfolio");
+                byText[holding.Symbol] = holding.Quantity;
+                if (SymbolCache.TryGetSymbol(holding.Symbol, out Symbol resolved))
+                {
+                    bySymbol[resolved] = holding.Quantity;
+                }
+            }
+
+            if (!SymbolCache.TryGetSymbol(portfolio.Underlying, out Symbol underlying) ||
+                !Securities.ContainsKey(underlying))
+            {
                 return false;
-                //var algoQuantity = Portfolio[option].Quantity;
-                //if (holdings.Quantity * (float)algoQuantity < 0)
-                //{
-                //    Log($"{Time} Removing TargetPortfolio. Symbol={option.Value}, holdings.Quantity={holdings.Quantity}, algoQuantity={algoQuantity}");
-                //    return false;
-                //}
-                //if (Math.Abs((float)algoQuantity) > Math.Abs((float)holdings.Quantity))
-                //{
-                //    Log($"{Time} Removing TargetPortfolio. Symbol={option.Value}, AlgoQuantity={algoQuantity}, PortfolioQuantity={holdings.Quantity}");
-                //    return false;
-                //}
+            }
+
+            var currentOptions = Portfolio
+                .Where(kvp => kvp.Key.SecurityType == SecurityType.Option
+                              && kvp.Value.Quantity != 0
+                              && kvp.Key.Underlying == underlying)
+                .ToList();
+
+            foreach (var kvp in currentOptions)
+            {
+                var option = kvp.Key;
+                if (!bySymbol.TryGetValue(option, out var targetQuantity) &&
+                    !byText.TryGetValue(option.Value, out targetQuantity))
+                {
+                    Log($"{Time} TargetPortfolio incompatible: holds {option.Value} not in target portfolio.");
+                    return false;
+                }
+
+                var algoQuantity = (float)kvp.Value.Quantity;
+                if (targetQuantity == algoQuantity)
+                {
+                    continue;   // already executed on this leg
+                }
+                if (Math.Sign(targetQuantity) != Math.Sign(algoQuantity))
+                {
+                    Log($"{Time} TargetPortfolio incompatible: {option.Value} algo={algoQuantity}, target={targetQuantity} (opposite side).");
+                    return false;
+                }
+                if (Math.Abs(targetQuantity) < Math.Abs(algoQuantity))
+                {
+                    Log($"{Time} TargetPortfolio incompatible: {option.Value} algo={algoQuantity}, target={targetQuantity} (would have to unwind).");
+                    return false;
+                }
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Keeps only the cached target portfolios still reachable from the current holdings, then
+        /// re-derives everything that depends on the set (utility sweeper, target holdings). Used
+        /// after a fill or a cancellation, where the previous code cleared the whole cache and left
+        /// the algorithm unquoted until a fresh solve arrived.
+        /// </summary>
+        public override void ReduceTargetPortfolios(Symbol underlying)
+        {
+            if (!TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> cached) || cached.Count == 0)
+            {
+                return;
+            }
+
+            var kept = cached.Where(IsTargetPortfolioCompatibleWithHoldings).ToList();
+            TargetPortfolios[underlying] = kept;
+
+            SetEquiUtilitySweeperFromTargetPortfolios(kept);
+            SetTargetHoldingsFromTargetPortfolios(underlying);
+
+            Log($"{Time} ReduceTargetPortfolios({underlying}): {cached.Count} -> {kept.Count} targets remain reachable.");
         }
 
         private DateTime SubtractBusinessDays(DateTime dt, int days)

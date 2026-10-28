@@ -9,11 +9,8 @@
  * the column list follows the table's kind, and the option tables' extra `sequence_number` (BIGINT)
  * says nothing to Lean but is part of the total order.
  *
- * On the catalog route there is NO cache and NO materialization step at this level: the mount IS
- * the "present locally, otherwise fetch" layer. rclone serves cached bytes and transparently
- * fetches anything missing, so a backtest reuses whatever the mount already holds and only pays
- * the network for genuinely missing files. The day cache lives one layer down, in R2LocalCatalog,
- * and only when the read route allows it.
+ * Rows are held as the typed structs in R2Rows.cs: a tick row is 24-40 bytes instead of ~300 for
+ * string[], which matters because an option chain-day is millions of rows.
  *
  * Session grain: the scan filter is the UTC day of sip_timestamp — the warehouse partitions on
  * day(sip_timestamp). For the sessions loaded so far this is exactly one ET session per UTC day
@@ -30,7 +27,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 
 using QuantConnect;
 using QuantConnect.Data.Market;
@@ -59,14 +55,6 @@ namespace QuantConnect.Lean.DataSource.R2
         }
 
         /// <summary>
-        /// The warehouse ticker for a Lean symbol, validated against the tick table that will serve
-        /// it. Null when the warehouse does not carry the symbol (e.g. a benchmark that was never
-        /// loaded). Throws on transport/catalog failure — a resolution failure must not read as
-        /// "not loaded".
-        /// </summary>
-        /// <param name="symbol">Lean symbol.</param>
-        /// <param name="table">Tick table the subscription will read, used for the lookup.</param>
-        /// <summary>
         /// The warehouse ticker for <paramref name="symbol"/>, or null when the table does not carry
         /// it. <paramref name="dayUtc"/> lets the catalog answer from its per-(table, day) symbol
         /// index — one query for the whole chain instead of one table scan per contract.
@@ -86,10 +74,15 @@ namespace QuantConnect.Lean.DataSource.R2
                     vendorTicker = symbol.Value.ToUpperInvariant();
                     break;
                 case SecurityType.Option:
+                case SecurityType.IndexOption:
                     // Warehouse form of Lean's OSI value, e.g. CRWD  261002P00262500 ->
-                    // O:CRWD261002P00262500. Contracts the warehouse never loaded resolve to null.
-                    vendorTicker = R2Warehouse.VendorOptionTicker(symbol);
-                    break;
+                    // O:CRWD261002P00262500. Returned WITHOUT a registry/scan check: existence is
+                    // answered by the (table, day, underlying) chain batch, which is cached and
+                    // already read for the rest of the chain. The old per-contract
+                    // `SELECT symbol ... LIMIT 1` re-scanned the table for every contract the day
+                    // index missed — thousands of scans per warmup for contracts that simply have no
+                    // rows that day (the chain registry carries more contracts than the bar tables).
+                    return R2Warehouse.VendorOptionTicker(symbol);
                 default:
                     return null;
             }
@@ -118,11 +111,61 @@ namespace QuantConnect.Lean.DataSource.R2
                 yield break;
             }
 
-            R2Warehouse.UtcDayBoundsNs(dayUtc, out var lo, out var hi);
-            // The day, read once: a materialised day answers every later question about it from memory.
-            var source = _catalog.DaySource(table.Name, dayUtc);
-            var columns = quotes ? QuoteColumns : TradeColumns;
+            if (quotes)
+            {
+                foreach (var row in ReadQuotesTyped(table, ticker, dayUtc))
+                {
+                    // NOTE the argument order of this ctor: (saleCondition, exchange, bidSize,
+                    // bidPrice, askSize, askPrice).
+                    yield return new Tick(
+                        R2Warehouse.ToExchangeTime(row.Ts), symbol, string.Empty, ExchangeName(row.BidExchangeId),
+                        row.BidSize, R2Warehouse.FromBasisPoints(row.BidPrice),
+                        row.AskSize, R2Warehouse.FromBasisPoints(row.AskPrice));
+                }
+                yield break;
+            }
 
+            foreach (var row in ReadTradesTyped(table, ticker, dayUtc))
+            {
+                // NOTE the argument order from Tick's ctor: quantity BEFORE price. Passing them
+                // the other way round compiles (both are decimal) and silently transposes
+                // volume and price.
+                yield return new Tick(
+                    R2Warehouse.ToExchangeTime(row.Ts), symbol, string.Empty, ExchangeName(row.ExchangeId),
+                    row.Size, R2Warehouse.FromBasisPoints(row.Price));
+            }
+        }
+
+        /// <summary>
+        /// One day of a tick table, typed. Chain batch first (one contract's question loads the whole
+        /// underlying's day, every other contract is a memory lookup); per-contract cache on the
+        /// fallback path. `sequence_number` stays in the ORDER BY without being selected.
+        /// </summary>
+        private IEnumerable<TradeTickRow> ReadTradesTyped(R2Table table, string ticker, DateTime dayUtc)
+        {
+            return RowsTyped<TradeTickRow>(table, ticker, dayUtc, TradeColumns, R2RowParser.TryTradeTick,
+                R2CellParser.TryTradeTick, "trade");
+        }
+
+        private IEnumerable<QuoteTickRow> ReadQuotesTyped(R2Table table, string ticker, DateTime dayUtc)
+        {
+            return RowsTyped<QuoteTickRow>(table, ticker, dayUtc, QuoteColumns, R2RowParser.TryQuoteTick,
+                R2CellParser.TryQuoteTick, "quote");
+        }
+
+        private IEnumerable<TRow> RowsTyped<TRow>(R2Table table, string ticker, DateTime dayUtc, string columns,
+            RowParser<TRow> parse, CellRowParser<TRow> cellParse, string variant)
+        {
+            var batch = _catalog.RowsByUnderlying(table.Name, dayUtc, ticker, columns, parse,
+                orderBy: "2, sequence_number", cellParse: cellParse);
+            if (batch.HasValue)
+            {
+                var slice = batch.Value.Rows(ticker);
+                return slice.Count == 0 ? (IEnumerable<TRow>)Array.Empty<TRow>() : slice;
+            }
+
+            R2Warehouse.UtcDayBoundsNs(dayUtc, out var lo, out var hi);
+            var source = _catalog.DaySource(table.Name, dayUtc);
             // The day predicate is a half-open range on sip_timestamp itself (not a cast of it), so
             // Iceberg manifest stats and Parquet row-group stats can both prune with it.
             var sql =
@@ -131,44 +174,8 @@ namespace QuantConnect.Lean.DataSource.R2
                 $"WHERE symbol = '{ticker.Replace("'", "''")}' " +
                 $"AND sip_timestamp >= make_timestamp_ns({lo}) AND sip_timestamp < make_timestamp_ns({hi}) " +
                 "ORDER BY sip_timestamp, sequence_number;";
-
-            foreach (var row in _catalog.Rows(sql))
-            {
-                if (row.Length < (quotes ? 7 : 4))
-                {
-                    continue;
-                }
-                if (!R2Warehouse.TryLong(row[0], out var ns))
-                {
-                    continue;
-                }
-
-                var time = R2Warehouse.ToExchangeTime(ns);
-
-                if (quotes)
-                {
-                    var bidSize = decimal.Parse(row[2], CultureInfo.InvariantCulture);
-                    var bid = R2Warehouse.FromBasisPoints(long.Parse(row[1], CultureInfo.InvariantCulture));
-                    var askSize = decimal.Parse(row[5], CultureInfo.InvariantCulture);
-                    var ask = R2Warehouse.FromBasisPoints(long.Parse(row[4], CultureInfo.InvariantCulture));
-                    var exchange = ExchangeName(row[3]);
-
-                    // NOTE the argument order of this ctor: (saleCondition, exchange, bidSize,
-                    // bidPrice, askSize, askPrice).
-                    yield return new Tick(time, symbol, string.Empty, exchange, bidSize, bid, askSize, ask);
-                }
-                else
-                {
-                    var price = R2Warehouse.FromBasisPoints(long.Parse(row[1], CultureInfo.InvariantCulture));
-                    var size = decimal.Parse(row[2], CultureInfo.InvariantCulture);
-                    var exchange = ExchangeName(row[3]);
-
-                    // NOTE the argument order from Tick's ctor: quantity BEFORE price. Passing them
-                    // the other way round compiles (both are decimal) and silently transposes
-                    // volume and price.
-                    yield return new Tick(time, symbol, string.Empty, exchange, size, price);
-                }
-            }
+            return _catalog.RowsForSymbol(table.Name, dayUtc, ticker, variant, () => _catalog.Rows(sql), parse,
+                out _);
         }
 
         private static void RequireTick(R2Table table, TickType expected)
@@ -193,13 +200,13 @@ namespace QuantConnect.Lean.DataSource.R2
         /// Vendor exchange id -> Lean exchange string. PLACEHOLDER for the spike: the real table is a
         /// P1 item, and a wrong exchange string affects fill modelling, not correctness of the read.
         /// </summary>
-        private static string ExchangeName(string exchangeId)
+        private static string ExchangeName(int exchangeId)
         {
             switch (exchangeId)
             {
-                case "4": return "XNAS";
-                case "1": return "XNYS";
-                case "8": return "ARCX";
+                case 4: return "XNAS";
+                case 1: return "XNYS";
+                case 8: return "ARCX";
                 default: return "NASD";
             }
         }

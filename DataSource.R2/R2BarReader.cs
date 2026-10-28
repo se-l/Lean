@@ -11,6 +11,10 @@
  * re-samples. The WAREHOUSE produced these bars from the ticks; this reader's whole job is to hand
  * them to Lean with the right units.
  *
+ * Rows are held as the typed structs in R2Rows.cs, never as strings: a chain-day of
+ * option_quote_bar_second is 7.4M rows, and string rows cost ~550 bytes each against 48 for the
+ * struct. Parsing happens once while the batch cache is filled; a read is a field access.
+ *
  * Units and time: prices arrive as integer basis points and `ts` as UTC nanoseconds with the bucket
  * START as its value. Both conversions live in R2Warehouse and happen exactly here.
  *
@@ -29,10 +33,11 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.Diagnostics;
 
 using QuantConnect;
 using QuantConnect.Data.Market;
+using QuantConnect.Logging;
 
 namespace QuantConnect.Lean.DataSource.R2
 {
@@ -64,21 +69,17 @@ namespace QuantConnect.Lean.DataSource.R2
             RequireBar(table, TickType.Trade);
             var period = table.Resolution.ToTimeSpan();
 
-            foreach (var row in Rows(table, ticker, dayUtc, TradeColumns))
+            foreach (var row in RowsTyped<TradeBarRow>(table, ticker, dayUtc, TradeColumns, R2RowParser.TryTradeBar,
+                R2CellParser.TryTradeBar, "trade"))
             {
-                if (row.Length < 6 || !R2Warehouse.TryLong(row[0], out var ns))
-                {
-                    continue;
-                }
-
                 yield return new TradeBar(
-                    R2Warehouse.ToExchangeTime(ns),
+                    R2Warehouse.ToExchangeTime(row.Ts),
                     symbol,
-                    R2Warehouse.FromBasisPoints(long.Parse(row[1], CultureInfo.InvariantCulture)),
-                    R2Warehouse.FromBasisPoints(long.Parse(row[2], CultureInfo.InvariantCulture)),
-                    R2Warehouse.FromBasisPoints(long.Parse(row[3], CultureInfo.InvariantCulture)),
-                    R2Warehouse.FromBasisPoints(long.Parse(row[4], CultureInfo.InvariantCulture)),
-                    decimal.Parse(row[5], CultureInfo.InvariantCulture),
+                    R2Warehouse.FromBasisPoints(row.Open),
+                    R2Warehouse.FromBasisPoints(row.High),
+                    R2Warehouse.FromBasisPoints(row.Low),
+                    R2Warehouse.FromBasisPoints(row.Close),
+                    row.Volume,
                     period);
             }
         }
@@ -89,60 +90,59 @@ namespace QuantConnect.Lean.DataSource.R2
             RequireBar(table, TickType.Quote);
             var period = table.Resolution.ToTimeSpan();
 
-            foreach (var row in Rows(table, ticker, dayUtc, QuoteColumns))
+            foreach (var row in RowsTyped<QuoteBarRow>(table, ticker, dayUtc, QuoteColumns, R2RowParser.TryQuoteBar,
+                R2CellParser.TryQuoteBar, "quote"))
             {
-                if (row.Length < 11 || !R2Warehouse.TryLong(row[0], out var ns))
-                {
-                    continue;
-                }
-
                 // NOTE the QuoteBar ctor: (time, symbol, bidBar, lastBidSize, askBar, lastAskSize,
                 // period). Sizes come from the closing quote of the bucket, not a sum over it.
                 yield return new QuoteBar(
-                    R2Warehouse.ToExchangeTime(ns),
+                    R2Warehouse.ToExchangeTime(row.Ts),
                     symbol,
                     new Bar(
-                        R2Warehouse.FromBasisPoints(long.Parse(row[1], CultureInfo.InvariantCulture)),
-                        R2Warehouse.FromBasisPoints(long.Parse(row[2], CultureInfo.InvariantCulture)),
-                        R2Warehouse.FromBasisPoints(long.Parse(row[3], CultureInfo.InvariantCulture)),
-                        R2Warehouse.FromBasisPoints(long.Parse(row[4], CultureInfo.InvariantCulture))),
-                    decimal.Parse(row[5], CultureInfo.InvariantCulture),
+                        R2Warehouse.FromBasisPoints(row.BidOpen),
+                        R2Warehouse.FromBasisPoints(row.BidHigh),
+                        R2Warehouse.FromBasisPoints(row.BidLow),
+                        R2Warehouse.FromBasisPoints(row.BidClose)),
+                    row.BidSizeClose,
                     new Bar(
-                        R2Warehouse.FromBasisPoints(long.Parse(row[6], CultureInfo.InvariantCulture)),
-                        R2Warehouse.FromBasisPoints(long.Parse(row[7], CultureInfo.InvariantCulture)),
-                        R2Warehouse.FromBasisPoints(long.Parse(row[8], CultureInfo.InvariantCulture)),
-                        R2Warehouse.FromBasisPoints(long.Parse(row[9], CultureInfo.InvariantCulture))),
-                    decimal.Parse(row[10], CultureInfo.InvariantCulture),
+                        R2Warehouse.FromBasisPoints(row.AskOpen),
+                        R2Warehouse.FromBasisPoints(row.AskHigh),
+                        R2Warehouse.FromBasisPoints(row.AskLow),
+                        R2Warehouse.FromBasisPoints(row.AskClose)),
+                    row.AskSizeClose,
                     period);
             }
         }
 
         /// <summary>
-        /// One day of a bar table. The day predicate sits on `ts` itself (not a cast of it) so
-        /// Iceberg manifest stats and Parquet row-group stats can both prune with it — the same
-        /// reason R2TickReader predicates on sip_timestamp.
+        /// One day of a bar table, typed. The chain batch answers options (the first contract pays for
+        /// the underlying's day, every other contract is a memory lookup); equities and oversize
+        /// chain-days go through the per-contract cache, so a repeated question never scans twice.
+        ///
+        /// The day predicate sits on `ts` itself (not a cast of it) so Iceberg manifest stats and
+        /// Parquet row-group stats can both prune with it.
         /// </summary>
-        private IEnumerable<string[]> Rows(R2Table table, string ticker, DateTime dayUtc, string columns)
+        private IEnumerable<TRow> RowsTyped<TRow>(R2Table table, string ticker, DateTime dayUtc, string columns,
+            RowParser<TRow> parse, CellRowParser<TRow> cellParse, string variant)
         {
             if (!_catalog.HoldsDay(table.Name, dayUtc) || !_catalog.HoldsSymbol(table.Name, dayUtc, ticker))
             {
-                return Array.Empty<string[]>();
+                return Array.Empty<TRow>();
+            }
+
+            // One read serves the whole chain: the first contract's question loads the underlying's
+            // day (all its contracts) into one flat array, every other contract is a slice lookup.
+            // Null for equities and on a failed batch, which keeps the per-symbol path below.
+            var batch = _catalog.RowsByUnderlying(table.Name, dayUtc, ticker, columns, parse, orderBy: "2",
+                cellParse: cellParse);
+            if (batch.HasValue)
+            {
+                var slice = batch.Value.Rows(ticker);
+                return slice.Count == 0 ? (IEnumerable<TRow>)Array.Empty<TRow>() : slice;
             }
 
             R2Warehouse.UtcDayBoundsNs(dayUtc, out var lo, out var hi);
-
-            // One read serves the whole chain: the first contract's question loads the underlying's
-            // day (all its contracts), every other contract answers from memory. Null for equities
-            // and on a failed batch, which keeps the per-symbol path below.
-            var batch = _catalog.RowsByUnderlying(table.Name, dayUtc, ticker, columns, orderBy: "2");
-            if (batch != null)
-            {
-                return batch.TryGetValue(ticker, out var symbolRows) ? symbolRows : Array.Empty<string[]>();
-            }
-
-            // The day, read once: a materialised day answers every later question about it from memory.
             var source = _catalog.DaySource(table.Name, dayUtc);
-
             var sql =
                 _catalog.ScanPreamble() +
                 $"SELECT {columns} FROM {source} " +
@@ -152,18 +152,17 @@ namespace QuantConnect.Lean.DataSource.R2
 
             // A slow read names its source: temp table (materialised, indexed) or Iceberg scan.
             // Without that split we could not tell why an index on the temp table changed nothing.
-            var readWatch = System.Diagnostics.Stopwatch.StartNew();
-            var materialised = new System.Collections.Generic.List<string[]>();
-            foreach (var row in _catalog.Rows(sql))
-            {
-                materialised.Add(row);
-            }
+            // RowsForSymbol keeps the fallback answer in process as well: a repeated question about
+            // the same contract-day (a second resolution, a warmup re-read) never scans twice.
+            var readWatch = Stopwatch.StartNew();
+            var materialised = _catalog.RowsForSymbol(table.Name, dayUtc, ticker, variant,
+                () => _catalog.Rows(sql), parse, out var cached);
             var readMs = readWatch.ElapsedMilliseconds;
-            if (readMs >= 50)
+            if (readMs >= 50 && !cached)
             {
-                QuantConnect.Logging.Log.Trace($"R2LocalCatalog: read {table.Name} {ticker} {dayUtc:yyyy-MM-dd}: " +
-                                               $"{materialised.Count} rows in {readMs} ms " +
-                                               $"({(_catalog.DayIsMaterialised(table.Name, dayUtc) ? "temp table" : "iceberg scan")})");
+                Log.Trace($"R2LocalCatalog: read {table.Name} {ticker} {dayUtc:yyyy-MM-dd}: " +
+                          $"{materialised.Count} rows in {readMs} ms " +
+                          $"({(_catalog.DayIsMaterialised(table.Name, dayUtc) ? "temp table" : "iceberg scan")})");
             }
             return materialised;
         }

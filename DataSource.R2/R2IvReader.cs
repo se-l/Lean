@@ -206,9 +206,10 @@ namespace QuantConnect.Lean.DataSource.R2
             var batchGrouping = R2Warehouse.BucketInterval(resolution) == null ? string.Empty : "GROUP BY 1, 2 ";
             var batch = _catalog.RowsByUnderlying(table.Name, dayUtc, ticker, columns, flavourPredicate,
                 batchGrouping, "2");
-            if (batch != null)
+            if (batch.HasValue)
             {
-                return batch.TryGetValue(ticker, out var symbolRows) ? symbolRows : Array.Empty<string[]>();
+                var slice = batch.Value.Rows(ticker);
+                return slice.Count == 0 ? Array.Empty<string[]>() : (IEnumerable<string[]>)slice;
             }
 
             // The day, read once: a materialised day answers every later question about it from memory.

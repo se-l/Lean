@@ -1,7 +1,7 @@
 {
-  "StartDate": "2026-07-27",
-  "EndDate": "2026-07-28",
-  "Ticker": [ "BA" ],
+  "StartDate": "2026-07-28",
+  "EndDate": "2026-07-29",
+  "Ticker": [ "STX" ],
   "MQHost": "127.0.0.1",
   "MQPort": 5672,
   "MQVirtualHost": "dev",

@@ -291,6 +291,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
+        /// Drops the target portfolios that can no longer be reached from the current holdings and
+        /// keeps the rest. A fill does not invalidate a whole set of candidate portfolios — most
+        /// remain valid targets, and re-solving the lot costs minutes of not quoting. The base
+        /// implementation clears (cold start); the Earnings algorithm overrides it with the
+        /// compatibility filter.
+        /// </summary>
+        public virtual void ReduceTargetPortfolios(Symbol underlying)
+        {
+            ClearTargetPortfolios(underlying);
+        }
+
+        /// <summary>
         /// Expect triggers cancelation of all dependent orders...
         /// </summary>
         public void ClearTargetHoldings(Symbol underlying)

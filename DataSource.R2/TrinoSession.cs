@@ -3,9 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace QuantConnect.Lean.DataSource.R2
 {
@@ -17,17 +16,24 @@ namespace QuantConnect.Lean.DataSource.R2
     /// directly instead of using Trino.Ado: that client is built against System.Text.Json 8, and a
     /// net6.0 host (Lean) has already loaded the framework's System.Text.Json 6 into the default
     /// load context, so any assembly placed beside the plugin that requests 8.0.0.0 fails with
-    /// FileLoad (0x80131621 / 0x80131040). Raw HTTP keeps the plugin dependency-free: Newtonsoft.Json
-    /// is already in Lean's dependency graph.
+    /// FileLoad (0x80131621 / 0x80131040).
     ///
-    /// The readers were written against DuckDB and emit DuckDB-dialect SQL; the two functions that
-    /// do not exist in Trino are translated here, so one SQL builder serves both engines:
-    /// <c>make_timestamp_ns(x)</c> -> <c>from_unixtime_nanos(x)</c> and
-    /// <c>regexp_matches(a,b)</c> -> <c>regexp_like(a,b)</c>.
+    /// Pages are decoded with <see cref="Utf8JsonReader"/> — a ref struct over the response bytes
+    /// that allocates nothing per token. Newtonsoft's JObject/JValue tree was allocating ~12 JValue
+    /// objects per row (~89M for a 7.4M-row chain-day, several GB of short-lived garbage); the
+    /// reader code below allocates only one symbol string per row, and nothing for the numbers.
+    ///
+    /// Rows are handed to the caller as a REUSED <see cref="JsonCell"/> buffer: consume the row in
+    /// the callback, never store the array.
+    ///
+    /// The readers were written against DuckDB and emit DuckDB-dialect SQL; the functions that do
+    /// not exist in Trino are translated here, so one SQL builder serves both engines:
+    /// <c>make_timestamp_ns(x)</c> -> <c>from_unixtime_nanos(x)</c>, <c>regexp_matches(a,b)</c> ->
+    /// <c>regexp_like(a,b)</c>, <c>epoch_ns(x)</c> -> <c>round(to_unixtime(x)*1e9)</c>, and
+    /// <c>arg_max/arg_min</c> -> <c>max_by/min_by</c>.
     ///
     /// One HttpClient per process, serialised by a lock: queries are issued from several reader
-    /// threads. Rows are materialised as invariant strings, the same contract the duckdb CSV path
-    /// provided (null -> empty string; timestamps truncated to .NET's 7 fractional digits).
+    /// threads.
     /// </summary>
     public sealed class TrinoSession : IDisposable
     {
@@ -43,6 +49,7 @@ namespace QuantConnect.Lean.DataSource.R2
         private readonly HttpClient _http;
         private readonly string _statementUrl;
         private bool _disposed;
+        private byte[] _page = new byte[2 << 20];
 
         /// <summary>Catalog the plugin reads (e.g. r2).</summary>
         public string Catalog { get; }
@@ -74,97 +81,254 @@ namespace QuantConnect.Lean.DataSource.R2
             _http.DefaultRequestHeaders.TryAddWithoutValidation("X-Trino-Time-Zone", "UTC");
         }
 
-        /// <summary>Runs DuckDB-dialect SQL on Trino and returns the rows as invariant strings.</summary>
-        public IEnumerable<string[]> Query(string sql)
+        /// <summary>
+        /// Runs DuckDB-dialect SQL and invokes <paramref name="onRow"/> for every row, in order. The
+        /// cells array is REUSED between rows: parse it immediately, do not retain it. One page is
+        /// held at a time (typically 0.5-1.5 MB), so a 7.4M-row result streams at constant memory.
+        /// </summary>
+        public void Execute(string sql, Action<JsonCell[], int> onRow)
         {
             if (string.IsNullOrWhiteSpace(sql))
             {
-                return Array.Empty<string[]>();
+                return;
+            }
+            if (onRow == null)
+            {
+                throw new ArgumentNullException(nameof(onRow));
             }
 
             var translated = Translate(sql);
+            var cells = new JsonCell[64];
             lock (_gate)
             {
                 ThrowIfDisposed();
-                var rows = new List<string[]>();
-                string nextUri;
+                var nextUri = (string)null;
                 using (var content = new StringContent(translated, Encoding.UTF8, "text/plain"))
                 using (var response = _http.PostAsync(_statementUrl, content).GetAwaiter().GetResult())
                 {
-                    nextUri = Consume(response, rows);
+                    nextUri = ScanPage(response, ref cells, onRow);
                 }
 
                 while (!string.IsNullOrEmpty(nextUri))
                 {
                     using var response = _http.GetAsync(nextUri).GetAwaiter().GetResult();
-                    nextUri = Consume(response, rows);
+                    nextUri = ScanPage(response, ref cells, onRow);
                 }
-
-                return rows;
             }
         }
 
-        /// <summary>Reads one statement-protocol page into <paramref name="rows"/>; returns the next page URI.</summary>
-        private static string Consume(HttpResponseMessage response, List<string[]> rows)
+        /// <summary>
+        /// Materialises a result as invariant strings — the duckdb contract, used by the preflight
+        /// counts and the IV reader. Not for the big batch reads (those go through Execute).
+        /// </summary>
+        public List<string[]> Query(string sql)
         {
-            var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            var rows = new List<string[]>();
+            Execute(sql, (cells, count) =>
+            {
+                var row = new string[count];
+                for (var i = 0; i < count; i++)
+                {
+                    row[i] = R2CellParser.Text(cells[i]);
+                }
+                rows.Add(row);
+            });
+            return rows;
+        }
+
+        /// <summary>
+        /// Decodes one page, invoking <paramref name="onRow"/> per row; returns the next page URI.
+        /// The page bytes are read into ONE reused buffer: a fresh 1.5 MB byte[] per page landed on
+        /// the LOH ~1,300 times for a chain-day, which was the last visible source of garbage.
+        /// </summary>
+        private string ScanPage(HttpResponseMessage response, ref JsonCell[] cells,
+            Action<JsonCell[], int> onRow)
+        {
+            var length = ReadIntoPage(response);
             if (!response.IsSuccessStatusCode)
             {
                 throw new InvalidOperationException(
-                    $"Trino HTTP {(int)response.StatusCode} {response.ReasonPhrase}: {Trim(body)}");
+                    $"Trino HTTP {(int)response.StatusCode} {response.ReasonPhrase}: " +
+                    Trim(Encoding.UTF8.GetString(_page, 0, Math.Min(length, 400))));
             }
+            var bytes = new ReadOnlySpan<byte>(_page, 0, length);
 
-            var page = JObject.Parse(body);
-            if (page["error"] is JObject error)
+            var nextUri = (string)null;
+            string error = null;
+            var reader = new Utf8JsonReader(bytes,
+                new JsonReaderOptions { CommentHandling = JsonCommentHandling.Skip });
+            while (reader.Read())
             {
-                throw new InvalidOperationException(
-                    "Trino: " + (error.Value<string>("message") ?? error.ToString(Formatting.None)));
-            }
-
-            if (page["data"] is JArray data)
-            {
-                foreach (var row in data)
+                if (reader.TokenType != JsonTokenType.PropertyName)
                 {
-                    if (row is JArray cells)
+                    continue;
+                }
+
+                if (reader.ValueTextEquals("nextUri"))
+                {
+                    reader.Read();
+                    nextUri = reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
+                }
+                else if (reader.ValueTextEquals("error"))
+                {
+                    reader.Read();
+                    if (reader.TokenType == JsonTokenType.StartObject)
                     {
-                        rows.Add(ToRow(cells));
+                        error = ReadErrorMessage(ref reader);
+                    }
+                }
+                else if (reader.ValueTextEquals("data"))
+                {
+                    reader.Read();
+                    if (reader.TokenType != JsonTokenType.StartArray)
+                    {
+                        continue;
+                    }
+                    // Rows: [ [cell, cell, ...], ... ]
+                    while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                    {
+                        if (reader.TokenType != JsonTokenType.StartArray)
+                        {
+                            continue;
+                        }
+                        var count = 0;
+                        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                        {
+                            Fill(ref reader, ref cells, ref count);
+                        }
+                        onRow(cells, count);
                     }
                 }
             }
 
-            return page.Value<string>("nextUri");
-        }
-
-        private static string[] ToRow(JArray cells)
-        {
-            var row = new string[cells.Count];
-            for (var i = 0; i < row.Length; i++)
+            if (error != null)
             {
-                row[i] = Format(cells[i]);
+                throw new InvalidOperationException("Trino: " + error);
             }
-            return row;
+            return nextUri;
         }
 
-        private static string Format(JToken cell)
+        /// <summary>Reads the response body into the reused page buffer; returns its length.</summary>
+        private int ReadIntoPage(HttpResponseMessage response)
         {
-            switch (cell.Type)
+            using var stream = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult();
+            var length = 0;
+            while (true)
             {
-                case JTokenType.Null:
-                case JTokenType.Undefined:
-                    return string.Empty;
-                case JTokenType.String:
-                    return Normalize(cell.Value<string>());
-                case JTokenType.Boolean:
-                    return cell.Value<bool>() ? "true" : "false";
-                case JTokenType.Integer:
-                case JTokenType.Float:
-                    var value = ((JValue)cell).Value;
-                    return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+                if (length == _page.Length)
+                {
+                    Array.Resize(ref _page, _page.Length * 2);
+                }
+                var read = stream.Read(_page, length, _page.Length - length);
+                if (read <= 0)
+                {
+                    return length;
+                }
+                length += read;
+            }
+        }
+
+        /// <summary>Reads one cell into the reused buffer.</summary>
+        private static void Fill(ref Utf8JsonReader reader, ref JsonCell[] cells, ref int count)
+        {
+            if (count == cells.Length)
+            {
+                Array.Resize(ref cells, cells.Length * 2);
+            }
+
+            ref var cell = ref cells[count];
+            cell.Text = null;
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.Null:
+                    cell.Kind = JsonCell.Null;
+                    break;
+                case JsonTokenType.True:
+                case JsonTokenType.False:
+                    cell.Kind = JsonCell.Boolean;
+                    cell.Bool = reader.TokenType == JsonTokenType.True;
+                    break;
+                case JsonTokenType.String:
+                    cell.Kind = JsonCell.String;
+                    cell.Text = Normalize(reader.GetString());
+                    break;
+                case JsonTokenType.Number:
+                    if (reader.TryGetInt64(out var integer))
+                    {
+                        cell.Kind = JsonCell.Integer;
+                        cell.Long = integer;
+                    }
+                    else
+                    {
+                        cell.Kind = JsonCell.Float;
+                        cell.Double = reader.GetDouble();
+                    }
+                    break;
+                case JsonTokenType.StartArray:
+                case JsonTokenType.StartObject:
+                    // Nested value (e.g. parquet `conditions`): skipped, exposed as null.
+                    SkipComposite(ref reader);
+                    cell.Kind = JsonCell.Null;
+                    break;
                 default:
-                    // arrays / row structures (e.g. parquet `conditions`): compact JSON is what the
-                    // duckdb CSV path effectively produced for such columns.
-                    return cell.ToString(Formatting.None);
+                    cell.Kind = JsonCell.Null;
+                    break;
             }
+            count++;
+        }
+
+        /// <summary>Consumes a nested array/object, leaving the reader on its closing token.</summary>
+        private static void SkipComposite(ref Utf8JsonReader reader)
+        {
+            var depth = 0;
+            do
+            {
+                if (reader.TokenType == JsonTokenType.StartArray || reader.TokenType == JsonTokenType.StartObject)
+                {
+                    depth++;
+                }
+                else if (reader.TokenType == JsonTokenType.EndArray || reader.TokenType == JsonTokenType.EndObject)
+                {
+                    depth--;
+                }
+            }
+            while (depth > 0 && reader.Read());
+        }
+
+        /// <summary>Extracts the "message" of the statement protocol's error object.</summary>
+        private static string ReadErrorMessage(ref Utf8JsonReader reader)
+        {
+            var depth = 0;
+            string message = null;
+            while (reader.Read())
+            {
+                switch (reader.TokenType)
+                {
+                    case JsonTokenType.StartObject:
+                    case JsonTokenType.StartArray:
+                        depth++;
+                        break;
+                    case JsonTokenType.EndObject:
+                    case JsonTokenType.EndArray:
+                        if (depth == 0)
+                        {
+                            return message ?? "query failed";
+                        }
+                        depth--;
+                        break;
+                    case JsonTokenType.PropertyName:
+                        if (depth == 0 && reader.ValueTextEquals("message"))
+                        {
+                            reader.Read();
+                            if (reader.TokenType == JsonTokenType.String)
+                            {
+                                message = reader.GetString();
+                            }
+                        }
+                        break;
+                }
+            }
+            return message ?? "query failed";
         }
 
         /// <summary>Trino renders TIMESTAMP(9) with 9 fractional digits; .NET DateTime parses at most 7.</summary>
