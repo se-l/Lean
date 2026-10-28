@@ -255,9 +255,13 @@ namespace QuantConnect.Lean.DataSource.R2
             // reads the same warehouse through the always-on Trino coordinator over HTTP - no
             // mount, no duckdb binary, no local metadata mirroring. Readers and SQL builders are
             // shared; only the transport changes.
-            var trinoUrl = Setting("trino-url", string.Empty);
+            // Default engine is trino (the always-on coordinator); duckdb stays opt-in only.
+            // Host runs reach the coordinator on loopback; containers override trino-url with
+            // http://host.docker.internal:18080.
+            var engine = Setting("engine", "trino");
+            var trinoUrl = Setting("trino-url", "http://127.0.0.1:18080");
             if (!string.IsNullOrEmpty(trinoUrl) &&
-                string.Equals(Setting("engine", "duckdb"), "trino", StringComparison.OrdinalIgnoreCase))
+                string.Equals(engine, "trino", StringComparison.OrdinalIgnoreCase))
             {
                 var trinoCatalog = Setting("trino-catalog", "r2");
                 var trinoSchema = Setting("trino-schema", "market");
