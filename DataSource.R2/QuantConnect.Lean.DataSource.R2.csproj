@@ -24,9 +24,10 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
-    <!-- The plugin is loaded by MEF from Launcher/bin/Release, not by an app that carries a
-         deps.json for it: its NuGet dependencies (Trino.Ado/Trino.Core) must sit beside it. -->
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <!-- The plugin is loaded by MEF from Launcher/bin/Release and must add NOTHING to that folder
+         beyond its own DLL: Lean's host already has System.Text.Json 6 in the default load context,
+         so any assembly requesting 8.0.0.0 beside the plugin fails to load (0x80131621/0x80131040).
+         Trino is spoken over raw HTTP with Newtonsoft.Json, which Lean already ships. -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -67,10 +68,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Trino transport for the engine=trino path. netstandard2.0 -> fine on net6.0; package
-         assemblies are copied into OutDir (Launcher/bin/Release), which the amm image ships. -->
-    <PackageReference Include="Trino.Ado" Version="1.1.0" />
-    <PackageReference Include="Trino.Core" Version="1.1.0" />
+    <!-- Trino statements use Newtonsoft.Json, which Lean already ships in Launcher/bin/Release. -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>../Launcher/bin/Release/Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
 </Project>
