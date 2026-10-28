@@ -24,6 +24,9 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- The plugin is loaded by MEF from Launcher/bin/Release, not by an app that carries a
+         deps.json for it: its NuGet dependencies (Trino.Ado/Trino.Core) must sit beside it. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup>
@@ -64,7 +67,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Configuration\QuantConnect.Configuration.csproj" />
+    <!-- Trino transport for the engine=trino path. netstandard2.0 -> fine on net6.0; package
+         assemblies are copied into OutDir (Launcher/bin/Release), which the amm image ships. -->
+    <PackageReference Include="Trino.Ado" Version="1.1.0" />
+    <PackageReference Include="Trino.Core" Version="1.1.0" />
   </ItemGroup>
 
 </Project>

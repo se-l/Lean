@@ -89,6 +89,9 @@ namespace QuantConnect.Lean.DataSource.R2
 
         private readonly string _mountRoot;
         private readonly string _duckdbPath;
+
+        /// <summary>Trino transport; null unless `cloudflare-r2.engine=trino`.</summary>
+        private readonly TrinoSession _trino;
         private readonly string _warehouse;
         private readonly string _catalogUri;
         private readonly string _s3Endpoint;
@@ -248,6 +251,41 @@ namespace QuantConnect.Lean.DataSource.R2
             string s3Endpoint = null,
             R2Routing routes = null)
         {
+            // Engine selection: "duckdb" (default) keeps the mount + child-process path; "trino"
+            // reads the same warehouse through the always-on Trino coordinator over HTTP - no
+            // mount, no duckdb binary, no local metadata mirroring. Readers and SQL builders are
+            // shared; only the transport changes.
+            var trinoUrl = Setting("trino-url", string.Empty);
+            if (!string.IsNullOrEmpty(trinoUrl) &&
+                string.Equals(Setting("engine", "duckdb"), "trino", StringComparison.OrdinalIgnoreCase))
+            {
+                var trinoCatalog = Setting("trino-catalog", "r2");
+                var trinoSchema = Setting("trino-schema", "market");
+                _mountRoot = mountRoot ?? string.Empty;
+                _duckdbPath = duckdbPath ?? string.Empty;
+                _warehouse = warehouse ?? string.Empty;
+                _catalogUri = catalogUri ?? string.Empty;
+                _s3Endpoint = s3Endpoint ?? string.Empty;
+                _routing = routes ?? R2Routing.FromConfiguration();
+                _catalogToken = Setting("catalog-token");
+                _s3AccessKey = Setting("s3-access-key");
+                _s3SecretKey = Setting("s3-secret-access-key");
+                _rootCachePath = Setting("roots-cache", DefaultRootCachePath);
+                _cacheMaxEntries = Setting("cache-max-entries", 64);
+                _catalogRetries = Setting("catalog-retries", 2);
+                _scanTimeout = TimeSpan.FromSeconds(Setting("trino-timeout-s", 600));
+                _cacheMaxRows = Setting("cache-max-rows", 30_000_000L);
+                _trino = new TrinoSession(
+                    trinoUrl,
+                    trinoCatalog,
+                    trinoSchema,
+                    Setting("trino-user", "seb"),
+                    _scanTimeout);
+                Log.Trace($"R2LocalCatalog: engine=trino, coordinator {trinoUrl}, " +
+                          $"catalog {trinoCatalog}.{trinoSchema}");
+                return;
+            }
+
             _mountRoot = Required(mountRoot, "mount-root");
             _duckdbPath = Required(duckdbPath, "duckdb-path");
             _warehouse = Required(warehouse, "warehouse");
@@ -444,6 +482,13 @@ namespace QuantConnect.Lean.DataSource.R2
         public bool HoldsDay(string table, DateTime dayUtc)
         {
             RequireTable(table);
+
+            if (_trino != null)
+            {
+                // Nothing to list locally; the scan's manifest stats answer it (a missing day is
+                // "no rows", not an error) - the same contract as the cloudflare metadata route.
+                return true;
+            }
 
             if (_routing.Metadata == R2Route.CloudFlare)
             {
@@ -874,14 +919,16 @@ namespace QuantConnect.Lean.DataSource.R2
             }
         }
 
-        public IEnumerable<string[]> Rows(string sql) => Run(sql, _routing.Data == R2Route.CloudFlare);
+        public IEnumerable<string[]> Rows(string sql) =>
+            _trino != null ? _trino.Query(sql) : Run(sql, _routing.Data == R2Route.CloudFlare);
 
         /// <summary>
         /// Rows of a CATALOG-SIDE table (dim/registry/ledger: option_contract_live,
         /// loaded_symbol_sessions, …) that exists only in the attached warehouse catalog — never a
         /// mount-routable data table, so the ATTACH is ensured unconditionally.
         /// </summary>
-        public IEnumerable<string[]> CatalogRows(string sql) => Run(sql, ensureAttach: true);
+        public IEnumerable<string[]> CatalogRows(string sql) =>
+            _trino != null ? _trino.Query(sql) : Run(sql, ensureAttach: true);
 
         /// <summary>
         /// The distinct vendor symbols a table holds for ONE underlying on ONE day, read through the
@@ -933,6 +980,11 @@ namespace QuantConnect.Lean.DataSource.R2
         {
             RequireTable(table);
 
+            if (_trino != null)
+            {
+                return $"{_trino.Catalog}.{_trino.Schema}.{table}";
+            }
+
             if (_routing.Data == R2Route.CloudFlare)
             {
                 return $"iceberg_scan('r2.market.{table}')";
@@ -962,6 +1014,12 @@ namespace QuantConnect.Lean.DataSource.R2
         /// </summary>
         public string ScanPreamble()
         {
+            if (_trino != null)
+            {
+                // Trino resolves the catalog itself; there is no SET/ATTACH preamble to send.
+                return string.Empty;
+            }
+
             if (_routing.Data == R2Route.CloudFlare)
             {
                 if (string.IsNullOrEmpty(_s3AccessKey) || string.IsNullOrEmpty(_s3SecretKey))
@@ -1325,6 +1383,13 @@ namespace QuantConnect.Lean.DataSource.R2
         {
             RequireTable(table);
             var from = DataFrom(table);
+
+            if (_trino != null)
+            {
+                // No local materialisation on the Trino path: the engine caches metadata and data
+                // blocks itself, and a temp-table copy would only duplicate them.
+                return from;
+            }
 
             if (_routing.Read == R2Route.CloudFlare)
             {
