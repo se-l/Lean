@@ -91,6 +91,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int MinutesBeforeCloseHedgeToAcrossDs { get; set; }
         public int MinutesBeforeCloseIsPreEarningsReleaseEOD { get; set; }
         public Dictionary<string, int> EquityHedgeMode { get; set; }
+
+        /// <summary>
+        /// Emit every utility component as an OTLP gauge. Replaces the per-underlying
+        /// UtilityOrder.csv dump; switch off if the metric volume is too high.
+        /// </summary>
+        public bool OtelUtilityMetrics { get; set; } = true;
         public Dictionary<string, int> IVSpreadSMAPeriod { get; set; }
         public int MaxDesiredOrders { get; set; }
     }
