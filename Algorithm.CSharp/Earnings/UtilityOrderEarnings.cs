@@ -23,7 +23,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Time = _algo.Time;
             OrderDirection = Num2Direction(Quantity);
 
-            _algo.UtilityWriters[Underlying].Write(this);
+            UtilityTelemetry.Emit(this, _algo.Cfg.OtelUtilityMetrics);
 
             // Calling Utility to snap the risk => cached for future use.
             _ = Utility;

@@ -17,6 +17,7 @@ using MathNet.Numerics.LinearAlgebra;
 using Newtonsoft.Json;
 using QuantConnect.Algorithm.CSharp.Core;
 using QuantConnect.Algorithm.CSharp.Core.Events;
+using QuantConnect.Logging;
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Algorithm.CSharp.Core.IO;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
@@ -55,6 +56,23 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         // serves IVs from the MQ-fed greek book, falls back to the ZMQ JuliaPricer on miss.
         public PricerCacheClient PricerCache;
 
+        /// <summary>
+        /// Telemetry run id: `yyyyMMdd-HHmmss` (UTC trigger time) - underlyings - start date - 6 hex.
+        /// The stamp leads so a descending sort puts the most recent run on top; the hash keeps two
+        /// runs started in the same second distinct.
+        /// </summary>
+        private string BuildRunId()
+        {
+            string stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+            string underlyings = string.Join(",", Cfg.Ticker.Where(t => !string.IsNullOrWhiteSpace(t)));
+            // Cfg.StartDate is the configured backtest start (CfgAlgo overrides Cfg); QCAlgorithm's
+            // StartDate is still the engine default at this point. Live runs have no window.
+            DateTime configuredStart = Cfg.StartDate;
+            string start = configuredStart.Year < 1990 ? "live" : configuredStart.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+            string salt = Guid.NewGuid().ToString("N").Substring(0, 6);
+            return $"{stamp}-{underlyings}-{start}-{salt}";
+        }
+
         public override bool HasActiveRequests() => rMQClient?.HasActiveRequests() ?? false;
         public override void Initialize()
         {
@@ -65,6 +83,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Cfg.OverrideWith(CfgAlgo); // Override with config
             File.Copy($"./{FoundationsConfigFileName}", Path.Combine(Globals.PathAnalytics, FoundationsConfigFileName));
             File.Copy($"./{CfgAlgoName}", Path.Combine(Globals.PathAnalytics, CfgAlgoName));
+
+            // Run identity for telemetry. Shape: <utc trigger stamp>-<underlyings>-<start date>-<6 hex>.
+            // Lexicographically descending therefore lists the newest run first, and the run id is a
+            // single filter in the backend (it is exported as the lean.run_id resource attribute).
+            string runId = BuildRunId();
+            OpenTelemetryLogHandler.SetRunId(runId, LiveMode ? "live" : "backtest");
+            Log($"{Time} EarningsAlgorithm.Initialize: telemetry run id {runId}");
 
             string pricerUri = CfgAlgo.PricerProtocol.ToLower() == "ipc" 
                 ? $"ipc://{CfgAlgo.PricerHost}.{CfgAlgo.PricerPort}"
@@ -381,7 +406,16 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 // Urgent first. Cancel other tickets. Hedge delta.
                 CancelOcaGroup(orderEvent);
                 CancelOptionTicketsWithSameDeltaSign(orderEvent.Symbol);
-                RiskScenarioHandler.ClearScenarios(ToEquity(Underlying(orderEvent.Symbol)));
+
+                // Only an OPTION fill invalidates the option scenario set - its holdings, entry IVs and
+                // utilities were computed against the option book. An EQUITY hedge fill used to wipe
+                // BestOrder and the sweep clock as well, and the delta hedge fills constantly, so every
+                // option quote after a hedge fill lost its sweep and silently fell back to the model
+                // price (visible as "no sweep IV ... bestOrder=none" right after the hedge fill).
+                if (orderEvent.Symbol.SecurityType == SecurityType.Option)
+                {
+                    RiskScenarioHandler.ClearScenarios(ToEquity(Underlying(orderEvent.Symbol)));
+                }
 
                 var trades = WrapToTrade(orderEvent);
                 ApplyToPosition(trades);

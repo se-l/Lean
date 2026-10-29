@@ -22,6 +22,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -88,8 +89,18 @@ namespace QuantConnect.Logging
         private static readonly HttpClient Http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         private static readonly long UnixEpochTicks = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).Ticks;
 
-        private static readonly string ServiceName =
+        private static string ServiceName =
             FirstNonEmpty(GetSetting("OTEL_SERVICE_NAME")) ?? "lean";
+
+        // Set from QuantConnect.Configuration (config.json, overridable by environment) via
+        // Configure(); the Logging assembly cannot reference Configuration directly (it would be a
+        // circular project reference), so the entry point pushes the values in before the handler
+        // is created.
+        private static string _configuredEndpoint;
+        private static string _configuredMetricsEndpoint;
+        private static bool? _configuredEnabled;
+        private static string RunId = "";
+        private static string RunMode = "";
 
         // Identity: resolved once. Mirrors Fino.jl's src/shared/Log.jl so both stacks are filters
         // in SigNoz with the same attribute names.
@@ -100,7 +111,7 @@ namespace QuantConnect.Logging
         private static readonly string HostIp = DetectHostIp();
         private static readonly string HostName = ResolveHostName();
 
-        private static readonly KeyValuePair<string, string>[] ExtraResourceAttributes =
+        private static KeyValuePair<string, string>[] ExtraResourceAttributes =
             ParseResourceAttributes(GetSetting("OTEL_RESOURCE_ATTRIBUTES"));
 
         /// <summary>
@@ -119,11 +130,17 @@ namespace QuantConnect.Logging
         private static OpenTelemetryLogHandler _live;
 
         private readonly ConcurrentQueue<Entry> _queue = new ConcurrentQueue<Entry>();
+        private readonly ConcurrentQueue<MetricEntry> _metricQueue = new ConcurrentQueue<MetricEntry>();
         private readonly Uri _endpoint;
+        private readonly Uri _metricsEndpoint;
         private readonly Thread _worker;
         private readonly ManualResetEventSlim _stop = new ManualResetEventSlim(false);
 
         private int _queued;
+        private int _queuedMetrics;
+        private int _metricFailCount;
+        private long _metricBackoffUntilTicks;
+        private bool _metricsDisabled;
         private int _dropped;
         private int _droppedReported;
         private int _disposed;
@@ -131,19 +148,38 @@ namespace QuantConnect.Logging
         private long _backoffUntilTicks;
         private bool _down;
 
+        private readonly struct MetricEntry
+        {
+            public readonly long TimeUnixNano;
+            public readonly string Name;
+            public readonly double Value;
+            public readonly KeyValuePair<string, object>[] Attributes;
+
+            public MetricEntry(long timeUnixNano, string name, double value, KeyValuePair<string, object>[] attributes)
+            {
+                TimeUnixNano = timeUnixNano;
+                Name = name;
+                Value = value;
+                Attributes = attributes;
+            }
+        }
+
         private readonly struct Entry
         {
             public readonly long TimeUnixNano;
             public readonly int SeverityNumber;
             public readonly string SeverityText;
             public readonly string Message;
+            public readonly KeyValuePair<string, object>[] Attributes;
 
-            public Entry(long timeUnixNano, int severityNumber, string severityText, string message)
+            public Entry(long timeUnixNano, int severityNumber, string severityText, string message,
+                         KeyValuePair<string, object>[] attributes = null)
             {
                 TimeUnixNano = timeUnixNano;
                 SeverityNumber = severityNumber;
                 SeverityText = severityText;
                 Message = message;
+                Attributes = attributes;
             }
         }
 
@@ -161,6 +197,93 @@ namespace QuantConnect.Logging
         /// Creates the handler when OTLP shipping is configured, otherwise returns null so callers
         /// can leave their handler composition untouched.
         /// </summary>
+        /// <summary>
+        /// Push the OTLP settings resolved from QuantConnect.Configuration. `Config.Get` reads the
+        /// environment first and config.json second, so the same keys work from Rider and from a
+        /// container whose compose sets the environment variable.
+        /// </summary>
+        /// <param name="endpoint">e.g. http://127.0.0.1:4318 (default endpoint when null/empty).</param>
+        /// <param name="enabled">false disables export regardless of the endpoint.</param>
+        /// <param name="serviceName">service.name; keep one per role (lean.bt, lean.prd, mind.prd).</param>
+        /// <param name="resourceAttributes">standard k=v,k=v pairs.</param>
+        public static void Configure(string endpoint = null, bool? enabled = null, string serviceName = null,
+                                     string resourceAttributes = null, string metricsEndpoint = null)
+        {
+            if (!string.IsNullOrWhiteSpace(endpoint)) _configuredEndpoint = endpoint;
+            if (enabled.HasValue) _configuredEnabled = enabled;
+            // Standard OTEL_* environment variables win over config.json, mirroring Config.Get's
+            // own precedence (environment first, file second) so the compose pathway is unchanged.
+            ServiceName = FirstNonEmpty(GetSetting("OTEL_SERVICE_NAME"), serviceName) ?? ServiceName;
+            if (!string.IsNullOrWhiteSpace(resourceAttributes))
+            {
+                ExtraResourceAttributes = ParseResourceAttributes(resourceAttributes);
+            }
+            if (!string.IsNullOrWhiteSpace(metricsEndpoint)) _configuredMetricsEndpoint = metricsEndpoint;
+        }
+
+        /// <summary>
+        /// Identify this process in the backend. Every exported record carries lean.run_id /
+        /// lean.mode as RESOURCE attributes, so a run is one filter and one retention unit.
+        /// </summary>
+        public static void SetRunId(string runId, string mode = null)
+        {
+            RunId = runId ?? "";
+            if (!string.IsNullOrWhiteSpace(mode)) RunMode = mode;
+        }
+
+        /// <summary>
+        /// Emit a STRUCTURED event: body = event name, fields = attributes (typed), not prose.
+        ///
+        /// This is what makes the backend queryable — attributes land in SigNoz's
+        /// attributes_string / attributes_number maps, so an agent can GROUP BY a reason code
+        /// instead of regexing log text.
+        ///
+        /// Keep the key set per event stable (declare the record type next to its emitter) and the
+        /// cardinality low: ClickHouse stores these as maps, so nothing enforces the schema.
+        /// </summary>
+        public static void Emit(string eventName, IEnumerable<KeyValuePair<string, object>> attributes,
+                                int severityNumber = SeverityInfo, string severityText = "INFO")
+        {
+            var live = _live;
+            if (live == null || string.IsNullOrEmpty(eventName)) return;
+
+            var list = new List<KeyValuePair<string, object>> { new("event.name", eventName) };
+            if (attributes != null)
+            {
+                foreach (var pair in attributes)
+                {
+                    if (pair.Key != null) list.Add(pair);
+                }
+            }
+            live.Enqueue(severityNumber, severityText, eventName, list.ToArray());
+        }
+
+        /// <summary>
+        /// Emit a numeric sample (a gauge data point) to OTLP /v1/metrics.
+        ///
+        /// Metrics are the right shape for anything you want to aggregate over a run — utility
+        /// components, latency, counts — where a log record per sample would be both bulky and
+        /// awkward to query. Attributes carry the dimensions (underlying, symbol, side).
+        /// </summary>
+        public static void Metric(string name, double value,
+                                  IEnumerable<KeyValuePair<string, object>> attributes = null)
+        {
+            var live = _live;
+            if (live == null || string.IsNullOrEmpty(name) || double.IsNaN(value) || double.IsInfinity(value)) return;
+
+            KeyValuePair<string, object>[] attrs = null;
+            if (attributes != null)
+            {
+                var list = new List<KeyValuePair<string, object>>();
+                foreach (var pair in attributes)
+                {
+                    if (pair.Key != null) list.Add(pair);
+                }
+                attrs = list.Count == 0 ? null : list.ToArray();
+            }
+            live.EnqueueMetric(name, value, attrs);
+        }
+
         public static ILogHandler TryCreate()
         {
             var endpoint = ResolveEndpoint();
@@ -197,6 +320,21 @@ namespace QuantConnect.Logging
         public OpenTelemetryLogHandler(Uri endpoint)
         {
             _endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+            string metricsOverride = _configuredMetricsEndpoint;
+            if (!string.IsNullOrWhiteSpace(metricsOverride))
+            {
+                // Accept either a base URL or the full /v1/metrics route.
+                metricsOverride = metricsOverride.TrimEnd('/');
+                if (!metricsOverride.EndsWith("/v1/metrics", StringComparison.Ordinal))
+                {
+                    metricsOverride += "/v1/metrics";
+                }
+            }
+            _metricsEndpoint = new Uri(!string.IsNullOrWhiteSpace(metricsOverride)
+                ? metricsOverride
+                : _endpoint.ToString().EndsWith("/v1/logs", StringComparison.Ordinal)
+                    ? _endpoint.ToString().Substring(0, _endpoint.ToString().Length - "/v1/logs".Length) + "/v1/metrics"
+                    : _endpoint.ToString().TrimEnd('/') + "/v1/metrics");
 
             _worker = new Thread(Worker)
             {
@@ -304,7 +442,8 @@ namespace QuantConnect.Logging
             };
         }
 
-        private void Enqueue(int severityNumber, string severityText, string text)
+        private void Enqueue(int severityNumber, string severityText, string text,
+                             KeyValuePair<string, object>[] attributes = null)
         {
             if (text == null || Volatile.Read(ref _disposed) != 0)
             {
@@ -324,7 +463,33 @@ namespace QuantConnect.Logging
             }
 
             var now = DateTime.UtcNow;
-            _queue.Enqueue(new Entry((now.Ticks - UnixEpochTicks) * 100, severityNumber, severityText, text));
+            _queue.Enqueue(new Entry((now.Ticks - UnixEpochTicks) * 100, severityNumber, severityText, text, attributes));
+        }
+
+        private void EnqueueMetric(string name, double value, KeyValuePair<string, object>[] attributes)
+        {
+            if (Volatile.Read(ref _disposed) != 0) return;
+
+            if (Interlocked.Increment(ref _queuedMetrics) > QueueMax)
+            {
+                Interlocked.Decrement(ref _queuedMetrics);
+                Interlocked.Increment(ref _dropped);
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            _metricQueue.Enqueue(new MetricEntry((now.Ticks - UnixEpochTicks) * 100, name, value, attributes));
+        }
+
+        private List<MetricEntry> CollectMetrics(int max)
+        {
+            var batch = new List<MetricEntry>(Math.Min(max, 128));
+            while (batch.Count < max && _metricQueue.TryDequeue(out var entry))
+            {
+                Interlocked.Decrement(ref _queuedMetrics);
+                batch.Add(entry);
+            }
+            return batch;
         }
 
         private List<Entry> Collect(int max)
@@ -352,6 +517,12 @@ namespace QuantConnect.Logging
                     else
                     {
                         ReportDrops();
+                    }
+
+                    var metrics = CollectMetrics(BatchMax);
+                    if (metrics.Count > 0)
+                    {
+                        ExportMetrics(metrics, ExportTimeout);
                     }
                 }
                 catch (Exception err)
@@ -422,6 +593,152 @@ namespace QuantConnect.Logging
             }
         }
 
+        private bool ExportMetrics(List<MetricEntry> batch, TimeSpan timeout)
+        {
+            if (batch.Count == 0 || _metricsDisabled) return true;
+
+            var now = DateTime.UtcNow.Ticks;
+            if (now < Interlocked.Read(ref _metricBackoffUntilTicks))
+            {
+                return false; // metrics-only cooldown; the log stream is unaffected
+            }
+
+            try
+            {
+                var payload = BuildMetricPayload(batch);
+                using (var content = new ByteArrayContent(payload))
+                using (var cts = new CancellationTokenSource(timeout))
+                {
+                    content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                    using (var response = Http.PostAsync(_metricsEndpoint, content, cts.Token).GetAwaiter().GetResult())
+                    {
+                        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                        {
+                            // The collector accepts logs but has no metrics pipeline. Say it once and
+                            // stop trying: this must never backoff the log export.
+                            _metricsDisabled = true;
+                            Console.Error.WriteLine("[Lean.OTel] metrics endpoint " + _metricsEndpoint +
+                                " returned 404 — metrics disabled for this process. Add a metrics pipeline to the" +
+                                " collector, or set otel-metrics-endpoint to a collector that has one.");
+                            return false;
+                        }
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            OnMetricFailure("metrics endpoint returned " + (int)response.StatusCode);
+                            return false;
+                        }
+                    }
+                }
+
+                Interlocked.Exchange(ref _metricFailCount, 0);
+                Interlocked.Exchange(ref _metricBackoffUntilTicks, 0);
+                return true;
+            }
+            catch (Exception err)
+            {
+                OnMetricFailure(err.Message);
+                return false;
+            }
+        }
+
+        /// Metrics-only backoff: same shape as the log path but its own counters.
+        private void OnMetricFailure(string reason)
+        {
+            var fails = Interlocked.Increment(ref _metricFailCount);
+            var wait = Math.Min(MaxRetryWait.TotalSeconds, RetryWait.TotalSeconds * Math.Pow(2, Math.Min(fails - 1, 5)));
+            Interlocked.Exchange(ref _metricBackoffUntilTicks, DateTime.UtcNow.AddSeconds(wait).Ticks);
+            if (fails == 1)
+            {
+                Console.Error.WriteLine("[Lean.OTel] metrics export failed at " + _metricsEndpoint + ": " + reason);
+            }
+        }
+
+        private byte[] BuildMetricPayload(List<MetricEntry> batch)
+        {
+            var buffer = new ArrayBufferWriter<byte>(1024);
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+                writer.WritePropertyName("resourceMetrics");
+                writer.WriteStartArray();
+                writer.WriteStartObject();
+
+                writer.WritePropertyName("resource");
+                writer.WriteStartObject();
+                writer.WritePropertyName("attributes");
+                writer.WriteStartArray();
+                WriteStringAttribute(writer, "service.name", ServiceName);
+                WriteStringAttribute(writer, "host.name", HostName);
+                WriteStringAttribute(writer, "host.ip", HostIp);
+                WriteStringAttribute(writer, "container.id", ContainerId);
+                WriteStringAttribute(writer, "container.name", ContainerName);
+                WriteIntAttribute(writer, "process.pid", Environment.ProcessId);
+                if (!string.IsNullOrEmpty(RunId)) WriteStringAttribute(writer, "lean.run_id", RunId);
+                if (!string.IsNullOrEmpty(RunMode)) WriteStringAttribute(writer, "lean.mode", RunMode);
+                foreach (var pair in ExtraResourceAttributes)
+                {
+                    WriteStringAttribute(writer, pair.Key, pair.Value);
+                }
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+
+                writer.WritePropertyName("scopeMetrics");
+                writer.WriteStartArray();
+                writer.WriteStartObject();
+                writer.WritePropertyName("scope");
+                writer.WriteStartObject();
+                writer.WriteString("name", "QuantConnect.Logging");
+                writer.WriteEndObject();
+
+                writer.WritePropertyName("metrics");
+                writer.WriteStartArray();
+
+                foreach (var group in batch.GroupBy(m => m.Name))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("name", group.Key);
+                    writer.WritePropertyName("gauge");
+                    writer.WriteStartObject();
+                    writer.WritePropertyName("dataPoints");
+                    writer.WriteStartArray();
+                    foreach (var sample in group)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("timeUnixNano", sample.TimeUnixNano.ToString(CultureInfo.InvariantCulture));
+                        writer.WriteNumber("asDouble", sample.Value);
+                        if (sample.Attributes != null && sample.Attributes.Length > 0)
+                        {
+                            writer.WritePropertyName("attributes");
+                            writer.WriteStartArray();
+                            foreach (var pair in sample.Attributes)
+                            {
+                                writer.WriteStartObject();
+                                writer.WriteString("key", pair.Key);
+                                writer.WritePropertyName("value");
+                                writer.WriteStartObject();
+                                WriteAttributeValue(writer, pair.Value);
+                                writer.WriteEndObject();
+                                writer.WriteEndObject();
+                            }
+                            writer.WriteEndArray();
+                        }
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+                    writer.WriteEndObject();
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+            return buffer.WrittenSpan.ToArray();
+        }
+
         private void OnFailure(string reason)
         {
             var fails = Interlocked.Increment(ref _failCount);
@@ -435,6 +752,30 @@ namespace QuantConnect.Logging
                 Console.Error.WriteLine(string.Format(CultureInfo.InvariantCulture,
                     "[Lean.OTel] OTLP/HTTP backend unreachable at {0} ({1}); backing off, telemetry is best-effort",
                     _endpoint, reason));
+            }
+        }
+
+        /// Typed OTLP attribute value: numbers and bools stay numeric so the backend can aggregate
+        /// them (SigNoz stores them in attributes_number / attributes_bool, not as text).
+        private static void WriteAttributeValue(Utf8JsonWriter writer, object value)
+        {
+            switch (value)
+            {
+                case null:
+                    writer.WriteString("stringValue", "");
+                    return;
+                case bool b:
+                    writer.WriteBoolean("boolValue", b);
+                    return;
+                case byte or sbyte or short or ushort or int or uint or long or ulong:
+                    writer.WriteString("intValue", Convert.ToString(value, CultureInfo.InvariantCulture));
+                    return;
+                case float or double or decimal:
+                    writer.WriteNumber("doubleValue", Convert.ToDouble(value, CultureInfo.InvariantCulture));
+                    return;
+                default:
+                    writer.WriteString("stringValue", Convert.ToString(value, CultureInfo.InvariantCulture));
+                    return;
             }
         }
 
@@ -458,6 +799,8 @@ namespace QuantConnect.Logging
                 WriteStringAttribute(writer, "container.id", ContainerId);
                 WriteStringAttribute(writer, "container.name", ContainerName);
                 WriteIntAttribute(writer, "process.pid", Environment.ProcessId);
+                if (!string.IsNullOrEmpty(RunId)) WriteStringAttribute(writer, "lean.run_id", RunId);
+                if (!string.IsNullOrEmpty(RunMode)) WriteStringAttribute(writer, "lean.mode", RunMode);
                 foreach (var pair in ExtraResourceAttributes)
                 {
                     WriteStringAttribute(writer, pair.Key, pair.Value);
@@ -486,6 +829,22 @@ namespace QuantConnect.Logging
                     writer.WriteStartObject();
                     writer.WriteString("stringValue", entry.Message);
                     writer.WriteEndObject();
+                    if (entry.Attributes != null && entry.Attributes.Length > 0)
+                    {
+                        writer.WritePropertyName("attributes");
+                        writer.WriteStartArray();
+                        foreach (var pair in entry.Attributes)
+                        {
+                            writer.WriteStartObject();
+                            writer.WriteString("key", pair.Key);
+                            writer.WritePropertyName("value");
+                            writer.WriteStartObject();
+                            WriteAttributeValue(writer, pair.Value);
+                            writer.WriteEndObject();
+                            writer.WriteEndObject();
+                        }
+                        writer.WriteEndArray();
+                    }
                     writer.WriteEndObject();
                 }
                 writer.WriteEndArray();
@@ -524,13 +883,13 @@ namespace QuantConnect.Logging
 
         private static Uri ResolveEndpoint()
         {
-            var enabledSetting = GetSetting("OTEL_ENABLED");
-            var enabled = ParseBool(enabledSetting);
+            var enabled = ParseBool(GetSetting("OTEL_ENABLED")) ?? _configuredEnabled;
 
             var raw = FirstNonEmpty(
                 GetSetting("OTEL_ENDPOINT"),
                 GetSetting("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"),
-                GetSetting("OTEL_EXPORTER_OTLP_ENDPOINT"));
+                GetSetting("OTEL_EXPORTER_OTLP_ENDPOINT"),
+                _configuredEndpoint);
 
             if (raw == null)
             {

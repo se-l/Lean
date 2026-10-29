@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using RabbitMQ.Client;
@@ -47,6 +48,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         private const string QueueName = "lean.config.update";
         private const string BindingKey = "config.#";
         private const int MaxQueuedMessages = 256;
+
+        private static readonly JsonSerializerOptions ChannelJsonOptions = new()
+        {
+            IncludeFields = true,                       // schedule config classes carry fields, not properties
+            PropertyNameCaseInsensitive = true,
+            NumberHandling = JsonNumberHandling.AllowReadingFromString,   // "1" as well as 1 for byte/decimal
+            ReadCommentHandling = JsonCommentHandling.Skip,               // the config files carry comments
+            AllowTrailingCommas = true,
+        };
 
         private readonly Foundations _algo;
         private readonly ConcurrentQueue<PendingUpdate> _pending = new();
@@ -421,6 +431,30 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     }
                     error = "expected a time span (hh:mm:ss)";
                     return false;
+                }
+
+                if (element.ValueKind == JsonValueKind.Object)
+                {
+                    // Config classes such as HedgeScheduleCfg / SweepScheduleCfg expose public FIELDS
+                    // (the file is read by Newtonsoft, which binds fields by default) — System.Text.Json
+                    // needs IncludeFields to do the same. This is also what lets a whole dictionary of
+                    // schedules be published over the channel, e.g.
+                    // {"HedgeSchedules": {"_": [{MarketRegime, Start, End, Direction, EquityHedgeMode}]}}.
+                    try
+                    {
+                        value = JsonSerializer.Deserialize(element.GetRawText(), target, ChannelJsonOptions);
+                        if (value == null)
+                        {
+                            error = "object payload deserialized to null";
+                            return false;
+                        }
+                        return true;
+                    }
+                    catch (JsonException exception)
+                    {
+                        error = exception.Message;
+                        return false;
+                    }
                 }
 
                 if (target.IsArray || (target.IsGenericType && target.GetGenericTypeDefinition() == typeof(List<>)))

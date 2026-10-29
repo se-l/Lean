@@ -18,7 +18,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             // Calling Utility to snap the risk => cached for future use.
             _ = Utility;
-            _algo.UtilityWriters[Underlying].Write(this);
+            UtilityTelemetry.Emit(this, _algo.Cfg.OtelUtilityMetrics);
         }
 
         public override double Utility

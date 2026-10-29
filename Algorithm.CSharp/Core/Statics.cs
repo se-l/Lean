@@ -661,6 +661,26 @@ namespace QuantConnect.Algorithm.CSharp.Core
             public string Direction;
             public byte EquityHedgeMode;
         }
+        /// Runtime form of `HedgeScheduleCfg`: parsed regime/direction, time window as TimeSpans,
+        /// and the equity hedge mode the schedule imposes while it is active.
+        public class HedgeSchedule
+        {
+            public MarketRegime MarketRegime;
+            public TimeSpan Start;
+            public TimeSpan End;
+            public OrderDirection Direction;
+            public byte EquityHedgeMode;
+
+            public HedgeSchedule(HedgeScheduleCfg cfg)
+            {
+                MarketRegime = Enum.Parse<MarketRegime>(cfg.MarketRegime);
+                Start = AlgoConfig.GetTimeSpan(cfg.Start);
+                End = AlgoConfig.GetTimeSpan(cfg.End);
+                Direction = Enum.Parse<OrderDirection>(cfg.Direction);
+                EquityHedgeMode = cfg.EquityHedgeMode;
+            }
+        }
+
         public class SweepSchedule
         {
             public MarketRegime MarketRegime;

@@ -152,7 +152,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 _algo.IsSignalsRunning[security.Symbol] = false;
 
                 _algo.RiskProfiles[security.Symbol] = new RiskProfile(_algo, equity);
-                _algo.UtilityWriters[security.Symbol] = new UtilityWriter(_algo, equity);
                 _algo.OrderEventWriters[security.Symbol] = new OrderEventWriter(_algo, equity);
                 _algo.AbsoluteDiscounts[security.Symbol] = new RiskDiscount(_algo, _algo.Cfg, security.Symbol, Metric.Absolute);
                 _algo.RequestContractsHandlers[security.Symbol] = new RequestContractsHandler(_algo, equity);

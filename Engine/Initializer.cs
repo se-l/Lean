@@ -45,6 +45,16 @@ namespace QuantConnect.Lean.Engine
                     Directory.CreateDirectory(destinationDir);
                     Log.FilePath = Path.Combine(destinationDir, "log.txt");
                 }
+                // OTLP export settings live in config.json as otel-*; Config.Get consults the
+                // environment FIRST, so the same keys are overridable by container environment
+                // (OTEL_ENDPOINT etc.) while Rider runs pick up the file defaults.
+                OpenTelemetryLogHandler.Configure(
+                    endpoint: Config.Get("otel-endpoint", ""),
+                    enabled: Config.GetBool("otel-enabled", false),
+                    serviceName: Config.Get("otel-service-name", "lean"),
+                    resourceAttributes: Config.Get("otel-resource-attributes", ""),
+                    metricsEndpoint: Config.Get("otel-metrics-endpoint", ""));
+
                 Log.LogHandler = Composer.Instance.GetExportedValueByTypeName<ILogHandler>(Config.Get("log-handler", "CompositeLogHandler"));
 
                 Log.Trace($"Engine.Main(): LEAN ALGORITHMIC TRADING ENGINE v{Globals.Version} Mode: {mode} ({(Environment.Is64BitProcess ? "64" : "32")}bit) Host: {Environment.MachineName}");
