@@ -416,7 +416,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                         LastDeltaAcrossDsOptionsOnly.Remove(Underlying(orderEvent.Symbol));
 
                         ClearTargetHoldings(underlying);
-                        ReduceTargetPortfolios(underlying);
+                        ReduceTargetPortfolios(underlying, orderEvent.Symbol, orderEvent.FillQuantity);
                         SetTargetHoldingsFromTargetPortfolios(underlying); // After earnings
                         CancelOrdersNotAlignedWithTargetPortfolio();
                         RequestTargetPortfolios(underlying); // Before earnings
@@ -699,6 +699,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 TargetPortfolios[Securities[pfUnderlying].Symbol] = new();
             }
 
+            bool loggedBestPresumedIv = false;
+            bool loggedBestMarginalUtil = false;
+            
             foreach (TargetPortfolioPb pf in targetPfs.OrderBy(pf => pf.Objective).Reverse())
             {
                 if (!IsTargetPortfolioCompatibleWithHoldings(pf))
@@ -718,9 +721,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 //        QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
                 //    }
                 //});
-
-                Log(
-                    $"{Time} OnTargetPortfolios, Presumed Fill IVs:\n{string.Join("\n", pf.Ivs.Select(kvp => $"{kvp.Key}: {kvp.Value:0.000}"))}");
+                
+                if (!loggedBestPresumedIv)
+                {
+                    Log($"{Time} OnTargetPortfolios, Presumed Fill IVs:\n{string.Join("\n", pf.Ivs.Select(kvp => $"{kvp.Key}: {kvp.Value:0.000}"))}");
+                    loggedBestPresumedIv = true;
+                }
+                
                 pf.Ivs.DoForEach(kvp =>
                 {
                     if (SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol) && Securities.ContainsKey(symbol))
@@ -754,7 +761,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                         // MarginalUtility can be for either adding or removing a symbol from the portfolio. Marginal is not just for adding. Done this way as utility is non-linear. Direction is chosen based on TargetPortfolio.
                         Core.Holding holding = new(symbol, Math.Sign(holdingPb.Quantity));
                         MarginalUtility[holding] = kvp.Value;
-                        Log($"{Time} MarginalUtility for Quantity={holding.Quantity}, Symbol={holding.Symbol}, Val={kvp.Value:0.00}, Quantity={holding.Quantity}");
+                        if (!loggedBestMarginalUtil)
+                        {
+                            Log($"{Time} MarginalUtility for Quantity={holding.Quantity}, Symbol={holding.Symbol}, Val={kvp.Value:0.00}, Quantity={holding.Quantity}");
+                            loggedBestMarginalUtil = true;
+                        }
                     }
                 }
             }
@@ -762,7 +773,15 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             // This overrides the risk scenario set to achieve delta neutral. Dont want that when PricingStategy is going delta neutral.
             foreach (var kvp in TargetPortfolios)
             {
-                TargetPortfolios[kvp.Key] = kvp.Value.Where(IsTargetPortfolioCompatibleWithHoldings).ToList();
+                TargetPortfolios[kvp.Key] = kvp.Value
+                    .Where(IsTargetPortfolioCompatibleWithHoldings)
+                    // Best objective first, and only the best 20: the response carries hundreds of
+                    // candidate portfolios and every one of them is carried through the utility and
+                    // stress-test paths. The set is already ranked by objective (maxObjective), so
+                    // this keeps the actionable head and drops the tail.
+                    .OrderByDescending(pf => pf.Objective)
+                    .Take(Math.Max(1, Cfg.MaxTargetPortfolios))
+                    .ToList();
                 SetEquiUtilitySweeperFromTargetPortfolios(TargetPortfolios[kvp.Key]);
             }
 
@@ -1015,7 +1034,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 if (!bySymbol.TryGetValue(option, out var targetQuantity) &&
                     !byText.TryGetValue(option.Value, out targetQuantity))
                 {
-                    Log($"{Time} TargetPortfolio incompatible: holds {option.Value} not in target portfolio.");
                     return false;
                 }
 
@@ -1026,12 +1044,10 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 }
                 if (Math.Sign(targetQuantity) != Math.Sign(algoQuantity))
                 {
-                    Log($"{Time} TargetPortfolio incompatible: {option.Value} algo={algoQuantity}, target={targetQuantity} (opposite side).");
                     return false;
                 }
                 if (Math.Abs(targetQuantity) < Math.Abs(algoQuantity))
                 {
-                    Log($"{Time} TargetPortfolio incompatible: {option.Value} algo={algoQuantity}, target={targetQuantity} (would have to unwind).");
                     return false;
                 }
             }
@@ -1045,7 +1061,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// after a fill or a cancellation, where the previous code cleared the whole cache and left
         /// the algorithm unquoted until a fresh solve arrived.
         /// </summary>
-        public override void ReduceTargetPortfolios(Symbol underlying)
+        public void ReduceTargetPortfolios(Symbol underlying, Symbol fillSymbol = null, decimal fillQuantity = 0)
         {
             if (!TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> cached) || cached.Count == 0)
             {
@@ -1055,10 +1071,49 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             var kept = cached.Where(IsTargetPortfolioCompatibleWithHoldings).ToList();
             TargetPortfolios[underlying] = kept;
 
-            SetEquiUtilitySweeperFromTargetPortfolios(kept);
-            SetTargetHoldingsFromTargetPortfolios(underlying);
+            // SetEquiUtilitySweeperFromTargetPortfolios(kept);
+            // SetTargetHoldingsFromTargetPortfolios(underlying);
 
-            Log($"{Time} ReduceTargetPortfolios({underlying}): {cached.Count} -> {kept.Count} targets remain reachable.");
+            // Anything a live ticket is resting on that no surviving portfolio wants has to go:
+            // a fill narrows the target set, and an order for a dropped contract would otherwise sit
+            // there forever (CancelOrdersNotAlignedWithTargetPortfolio only looks at TargetHoldings,
+            // which no longer contains it).
+            var heldBySurvivors = new HashSet<Symbol>();
+            foreach (var portfolio in kept)
+            {
+                foreach (var holding in portfolio.Holdings.Values)
+                {
+                    if (SymbolCache.TryGetSymbol(holding.Symbol, out Symbol held))
+                    {
+                        heldBySurvivors.Add(held);
+                    }
+                }
+            }
+
+            var orphans = new List<(Symbol Symbol, OrderTicket Ticket)>();
+            foreach (var kvp in orderTickets)
+            {
+                if (kvp.Key.SecurityType != SecurityType.Option || kvp.Key.Underlying != underlying)
+                {
+                    continue;
+                }
+                foreach (var ticket in kvp.Value)
+                {
+                    if (IsLiveTicket(ticket) && !heldBySurvivors.Contains(kvp.Key))
+                    {
+                        orphans.Add((kvp.Key, ticket));
+                    }
+                }
+            }
+
+            foreach (var (orphanSymbol, ticket) in orphans)
+            {
+                Cancel(ticket, $"ReduceTargetPortfolios: {orphanSymbol} not in any surviving target portfolio");
+            }
+
+            var fillText = fillSymbol == null ? string.Empty : $" after fill {fillSymbol} qty={fillQuantity}";
+            Log($"{Time} ReduceTargetPortfolios({underlying}){fillText}: {cached.Count} -> {kept.Count} targets reachable, " +
+                $"{orphans.Count} orphan ticket(s) cancelled.");
         }
 
         private DateTime SubtractBusinessDays(DateTime dt, int days)
@@ -1126,13 +1181,33 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 HashSet<MarketRegime> regimes = ActiveRegimes.TryGetValue(ToEquity(underlying), out regimes)
                     ? regimes
                     : new HashSet<MarketRegime>();
-                if (!force && (IsWarmingUp || !regimes.Contains(MarketRegime.PreEarningsRelease) ||
-                        !IsMyMarketOpen(symbolSubscribed) || !IsPreparingEarningsRelease(underlying) ||
-                        !IsPastEarningsEntryStartTime(underlying))) return;
+                if (!force)
+                {
+                    // Each of these terms used to return silently. With 50 UnderlyingMovedX triggers
+                    // and not a single request in the log there was no way to tell which one blocked,
+                    // so name the reason on the way out.
+                    string skip = null;
+                    if (IsWarmingUp) skip = "warming up";
+                    else if (!regimes.Contains(MarketRegime.PreEarningsRelease))
+                        skip = $"regime=[{string.Join(",", regimes)}] has no PreEarningsRelease";
+                    else if (!IsMyMarketOpen(symbolSubscribed)) skip = "market closed";
+                    else if (!IsPreparingEarningsRelease(underlying))
+                        skip = $"release={NextReleaseDate(underlying):yyyy-MM-dd} is outside the preparation window";
+                    else if (!IsPastEarningsEntryStartTime(underlying)) skip = "before the earnings entry start time";
+                    if (skip != null)
+                    {
+                        Log($"{Time} RequestTargetPortfolios: {underlying} skipped — {skip}. force=False");
+                        return;
+                    }
+                }
 
                 Equity equity = ToEquity(underlying);
 
-                if (!KalmanFiltersSSVI.ContainsKey(equity) && !force) return;
+                if (!KalmanFiltersSSVI.ContainsKey(equity) && !force)
+                {
+                    Log($"{Time} RequestTargetPortfolios: {underlying} skipped — Kalman SSVI filter not initialized yet. force=False");
+                    return;
+                }
 
                 // Build request
                 //int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
@@ -1152,9 +1227,15 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 HashSet<DateTime> scopedSlices = Securities.Values
                     .Where(k => k.Type == SecurityType.Option && Underlying(k.Symbol) == underlying).Select(k => (Option)k)
                     .Select(o => o.Expiry).ToHashSet();
-                if (KalmanFiltersSSVI.ContainsKey(equity))
+                if (KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> kalmanSsviTp))
                 {
-                    requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying, KalmanFiltersSSVI[equity].GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
+                    requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying, kalmanSsviTp.GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
+                }
+                else
+                {
+                    // Only reachable with force=True: send the request without SSVI params rather
+                    // than dropping it, but say so.
+                    Log($"{Time} RequestTargetPortfolios: {underlying} sending without SSVI params — Kalman filter not initialized yet. force={force}");
                 }
                 requestTargetPortfolios.ScopedSymbols.AddRange(Securities.Keys
                     .Where(k => k.SecurityType == SecurityType.Option && Underlying(k) == underlying).Select(k => k.Value));
@@ -1212,8 +1293,16 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             HashSet<DateTime> scopedSlices = Securities.Values
                 .Where(k => k.Type == SecurityType.Option && Underlying(k.Symbol) == underlying).Select(k => (Option)k)
                 .Select(o => o.Expiry).ToHashSet();
+            // A regime change can fire before the Kalman filter exists for this underlying (it is created
+            // when the KalmanInit response arrives), and indexing the dictionary threw
+            // "The given key 'NOW' was not present in the dictionary" out of the scheduled event.
+            if (!KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> kalmanSsvi))
+            {
+                Log($"{Time} RequestPfRiskScenarios: no Kalman SSVI filter for {underlying} yet — not requesting risk scenarios.");
+                return;
+            }
             request.Params.AddRange(IVSSSVIParamsToPb(underlying,
-                KalmanFiltersSSVI[equity].GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
+                kalmanSsvi.GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
 
             IEnumerable<string> scopedSymbols = TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> targetPortfolios)
                 ? targetPortfolios

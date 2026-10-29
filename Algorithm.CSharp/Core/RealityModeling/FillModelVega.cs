@@ -34,8 +34,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
         private readonly ConcurrentDictionary<(Symbol Symbol, DateTime BarTime), double> _vegaByBar = new();
 
         public FillModelVega(Foundations algo,
-            double vegaWeight = 1.0,
-            double pFillSpreadExp = 2.0,
+            double vegaWeight = 0.1,
+            double pFillSpreadExp = 3.0,
             int? randomSeed = null)
         {
             _algo = algo ?? throw new ArgumentNullException(nameof(algo));
@@ -46,13 +46,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
 
         /// <summary>
         /// Config-driven construction: <c>fill-model-vega-weight</c> (default 1.0) and
-        /// <c>fill-model-vega-spread-exp</c> (default 2.0). Separate from the constructor so the
+        /// <c>fill-model-vega-spread-exp</c> (default 3.0). Separate from the constructor so the
         /// call is not ambiguous with the explicit-weights overload.
         /// </summary>
         public static FillModelVega FromConfig(Foundations algo, int? randomSeed = null) =>
-            new FillModelVega(algo,
-                Config.GetDouble("fill-model-vega-weight", 1.0),
-                Config.GetDouble("fill-model-vega-spread-exp", 2.0),
+            new (algo,
+                Config.GetDouble("fill-model-vega-weight", 0.1),
+                Config.GetDouble("fill-model-vega-spread-exp", 3.0),
                 randomSeed);
 
         protected override OrderEvent InternalLimitFill(Security asset, Order order, decimal limitPrice, decimal quantity)

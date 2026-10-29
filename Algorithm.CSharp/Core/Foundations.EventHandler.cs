@@ -53,7 +53,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Log($"{Time} SetActiveRegimes: Switched to {string.Join(", ", e?.MarketRegimes ?? new HashSet<MarketRegime> ())}");
             if (e.MarketRegimes.Contains(MarketRegime.PreEarningsReleaseBeforeMarketClose))
             {
-                ReduceTargetPortfolios(e.Symbol);
                 ClearTargetHoldings(e.Symbol);
                 CancelOrdersNotAlignedWithTargetPortfolio();
             }

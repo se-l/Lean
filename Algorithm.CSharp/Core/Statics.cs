@@ -653,6 +653,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
             public string Duration;
             public string Direction;
         }
+        public class HedgeScheduleCfg
+        {
+            public string MarketRegime;
+            public string Start;
+            public string End;
+            public string Direction;
+            public byte EquityHedgeMode;
+        }
         public class SweepSchedule
         {
             public MarketRegime MarketRegime;

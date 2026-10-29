@@ -198,7 +198,22 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     errors.Add($"{entry.Name}: null is not supported — send the value you want");
                     continue;
                 }
-                if (!TryConvert(entry.Value, property.PropertyType, out var value, out var conversionError))
+                object value;
+                string conversionError;
+                if (IsStringKeyedDictionary(property.PropertyType) &&
+                    entry.Value.ValueKind == JsonValueKind.Object)
+                {
+                    // Dictionaries are MERGED, not replaced: this channel carries deltas, never a
+                    // full config, and a full replacement would silently drop per-ticker overrides
+                    // that the sender did not mention (e.g. only "\"_\": 5" in the payload).
+                    if (!TryMergeDictionary(property.PropertyType, property.GetValue(owner), entry.Value,
+                                             out value, out conversionError))
+                    {
+                        errors.Add($"{entry.Name}: {conversionError}");
+                        continue;
+                    }
+                }
+                else if (!TryConvert(entry.Value, property.PropertyType, out value, out conversionError))
                 {
                     errors.Add($"{entry.Name}: {conversionError}");
                     continue;
@@ -287,6 +302,39 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
             var property = FindProperty(current.GetType(), parts[^1]);
             return property == null ? null : (current, property);
+        }
+
+        private static bool IsStringKeyedDictionary(Type type) =>
+            type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>) &&
+            type.GetGenericArguments()[0] == typeof(string);
+
+        /// Merge the JSON object's entries into a copy of `current`, converting each value to the
+        /// dictionary's value type. Keys absent from the payload are preserved.
+        private static bool TryMergeDictionary(Type type, object current, JsonElement payload,
+                                               out object value, out string error)
+        {
+            value = null;
+            error = null;
+            var valueType = type.GetGenericArguments()[1];
+            var merged = (IDictionary)Activator.CreateInstance(type);
+            if (current is IDictionary existing)
+            {
+                foreach (DictionaryEntry entry in existing)
+                {
+                    merged[entry.Key] = entry.Value;
+                }
+            }
+            foreach (var item in payload.EnumerateObject())
+            {
+                if (!TryConvert(item.Value, valueType, out var converted, out var conversionError))
+                {
+                    error = $"{item.Name}: {conversionError}";
+                    return false;
+                }
+                merged[item.Name] = converted;
+            }
+            value = merged;
+            return true;
         }
 
         private static PropertyInfo FindProperty(Type type, string name) =>
@@ -427,6 +475,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         {
             null => "null",
             string text => text,
+            // Dictionaries default to their type name; show the entries so the applied/old pair in
+            // the log is actually readable for settings like MaxOptionOrderQuantity.
+            IDictionary dictionary => "{" + string.Join(", ",
+                dictionary.Cast<DictionaryEntry>().Select(e => $"{e.Key}={Format(e.Value)}")) + "}",
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
             _ => value.ToString()
         };

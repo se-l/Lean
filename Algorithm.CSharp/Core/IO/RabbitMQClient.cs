@@ -232,18 +232,25 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
             var body = msg.ToByteArray();
 
-            // One request in flight per channel. The recipient conflates (MQMsgBroker.jl
-            // "latest-wins": conflating channels ack on receipt because the pending message may be
-            // overwritten), so a request sent while another is still computing is exactly the one
-            // that never answers — and it stretches the pacing wait by a full compute. Keep the
-            // newest payload here; it is published as soon as the outstanding response lands.
+            // Expire stale waits BEFORE the in-flight check, in every mode. Nothing else calls
+            // HasActiveRequests() in live (Foundations only consults it when
+            // BacktestNearRealtimePacingEnabled), so without this an unanswered request — a
+            // conflated payload, a lost response, or a hung handler — wedges its channel for the
+            // rest of the session and every later fetch is dropped (observed 2026-10-28: live
+            // TargetPortfolio stuck for 26+ min on one in-flight id).
+            ExpireUnansweredRequests();
+
+            // One request in flight per channel. A request that arrives while one is computing is
+            // DROPPED, not queued: the recipient conflates (latest-wins) and only ever answers the
+            // message it is working on, so a queued replay would be answered a full compute later —
+            // which in a backtest stretches the pacing wait to minutes. Dropping keeps the loop
+            // moving; the caller's next tick re-derives whatever is current then.
             lock (_sendGate)
             {
                 if (HasOutstandingRequest(rabbitChannel))
                 {
-                    _pending[rabbitChannel] = new PendingRequest(msg.Id, body);
-                    _algo.Log($"{_algo.Time} RabbitMqClient: {rabbitChannel} request coalesced " +
-                              "(one already in flight) — newest payload kept.");
+                    _algo.Log($"{_algo.Time} RabbitMqClient: {rabbitChannel} request dropped " +
+                              "(one already in flight; not queued).");
                     return;
                 }
                 _activeRequests[msg.Id] = (rabbitChannel, _algo.Time, DateTime.UtcNow);
@@ -291,34 +298,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         /// </summary>
         private void TryPublishPending(ChannelPb channel)
         {
-            if (!_pending.TryRemove(channel, out var pending))
+            // Publishing no longer queues a replacement (see the publish path): anything still here
+            // is a leftover from an older code path and is dropped, loudly, rather than replayed a
+            // compute later.
+            if (_pending.TryRemove(channel, out _))
             {
-                return;
+                _algo.Log($"{_algo.Time} RabbitMqClient: dropped a queued {channel} payload " +
+                          "(publishing does not queue a second request).");
             }
-
-            lock (_sendGate)
-            {
-                if (HasOutstandingRequest(channel))
-                {
-                    // Lost a race with a direct send: keep the payload queued behind it.
-                    _pending[channel] = pending;
-                    return;
-                }
-                _activeRequests[pending.Id] = (channel, _algo.Time, DateTime.UtcNow);
-                _lastSentIds[channel] = pending.Id;
-            }
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await PublishAsync(channel, pending.Id, pending.Body);
-                }
-                catch (Exception error)
-                {
-                    _algo.Error($"{_algo.Time} RabbitMqClient: coalesced {channel} publish failed: {error.Message}");
-                }
-            });
         }
 
         // ── Receive ───────────────────────────────────────────────────

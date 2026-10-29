@@ -16,6 +16,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public bool ExecuteManualOrderInstructions { get; set; }
         public Dictionary<string, decimal> BacktestingHoldings { get; set; }
         public int VolatilityPeriodDays { get; set; }
+
+        /// <summary>
+        /// How many target portfolios per underlying are kept after a response: the best by
+        /// objective (maxObjective), the rest dropped. Live-tunable over the config channel.
+        /// </summary>
+        public int MaxTargetPortfolios { get; set; } = 5;
         public decimal ScopeContractStrikeOverUnderlyingMax { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMin { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMargin { get; set; }
@@ -57,6 +63,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int LimitOrderUpdateBeforeMarketOrderConversion { get; set; }
         public decimal MaxSpreadForMarketOrderHedging { get; set; }
         public Dictionary<string, List<SweepScheduleCfg>> SweepSchedules { get; set; }
+        public Dictionary<string, List<HedgeScheduleCfg>> HedgeSchedules { get; set; }
         public Dictionary<string, double> SweepWorstIVUtilityBump { get; set; }
         public Dictionary<string, List<double>> KalmanScopedMoneyness { get; set; }
         public Dictionary<string, double> KalmanAlphaBid { get; set; }

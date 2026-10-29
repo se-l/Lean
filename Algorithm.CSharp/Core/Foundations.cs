@@ -291,18 +291,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
-        /// Drops the target portfolios that can no longer be reached from the current holdings and
-        /// keeps the rest. A fill does not invalidate a whole set of candidate portfolios — most
-        /// remain valid targets, and re-solving the lot costs minutes of not quoting. The base
-        /// implementation clears (cold start); the Earnings algorithm overrides it with the
-        /// compatibility filter.
-        /// </summary>
-        public virtual void ReduceTargetPortfolios(Symbol underlying)
-        {
-            ClearTargetPortfolios(underlying);
-        }
-
-        /// <summary>
         /// Expect triggers cancelation of all dependent orders...
         /// </summary>
         public void ClearTargetHoldings(Symbol underlying)
@@ -1094,7 +1082,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// does arrive, so it is the reliable half: once a group is Filled/Canceled, every ticket
         /// still carrying it is dead, whatever its own status says.
         /// </summary>
-        private bool IsLiveTicket(OrderTicket ticket) =>
+        private protected bool IsLiveTicket(OrderTicket ticket) =>
             !orderFilledCanceledCancelPendingInvalid.Contains(ticket.Status)
             && !orderFilledCanceledCancelPendingInvalid.Contains(OcaGroupStatus(ticket.OcaGroup));
 
@@ -1439,6 +1427,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             List<Signal> signals = new();
             var sw = Stopwatch.StartNew();
             int optionCount = 0;
+            double minUtility = Cfg.MinUtility.TryGetValue(underlying.Value, out double configuredMinUtility)
+                ? configuredMinUtility
+                : Cfg.MinUtility[CfgDefault];
             using (PricingCallSite.Scope("UtilityLoop"))
             foreach (Option option in scopedOptions)
             {
@@ -1448,22 +1439,31 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 Symbol symbol = option.Symbol;
 
-                IUtilityOrder utilBuy = UtilityOrderFactory.Create(this, option, SignalQuantity(symbol, OrderDirection.Buy), option.BidPrice);
-                IUtilityOrder utilSell = UtilityOrderFactory.Create(this, option, SignalQuantity(symbol, OrderDirection.Sell), option.AskPrice);
+                // Pick the side BEFORE building the utilities. Constructing one costs its whole
+                // greek vector; the delta-hedge gate already knows which direction reduces risk (a
+                // sign test on delta against the portfolio's), so when a hedge is in progress only
+                // one side is built instead of both — halving the loop's pricer work.
+                bool sellAllowed = IfFilledDecreasesEquityHedgeOrderSize(symbol, OrderDirection.Sell);
+                bool buyAllowed = IfFilledDecreasesEquityHedgeOrderSize(symbol, OrderDirection.Buy);
+                if (!sellAllowed && !buyAllowed)
+                {
+                    continue;
+                }
 
-                double minUtility = Cfg.MinUtility.TryGetValue(underlying.Value, out minUtility) ? minUtility : Cfg.MinUtility[CfgDefault];
-                // Utility from Risk and Profit are not normed and cannot be compared directly. Risk is not in USD. UtilProfitVega can change very frequently whenever market IV whipsaws around the EWMA.
-                if (utilSell.Utility >= minUtility &&
-                    utilSell.Utility >= utilBuy.Utility &&
-                    IfFilledDecreasesEquityHedgeOrderSize(symbol, OrderDirection.Sell)
-                    )
+                IUtilityOrder utilSell = sellAllowed
+                    ? UtilityOrderFactory.Create(this, option, SignalQuantity(symbol, OrderDirection.Sell), option.AskPrice)
+                    : null;
+                IUtilityOrder utilBuy = buyAllowed
+                    ? UtilityOrderFactory.Create(this, option, SignalQuantity(symbol, OrderDirection.Buy), option.BidPrice)
+                    : null;
+
+                if (utilSell != null && utilSell.Utility >= minUtility &&
+                    (utilBuy == null || utilSell.Utility >= utilBuy.Utility))
                 {
                     signals.Add(new Signal(symbol, OrderDirection.Sell, utilSell));
                 }
-                else if (utilBuy.Utility >= minUtility &&
-                    utilBuy.Utility > utilSell.Utility &&
-                    IfFilledDecreasesEquityHedgeOrderSize(symbol, OrderDirection.Buy)
-                    )
+                else if (utilBuy != null && utilBuy.Utility >= minUtility &&
+                    (utilSell == null || utilBuy.Utility > utilSell.Utility))
                 {
                     signals.Add(new Signal(symbol, OrderDirection.Buy, utilBuy));
                 }

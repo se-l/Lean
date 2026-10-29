@@ -32,6 +32,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
     /// </summary>
     public class RiskScenarioHandler
     {
+        /// <summary>Cap on scored scenarios carried into the order loop (see SetScenarios).</summary>
+        private const int MaxScenarios = 100;
+
         private Dictionary<Equity, IEnumerable<PfRiskScenarioPb>> PfRiskScenarios { get; set; }
         public Dictionary<Equity, Option[]> TradableOptions { get; internal set; }
         private readonly Foundations _algo;
@@ -87,7 +90,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             PfRiskScenarios[equity] = scenarios
                 .Where(s => s.Score > 0)
-                .Where(s => _algo.Securities.ContainsKey(GetOptionHolding(equity, s.HoldingsHedge)?.Symbol ?? ""));
+                .Where(s => _algo.Securities.ContainsKey(GetOptionHolding(equity, s.HoldingsHedge)?.Symbol ?? ""))
+                // Only the best scenarios are actionable, and every survivor costs a full utility
+                // evaluation in GetDesiredOrders (two utilities, each with a greek vector across DS
+                // buckets: 736 scenarios measured ~94 s of compute per pass). Keeping the top 100 by
+                // score bounds the loop without changing which hedge wins — the discarded tail is
+                // exactly what the loop's minUtility gate rejects.
+                .OrderByDescending(s => s.Score)
+                .Take(MaxScenarios)
+                .ToArray();
 
             if (!PfRiskScenarios[equity].Any())
             {
@@ -98,6 +109,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             TradableOptions[equity] = PfRiskScenarios[equity]
                 .Select(s => GetOptionHolding(equity, s.HoldingsHedge))
                 .Select(h => (Option)_algo.Securities[h?.Symbol ?? ""])
+                // Several scenarios commonly share one hedge contract; the utility loop is keyed by
+                // contract, so duplicates would only re-evaluate the same option with different DS
+                // weights.
+                .Distinct()
                 .ToArray();
 
             _algo.Log($"{_algo.Time} SetScenarios(): # ${PfRiskScenarios[equity].Count()} / ${scenarios.Length} scenarios.");
