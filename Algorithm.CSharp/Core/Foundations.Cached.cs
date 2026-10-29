@@ -206,6 +206,62 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <param name="symbol"></param>
         /// <param name="quantity"></param>
         /// <param name="orderType"></param>
+        /// <summary>
+        /// The schedules matching `underlying` right now, classified by their Direction attribute.
+        ///
+        /// A schedule matches when its underlying key (ticker, falling back to `_`), its
+        /// MarketRegime (one of the active regimes) and its [Start, End] window all fit the current
+        /// cycle. Direction decides what it means:
+        ///   "Hold"      — restrictive: do not hedge while this window is in force
+        ///   "Buy"/"Sell"— permissive: hedge in that direction, priced with EquityHedgeMode
+        /// No matching schedule at all means neither style applies and hedging proceeds normally.
+        /// </summary>
+        private (HedgeScheduleCfg Hold, HedgeScheduleCfg Buy, HedgeScheduleCfg Sell) MatchHedgeSchedules(Symbol underlying)
+        {
+            if (Cfg.HedgeSchedules == null || Cfg.HedgeSchedules.Count == 0) return (null, null, null);
+
+            Symbol equitySymbol = underlying.SecurityType == SecurityType.Equity ? underlying : Underlying(underlying);
+            if (!Securities.ContainsKey(equitySymbol)) return (null, null, null);
+
+            string key = equitySymbol.Value;
+            if (!Cfg.HedgeSchedules.TryGetValue(key, out List<HedgeScheduleCfg> schedules) || schedules == null)
+            {
+                if (!Cfg.HedgeSchedules.TryGetValue(CfgDefault, out schedules) || schedules == null) return (null, null, null);
+            }
+
+            HashSet<MarketRegime> regimes = ActiveRegimes.TryGetValue((Equity)Securities[equitySymbol], out HashSet<MarketRegime> active)
+                ? active
+                : new HashSet<MarketRegime>();
+
+            TimeSpan now = Time.TimeOfDay;
+            HedgeScheduleCfg hold = null, buy = null, sell = null;
+            foreach (HedgeScheduleCfg schedule in schedules)
+            {
+                if (!Enum.TryParse(schedule.MarketRegime, out MarketRegime regime) || !regimes.Contains(regime)) continue;
+                TimeSpan scheduleStart = AlgoConfig.GetTimeSpan(schedule.Start);
+                TimeSpan scheduleEnd = AlgoConfig.GetTimeSpan(schedule.End);
+                if (now < scheduleStart || now > scheduleEnd) continue;
+
+                switch ((schedule.Direction ?? string.Empty).Trim().ToUpperInvariant())
+                {
+                    case "HOLD": hold ??= schedule; break;
+                    case "BUY": buy ??= schedule; break;
+                    case "SELL": sell ??= schedule; break;
+                }
+            }
+            return (hold, buy, sell);
+        }
+
+        /// <summary>True when a matching schedule says "Hold" — hedging is suppressed for the window.</summary>
+        public bool IsHedgeOnHold(Symbol underlying) => MatchHedgeSchedules(underlying).Hold != null;
+
+        /// <summary>The permissive Buy/Sell schedule for this direction, or null when none matches.</summary>
+        public HedgeScheduleCfg GetActiveHedgeSchedule(Symbol underlying, OrderDirection direction)
+        {
+            (HedgeScheduleCfg _, HedgeScheduleCfg buy, HedgeScheduleCfg sell) = MatchHedgeSchedules(underlying);
+            return direction == OrderDirection.Buy ? buy : sell;
+        }
+
         public void ExecuteHedge(Symbol symbol, decimal quantity, OrderType? orderType = null)
         {
             // // Quickly Test algo performance without any hedge on July 11 2024
@@ -224,6 +280,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (quantity == 0)
             {
                 Log($"{Time} ExecuteHedge: Not hedging {equity} because quantity={quantity}.");
+                return;
+            }
+
+            // Hedge schedules: a matching "Hold" schedule suppresses hedging for its window (that is
+            // what keeps the algo out of the market for the first minutes after a release). Buy/Sell
+            // schedules are permissive and only set the pricing mode; when nothing matches, hedging
+            // proceeds as before.
+            OrderDirection hedgeDirection = quantity > 0 ? OrderDirection.Buy : OrderDirection.Sell;
+            if (IsHedgeOnHold(equity.Symbol))
+            {
+                Log($"{Time} ExecuteHedge: {equity} qty={quantity} ({hedgeDirection}) skipped — HedgeSchedule Direction=Hold.");
                 return;
             }
 
@@ -296,6 +363,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             bool isPriceMovingAway = (ticket != null && ticket.UpdateRequests.Count > Cfg.LimitOrderUpdateBeforeMarketOrderConversion);
             int modeInt = Cfg.EquityHedgeMode.TryGetValue(equity.Symbol.Value, out modeInt) ? modeInt : Cfg.EquityHedgeMode[CfgDefault];
+            // An active hedge schedule dictates the mode for its window (byte in the config, the same
+            // 0/1/2 encoding as EquityHedgeMode); otherwise the per-underlying setting applies.
+            HedgeScheduleCfg activeSchedule = GetActiveHedgeSchedule(equity.Symbol, direction);
+            if (activeSchedule != null) modeInt = activeSchedule.EquityHedgeMode;
+            int maxMode = Enum.GetValues(typeof(EquityHedgeMode)).Length - 1;
+            modeInt = Math.Min(Math.Max(modeInt, 0), maxMode);
             EquityHedgeMode mode = (EquityHedgeMode)Enum.GetValues(typeof(EquityHedgeMode)).GetValue(modeInt);
             mode = isPriceMovingAway ? EquityHedgeMode.Agressive : mode;
 
