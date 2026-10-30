@@ -58,7 +58,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             IVBidAsk = default(IVQuote);  // Default, in case referenced downstream before any successful update.
         }
 
-        public void Update(DateTime time, decimal quote, decimal midPriceUnderlying, double? iv = null)
+        /// <summary>
+        /// <paramref name="asyncOk"/> is set only by the quote-event path. Every other caller
+        /// (Refresh, warm-up pushes, ComputeNextValue, ad-hoc risk) must keep the solve
+        /// synchronous, because it reads the IV back immediately.
+        /// </summary>
+        public void Update(DateTime time, decimal quote, decimal midPriceUnderlying, double? iv = null, bool asyncOk = false)
         {
             if (time <= Time || quote == 0) return;
 
@@ -82,6 +87,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 }
                 else
                 {
+                    if (asyncOk && _algo.IvSolveAsync && _algo.QueueIvSolve(this, time, quote, midPriceUnderlying))
+                    {
+                        // Inverted off the algorithm thread; this indicator keeps its previous IV
+                        // until DrainSolvedIvs applies the result on a later slice.
+                        return;
+                    }
                     // Expected in live mode: there is no precomputed feed IV by design — the
                     // pricer solver IS the source. Not logged; it fired per contract per minute.
                     using (PricingCallSite.Scope("IVQuote"))
@@ -156,10 +167,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         {
             if (_algo.Time <= Time) return;
 
+            // The quote-event path: the only caller allowed to hand the inversion to the worker.
             Update(
                 _algo.Time,
                 Side == QuoteSide.Bid ? Option.BidPrice : Option.AskPrice,
-                _algo.MidPrice(Underlying)
+                _algo.MidPrice(Underlying),
+                asyncOk: true
                 );
         }
         protected override decimal ComputeNextValue(IndicatorDataPoint input)
@@ -203,7 +216,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         }
         public IVQuote Refresh()
         {
-            Update();
+            // Synchronous by contract: the caller reads IVBidAsk straight after.
+            if (_algo.Time > Time)
+            {
+                Update(
+                    _algo.Time,
+                    Side == QuoteSide.Bid ? Option.BidPrice : Option.AskPrice,
+                    _algo.MidPrice(Underlying));
+            }
             return IVBidAsk;
         }
 

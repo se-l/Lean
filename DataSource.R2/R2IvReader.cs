@@ -77,7 +77,7 @@ namespace QuantConnect.Lean.DataSource.R2
 
         private readonly R2LocalCatalog _catalog;
 
-        /// <param name="catalog">Route-aware catalog helper (scan source, table roots, duckdb plumbing).</param>
+        /// <param name="catalog">Catalog helper (scan source and the in-process batch caches).</param>
         public R2IvReader(R2LocalCatalog catalog)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -189,10 +189,10 @@ namespace QuantConnect.Lean.DataSource.R2
         private IEnumerable<string[]> Rows(R2IvTable table, string ticker, DateTime dayUtc, Resolution resolution,
             string columns, string flavourPredicate)
         {
-            // Days the warehouse does not hold are answered without a query on the catalog route — a local
-            // directory listing, no duckdb process, no network. Warmup lookbacks run over weeks while a
-            // freshly loaded table holds a handful of days, so most of these calls have nothing to
-            // read. The cloudflare metadata route answers true here and lets the scan prune instead.
+            // Every day is attempted: there is no local listing to answer "does the warehouse hold
+            // this day" from, so the coordinator's manifest stats prune instead — a day the table
+            // does not carry answers "no rows", not an error. Warmup lookbacks run over weeks while
+            // a freshly loaded table holds a handful of days, so most of these are empty scans.
             if (!_catalog.HoldsDay(table.Name, dayUtc) || !_catalog.HoldsSymbol(table.Name, dayUtc, ticker))
             {
                 return Array.Empty<string[]>();
@@ -259,7 +259,7 @@ namespace QuantConnect.Lean.DataSource.R2
         /// <summary>An all-zero price bar: the features table's price columns are not read.</summary>
         private static Bar NoPriceBar() => new Bar(0m, 0m, 0m, 0m);
 
-        /// <summary>Parses a duckdb CSV field; false for NULL/empty or anything unparseable.</summary>
+        /// <summary>Parses a warehouse CSV field; false for NULL/empty or anything unparseable.</summary>
         private static bool TryDecimal(string text, out decimal value) =>
             decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }

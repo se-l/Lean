@@ -69,8 +69,8 @@ namespace QuantConnect.Lean.DataSource.R2
             var day = date.Date;
 
             // The (session, underlying) batch: serves ResolveSymbol/HoldsDay for every contract of
-            // this underlying for the TTL window (live setup asks per contract; on the cloudflare
-            // metadata route each ask was a ~2.5 s catalog round trip).
+            // this underlying for the TTL window (live setup asks per contract, so one batched
+            // ledger read replaces a round trip per contract).
             // R2SessionPrefetch.Ensure(underlying, day, _catalog);
 
             lock (_cacheGate)

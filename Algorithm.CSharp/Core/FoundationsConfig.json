@@ -251,7 +251,7 @@
     "_": "11:30"
   },
   "EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell": {
-    "_": "09:45"
+    "_": "09:40"
   },
   "BufferIntraSpreadRatioSpreadThreshold": 0.05,
   "BufferIntraSpreadWaitingPeriodSeconds": 15,
@@ -298,5 +298,6 @@
   "MinutesBeforeCloseIsPreEarningsReleaseEOD": 30,
   "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread;  1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
   "IVSpreadSMAPeriod": { "_": 100 },
-  "MaxDesiredOrders": 10
+  "MaxDesiredOrders": 10,
+  "MaxSignalBatchAgeMs": 5000
 }

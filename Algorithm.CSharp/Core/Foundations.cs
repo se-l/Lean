@@ -133,8 +133,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public readonly SignalRunner SignalRunner = new();
         /// <summary>Backtests run the pass inline (deterministic); live runs it off-thread.</summary>
         public bool AsyncSignals = false;
-        /// <summary>A batch older than this is dropped at apply rather than submitted blind.</summary>
-        public int MaxSignalBatchAgeMs = 5_000;
         public readonly ConcurrentQueue<Signal> _signalQueue = new();
         public int ocaGroupId;
         public int SignalQuantityDflt = 9999;
@@ -156,6 +154,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, Func<QuoteRequest<Option>, decimal>> PricingStrategy = new();
         
         public TaskHandler TaskHandler = new();
+
+        // Main-thread watchdog. Every queued task runs synchronously inside OnData, so a slow task
+        // is a slow slice — and a stalled slice starves the signal drain, which then looks like a
+        // stale batch. Both numbers are logged so a stall can be attributed rather than guessed at.
+        public double OnDataGapWarnMs = 2_000;
+        public double TaskWarnMs = 250;
+        private long _lastOnDataTicks;
+        private double _lastOnDataMs;
+
+        private void ReportTask(string name, double ms)
+        {
+            if (ms < TaskWarnMs) return;
+            Log($"{Time} SlowTask: {name} took {ms:0}ms on the algorithm thread.");
+            QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.algo.task_ms", ms,
+                new[] { new KeyValuePair<string, object>("task", name) });
+        }
         private DateTime _lastOnDataLagWarningUtc = DateTime.MinValue;
         
         public DateTime TimeWarmupFinished = DateTime.MaxValue;
@@ -169,6 +183,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Backtests run the pass inline so fills stay deterministic; live runs it off-thread and
             // applies the result on a later slice. Cfg.SignalsAsync can force async in a backtest.
             AsyncSignals = LiveMode || Cfg.SignalsAsync;
+            TaskHandler.Timed = ReportTask;
+            IvSolveAsync = LiveMode;
+            StartIvSolver();
             UniverseSettings.Resolution = resolution = Resolution.Second;
             SetStartDate(Cfg.StartDate);
             SetEndDate(Cfg.EndDate);
@@ -339,8 +356,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void OnNewBidAskEventUpdateIVSpread(object sender, NewBidAskEventArgs newBidAsk)
         {
-            Symbol symbol = newBidAsk.Symbol;
-            if (symbol.SecurityType == SecurityType.Option)
+            // With the async solver the IVs for this quote do not exist yet; the spread is updated
+            // in DrainSolvedIvs, on the same thread, right after they are applied.
+            if (IvSolveAsync) return;
+            UpdateIvSpread(newBidAsk.Symbol);
+        }
+
+        public void UpdateIvSpread(Symbol symbol)
+        {
+            if (symbol.SecurityType != SecurityType.Option) return;
+            // Both sides are registered together, but the async apply can arrive for one side only.
+            if (!IvBids.ContainsKey(symbol) || !IvAsks.ContainsKey(symbol)) return;
             {
                 double spread = IvAsks[symbol].IVBidAsk.IV - IvBids[symbol].IVBidAsk.IV;
 
@@ -460,6 +486,35 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public override void OnData(Slice slice)
         {
+            long entry = Stopwatch.GetTimestamp();
+            if (_lastOnDataTicks != 0)
+            {
+                double gapMs = (entry - _lastOnDataTicks) * 1000.0 / Stopwatch.Frequency;
+                if (gapMs >= OnDataGapWarnMs)
+                {
+                    Log($"{Time} OnData gap {gapMs:0}ms since previous entry (previous body {_lastOnDataMs:0}ms, " +
+                        $"slice={slice.Time:HH:mm:ss.fff}, dataLag={(DateTime.UtcNow - slice.UtcTime).TotalSeconds:0.0}s).");
+                }
+            }
+            _lastOnDataTicks = entry;
+
+            try
+            {
+                OnDataCore(slice);
+            }
+            finally
+            {
+                _lastOnDataMs = (Stopwatch.GetTimestamp() - entry) * 1000.0 / Stopwatch.Frequency;
+                if (_lastOnDataMs >= OnDataGapWarnMs)
+                {
+                    Log($"{Time} OnData took {_lastOnDataMs:0}ms on the algorithm thread " +
+                        $"(slice={slice.Time:HH:mm:ss.fff}).");
+                }
+            }
+        }
+
+        private void OnDataCore(Slice slice)
+        {
             // Live config deltas land here, on the algorithm thread: a settings object read by this
             // cycle never changes underneath it. Applied during warm-up too — a knob changed before
             // the session opens should be in force at the open.
@@ -512,6 +567,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             PfRisk.ResetCache();
+
+            // Quote IVs inverted on the worker during the last slice: apply before risk/signals so
+            // the whole slice sees one consistent set.
+            DrainSolvedIvs();
 
             foreach (Symbol underlying in equities)
             {
@@ -732,6 +791,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public override void OnEndOfAlgorithm()
         {
+            StopIvSolver();
             OnEndOfDay();
             PositionWriters.Keys.DoForEach(RiskRecorder.Record);
             RiskRecorder.Dispose();
@@ -1485,6 +1545,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 Underlying = underlying,
                 CapturedTicks = Stopwatch.GetTimestamp(),
+                CapturedUtc = DateTime.UtcNow,
                 CapturedAt = capturedAt,
                 OptionCount = scope.Count,
             };
@@ -1870,7 +1931,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (!AsyncSignals)
             {
                 // Backtest: identical code path, inline — deterministic, still fanned out per contract.
-                ApplySignals(ComputeSignals(underlying, scope, minUtility, capturedAt));
+                // Release in finally: ComputeSignals sits outside ApplySignals' own try/catch, so a
+                // throw there would otherwise leave the single-flight gate acquired forever and every
+                // later pass for this underlying would be skipped.
+                try
+                {
+                    ApplySignals(ComputeSignals(underlying, scope, minUtility, capturedAt));
+                }
+                finally
+                {
+                    SignalRunner.Release(underlying);
+                }
                 return;
             }
 
@@ -1906,13 +1977,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     else stale++;
                 }
 
-                double ageMs = batch.AgeMs;
+                double ageMs = batch.StalenessMs(LiveMode, Time);
+                double wallMs = batch.WallAgeMs;
                 var attributes = new[] { new KeyValuePair<string, object>("underlying", underlying.Value) };
                 QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.signals.pass_ms", batch.ComputeMs, attributes);
                 QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.signals.apply_delay_ms", ageMs, attributes);
+                QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.signals.apply_wall_ms", wallMs, attributes);
                 QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.signals.stale", stale, attributes);
                 Log($"{Time} ApplySignals. underlying={underlying}. #Signals={batch.Signals.Count} #Applied={keep.Count} " +
-                    $"#Stale={stale} age={ageMs:0}ms compute={batch.ComputeMs:0}ms speedup={batch.Speedup:0.0}x" +
+                    $"#Stale={stale} age={ageMs:0}ms wall={wallMs:0}ms at={batch.CapturedUtc:HH:mm:ss.fff} compute={batch.ComputeMs:0}ms speedup={batch.Speedup:0.0}x" +
                     (batch.Errors > 0 ? $" #Errors={batch.Errors} ({batch.ErrorSample})" : ""));
 
                 if (keep.Count > 0) HandleDesiredOrders(keep);
@@ -1944,9 +2017,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Symbol underlying = Underlying(signal.Symbol);
             if (IsWarmingUp || !IsMyMarketOpen(underlying)) return false;
             if (!Cfg.Ticker.Contains(underlying.Value)) return false;
-            if (batch.AgeMs > MaxSignalBatchAgeMs)
+            double ageMs = batch.StalenessMs(LiveMode, Time);
+            if (ageMs > Cfg.MaxSignalBatchAgeMs)
             {
-                Log($"{Time} SignalStillValid: dropping {signal.Symbol} — batch age {batch.AgeMs:0}ms > {MaxSignalBatchAgeMs}ms.");
+                Log($"{Time} SignalStillValid: dropping {signal.Symbol} — batch age {ageMs:0}ms " +
+                    $"(wall {batch.WallAgeMs:0}ms, sim {batch.SimAgeMs(Time):0}ms, live={LiveMode}) > {Cfg.MaxSignalBatchAgeMs}ms.");
                 return false;
             }
             if (!IfFilledDecreasesEquityHedgeOrderSize(signal.Symbol, signal.OrderDirection)) return false;

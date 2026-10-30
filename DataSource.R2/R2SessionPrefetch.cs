@@ -3,8 +3,7 @@
  * "does the warehouse carry this?" question the plugin asks while subscribing and warming up:
  *
  *   ResolveSymbol(table, ticker) — Lean asks it per contract, per table, several times
- *   (subscription, seeding, history); on the cloudflare metadata route each ask cost a
- *   ~2.5 s catalog round trip (the 10-minute Isolator kill on the AWS paper run).
+ *   (subscription, seeding, history); each ask used to cost its own catalog round trip.
  *
  * The data-presence source is the loaded_symbol_sessions LEDGER, not the data tables: the ledger
  * already answers "which contracts of this underlying were loaded, for which session, into which

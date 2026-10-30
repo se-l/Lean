@@ -314,7 +314,7 @@ namespace QuantConnect.Lean.DataSource.R2
             return true;
         }
 
-        /// <summary>Materialises the cells after <paramref name="offset"/> as a string[] (duckdb path).</summary>
+        /// <summary>Materialises the cells after <paramref name="offset"/> as a string[] (legacy JArray path).</summary>
         public static string[] ToStringRow(JArray row, int offset)
         {
             var cells = new string[row.Count - offset];
@@ -393,8 +393,8 @@ namespace QuantConnect.Lean.DataSource.R2
     }
 
     /// <summary>
-    /// One decoded statement-protocol cell. A reused buffer of these replaces both the string[] of
-    /// the duckdb path and Newtonsoft's per-cell JValue objects — the latter was ~89M short-lived
+    /// One decoded statement-protocol cell. A reused buffer of these replaces both the earlier
+    /// string[] row and Newtonsoft's per-cell JValue objects — the latter was ~89M short-lived
     /// objects for a 7.4M-row chain-day (12 cells each) and the reason peak RSS stayed at GBs while
     /// the retained rows were a few hundred MB.
     /// </summary>

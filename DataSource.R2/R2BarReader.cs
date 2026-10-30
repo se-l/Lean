@@ -1,8 +1,6 @@
 /*
  * R2BarReader — pre-aggregated bars for one symbol/session out of the R2 warehouse, through
- * R2LocalCatalog (see R2Route.cs for the route toggles; the catalog data route reads the local
- * rclone mount with allow_moved_paths, the cloudflare data route reads the attached table
- * directly).
+ * R2LocalCatalog, which reads every table through the Trino coordinator (see R2LocalCatalog.cs).
  *
  * Sibling of R2TickReader and deliberately the same shape: Iceberg metadata first, then the Parquet
  * data files, day-bounded predicate on the time column so manifest and row-group stats can prune.
@@ -57,7 +55,7 @@ namespace QuantConnect.Lean.DataSource.R2
 
         private readonly R2LocalCatalog _catalog;
 
-        /// <param name="catalog">Route-aware catalog helper (scan source, table roots, duckdb plumbing).</param>
+        /// <param name="catalog">Catalog helper (scan source and the in-process batch caches).</param>
         public R2BarReader(R2LocalCatalog catalog)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
@@ -150,8 +148,8 @@ namespace QuantConnect.Lean.DataSource.R2
                 $"AND ts >= make_timestamp_ns({lo}) AND ts < make_timestamp_ns({hi}) " +
                 "ORDER BY ts;";
 
-            // A slow read names its source: temp table (materialised, indexed) or Iceberg scan.
-            // Without that split we could not tell why an index on the temp table changed nothing.
+            // A slow read names its source: a materialised day (never on this transport) or a
+            // coordinator scan. Without that split we could not tell why a cache change did nothing.
             // RowsForSymbol keeps the fallback answer in process as well: a repeated question about
             // the same contract-day (a second resolution, a warmup re-read) never scans twice.
             var readWatch = Stopwatch.StartNew();
@@ -162,7 +160,7 @@ namespace QuantConnect.Lean.DataSource.R2
             {
                 Log.Trace($"R2LocalCatalog: read {table.Name} {ticker} {dayUtc:yyyy-MM-dd}: " +
                           $"{materialised.Count} rows in {readMs} ms " +
-                          $"({(_catalog.DayIsMaterialised(table.Name, dayUtc) ? "temp table" : "iceberg scan")})");
+                          $"({(_catalog.DayIsMaterialised(table.Name, dayUtc) ? "temp table" : "trino scan")})");
             }
             return materialised;
         }

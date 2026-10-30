@@ -1,7 +1,7 @@
 /*
  * R2IcebergHistoryProvider — History() and indicator warmup served from the R2 warehouse through
- * R2LocalCatalog, over the SAME table registry as the feed (R2Warehouse) and the SAME routes
- * (rclone mount or direct CloudFlare; see R2Route.cs).
+ * R2LocalCatalog, over the SAME table registry as the feed (R2Warehouse) and the SAME transport
+ * (the Trino coordinator; see R2LocalCatalog.cs).
  *
  * This is the piece that serves both modes: in a backtest it feeds warmup and every History() call,
  * and in live it still answers History()/warmup while the stream itself comes from Polygon. That is
@@ -52,7 +52,7 @@ namespace QuantConnect.Lean.DataSource.R2
 
         public override void Initialize(HistoryProviderInitializeParameters parameters)
         {
-            // Shared with the feed: one duckdb process, one day cache, one root cache
+            // Shared with the feed: one coordinator connection and one set of caches
             // (see R2LocalCatalog.Shared).
             _catalog = R2LocalCatalog.Shared;
             _ticks = new R2TickReader(_catalog);

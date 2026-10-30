@@ -537,16 +537,36 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }            
             
             double fv = (vol1 - vol0) * OCW.Vega(vol0) * (double)(Quantity * _option.ContractMultiplier);
-            if (!double.IsFinite(fv)) { return 0; }
+            if (!double.IsFinite(fv) || Math.Abs(fv) > MaxDecimalCast) { return 0; }  // (decimal) would throw
             return (double)_algo.DiscountedValue((decimal)fv, _option);
         }
 
         /// <summary>
         /// Simplified model. Consider changing to ATM, based on whether hedging error is reduced by that.
         /// </summary>
+        /// Guard rail for casts to decimal: beyond this magnitude the cast throws OverflowException.
+        private const double MaxDecimalCast = 1e27;
+
+        /// An ATM IV outside [0, 1000%) is not a vol — it is a degenerate/missing surface.
+        private const double MaxExpectedVolatility = 10.0;
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Symbol, byte> VolFallbackLogged = new();
+
         protected decimal ExpectedMeanRealizedVolatility(Symbol underlying, DateTime? until=null)
         {
-            return (decimal)_algo.AtmIV(underlying);  // Hedging Error was larger with ATM, hence assuming not matching realized vola better...
+            double atmIv = _algo.AtmIV(underlying);
+            // (decimal)double.NaN / Infinity throws OverflowException, and this runs inside a utility
+            // constructor that a scheduled event invokes — so a missing surface used to end the run.
+            // A vol we do not have is not a crash: fall back to zero and say it once per underlying.
+            if (!double.IsFinite(atmIv) || atmIv < 0 || atmIv > MaxExpectedVolatility)
+            {
+                if (VolFallbackLogged.TryAdd(underlying, 0))
+                {
+                    _algo.Error($"{_algo.Time} ExpectedMeanRealizedVolatility: {underlying} ATM IV is {atmIv}; using 0 (logged once).");
+                }
+                return 0m;
+            }
+            return (decimal)atmIv;  // Hedging Error was larger with ATM, hence assuming not matching realized vola better...
             //return _algo.Securities[underlying].VolatilityModel.Volatility;  // Led to drastic losses in Nov 22nd 2023. To be investigated. Need proper expected realized vola.
         }
 

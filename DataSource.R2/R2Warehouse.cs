@@ -308,7 +308,7 @@ namespace QuantConnect.Lean.DataSource.R2
             return "O:" + symbol.Value.Replace(" ", string.Empty);
         }
 
-        /// <summary>Parses a warehouse integer column, tolerating the decimal form duckdb may print.</summary>
+        /// <summary>Parses a warehouse integer column, tolerating the decimal form a SQL engine may print.</summary>
         public static bool TryLong(string text, out long value) =>
             long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
     }

@@ -1,7 +1,6 @@
 /*
- * R2IcebergDataFeed — backtest data feed over the R2 warehouse, through R2LocalCatalog: whose
- * transport behind it is configurable per class of request (rclone mount vs direct CloudFlare;
- * see R2Route.cs for the R2_METADATA_ROUTE / R2_DATA_ROUTE / R2_READ_ROUTE toggles).
+ * R2IcebergDataFeed — backtest data feed over the R2 warehouse, through R2LocalCatalog, which
+ * reads every table through the Trino coordinator (see R2LocalCatalog.cs).
  *
  * EVERY (asset class, tick kind, resolution) IS SERVED FROM ITS OWN WAREHOUSE TABLE. The
  * subscription shape is translated once, by R2Warehouse, into one of the twenty tables:
@@ -25,12 +24,12 @@
  *   it the universe subscription ends immediately and the added security never gets a data
  *   subscription at all — the engine logs no feed, only a skipped run.
  *
- * - No cache, no staging: reads go through the route's own source (mount or CloudFlare direct).
- *   The earlier "materialize a session before running" contract is gone.
+ * - No cache, no staging on this side: reads go through the coordinator, which owns the file reads
+ *   and the Iceberg metadata. The earlier "materialize a session before running" contract is gone.
  *
  * A session with no rows is silent: bars are sparse by construction and the warehouse may simply
  * not carry that symbol-day. A symbol the warehouse does not carry ends its subscription with a
- * loud log, as does a subscription shape that maps to no table. Read failures (mount/duckdb) are
+ * loud log, as does a subscription shape that maps to no table. Read failures (coordinator/HTTP) are
  * loud too: Log.Error naming the session.
  */
 
@@ -54,8 +53,8 @@ using QuantConnect.Securities;
 namespace QuantConnect.Lean.DataSource.R2
 {
     /// <summary>
-    /// Serves Lean subscriptions out of the R2 warehouse, on the routes R2LocalCatalog is
-    /// configured with (local rclone mirror or direct CloudFlare).
+    /// Serves Lean subscriptions out of the R2 warehouse through R2LocalCatalog, which reads every
+    /// table through the Trino coordinator.
     /// </summary>
     [InheritedExport(typeof(IDataFeed))]
     public class R2IcebergDataFeed : IDataFeed
@@ -89,7 +88,7 @@ namespace QuantConnect.Lean.DataSource.R2
             _timeProvider = dataFeedTimeProvider.FrontierTimeProvider;
             _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
 
-            // Shared with the history provider: one duckdb process, one day cache, one root cache
+            // Shared with the history provider: one coordinator connection and one set of caches
             // (see R2LocalCatalog.Shared).
             _catalog = R2LocalCatalog.Shared;
             _ticks = new R2TickReader(_catalog);

@@ -49,8 +49,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
     {
         public Symbol Underlying;
         public List<Signal> Signals = new();
-        public DateTime CapturedAt;     // algorithm time when the scope was taken
-        public long CapturedTicks;      // Stopwatch timestamp at capture (staleness clock)
+        public DateTime CapturedAt;     // algorithm time when the scope was taken — the STALENESS clock
+        public long CapturedTicks;      // Stopwatch timestamp at capture (wall clock, diagnostics)
+        public DateTime CapturedUtc;    // wall clock at capture (diagnostics)
         public double ComputeMs;
         public double SerialMs;         // sum of per-option times = what a serial loop would have cost
         public int OptionCount;
@@ -59,7 +60,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public string ErrorSample;      // first few messages, for the apply-time log
         public Exception Error;
 
-        public double AgeMs => (Stopwatch.GetTimestamp() - CapturedTicks) * 1000.0 / Stopwatch.Frequency;
+        /// <summary>Age on the DATA clock: how many market seconds the decision is behind.</summary>
+        public double SimAgeMs(DateTime now) =>
+            CapturedAt == default ? 0.0 : Math.Max(0.0, (now - CapturedAt).TotalMilliseconds);
+
+        /// <summary>Age on the WALL clock: how many real seconds the caller actually waited.</summary>
+        public double WallAgeMs =>
+            CapturedTicks == 0 ? 0.0 : (Stopwatch.GetTimestamp() - CapturedTicks) * 1000.0 / Stopwatch.Frequency;
+
+        /// <summary>
+        /// Which clock decides staleness. LIVE must use wall time: if the algorithm thread was
+        /// wedged for 16 s, the market moved 16 s even though the data frontier never advanced, and
+        /// the decision really is that old. BACKTEST must use simulation time, or a slow or paced
+        /// machine silently drops signals and the run stops being reproducible.
+        /// </summary>
+        public double StalenessMs(bool live, DateTime now) => live ? WallAgeMs : SimAgeMs(now);
+
         public double Speedup => SerialMs / Math.Max(1.0, ComputeMs);
     }
 
@@ -155,6 +171,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         {
                             Underlying = worker.Underlying,
                             CapturedTicks = Stopwatch.GetTimestamp(),
+                            CapturedUtc = DateTime.UtcNow,
+                            CapturedAt = DateTime.MinValue,   // unknown: the pass never captured
                             Error = ex
                         };
                     }

@@ -123,5 +123,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public bool OtelUtilityMetrics { get; set; } = true;
         public Dictionary<string, int> IVSpreadSMAPeriod { get; set; }
         public int MaxDesiredOrders { get; set; }
+
+        /// <summary>
+        /// Maximum age of a computed signal batch at apply time. LIVE measures wall time (a stall
+        /// of N ms is N ms of market, even if the data frontier never advanced); BACKTEST measures
+        /// simulation time, so a slow or paced machine does not silently drop signals. A batch past
+        /// this age is dropped, never applied.
+        /// </summary>
+        public int MaxSignalBatchAgeMs { get; set; } = 5_000;
     }
 }

@@ -1,8 +1,7 @@
 /*
- * Tick reader: ticks for one symbol/session out of the R2 warehouse, through R2LocalCatalog —
- * Iceberg metadata first, then the daily Parquet data files, all with
- * allow_moved_paths := true on the catalog data route, or the catalog-attached table read
- * straight from CloudFlare on the cloudflare data route (see R2Route.cs for the toggles).
+ * Tick reader: ticks for one symbol/session out of the R2 warehouse, through R2LocalCatalog — one
+ * statement per read, served by the Trino coordinator, which resolves the Iceberg manifests and the
+ * Parquet data files itself (see R2LocalCatalog.cs).
  *
  * Tables are NOT chosen here. The caller passes the R2Table it resolved through R2Warehouse, so
  * this reader serves any of the four tick tables (equity/option x trade/quote) with one code path:
@@ -48,7 +47,7 @@ namespace QuantConnect.Lean.DataSource.R2
 
         private readonly R2LocalCatalog _catalog;
 
-        /// <param name="catalog">Route-aware catalog helper (scan source, table roots, duckdb plumbing).</param>
+        /// <param name="catalog">Catalog helper (scan source and the in-process batch caches).</param>
         public R2TickReader(R2LocalCatalog catalog)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));

@@ -494,6 +494,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             foreach (var kvp in TargetHoldings)
             {
+              try
+              {
                 Symbol symbol = kvp.Key;
                 decimal quantityToOrder = kvp.Value - Portfolio[symbol].Quantity;
                 if (quantityToOrder == 0) continue;
@@ -506,6 +508,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     double marginalUtility = MarginalUtility.TryGetValue(holding, out marginalUtility) ? marginalUtility : 0;
                     Error($"{Time} No order ticket present for {symbol}. Remaining Quantity to fill: {quantityToOrder}. Marginal utility: {marginalUtility:0.00}, Util: {util:0.00} UUtil: {util.Utility:0.00} UEquity: {util.UtilityEquityPosition:0.00} UGamma: {util.UtilityGamma:0.00}");
                 }
+              }
+              catch (Exception error)
+              {
+                  // Diagnostic-only event: a failing utility must not end the run.
+                  Error($"{Time} LogDifferenceTargetHoldingsOrderTickets: {kvp.Key} skipped — {error.Message}");
+              }
             }
         }
 
