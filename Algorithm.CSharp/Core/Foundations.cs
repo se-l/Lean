@@ -660,7 +660,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         // Exercising this position would not bring us to zero delta
                         decimal quantity = Math.Min((int)pos.Quantity, Math.Floor(Math.Abs(deltaPfTotal / deltaPos)));
                         deltaPfTotal += deltaPos * quantity;
-                        ExerciseOption(pos.Symbol, (int)quantity);
+                        ExerciseIfInTheMoney(pos.Symbol, (int)quantity);
                     }
                 }
             }
@@ -671,6 +671,39 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// equity positions to be accumlated overnight, leading to undesirable gap risk. That is why here, positions that are exercisable
         /// in excess are exercised during market hours, ie, when this function is scheduled to run.
         /// </summary>
+        /// <summary>
+        /// True when exercising this contract can settle value: a call needs the underlying above the
+        /// strike, a put below it. IB rejects exercise requests for OTM contracts ("Exercise ignored
+        /// because option is not in-the-money"), and an OTM contract must simply expire worthless.
+        /// </summary>
+        public bool IsOptionInTheMoneyForExercise(Symbol optionSymbol)
+        {
+            if (optionSymbol.SecurityType != SecurityType.Option) return false;
+            Symbol underlying = Underlying(optionSymbol);
+            if (!Securities.ContainsKey(underlying)) return false;
+
+            Security security = Securities[underlying];
+            decimal spot = security.Price;
+            if (spot <= 0) spot = (security.BidPrice + security.AskPrice) / 2m;
+            if (spot <= 0) return false;   // no reference price: do not attempt an exercise
+
+            decimal strike = optionSymbol.ID.StrikePrice;
+            return optionSymbol.ID.OptionRight == OptionRight.Call ? spot > strike : spot < strike;
+        }
+
+        /// <summary>Exercise a long option only when it is in the money; log and skip otherwise.</summary>
+        private void ExerciseIfInTheMoney(Symbol optionSymbol, int quantity)
+        {
+            if (quantity == 0) return;
+            if (!IsOptionInTheMoneyForExercise(optionSymbol))
+            {
+                Log($"{Time} Exercise skipped for {optionSymbol}: out of the money (strike={optionSymbol.ID.StrikePrice}, " +
+                    $"underlying={Securities[Underlying(optionSymbol)].Price}). It will expire worthless.");
+                return;
+            }
+            ExerciseOption(optionSymbol, quantity);
+        }
+
         public void ExerciseOnExpiryDate()
         {
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
@@ -696,7 +729,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     posToExercise.Add(pos);
                 }
             }
-            posToExercise.DoForEach(p => ExerciseOption(p.Symbol, (int)p.Quantity));
+            posToExercise.DoForEach(p => ExerciseIfInTheMoney(p.Symbol, (int)p.Quantity));
         }
 
         public List<Symbol> AddOptionIfScoped(Symbol optionSymbol)
