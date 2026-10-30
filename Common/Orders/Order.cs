@@ -409,6 +409,10 @@ namespace QuantConnect.Orders
             order.CanceledTime = CanceledTime;
             order.BrokerId = BrokerId.ToList();
             order.ContingentId = ContingentId;
+            // OCA identity must survive clone: IOrderProvider hands out clones, and brokerages group
+            // orders by OcaGroup to fan out cancels (e.g. InteractiveBrokersBrokerage.HandleError)
+            order.OcaGroup = OcaGroup;
+            order.OcaType = OcaType;
             order.Price = Price;
             order.PriceCurrency = PriceCurrency;
             order.Quantity = Quantity;
