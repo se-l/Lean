@@ -8,18 +8,17 @@
   },
   "ExecuteManualOrderInstructions": true,
   "BacktestingHoldings": {
-//    "DAL": -3,
-//    "DAL   240920P00039000": -1,
-//    "DAL   240920P00040000": -1,
-//    "DAL   240712C00043000": 1,
-//    "DAL   250117P00050000": 1,
-//    "DAL   240712P00050000": 1,
-//    "DAL   250620C00052500": -1,
-//    "DAL   240712P00051000": 1,
-//    "DAL   240719P00050000": -1,
-//    "DAL   240719P00052500": -2,
-//    "DAL   240719C00046500": -1,
-//    "DAL   240719C00048000": -1
+//    "NOW   260724C00086000": 6, 
+//    "NOW   260724C00087000": 1, 
+//    "NOW   260724P00097000": -2, 
+//    "NOW   260724P00113000": 2, 
+//    "NOW   260731C00074000": -1, 
+//    "NOW   260814C00090000": 1, 
+//    "NOW   261120P00120000": -6, 
+//    "NOW   270115C00074000": -4, 
+//    "NOW   270115C00098000": -6, 
+//    "NOW   270115C00115000": -1, 
+//    "NOW": -196
   },
   "LogOrderUpdates": true,
   "SkipWarmUpSecurity": false, // for debugging. Usually false.
@@ -72,9 +71,9 @@
   },
   ///
 
-  // Needs to depend on underlying price, delta, and jumps.
+  // refactor to express in USD = Sppt * Delta * Multiplier * Quanitiy
   "MaxOptionOrderQuantity": {
-    "_": 1
+    "_": 3
   },
   "TargetMaxEquityPositionUSD": {
     "_": 4000
@@ -153,55 +152,69 @@
       {
         "MarketRegime": "PreEarningsRelease",
         "Start": "09:00",
-        "End": "11:00",
-        "Duration": "00:30",
+        "End": "15:00",
+        "Duration": "00:15",
         "Direction": "Buy"
       },
       {
         "MarketRegime": "PreEarningsRelease",
         "Start": "09:00",
-        "End": "11:00",
-        "Duration": "00:30",
+        "End": "15:00",
+        "Duration": "00:15",
         "Direction": "Sell"
       },
       {
         "MarketRegime": "PreEarningsReleaseBeforeMarketClose",
-        "Start": "11:00",
+        "Start": "15:00",
         "End": "16:00",
-        "Duration": "00:05",
+        "Duration": "00:10",
         "Direction": "Buy"
       },
       {
         "MarketRegime": "PreEarningsReleaseBeforeMarketClose",
-        "Start": "11:00",
+        "Start": "15:00",
         "End": "16:00",
-        "Duration": "00:05",
+        "Duration": "00:10",
         "Direction": "Sell"
       },
       // After release. Short aggressively SOD.
       {
         "MarketRegime": "PostEarningsRelease",
-        "Start": "14:00",
-        "End": "16:00",
+        "Start": "09:40",
+        "End": "11:30",
         "Duration": "00:15",
+        "Direction": "Sell"
+      },
+      {
+        "MarketRegime": "PostEarningsRelease",
+        "Start": "11:45",
+        "End": "14:30",
+        "Duration": "00:20",
         "Direction": "Buy"
       },
       {
         "MarketRegime": "PostEarningsRelease",
-        "Start": "09:00",
-        "End": "11:00",
-        "Duration": "00:15",
-        "Direction": "Sell"
-      },
-      {
-        "MarketRegime": "PostEarningsRelease",
-        "Start": "11:00",
+        "Start": "14:30",
         "End": "16:00",
-        "Duration": "00:15",
+        "Duration": "00:20",
         "Direction": "Sell"
       }
     ]
   },
+  "HedgeSchedules": {
+    "_": [
+      // After release. Wait.
+      {
+        "MarketRegime": "PostEarningsRelease",
+        "Start": "09:30",
+        "End": "09:31",
+        "Direction": "Hold",
+        "EquityHedgeMode": 1
+      }
+    ]
+  },
+  // Emit every utility component as an OTLP gauge (replaces the old UtilityOrder.csv dump).
+  "OtelUtilityMetrics": true,
   "SweepWorstIVUtilityBump": {
     "_": 20
   },
@@ -235,10 +248,10 @@
     "_": "09:30"
   },
   "EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy": {
-    "_": "10:00"
+    "_": "11:30"
   },
   "EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell": {
-    "_": "10:00"
+    "_": "09:45"
   },
   "BufferIntraSpreadRatioSpreadThreshold": 0.05,
   "BufferIntraSpreadWaitingPeriodSeconds": 15,
@@ -252,7 +265,7 @@
         "End": "14:00",
         "NRemaining": 3,
         "Increment": 10,
-        "NMaximum": 20
+        "NMaximum": 50
       },
       {
         "StartDaysOffset": 0,
@@ -260,8 +273,8 @@
         "EndDaysOffset": 0,
         "End": "15:30",
         "NRemaining": 2,
-        "Increment": 5,
-        "NMaximum": 20
+        "Increment": 4,
+        "NMaximum": 50
       },
       {
         "StartDaysOffset": 0,
@@ -270,16 +283,19 @@
         "End": "",
         "NRemaining": 0,
         "Increment": 0,
-        "NMaximum": 20
+        "NMaximum": 50
       }
     ]
   },
   "KalmanMinUpdatesToReady": { "_": 15 },
+  "KalmanProcessStd": { "theta": 0.002, "rho": 0.02, "psi": 0.05 },
+  "KalmanMeasurementStd": { "theta": 0.008, "rho": 0.06, "psi": 0.12 },
+  "KalmanNewTenorPriorScale": 1.0,
   "MinutesBeforeMarketCloseHedgeDeltaFlat": 2,
   "MinutesAfterOpenMMWindowStarts": 1,
   "MinutesBeforeCloseMMWindowEnds": 5,
   "MinutesBeforeCloseHedgeToAcrossDs": 3,
-  "MinutesBeforeCloseIsPreEarningsReleaseEOD": 300,
+  "MinutesBeforeCloseIsPreEarningsReleaseEOD": 30,
   "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread;  1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
   "IVSpreadSMAPeriod": { "_": 100 },
   "MaxDesiredOrders": 10

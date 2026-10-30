@@ -94,9 +94,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             string pricerUri = CfgAlgo.PricerProtocol.ToLower() == "ipc" 
                 ? $"ipc://{CfgAlgo.PricerHost}.{CfgAlgo.PricerPort}"
                 : $"{CfgAlgo.PricerProtocol}://{CfgAlgo.PricerHost}:{CfgAlgo.PricerPort}";
-            julia = new JuliaPricingClient(pricerUri);
+            julia = new JuliaPricingClient(pricerUri, CfgAlgo.PricerConcurrency);
             JuliaPricingClient.Logger = msg => Log(msg);
-            Log($"Connecting to JuliaPricer: {pricerUri} ...");
+            PricerBudget.MetricsSink = OpenTelemetryLogHandler.Metric;
+            Log($"Connecting to JuliaPricer: {pricerUri} ... (in-flight budget={julia.Budget.Capacity}" +
+                $"{(CfgAlgo.PricerConcurrency > 0 ? " from PricerConcurrency" : " = CPU count")})");
 
             rMQClient = new(this);
             rMQClient.ConnectAsync(CfgAlgo.MQHost, CfgAlgo.MQPort, CfgAlgo.MQUser, CfgAlgo.MQPass, CfgAlgo.MQVirtualHost);
@@ -142,6 +144,10 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Schedule.On("LogDifferenceTargetHoldingsOrderTickets", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), LogDifferenceTargetHoldingsOrderTickets);
             Schedule.On("FetchTargetPortfolios", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), FetchTargetPortfolios); // Only runs if marketRegime is matching. refactor
             Schedule.On("FetchPfRiskScenarios", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), FetchPfRiskScenarios); // Only runs if marketRegime is matching. refactor
+            // The Kalman state is not persisted across sessions: re-init each session from the
+            // previous session's EM fit (04:05, before the 04:00 pre-market data is used for
+            // trading; the guard inside makes it idempotent when warm-up already initialised).
+            Schedule.On("ResetKalmanDaily", DateRules.EveryDay(symbolSubscribed), TimeRules.At(4, 5), ResetKalmanDaily);
             ScheduleRegularRequestStressTestDs(startTime: new TimeSpan(0, 15, 50, 0), endTime: new TimeSpan(0, 16, 10, 0));
 
             foreach (string tickerStr in ticker)
@@ -470,6 +476,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     LastDeltaAcrossDsOptionsOnly.Remove(Underlying(orderEvent.Symbol));
                     RequestPfRiskScenarios(underlying);
                 }));
+            }
+
+            // A terminal ticket ends that contract's sweep clock: the next submission for the same
+            // contract freezes fresh anchors from the then-current book and surface.
+            if (orderFilledCanceledInvalid.Contains(orderEvent.Status))
+            {
+                RiskScenarioHandler.ClearSweep(orderEvent.Symbol);
             }
 
             HandleSpreadBuffers(orderEvent);
@@ -874,24 +887,26 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Cancel(ticket, $"CmdCancelOID: {cmdCancelOID}");
         }
 
-        private static Func<Vector<double>, SSVIParamsDictionary> VecToSsviParamsDictionary(
-            SSVIParamsDictionary ssviParamsDictionary
-            )
+        /// <summary>
+        /// Builds the state-vector -> params mapping for a GIVEN tenor list. It is a factory rather
+        /// than a closure over one dictionary because the Kalman state grows when a new expiry is
+        /// listed: a mapping that captured the initial key list would keep writing every parameter
+        /// under the wrong tenor after the insertion point.
+        /// </summary>
+        private static Func<IReadOnlyList<DateTime>, Func<Vector<double>, SSVIParamsDictionary>> VecToSsviParamsDictionary()
         {
-            return (Vector<double> vec) =>
+            return (IReadOnlyList<DateTime> tenors) =>
             {
-                SSVIParamsDictionary result = new();
-                List<DateTime> sortedKeys = ssviParamsDictionary.GetSortedKeys();
-                for (int i = 0; i < sortedKeys.Count; i++)
+                return (Vector<double> vec) =>
                 {
-                    double theta = vec[i * 3 + 0];
-                    double psi = vec[i * 3 + 1];
-                    double vega = vec[i * 3 + 2];
+                    SSVIParamsDictionary result = new();
+                    for (int i = 0; i < tenors.Count; i++)
+                    {
+                        result[tenors[i]] = new SSVIParamsRecord(vec[i * 3 + 0], vec[i * 3 + 1], vec[i * 3 + 2]);
+                    }
 
-                    result[sortedKeys[i]] = new SSVIParamsRecord(theta, psi, vega);
-                }
-
-                return result;
+                    return result;
+                };
             };
         }
 
@@ -907,19 +922,35 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                         Matrix<double>.Build.DenseOfRowArrays(
                             e.ResponseKalmanInit.InitCovariance.Select(row => row.Values.ToArray()));
 
-                    var vecToSsviParamsDictionary = VecToSsviParamsDictionary(ssviParamsDct);
+                    List<DateTime> tenors = ssviParamsDct.GetSortedKeys();
                     KalmanFiltersSSVI[equity] = new KalmanFilter<SSVIParamsDictionary>(this, equity,
-                        ssviParamsDct.ToVector(), init_covariance, vecToSsviParamsDictionary);
+                        tenors, ssviParamsDct.ToVector(), init_covariance, VecToSsviParamsDictionary());
                     KalmanFiltersSSVI[equity].OnUpdate += IvSurfaceSsviMid[equity].SetModelParams;
                     KalmanFilterSSVIWriters[equity] = new(this, KalmanFiltersSSVI[equity]);
                     PositionWriters[equity] = new(this);
                     IvSurfaceSsviMid[equity].SetModelParams(KalmanFiltersSSVI[equity].GetSSVIParams());
                     KalmanFiltersSSVI[equity].OnUpdate += OnSSVISurfaceUpdated;
-                    Log($"{Time} OnResponseKalmanInit: {equity} Kalman filter initialized.");
+                    Log($"{Time} OnResponseKalmanInit: {equity} Kalman filter initialized " +
+                        $"({tenors.Count} tenors, {KalmanFiltersSSVI[equity].StateDim} dims).");
                 }
                 else
                 {
-                    Log($"{Time} OnResponseKalmanInit: {equity} Kalman filter already exists. Ignoring.");
+                    // Daily reset path: keep the object — and therefore every OnUpdate subscriber
+                    // (the surface, the CSV writer, the scenario publisher) — and replace its state.
+                    // Re-creating the filter would silently drop those subscriptions.
+                    SSVIParamsDictionary ssviParamsDct = new(e.ResponseKalmanInit.InitState.ToArray());
+                    Matrix<double> init_covariance =
+                        Matrix<double>.Build.DenseOfRowArrays(
+                            e.ResponseKalmanInit.InitCovariance.Select(row => row.Values.ToArray()));
+                    List<DateTime> tenors = ssviParamsDct.GetSortedKeys();
+
+                    KalmanFiltersSSVI[equity].Reset(tenors, ssviParamsDct.ToVector(), init_covariance);
+                    if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface))
+                    {
+                        surface.SetModelParams(KalmanFiltersSSVI[equity].GetSSVIParams());
+                    }
+                    Log($"{Time} OnResponseKalmanInit: {equity} Kalman filter re-initialized " +
+                        $"({tenors.Count} tenors, {KalmanFiltersSSVI[equity].StateDim} dims).");
                 }
             }
             else
@@ -989,9 +1020,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
         }
 
-        private void RequestKalmanInit(Equity underlying)
+        /// <summary>Session date the Kalman state was last (re)initialised for; guards the daily job.</summary>
+        private DateTime _lastKalmanInitDate = DateTime.MinValue;
+
+        private void RequestKalmanInit(Equity underlying, DateTime? fitDate = null)
         {
-            DateTime start = SubtractBusinessDays(Time.Date, 1);
+            DateTime start = fitDate ?? SubtractBusinessDays(Time.Date, 1);
             RequestKalmanInitPb requestKalmanInit = new()
             {
                 Underlying = underlying.Symbol.Value,
@@ -1000,7 +1034,41 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
             };
 
+            _lastKalmanInitDate = Time.Date;
             _ = rMQClient.SendMessageAsync(requestKalmanInit);
+        }
+
+        /// <summary>
+        /// Start-of-session re-initialisation. The Kalman state is NOT persisted across sessions and
+        /// must not carry overnight: each session begins from Fino's EM fit over the previous
+        /// session's surfaces. Any expiry listed since that fit is added intraday by
+        /// KalmanFilter.Grow — which is why the init's tenor set being one session stale is fine.
+        /// </summary>
+        private void ResetKalmanDaily()
+        {
+            if (IsWarmingUp) return;
+            if (_lastKalmanInitDate >= Time.Date)
+            {
+                return;   // already initialised for this session (e.g. warm-up finished today)
+            }
+
+            foreach (string tickerStr in Cfg.Ticker)
+            {
+                if (!Securities.ContainsKey(tickerStr)) continue;
+                Equity equity = ToEquity(Securities[tickerStr].Symbol);
+
+                // Drop the previous session's parameters BEFORE the new init lands: if the mind
+                // service does not answer, the surface must read as uncalibrated (pricer fallback)
+                // rather than keep pricing yesterday's smile into a new session.
+                if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
+                {
+                    ssvi.IsCalibrated = false;
+                }
+
+                Log($"{Time} ResetKalmanDaily: {equity} re-initialising the Kalman state for " +
+                    $"{Time.Date:yyyy-MM-dd} (fit on {SubtractBusinessDays(Time.Date, 1):yyyy-MM-dd}).");
+                RequestKalmanInit(equity);
+            }
         }
 
         public void OnCmdFetchTargetPortfolio(object sender, CmdFetchTargetPortfolio cmdFetchTargetPortfolio)
@@ -1540,10 +1608,33 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 Log($"{Time} OnResponseSSVICalibration: {underlying} Kalman filter not found. Ignoring.");
                 return;
             }
-            SSVIParamsDictionary currentStateParams = KalmanFiltersSSVI[underlying].GetSSVIParams();
             SSVIParamsDictionary responseParams = new(e.ResponseSSVICalibration.Params.ToArray());
-            KalmanFiltersSSVI[underlying].Update(currentStateParams.Update(responseParams).ToVector());
-            Log($"{Time} OnResponseSSVICalibration: {underlying} Kalman state updated for # tenors: {currentStateParams.Count} -> {responseParams.Count}");
+
+            // A newly listed expiry GROWS the state (tenors never contract). The existing covariance
+            // blocks are carried over BY TENOR and the params mapping is rebuilt inside Grow, so a
+            // tenor inserted in the middle cannot shift the parameters that follow it.
+            int tenorsBefore = kalmanFilter.Tenors.Count;
+            var additions = responseParams
+                .Where(kvp => kvp.Value != null && !kalmanFilter.Tenors.Contains(kvp.Key))
+                .Select(kvp => (kvp.Key, kvp.Value.Theta, kvp.Value.Rho, kvp.Value.Psi))
+                .ToList();
+            bool grew = additions.Count > 0 && kalmanFilter.Grow(additions);
+
+            // Feed the RAW calibration as the observation, union-aligned to the (possibly grown)
+            // tenor list: tenors this response does not carry stay NaN and the filter does a
+            // predict-only step for them. The old `currentStateParams.Update(responseParams)`
+            // copied the current state into those slots, which fabricated observations equal to
+            // the state and shrank the covariance as if data had arrived.
+            Vector<double> observation = responseParams.ToVector(kalmanFilter.Tenors);
+            kalmanFilter.Update(observation, Time);
+
+            Log($"{Time} OnResponseSSVICalibration: {underlying} Kalman update: observed " +
+                $"{kalmanFilter.LastObservations}/{kalmanFilter.StateDim} dims, " +
+                $"|z|/sigma med={kalmanFilter.MedianStandardizedInnovation:0.0} " +
+                $"p90={kalmanFilter.P90StandardizedInnovation:0.0} " +
+                $"max={kalmanFilter.MaxStandardizedInnovation:0.0} @{kalmanFilter.WorstInnovationParam}, " +
+                $"tenors {tenorsBefore}{(grew ? $"->{kalmanFilter.Tenors.Count}" : string.Empty)} " +
+                $"(response {responseParams.Count})");
         }
 
         private void OnSSVISurfaceUpdated(object sender, KalmanOnUpdateEventArgs<SSVIParamsDictionary> e)

@@ -440,11 +440,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             var key = (ticker, isCall ? 1 : 0, (int)KCents(k), Tq10kInt(t));
             var now = Environment.TickCount64;
-            if (_lastHitPublish.TryGetValue(key, out var last) && now - last < HitKeepaliveMs)
+            // _bookLock, not a new lock: the day-rollover prune clears these maps under it, and the
+            // utility loop now calls this from several threads at once (a plain Dictionary would
+            // corrupt here). Held only for the lookup/update — never across PublishRequest.
+            lock (_bookLock)
             {
-                return;
+                if (_lastHitPublish.TryGetValue(key, out var last) && now - last < HitKeepaliveMs)
+                {
+                    return;
+                }
+                _lastHitPublish[key] = now;
             }
-            _lastHitPublish[key] = now;
             PublishRequest(ticker, isCall, k, t, s, price, calcTimeUtc);
         }
 
@@ -496,20 +502,34 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             // Dedupe on the same packed key the lookup uses: a cell already asked for within the
             // window is queued (or solved) on the feeder, so sending it again is pure parse load.
-            if (_tickerIds.TryGetValue(ticker, out var tickerId) &&
-                TryNodeKeyOf(tickerId, isCall, k, t, s, price, out var nodeKey))
+            // Under _bookLock because BOTH maps (and _tickerIds) are plain Dictionaries that the
+            // delta-ingest thread writes under it; the utility loop calls this from several
+            // threads at once, and a concurrent resize is memory corruption, not a stale read.
+            bool deduped = false;
+            lock (_bookLock)
             {
-                var nowTicks = Environment.TickCount64;
-                if (_lastPublishTicks.TryGetValue(nodeKey, out var last) && nowTicks - last < PublishDedupeMs)
+                if (_tickerIds.TryGetValue(ticker, out var tickerId) &&
+                    TryNodeKeyOf(tickerId, isCall, k, t, s, price, out var nodeKey))
                 {
-                    Interlocked.Increment(ref _publishDeduped);
-                    return;
+                    var nowTicks = Environment.TickCount64;
+                    if (_lastPublishTicks.TryGetValue(nodeKey, out var last) && nowTicks - last < PublishDedupeMs)
+                    {
+                        deduped = true;
+                    }
+                    else
+                    {
+                        _lastPublishTicks[nodeKey] = nowTicks;
+                        if (_lastPublishTicks.Count > 1_000_000)
+                        {
+                            _lastPublishTicks.Clear();   // bounded; a clear costs one re-publish per cell
+                        }
+                    }
                 }
-                _lastPublishTicks[nodeKey] = nowTicks;
-                if (_lastPublishTicks.Count > 1_000_000)
-                {
-                    _lastPublishTicks.Clear();   // bounded; a clear only costs one re-publish per cell
-                }
+            }
+            if (deduped)
+            {
+                Interlocked.Increment(ref _publishDeduped);
+                return;
             }
 
             var body = BuildRequest(ticker, isCall, k, t, s, price, calcTimeUtc);

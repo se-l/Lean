@@ -93,8 +93,27 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 
         public double AtmIv()
         {
-            // Use tenor from params keys that is at least 7 days away
-            DateTime tenor = ModelParams.Keys.Where(k => k > _algo.Time.Date.AddDays(7)).Min(k => k);
+            // Use tenor from params keys that is at least 7 days away. Only calibrated records count:
+            // an empty tenor set or a null record used to throw (Min over an empty sequence, or a
+            // NullReferenceException inside SsviIV) out of a utility evaluation, killing the run from a
+            // scheduled event. Now it is "no ATM IV", which propagates as NaN and is filtered by the
+            // callers' IsFinite guards.
+            if (ModelParams == null)
+            {
+                // The surface has never been calibrated (e.g. the KalmanInit/SSVI response timed out).
+                return double.NaN;
+            }
+
+            DateTime[] tenors = ModelParams
+                .Where(kvp => kvp.Value != null && kvp.Key > _algo.Time.Date.AddDays(7))
+                .Select(kvp => kvp.Key)
+                .ToArray();
+            if (tenors.Length == 0)
+            {
+                return double.NaN;
+            }
+
+            DateTime tenor = tenors.Min();
             return (IV(0, tenor, OptionRight.Call, _algo.Time.Date) + IV(0, tenor, OptionRight.Put, _algo.Time.Date)) / 2;
 
         }

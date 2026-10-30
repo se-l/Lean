@@ -149,7 +149,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 //_algo.RegisterIndicator(symbol, _algo.ConsecutiveTicksTrend[symbol], _algo.QuoteBarConsolidators[symbol], (IBaseData b) => (((QuoteBar)b).Bid.Close + ((QuoteBar)b).Ask.Close) / 2);
 
                 _algo.SignalsLastRun[security.Symbol] = DateTime.MinValue;
-                _algo.IsSignalsRunning[security.Symbol] = false;
 
                 _algo.RiskProfiles[security.Symbol] = new RiskProfile(_algo, equity);
                 _algo.OrderEventWriters[security.Symbol] = new OrderEventWriter(_algo, equity);

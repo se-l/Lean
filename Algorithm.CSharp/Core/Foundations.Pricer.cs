@@ -45,37 +45,43 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (qr == null || IsUtilityGtMin(qr)) return 0;
 
-            // Should be replaced with a sweep that is anchored on the option with best utility. Hence quote all option with equal utility. That'll improve
-            // chances on arriving at the most profitbale scenario.
-            double? iv = RiskScenarioHandler.SweepIv(qr.Option, qr.OrderDirection);
-            if ((iv ?? 0) == 0 || !double.IsFinite(iv ?? 0))
+            // The sweep curve is already a PRICE: the live touch at ratio 0, walking towards the target as
+            // the active schedule's duration elapses (RiskScenarioHandler.ComputeSweepCurve). No IV round
+            // trip here any more - inverting an IV that never priced back to the touch is what threw the
+            // quote into the middle of the spread on the first tick.
+            var sweep = RiskScenarioHandler.SweepCurve(qr.Option, qr.OrderDirection);
+            decimal priceSweep = sweep?.Price ?? 0;
+            double sweepTargetIv = sweep?.TargetIv ?? 0;
+            double sweepRatio = sweep?.Ratio ?? 0;
+            decimal sweepEntry = sweep?.EntryPrice ?? 0;
+            decimal sweepTargetPrice = sweep?.TargetPrice ?? 0;
+            if (priceSweep <= 0)
             {
                 // No risk scenario, no price.
                 return 0;
             }
-            // Convert IV to a price
-            double priceSweepRaw = OptionContractWrap.E(this, qr.Option, Time.Date).NPV((double)iv, MidPrice(qr.Option.Underlying.Symbol));
-            if (!double.IsFinite(priceSweepRaw))
-                return 0;
-            decimal priceSweep = (decimal)priceSweepRaw;
 
             decimal kfPrice = GetKalmanQuote(qr) ?? 0;
-            decimal priceAggressive = TakeAggressivePrice(qr.OrderDirection, kfPrice, priceSweep);
-            decimal price = priceAggressive;
+            decimal priceModel = TakeAggressivePrice(qr.OrderDirection, kfPrice, priceSweep);
+
+            // The sweep curve IS the quote policy: at ratio 0 it rests on the passive touch (ask for a
+            // sell, bid for a buy) and walks into the spread as the schedule's duration elapses. It
+            // must not be collapsed onto the model price - TakeAggressivePrice(kfPrice, priceSweep)
+            // picks the MORE AGGRESSIVE of the two, and the model mid is always more aggressive than
+            // the touch, so the first order crossed half the spread instead of resting at the touch.
+            // The model price stays as the fallback for when there is no sweep at all.
+            decimal price = priceSweep != 0 ? priceSweep : kfPrice;
 
             decimal bid = qr.Option.BidPrice;
             decimal ask = qr.Option.AskPrice;
             decimal spread = ask - bid;
 
-            decimal aggressiveCrossRatio = 0;
-            if (spread > 0)
+            decimal aggressiveCrossRatio = CrossRatio(qr.OrderDirection, priceModel, bid, ask);
+
+            if (price == 0)
             {
-                aggressiveCrossRatio = qr.OrderDirection switch
-                {
-                    OrderDirection.Buy => (priceAggressive - bid) / spread,
-                    OrderDirection.Sell => (ask - priceAggressive) / spread,
-                    _ => 0
-                };
+                Log($"{Time} GetPricePreEarningsReleasePricerKalman(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, no sweep and no model price - not quoting. bid={bid}, ask={ask}");
+                return 0;
             }
 
             if (IsPricerOverridePricesWithPresumedIvFillDefensively(qr.Underlying.Value))
@@ -84,22 +90,24 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             decimal priceBeforeBboCap = price;
+            price = ClampInsideSpread(qr, price);
             price = LimitPriceToBBO(qr, price);
 
-            decimal finalCrossRatio = 0;
-            if (spread > 0)
+            decimal finalCrossRatio = CrossRatio(qr.OrderDirection, price, bid, ask);
+
+            // The sweep schedule is the rate control for a sweep-priced quote; BufferPriceCrossingSpread
+            // is only the fallback rate limiter for a MODEL-priced one. Applying both double-counts the
+            // walk - the buffer moves 5% of the spread every 15s (a full spread in ~5 minutes), far
+            // faster than a 30-minute sweep - and its NBBO-mid cap then blocks the sweep from ever
+            // reaching the worse execution price.
+            bool bufferApplied = priceSweep == 0;
+
+            Log($"{Time} GetPricePreEarningsReleasePricerKalman(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, utility={qr.UtilityOrder.Utility:0.00}, sweepTargetIV={sweepTargetIv:0.000}, sweepRatio={sweepRatio:0.000}, sweepEntry={sweepEntry:0.0000}, sweepTarget={sweepTargetPrice:0.0000}, sweepPrice={priceSweep:0.0000}, kfPrice={kfPrice:0.0000}, aggressivePrice={priceModel:0.0000}, priceSource={(priceSweep != 0 ? "sweep" : "model")}, bufferApplied={bufferApplied}, preBboPrice={priceBeforeBboCap:0.0000}, finalPrice={price:0.0000}, bid={bid:0.0000}, ask={ask:0.0000}, spread={spread:0.0000}, aggressiveCrossRatio={aggressiveCrossRatio:0.000}, finalCrossRatio={finalCrossRatio:0.000}");
+            if (bufferApplied)
             {
-                finalCrossRatio = qr.OrderDirection switch
-                {
-                    OrderDirection.Buy => (price - bid) / spread,
-                    OrderDirection.Sell => (ask - price) / spread,
-                    _ => 0
-                };
+                price = BufferPriceCrossingSpread(qr, price);
+                price = LimitPriceToBBO(qr, price);
             }
-
-            Log($"{Time} GetPricePreEarningsReleasePricerKalman(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, utility={qr.UtilityOrder.Utility:0.00}, sweepIV={iv:0.000}, sweepPrice={priceSweep:0.0000}, kfPrice={kfPrice:0.0000}, aggressivePrice={priceAggressive:0.0000}, preBboPrice={priceBeforeBboCap:0.0000}, finalPrice={price:0.0000}, bid={bid:0.0000}, ask={ask:0.0000}, spread={spread:0.0000}, aggressiveCrossRatio={aggressiveCrossRatio:0.000}, finalCrossRatio={finalCrossRatio:0.000}");
-            price = BufferPriceCrossingSpread(qr, price);
-            price = LimitPriceToBBO(qr, price);
             // price = LimitMaxSpreadDiscount(qr, price);
 
             return price;
@@ -111,36 +119,74 @@ namespace QuantConnect.Algorithm.CSharp.Core
         private decimal GetPricePreEarningsReleaseBeforeMarketClose(QuoteRequest<Option> qr)
         {
             // Check if sweep is already underway
-            double? iv = RiskScenarioHandler.SweepIv(qr.Option, qr.OrderDirection);
-            if ((iv ?? 0) == 0)
+            var sweep = RiskScenarioHandler.SweepCurve(qr.Option, qr.OrderDirection);
+            decimal price = sweep?.Price ?? 0;
+            if (price <= 0)
             {
                 // No risk scenario, no price.
                 return 0;
             }
-            // Convert IV to a price
-            double priceRaw = OptionContractWrap.E(this, qr.Option, Time.Date).NPV((double)iv, MidPrice(qr.Option.Underlying.Symbol));
-            if (!double.IsFinite(priceRaw))
-                return 0;
-            decimal price = (decimal)priceRaw;
+            price = ClampInsideSpread(qr, price);
             price = LimitPriceToBBO(qr, price);
 
             return price;
         }
 
 
+        /// <summary>
+        /// Post-release quoting. The sweep schedule in FoundationsConfig has PostEarningsRelease
+        /// entries (Sell 09:45-11:30, Buy 11:30-14:30, Sell 14:00-16:00), so the same policy as the
+        /// pre-release Kalman pricer applies: the schedule drives the limit from the passive touch
+        /// inward over its Duration, BufferPriceCrossingSpread rate-limits how fast the quote is
+        /// allowed to walk, and the Kalman model price is only the fallback when no sweep exists.
+        ///
+        /// This path used to (a) collapse the sweep onto the model mid with TakeAggressivePrice,
+        /// (b) leave the spread buffer commented out, and (c) log nothing at all - which is why a
+        /// null sweep silently quoted at the model mid and looked like "the sweeper never ran".
+        /// </summary>
         private decimal GetPricePostEarningsReleasePricer(QuoteRequest<Option> qr)
         {
-            double? iv = RiskScenarioHandler.SweepIv(qr.Option, qr.OrderDirection);
-            double npvRaw = (iv != 0 && iv != null) ? OptionContractWrap.E(this, qr.Option, Time.Date).NPV((double)iv, MidPrice(qr.Option.Underlying.Symbol)) : 0;
-            decimal priceSweep = double.IsFinite(npvRaw) ? (decimal)npvRaw : 0;
-            
+            if (qr == null) return 0;
+
+            var sweep = RiskScenarioHandler.SweepCurve(qr.Option, qr.OrderDirection);
+            decimal priceSweep = sweep?.Price ?? 0;
+            double sweepTargetIv = sweep?.TargetIv ?? 0;
+            double sweepRatio = sweep?.Ratio ?? 0;
+            decimal sweepEntry = sweep?.EntryPrice ?? 0;
+            decimal sweepTargetPrice = sweep?.TargetPrice ?? 0;
+
             // Convert IV to a price
             decimal kfPrice = GetKalmanQuote(qr) ?? 0;
-            
-            decimal price = TakeAggressivePrice(qr.OrderDirection, priceSweep, kfPrice);
+            decimal priceModel = TakeAggressivePrice(qr.OrderDirection, priceSweep, kfPrice);
 
+            // Sweep first, model only as the fallback - see GetPricePreEarningsReleasePricerKalman.
+            decimal price = priceSweep != 0 ? priceSweep : kfPrice;
+
+            decimal bid = qr.Option.BidPrice;
+            decimal ask = qr.Option.AskPrice;
+            decimal spread = ask - bid;
+
+            if (price == 0)
+            {
+                Log($"{Time} GetPricePostEarningsReleasePricer(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, no sweep and no model price - not quoting. bid={bid}, ask={ask}");
+                return 0;
+            }
+
+            decimal priceBeforeBuffer = price;
+            price = ClampInsideSpread(qr, price);
             price = LimitPriceToBBO(qr, price);
-            //price = BufferPriceCrossingSpread(qr, price);
+
+            // Sweep-priced quotes are paced by the schedule; the spread buffer only paces a model-priced
+            // fallback (see GetPricePreEarningsReleasePricerKalman).
+            bool bufferApplied = priceSweep == 0;
+
+            Log($"{Time} GetPricePostEarningsReleasePricer(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, utility={qr.UtilityOrder.Utility:0.00}, sweepTargetIV={sweepTargetIv:0.000}, sweepRatio={sweepRatio:0.000}, sweepEntry={sweepEntry:0.0000}, sweepTarget={sweepTargetPrice:0.0000}, sweepPrice={priceSweep:0.0000}, kfPrice={kfPrice:0.0000}, modelPrice={priceModel:0.0000}, priceSource={(priceSweep != 0 ? "sweep" : "model")}, bufferApplied={bufferApplied}, preBufferPrice={priceBeforeBuffer:0.0000}, priceInSpread={price:0.0000}, sweepCrossRatio={CrossRatio(qr.OrderDirection, priceSweep, bid, ask):0.000}, modelCrossRatio={CrossRatio(qr.OrderDirection, priceModel, bid, ask):0.000}, bid={bid:0.0000}, ask={ask:0.0000}, spread={spread:0.0000}");
+
+            if (bufferApplied)
+            {
+                price = BufferPriceCrossingSpread(qr, price);
+                price = LimitPriceToBBO(qr, price);
+            }
 
             return price;
         }
@@ -164,9 +210,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return PresumedFillIV.ContainsKey(qr.Option) ? new PresumedFillMetrics(qr, this).DiscountedPrice : null;
         }
 
+        /// <summary>
+        /// Least aggressive of the given prices (a buy at the lowest, a sell at the highest).
+        /// Returns 0 when there is nothing to price with: Min()/Max() over an empty sequence throws,
+        /// and "no price" is a condition the callers must handle (do not quote), not a crash.
+        /// </summary>
         private static decimal TakeDefensivePrice(OrderDirection direction, params decimal[] prices)
         {
             decimal[] okPrices = prices.Where(p => p != 0).ToArray();
+            if (okPrices.Length == 0)
+            {
+                return 0;
+            }
             return direction switch
             {
                 OrderDirection.Buy => okPrices.Min(),
@@ -175,14 +230,60 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
         }
 
+        /// <summary>
+        /// Most aggressive of the given prices (a buy at the highest, a sell at the lowest).
+        /// Returns 0 when there is nothing to price with - see TakeDefensivePrice.
+        /// </summary>
         private static decimal TakeAggressivePrice(OrderDirection direction, params decimal[] prices)
         {
             decimal[] okPrices = prices.Where(p => p != 0).ToArray();
+            if (okPrices.Length == 0)
+            {
+                return 0;
+            }
             return direction switch
             {
                 OrderDirection.Buy => okPrices.Max(),
                 OrderDirection.Sell => okPrices.Min(),
                 _ => throw new ArgumentException($"Unknown order direction {direction}")
+            };
+        }
+
+        /// <summary>
+        /// Clamps a quote into the live NBBO. A sweep IV taken from the scenario surface can price a
+        /// contract outside the touch - above the ask for a sell, below the bid for a buy - and a
+        /// limit there is not "passive", it is off-market and never fills. The passive edge of every
+        /// quote is the touch; LimitPriceToBBO then guards the aggressive edge.
+        /// </summary>
+        private static decimal ClampInsideSpread(QuoteRequest<Option> qr, decimal price)
+        {
+            decimal bid = qr.Option.BidPrice;
+            decimal ask = qr.Option.AskPrice;
+            if (bid <= 0 || ask <= bid)
+            {
+                return price;
+            }
+            return Math.Min(Math.Max(price, bid), ask);
+        }
+
+        /// <summary>
+        /// Fraction of the spread the quote has crossed, measured from the passive touch:
+        /// 0 = resting on the ask (sell) / bid (buy), 1 = at the opposite touch, &gt;1 = out of the
+        /// book. May be negative when a price sits outside the touch on the passive side; logged raw
+        /// on purpose.
+        /// </summary>
+        private static decimal CrossRatio(OrderDirection direction, decimal price, decimal bid, decimal ask)
+        {
+            decimal spread = ask - bid;
+            if (spread <= 0 || price == 0)
+            {
+                return 0;
+            }
+            return direction switch
+            {
+                OrderDirection.Buy => (price - bid) / spread,
+                OrderDirection.Sell => (ask - price) / spread,
+                _ => 0
             };
         }
         /// <summary>

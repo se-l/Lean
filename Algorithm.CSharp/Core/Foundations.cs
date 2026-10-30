@@ -103,7 +103,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public Dictionary<Symbol, RiskProfile> RiskProfiles = new();
         public Dictionary<Symbol, GammaScalper> GammaScalpers = new();
-        public Dictionary<Symbol, UtilityWriter> UtilityWriters = new();
         public Dictionary<Symbol, OrderEventWriter> OrderEventWriters = new();
         public TradeWriter TradeWriter;
         public Dictionary<int, Quote<Option>> Quotes = new();
@@ -130,7 +129,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public record MMWindow(TimeSpan Start, TimeSpan End);
         Func<Option, decimal> IntrinsicValue;
         public Dictionary<Symbol, DateTime> SignalsLastRun = new();
-        public Dictionary<Symbol, bool> IsSignalsRunning = new();
+        /// <summary>Per-underlying single-flight gate + worker threads for off-thread signal passes.</summary>
+        public readonly SignalRunner SignalRunner = new();
+        /// <summary>Backtests run the pass inline (deterministic); live runs it off-thread.</summary>
+        public bool AsyncSignals = false;
+        /// <summary>A batch older than this is dropped at apply rather than submitted blind.</summary>
+        public int MaxSignalBatchAgeMs = 5_000;
         public readonly ConcurrentQueue<Signal> _signalQueue = new();
         public int ocaGroupId;
         public int SignalQuantityDflt = 9999;
@@ -162,6 +166,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public void InitializeAlgo(IUtilityOrderFactory utilityOrderFactory)
         {
             UtilityOrderFactory = utilityOrderFactory;
+            // Backtests run the pass inline so fills stay deterministic; live runs it off-thread and
+            // applies the result on a later slice. Cfg.SignalsAsync can force async in a backtest.
+            AsyncSignals = LiveMode || Cfg.SignalsAsync;
             UniverseSettings.Resolution = resolution = Resolution.Second;
             SetStartDate(Cfg.StartDate);
             SetEndDate(Cfg.EndDate);
@@ -511,6 +518,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (SignalsLastRun[underlying] < Time - TimeSpan.FromMinutes(5)) RunSignals(underlying);
             }
 
+            // Results of any off-thread signal pass, applied here on the algorithm thread.
+            DrainCompletedSignals();
             TaskHandler.RunTasks();
         }
 
@@ -730,7 +739,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             PositionWriters.Values.DoForEach(w => w.Dispose());
             KalmanFilterSSVIWriters.Values.DoForEach(w => w.Dispose());
             RiskProfiles.Values.DoForEach(s => s.Dispose());
-            UtilityWriters.Values.DoForEach(s => s.Dispose());
             OrderEventWriters.Values.DoForEach(s => s.Dispose());
             TradeWriter.Dispose();
         }
@@ -874,7 +882,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             lock (_signalQueue)
             {
-                _signalQueue.Clear(); // Move out
+                // Append, do not Clear: ConsumeSignal can bail early while submissions are still
+                // unprocessed (`:1027`), and a later batch wiping the queue would silently drop
+                // signals. Per-underlying async batches make that reachable (B applies while A's
+                // signals are still queued).
                 signals.DoForEach(s => _signalQueue.Enqueue(s));
                 ConsumeSignal();
             }
@@ -1406,70 +1417,177 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         /// <summary>
         /// Signals. Securities where we assume risk. Not necessarily same as positions or subscriptions.
+        ///
+        /// Synchronous path: capture the scope on THIS thread, compute inline, return the signals.
+        /// <see cref="RunSignals"/> uses the same three steps so the compute step can move off-thread.
         /// </summary>
         public List<Signal> GetDesiredOrders(Symbol underlying)
+        {
+            var scope = CaptureScope(underlying);
+            if (scope == null) return new();
+
+            var batch = ComputeSignals(underlying, scope, MinUtility(underlying), Time);
+            LogSignalBatch(batch);
+            return batch.Signals;
+        }
+
+        private double MinUtility(Symbol underlying) =>
+            Cfg.MinUtility.TryGetValue(underlying.Value, out double configured) ? configured : Cfg.MinUtility[CfgDefault];
+
+        /// <summary>
+        /// Snapshot of the option scope, taken ON THE ALGORITHM THREAD. Everything the utility loop
+        /// needs from live state is resolved here — the scoped set, the side gates, the quantities
+        /// and the prices — so the worker never enumerates Securities, evaluates a regime gate or
+        /// scans order tickets while OnData may be adding contracts.
+        /// </summary>
+        private List<ScopedOption> CaptureScope(Symbol underlying)
         {
             Equity equity = ToEquity(underlying);
             if (!IvSurfaceSsviMid.ContainsKey(equity))
             {
                 Log($"{Time} GetDesiredOrders: {underlying} IVSurfaceSSVIMid not ready.");
-                return new();
+                return null;
             }
-            var scopedOptions = Securities.Values
-                .Where(s => s.Type == SecurityType.Option)
-                .Select(o => (Option)o)
-                .Where(o =>
-                    o.Underlying.Symbol == underlying
-                    && ContractScopedForNewPosition(o) 
-                    // && IvSurfaceSsviMid[equity].HasParams(o)
-            );
 
-            List<Signal> signals = new();
-            var sw = Stopwatch.StartNew();
-            int optionCount = 0;
-            double minUtility = Cfg.MinUtility.TryGetValue(underlying.Value, out double configuredMinUtility)
-                ? configuredMinUtility
-                : Cfg.MinUtility[CfgDefault];
-            using (PricingCallSite.Scope("UtilityLoop"))
-            foreach (Option option in scopedOptions)
+            var scope = new List<ScopedOption>();
+            foreach (Security security in Securities.Values)
             {
-                optionCount++;
-                // BuySell Distinction is insufficient. Scenario: We are delta short, gamma long. Would only want to buy/sell options reducing both, unless the utility is calculated better to compare weight 
-                // beneficial risk and detrimental risk against each other. That's what the RiskDiscounts are for.
-
-                Symbol symbol = option.Symbol;
+                if (security.Type != SecurityType.Option) continue;
+                var option = (Option)security;
+                if (option.Underlying.Symbol != underlying) continue;
+                // && IvSurfaceSsviMid[equity].HasParams(option)
+                if (!ContractScopedForNewPosition(option)) continue;
 
                 // Pick the side BEFORE building the utilities. Constructing one costs its whole
                 // greek vector; the delta-hedge gate already knows which direction reduces risk (a
                 // sign test on delta against the portfolio's), so when a hedge is in progress only
                 // one side is built instead of both — halving the loop's pricer work.
-                bool sellAllowed = IfFilledDecreasesEquityHedgeOrderSize(symbol, OrderDirection.Sell);
-                bool buyAllowed = IfFilledDecreasesEquityHedgeOrderSize(symbol, OrderDirection.Buy);
-                if (!sellAllowed && !buyAllowed)
-                {
-                    continue;
-                }
+                bool sellAllowed = IfFilledDecreasesEquityHedgeOrderSize(option.Symbol, OrderDirection.Sell);
+                bool buyAllowed = IfFilledDecreasesEquityHedgeOrderSize(option.Symbol, OrderDirection.Buy);
+                if (!sellAllowed && !buyAllowed) continue;
 
-                IUtilityOrder utilSell = sellAllowed
-                    ? UtilityOrderFactory.Create(this, option, SignalQuantity(symbol, OrderDirection.Sell), option.AskPrice)
-                    : null;
-                IUtilityOrder utilBuy = buyAllowed
-                    ? UtilityOrderFactory.Create(this, option, SignalQuantity(symbol, OrderDirection.Buy), option.BidPrice)
-                    : null;
-
-                if (utilSell != null && utilSell.Utility >= minUtility &&
-                    (utilBuy == null || utilSell.Utility >= utilBuy.Utility))
-                {
-                    signals.Add(new Signal(symbol, OrderDirection.Sell, utilSell));
-                }
-                else if (utilBuy != null && utilBuy.Utility >= minUtility &&
-                    (utilSell == null || utilBuy.Utility > utilSell.Utility))
-                {
-                    signals.Add(new Signal(symbol, OrderDirection.Buy, utilBuy));
-                }
+                scope.Add(new ScopedOption(option, sellAllowed, buyAllowed,
+                    sellAllowed ? SignalQuantity(option.Symbol, OrderDirection.Sell) : 0m,
+                    buyAllowed ? SignalQuantity(option.Symbol, OrderDirection.Buy) : 0m));
             }
+            return scope;
+        }
 
-            Log($"{Time} GetDesiredOrders: {underlying}. Utility loop over {optionCount} options took {sw.ElapsedMilliseconds}ms.");
+        /// <summary>
+        /// The utility loop. Safe off the algorithm thread: it reads the captured scope plus numeric
+        /// market data, and fans out per contract — each option's IV→greeks chain is serial, but
+        /// contracts are independent, so K workers keep K requests in flight against the pricer.
+        /// </summary>
+        private SignalBatch ComputeSignals(Symbol underlying, List<ScopedOption> scope, double minUtility,
+            DateTime capturedAt)
+        {
+            var batch = new SignalBatch
+            {
+                Underlying = underlying,
+                CapturedTicks = Stopwatch.GetTimestamp(),
+                CapturedAt = capturedAt,
+                OptionCount = scope.Count,
+            };
+
+            // Bounded by the admission budget — offering more than the pricer's worker count only
+            // deepens its queue. Two pool threads are left free because each worker blocks on its
+            // reply (sync GetResult) and the TCS continuations need a thread to complete on.
+            int parallelism = Math.Max(1, Math.Min(
+                Math.Min(scope.Count, julia?.Budget.Capacity ?? Environment.ProcessorCount),
+                Math.Max(2, Environment.ProcessorCount - 2)));
+            batch.Parallelism = parallelism;
+
+            var outcome = new Signal[scope.Count];
+            long soloTicks = 0;
+            int optionErrors = 0;
+            var errorSamples = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+            var sw = Stopwatch.StartNew();
+            System.Threading.Tasks.Parallel.For(0, scope.Count,
+                new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = parallelism },
+                i =>
+                {
+                    // The caller tag is thread-static, so it must be set ON the worker thread;
+                    // a Scope around the whole loop would tag only the calling thread.
+                    using (PricingCallSite.Scope("UtilityLoop"))
+                    {
+                        long t0 = Stopwatch.GetTimestamp();
+                        try
+                        {
+                            outcome[i] = Evaluate(scope[i], minUtility);
+                        }
+                        catch (Exception ex)
+                        {
+                            // ONE contract's pricing failure must not abort the pass, and must
+                            // never reach the caller: Parallel.For aggregates and rethrows, which
+                            // killed a backtest on 2026-10-30 when a socket send failed.
+                            System.Threading.Interlocked.Increment(ref optionErrors);
+                            if (errorSamples.Count < 3) errorSamples.Enqueue($"{scope[i].Symbol}: {ex.Message}");
+                        }
+                        System.Threading.Interlocked.Add(ref soloTicks, Stopwatch.GetTimestamp() - t0);
+                    }
+                });
+            sw.Stop();
+
+            batch.ComputeMs = sw.Elapsed.TotalMilliseconds;
+            batch.SerialMs = soloTicks * 1000.0 / Stopwatch.Frequency;
+            batch.Errors = optionErrors;
+            batch.ErrorSample = errorSamples.Count == 0 ? null : string.Join("; ", errorSamples);
+            for (int i = 0; i < outcome.Length; i++)
+            {
+                if (outcome[i] != null) batch.Signals.Add(outcome[i]);
+            }
+            return batch;
+        }
+
+        /// <summary>One contract's two utilities. Reads the captured scope only — no live gates.</summary>
+        private Signal Evaluate(ScopedOption scoped, double minUtility)
+        {
+            // BuySell Distinction is insufficient. Scenario: We are delta short, gamma long. Would only want to buy/sell options reducing both, unless the utility is calculated better to compare weight 
+            // beneficial risk and detrimental risk against each other. That's what the RiskDiscounts are for.
+            IUtilityOrder utilSell = scoped.SellAllowed
+                ? UtilityOrderFactory.Create(this, scoped.Option, scoped.QuantitySell, scoped.AskPrice)
+                : null;
+            IUtilityOrder utilBuy = scoped.BuyAllowed
+                ? UtilityOrderFactory.Create(this, scoped.Option, scoped.QuantityBuy, scoped.BidPrice)
+                : null;
+
+            if (utilSell != null && utilSell.Utility >= minUtility &&
+                (utilBuy == null || utilSell.Utility >= utilBuy.Utility))
+            {
+                return new Signal(scoped.Symbol, OrderDirection.Sell, utilSell);
+            }
+            if (utilBuy != null && utilBuy.Utility >= minUtility &&
+                (utilSell == null || utilBuy.Utility > utilSell.Utility))
+            {
+                return new Signal(scoped.Symbol, OrderDirection.Buy, utilBuy);
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// All per-pass logging, on the algorithm thread. The three StatsSinceLast calls reset their
+        /// baselines while formatting, so they must never run on a worker (two passes would split
+        /// one interval between them) — that is why this is separate from ComputeSignals.
+        /// </summary>
+        private void LogSignalBatch(SignalBatch batch)
+        {
+            Symbol underlying = batch.Underlying;
+            double avgOptionMs = batch.OptionCount > 0 ? batch.SerialMs / batch.OptionCount : 0;
+            var attributes = new[]
+            {
+                new KeyValuePair<string, object>("underlying", underlying.Value),
+                new KeyValuePair<string, object>("parallelism", (double)batch.Parallelism),
+                new KeyValuePair<string, object>("options", (double)batch.OptionCount),
+            };
+            // Total wall time AND per-option cost: the pair is what shows whether the fan-out
+            // actually overlapped work (serial-equivalent >> loop means it did).
+            QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.utility.loop_ms", batch.ComputeMs, attributes);
+            QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.utility.option_ms", avgOptionMs, attributes);
+            QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.utility.loop_serial_ms", batch.SerialMs, attributes);
+            Log($"{batch.CapturedAt} GetDesiredOrders: {underlying}. Utility loop over {batch.OptionCount} options took {batch.ComputeMs:0}ms " +
+                $"(avg={avgOptionMs:0.0}ms/option, serial-equivalent={batch.SerialMs:0}ms, parallelism={batch.Parallelism}, " +
+                $"speedup={batch.Speedup:0.0}x).");
 
             Log($"{Time} GetDesiredOrders: {underlying}. JuliaPricing since last report (run totals in brackets): {JuliaPricingClient.StatsSinceLast()}");
 
@@ -1491,7 +1609,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Log($"{Time} GetDesiredOrders: {underlying} initialMargin={InitialMargin()} exceeded by marginExcessTarget={marginExcessTarget}.");
             }
 
-            var filteredSignals = signals.Where(s => s.Symbol.Underlying == underlying).ToList();
+            var filteredSignals = batch.Signals.Where(s => s.Symbol.Underlying == underlying).ToList();
             Log($"{Time}, topic=SIGNALS, " +
                 $"#Underlying={underlying}, " +
                 $"#Symbols={filteredSignals.Select(s => s.Symbol).Distinct().Count()}, " +
@@ -1505,7 +1623,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     $"# SubmitRequests={Transactions.SubmitRequestsUnprocessed.Count()}, " +
                     $"# UpdateRequests={Transactions.UpdateRequestsUnprocessed.Count()}, " +
                     $"# CancelRequests={Transactions.CancelRequestsUnprocessed.Count()}");
-            return signals;
         }
 
         public double IV(Option option, decimal? price = null)
@@ -1675,14 +1792,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
-        /// Event driven: On MarketOpen ok, OnFill ok. On underlying moves 0.1% ok. at least every x 5mins. Every call restarts the timer.ok.
+        /// Event driven: On MarketOpen ok, OnFill ok. On underlying moves 0.1% ok. at least every x 5mins.
+        ///
+        /// Launcher only. It validates cheap state, captures the option scope ON THIS THREAD and
+        /// either runs the pass inline (backtest) or hands it to the underlying's worker (live).
+        /// Order submission happens in <see cref="ApplySignals"/>, on the algorithm thread.
         /// </summary>
         public void RunSignals(Symbol symbol)
         {
             Symbol underlying = Underlying(symbol);
 
-            if (IsSignalsRunning[underlying] ||
-                IsWarmingUp ||
+            if (IsWarmingUp ||
                 !IsMyMarketOpen(underlying) ||
                 Time.TimeOfDay <= mmWindow.Start ||
                 Time.TimeOfDay >= mmWindow.End ||
@@ -1701,22 +1821,138 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Log($"{Time} RunSignals. Waiting a minute since warmup before restarting to trade. TimeWarmupFinished={TimeWarmupFinished}");
                 return;
             }
-            ;
 
-            Log($"{Time} RunSignals. underlying={underlying}");
-
-            IsSignalsRunning[underlying] = true;  // if refactored as task, more elegant? Just run 1 task at a time...
             bool skipRunSignals = Cfg.SkipRunSignals.TryGetValue(underlying.Value, out skipRunSignals) ? skipRunSignals : Cfg.SkipRunSignals[CfgDefault];
-            var sw = Stopwatch.StartNew();
-            if (!skipRunSignals)
+            if (skipRunSignals) return;
+
+            // Per-underlying single-flight gate. A second request while a pass is in flight is
+            // dropped with a log — same scope, and its result would only duplicate submissions.
+            if (!SignalRunner.TryAcquire(underlying))
             {
-                List<Signal> signals = GetDesiredOrders(underlying);
-                Log($"{Time} RunSignals. underlying={underlying}. GetDesiredOrders took {sw.ElapsedMilliseconds}ms. #Signals={signals.Count}");
-                HandleDesiredOrders(signals);
-                Log($"{Time} RunSignals. underlying={underlying}. HandleDesiredOrders took {sw.ElapsedMilliseconds}ms total.");
+                SignalRunner.CountSkipped();
+                Log($"{Time} RunSignals. underlying={underlying}. A signal pass is already running — skipping this request.");
+                return;
             }
-            IsSignalsRunning[underlying] = false;
-            SignalsLastRun[underlying] = Time;
+
+            List<ScopedOption> scope;
+            DateTime capturedAt = Time;
+            try
+            {
+                Log($"{Time} RunSignals. underlying={underlying}");
+                scope = CaptureScope(underlying);   // MAIN THREAD — see ScopedOption
+            }
+            catch (Exception ex)
+            {
+                SignalRunner.Release(underlying);
+                Error($"RunSignals({underlying}): scope capture failed: {ex.Message}");
+                return;
+            }
+
+            if (scope == null || scope.Count == 0)
+            {
+                SignalsLastRun[underlying] = Time;
+                SignalRunner.Release(underlying);
+                return;
+            }
+
+            double minUtility;
+            try
+            {
+                minUtility = MinUtility(underlying);
+            }
+            catch (Exception ex)
+            {
+                SignalRunner.Release(underlying);
+                Error($"RunSignals({underlying}): config lookup failed: {ex.Message}");
+                return;
+            }
+
+            if (!AsyncSignals)
+            {
+                // Backtest: identical code path, inline — deterministic, still fanned out per contract.
+                ApplySignals(ComputeSignals(underlying, scope, minUtility, capturedAt));
+                return;
+            }
+
+            if (!SignalRunner.Launch(underlying, () => ComputeSignals(underlying, scope, minUtility, capturedAt)))
+            {
+                SignalRunner.Release(underlying);
+            }
+        }
+
+        /// <summary>
+        /// Applies one completed pass on the ALGORITHM THREAD: re-validate what can have changed
+        /// since the scope was captured, then submit. Order submission, OCA assignment and ticket
+        /// bookkeeping all live below this point and must never run on a worker.
+        /// </summary>
+        public void ApplySignals(SignalBatch batch)
+        {
+            Symbol underlying = batch.Underlying;
+            try
+            {
+                if (batch.Error != null)
+                {
+                    Error($"RunSignals({underlying}): background pass failed: {batch.Error.Message}");
+                    return;
+                }
+
+                LogSignalBatch(batch);
+
+                var keep = new List<Signal>(batch.Signals.Count);
+                int stale = 0;
+                foreach (Signal signal in batch.Signals)
+                {
+                    if (SignalStillValid(signal, batch)) keep.Add(signal);
+                    else stale++;
+                }
+
+                double ageMs = batch.AgeMs;
+                var attributes = new[] { new KeyValuePair<string, object>("underlying", underlying.Value) };
+                QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.signals.pass_ms", batch.ComputeMs, attributes);
+                QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.signals.apply_delay_ms", ageMs, attributes);
+                QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.signals.stale", stale, attributes);
+                Log($"{Time} ApplySignals. underlying={underlying}. #Signals={batch.Signals.Count} #Applied={keep.Count} " +
+                    $"#Stale={stale} age={ageMs:0}ms compute={batch.ComputeMs:0}ms speedup={batch.Speedup:0.0}x" +
+                    (batch.Errors > 0 ? $" #Errors={batch.Errors} ({batch.ErrorSample})" : ""));
+
+                if (keep.Count > 0) HandleDesiredOrders(keep);
+                SignalsLastRun[underlying] = Time;
+            }
+            finally
+            {
+                SignalRunner.Release(underlying);
+            }
+        }
+
+        /// <summary>Runs every completed pass on the algorithm thread. Call once per slice.</summary>
+        public void DrainCompletedSignals()
+        {
+            while (SignalRunner.TryDequeueCompleted(out SignalBatch batch))
+            {
+                ApplySignals(batch);
+            }
+        }
+
+        /// <summary>
+        /// Everything a signal must still satisfy at APPLY time. Prices and quantities are NOT
+        /// re-checked here: OrderOptionContract recomputes the quantity from live state and clamps
+        /// the limit to the live NBBO. What can genuinely differ is the decision — side gate, scope
+        /// membership and age.
+        /// </summary>
+        private bool SignalStillValid(Signal signal, SignalBatch batch)
+        {
+            Symbol underlying = Underlying(signal.Symbol);
+            if (IsWarmingUp || !IsMyMarketOpen(underlying)) return false;
+            if (!Cfg.Ticker.Contains(underlying.Value)) return false;
+            if (batch.AgeMs > MaxSignalBatchAgeMs)
+            {
+                Log($"{Time} SignalStillValid: dropping {signal.Symbol} — batch age {batch.AgeMs:0}ms > {MaxSignalBatchAgeMs}ms.");
+                return false;
+            }
+            if (!IfFilledDecreasesEquityHedgeOrderSize(signal.Symbol, signal.OrderDirection)) return false;
+            if (Securities.ContainsKey(signal.Symbol) && Securities[signal.Symbol] is Option option &&
+                !ContractScopedForNewPosition(option)) return false;
+            return true;
         }
 
         /// <summary>
@@ -1928,6 +2164,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 orderTickets[orderTicket.Symbol].Add(orderTicket);
             }
             ;
+
+            // Start the equity's sweep clock on the first option ticket it gets (see
+            // RiskScenarioHandler.NoteOptionTicket - it used to be written from a pricing getter, so
+            // the clock depended on which contract asked for a price first).
+            RiskScenarioHandler.NoteOptionTicket(orderTicket);
 
             if (quote != null)
             {
@@ -2392,6 +2633,43 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <param name="orderDirection"></param>
         /// <returns></returns>
         public decimal MaxQuantityByMarginConstraints(Symbol symbol, OrderDirection orderDirection) => 9999;
+
+        /// <summary>
+        /// USD utility of trading `SignalQuantity` of this contract at `price` - one full utility
+        /// evaluation (a greek vector across DS buckets), so callers must cache per bar. The sweep uses
+        /// it once per ticket when it freezes its anchors, and once per quote for the frontier contract.
+        /// </summary>
+        private readonly Dictionary<Symbol, DateTime> _lastUtilityAtErrorLog = new();
+
+        public double UtilityAt(Option option, OrderDirection direction, decimal price)
+        {
+            if (option == null || direction == OrderDirection.Hold) return 0;
+
+            decimal quantity = SignalQuantity(option.Symbol, direction);
+            if (quantity == 0) return 0;
+
+            try
+            {
+                IUtilityOrder utilityOrder = UtilityOrderFactory.Create(this, option, quantity, price);
+                if (utilityOrder == null) return 0;
+
+                double utility = utilityOrder.Utility;
+                return double.IsFinite(utility) ? utility : 0;
+            }
+            catch (Exception error)
+            {
+                // A utility that cannot be evaluated (surface not calibrated yet, a greek the pricer
+                // cannot produce) must not kill the run from a scheduled event or a pricing call: it
+                // means "no utility budget", which leaves the sweep resting on its anchor.
+                if (_lastUtilityAtErrorLog.Count > 5000) _lastUtilityAtErrorLog.Clear();
+                if (!_lastUtilityAtErrorLog.TryGetValue(option.Symbol, out DateTime last) || Time - last > TimeSpan.FromMinutes(1))
+                {
+                    _lastUtilityAtErrorLog[option.Symbol] = Time;
+                    Log($"{Time} UtilityAt(): utility unavailable for {option.Symbol.Value} {direction} at {price} ({error.GetType().Name}: {error.Message}) - treated as 0.");
+                }
+                return 0;
+            }
+        }
 
         /// <summary>
         /// Function is buggy and out of date pretty much. Only return -1/+1 at the moment

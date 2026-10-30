@@ -181,12 +181,26 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 return price;
             }
 
-            if (!double.IsFinite(BidIV) || !double.IsFinite(AskIV) || SpreadIV <= 0)
+            double bidIv = BidIV;
+            double askIv = AskIV;
+            if (!double.IsFinite(bidIv) || !double.IsFinite(askIv) || askIv <= bidIv)
             {
                 return price;
             }
 
-            SetWorstIVToAtLeastNBBO();
+            // WorstIV has to be a USABLE starting point before it can bound a quote. InitWorstIV returns 0
+            // for a contract created during warm-up, and SetWorstIVToAtLeastNBBO cannot repair that on the
+            // sell side (Min(0, askIV) == 0), which left IsPriceIVCrossingTolerance - `priceIV < WorstIV` -
+            // permanently false and the whole buffer inert for the run. Keep it on the near side of the
+            // mid too: a value beyond the mid would quote the walk's endpoint immediately.
+            double midIv = (bidIv + askIv) / 2;
+            if (!double.IsFinite(WorstIV) || WorstIV <= 0)
+            {
+                WorstIV = Direction == OrderDirection.Buy ? bidIv : askIv;
+            }
+            WorstIV = Direction == OrderDirection.Buy
+                ? Math.Min(Math.Max(WorstIV, bidIv), midIv)
+                : Math.Max(Math.Min(WorstIV, askIv), midIv);
 
             if (IsPriceIVCrossingTolerance(priceIV))
             {
