@@ -176,7 +176,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             {
                 using (update.Document)
                 {
-                    applied += Apply(update);
+                    try
+                    {
+                        applied += Apply(update);
+                    }
+                    catch (Exception error)
+                    {
+                        // Called from OnData, so an escaping exception would end the algorithm. A
+                        // malformed or unsupported delta must be logged and dropped, never fatal.
+                        _algo.Error($"{_algo.Time} ConfigUpdateChannel: failed to apply {update.RoutingKey}: {error}");
+                        try
+                        {
+                            PublishOutcome(update.ReplyTo, false, Array.Empty<string>(), new[] { error.Message });
+                        }
+                        catch
+                        {
+                            // reply path is best-effort as well
+                        }
+                    }
                 }
             }
             return applied;
@@ -511,11 +528,28 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             string text => text,
             // Dictionaries default to their type name; show the entries so the applied/old pair in
             // the log is actually readable for settings like MaxOptionOrderQuantity.
-            IDictionary dictionary => "{" + string.Join(", ",
-                dictionary.Cast<DictionaryEntry>().Select(e => $"{e.Key}={Format(e.Value)}")) + "}",
+            // Dictionaries default to their type name; show the entries so the applied/old pair
+            // in the log is readable for settings like MaxOptionOrderQuantity.
+            // NB: iterate the non-generic IDictionaryEnumerator — Dictionary<K,V> enumerates
+            // KeyValuePair<K,V> through IEnumerable, so Cast<DictionaryEntry>() throws.
+            IDictionary dictionary => FormatDictionary(dictionary),
+            // Lists of config objects (HedgeSchedules values) have no useful ToString; the count is
+            // what a log line needs, the dictionary formatter shows the keys.
+            IList list => $"[{list.Count} item(s)]",
             IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
             _ => value.ToString()
         };
+
+        private static string FormatDictionary(IDictionary dictionary)
+        {
+            var parts = new List<string>(dictionary.Count);
+            IDictionaryEnumerator enumerator = dictionary.GetEnumerator();
+            while (enumerator.MoveNext())
+            {
+                parts.Add($"{enumerator.Key}={Format(enumerator.Value)}");
+            }
+            return "{" + string.Join(", ", parts) + "}";
+        }
 
         private static string Truncate(string text) =>
             text.Length <= 200 ? text : text.Substring(0, 200) + "…";
