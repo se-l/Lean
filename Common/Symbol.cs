@@ -19,7 +19,6 @@ using ProtoBuf;
 using Python.Runtime;
 using Newtonsoft.Json;
 using QuantConnect.Securities;
-using QuantConnect.Data.Market;
 
 namespace QuantConnect
 {
@@ -163,13 +162,8 @@ namespace QuantConnect
                     ? underlying.ID.Date
                     : (DateTime?)null;
 
-            bool isVolatilityBar = baseType == typeof(VolatilityQuoteBar);
-
-            var sid = isVolatilityBar switch
-            {
-                true => SecurityIdentifier.GenerateBase(baseType, underlying.Value.Replace(" ", ""), market, mapSymbol: false, date: firstDate),
-                _ => SecurityIdentifier.GenerateBase(baseType, underlying.ID.Symbol, market, mapSymbol: false, date: firstDate),
-            };
+            var sid = SecurityIdentifier.GenerateBase(baseType, underlying.ID.Symbol, market, mapSymbol: false,
+                date: firstDate);
             return new Symbol(sid, underlying.Value, underlying);
         }
 

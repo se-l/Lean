@@ -91,13 +91,7 @@ namespace QuantConnect.Securities
 
                     if (!gotData)
                     {
-                        if (security.SubscriptionDataConfig.Type != typeof(VolatilityQuoteBar) || security.SubscriptionDataConfig.Type != typeof(VolatilityTradeBar))
-                        {
-                        }
-                        else
-                        {
-                            Log.Trace("FuncSecuritySeeder.SeedSecurity(): " + Messages.FuncSecuritySeeder.UnableToSeedSecurity(security));
-                        }
+                        Log.Trace("FuncSecuritySeeder.SeedSecurity(): " + Messages.FuncSecuritySeeder.UnableToSeedSecurity(security));
                         return false;
                     }
                 }

@@ -15,9 +15,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         // Given not using the CSVExport method, no need to implement each metric as attribute. Underlying Pct change just a parameter.        
         public readonly Equity Equity;
         public Symbol Symbol { get => Equity.Symbol; }
-        private bool _headerWritten;
-        private List<string> _header;
-        private readonly string _path;
 
         //public Dictionary<double, decimal> PnLProfile = Enumerable.Range(-10, 21).Select(i => (double)i).ToDictionary(i => i, i => 0m);
         private readonly HashSet<Metric> dfltMetricsDIV = new() { Metric.Vega, Metric.Vanna, Metric.Volga };
@@ -45,43 +42,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             _algo = algo;
             Equity = equity;
 
-            _path = Path.Combine(Globals.PathAnalytics, Symbol.Value, "RiskProfile.csv");
-            if (!File.Exists(_path))
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(_path));
-            }
-            _writer = new(_path, false)
-            {
-                AutoFlush = true
-            };
+            // No file: the stressed-PnL numbers this class computes are consumed as WhatIfMarginAdd()
+            // results, not persisted. Update() is a no-op, so the CSV it used to append never ran.
         }
 
-        public bool WriteHeader()
-        {
-            if (_headerWritten) { return true; }
-
-            var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol).ToList();
-            if (positions.Select(p => p.SecurityType).Contains(SecurityType.Option) && positions.Select(p => p.SecurityType).Contains(SecurityType.Equity))
-            {
-                _header = positions.SelectMany(x => ObjectsToHeaderNames(x)).Distinct().OrderBy(x => x).ToList();
-                _writer.WriteLine(string.Join(",", _header));
-                _headerWritten = true;
-            }
-            return _headerWritten;
-        }
-
-        public void Update()
-        {
-            return;
-            if (!WriteHeader()) { return; }
-
-            var positions = _algo.Positions.Values.Where(x => x.UnderlyingSymbol == Symbol && x.Quantity != 0);
-            if (positions.Any())
-            {
-                _writer.Write(ToCsv(positions, _header, skipHeader: true));
-            }
-            CachedMetric2F.Clear();
-        }
+        /// <summary>Clears the per-time stress cache; kept as the old writer's hook.</summary>
+        public void Update() => CachedMetric2F.Clear();
 
         /// <summary>
         /// Rough estimate of the marginal contribution of a trade to the overall margin reqirement. Put differently, how much risk is added by the trade.

@@ -364,7 +364,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 OrderDirection.Sell => ocw.NPV(modelIv, null),
                 _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
             };
-            Log($"{Time} GetKalmanQuote(): direction={qr.OrderDirection} option={qr.Option}, kfPriceMid={kfPriceMid:0.0000}, kfModelIV={modelIv:0.00}, kfPriceWSpread={kfPriceWSpread:0.0000}, bidPrice={qr.Option.BidPrice}, bidIV={IvBids[qr.Option.Symbol].IVBidAsk.IV:0.00}, askPrice={qr.Option.AskPrice}, askIV={IvAsks[qr.Option.Symbol].IVBidAsk.IV:0.00}, spot={MidPrice(qr.Option.Underlying.Symbol)}");
+            Log($"{Time} GetKalmanQuote(): direction={qr.OrderDirection} option={qr.Option}, kfPriceMid={kfPriceMid:0.0000}, kfModelIV={modelIv:0.00}, kfPriceWSpread={kfPriceWSpread:0.0000}, bidPrice={qr.Option.BidPrice}, bidIV={IvBid(qr.Option):0.00}, askPrice={qr.Option.AskPrice}, askIV={IvAsk(qr.Option):0.00}, spot={MidPrice(qr.Option.Underlying.Symbol)}");
             return (decimal?)kfPriceWSpread;
         }
 

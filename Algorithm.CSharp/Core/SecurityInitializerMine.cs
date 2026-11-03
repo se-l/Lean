@@ -2,19 +2,18 @@ using System;
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Algorithm.CSharp.Core.RealityModeling;
 using QuantConnect.Brokerages;
+using QuantConnect.Configuration;
 using QuantConnect.Data.Market;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using System.Linq;
 using QuantConnect.Data.Consolidators;
-using QuantConnect.Util;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Data;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Orders;
-using QuantConnect.Indicators;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
@@ -119,23 +118,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 InitializeIVSurfaces(equity);
                 _algo.Log($"SecurityInitializer.Initialize: {symbol} WarmedUp Volatility To: PostSurface: {security.VolatilityModel.Volatility}, PreSurface: {vola}");
 
-                _algo.QuoteBarConsolidators[symbol].DataConsolidated += (object sender, QuoteBar consolidated) =>
-                {
-                    if (_algo.IsEventNewQuote(symbol))  // Can refactor this to event driven. Then IVBids/Asks subscribe to EventNewQuote. Saves costly consolidator logic
-                    {
-                        _algo.IvBids.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
-                        _algo.IvAsks.Where(kvp => kvp.Key.Underlying == symbol).DoForEach(kvp => kvp.Value.Update());
-                    }
-                };
                 _algo.MarketDataQuotes[security.Symbol] = new();
                 _algo.MarketDataTrades[security.Symbol] = new();
 
                 _algo.GammaScalpers[symbol] = new(_algo, equity);
-                //_algo.PutCallRatios[symbol] = new PutCallRatioIndicator(equity, _algo, TimeSpan.FromDays(_algo.Cfg.PutCallRatioWarmUpDays));
-                //_algo.IntradayIVDirectionIndicators[symbol] = new IntradayIVDirectionIndicator(_algo, security.Symbol);
-                //_algo.AtmIVIndicators[symbol] = new AtmIVIndicator(_algo, equity);
-                //_algo.IVSurfaceRelativeStrikeBid[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Bid);
-                //_algo.IVSurfaceRelativeStrikeAsk[symbol].EODATMEventHandler += (object sender, IVQuote e) => _algo.AtmIVIndicators[symbol].Update(e.Time.Date, e.IV, QuoteSide.Ask);
 
                 // Refactor - turn percentages over to some config.
                 _algo.UnderlyingMovedX[(symbol, 0.001m)] = new(equity, 0.001m);
@@ -172,130 +158,70 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 _algo.MarketDataQuotes[security.Symbol] = new();
                 _algo.MarketDataTrades[security.Symbol] = new();
-
-                _algo.IvBids[symbol] = new IVQuoteIndicator(QuoteSide.Bid, option, _algo);
-                _algo.IvAsks[symbol] = new IVQuoteIndicator(QuoteSide.Ask, option, _algo);
-                int ivSpreadSMAPeriod = _algo.Cfg.IVSpreadSMAPeriod.TryGetValue(symbol, out int period) ? period : _algo.Cfg.IVSpreadSMAPeriod[CfgDefault];
-                _algo.IVSpreadSMA[symbol] = new SimpleMovingAverage(ivSpreadSMAPeriod);
-
+                
                 foreach (OrderDirection direction in new[] { OrderDirection.Buy, OrderDirection.Sell })
                 {
                     _algo.SpreadBuffers[direction][symbol] = new(_algo, option, direction);
                 }
             }
 
-            //var equityOptions = new HashSet<SecurityType>() { SecurityType.Option, SecurityType.Equity };
-            //if (equityOptions.Contains(security.Type) && !symbol.ID.Symbol.Contains("VolatilityBar"))
-            //{
-            //    _algo.SweepState[symbol] = new();
-            //    foreach (var direction in new[] { OrderDirection.Buy, OrderDirection.Sell })
-            //    {
-            //        _algo.SweepState[symbol][direction] = new Sweep(_algo, symbol, direction);
-            //    }
-            //}
-
             if (security.Resolution == Resolution.Tick)
             {
                 security.SetDataFilter(new OptionTickDataFilter(_algo));
             }
-
-            // WarmUpSecurity(security);
         }
 
         private void InitializeIVSurfaces(Equity underlying)
         {
-            if (!_algo.IvSurfaceSsviMid.ContainsKey(underlying))
+            if (_algo.IvSurfaceSsviMid.ContainsKey(underlying))
             {
-                _algo.IvSurfaceSsviMid[underlying] = new IVSurfaceSSVI(_algo, underlying, null, false);
+                return;
             }
-        }
-        public DateTime HistoryRequestEndDate(Security security)
-        {
-            if (_algo.LiveMode && _algo.Time.TimeOfDay < new TimeSpan(9, 30, 0))
+
+            _algo.IvSurfaceSsviMid[underlying] = new IVSurfaceSSVI(_algo, underlying, null, false);
+
+            // ONE-SHOT WARM-UP SEED. Here because this is the one place that knows the underlying's
+            // surface object exists: the equity security is being initialized and its IIVSurface was
+            // just created. The engine's own warm-up window for a custom type is a couple of calendar
+            // days and lands on the weekend before a Monday release, so the anchor is fetched
+            // explicitly — the PREVIOUS session's surfaces, whose LAST one is the state this session
+            // starts from (the Kalman design carries uncertainty across the day boundary).
+            // `surface-mode = rabbitmq` leaves the seed to the live consumer.
+            if (!_algo.SurfaceFromSlice)
             {
-                SecurityExchangeHours SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, security.Symbol, security.Type);
-                return Time.EachTradeableDay(SecurityExchangeHours, _algo.Time.Date.AddDays(-4), _algo.Time.Date.AddDays(-1)).Last();
+                return;
             }
-            else if (_algo.LiveMode && _algo.Time.TimeOfDay >= new TimeSpan(9, 30, 0))
+
+            try
             {
-                return _algo.Time.Date;
-            }
-            else
-            {
-                return _algo.StartDate;
-            }
-        }
-
-        /// <param name="security"></param>
-        public void WarmUpSecurity(Security security)
-        {
-            Symbol symbol;
-
-            _algo.Log($"SecurityInitializer.WarmUpSecurity: {security}");
-
-            if (security.Type == SecurityType.Option)
-            
-            {
-                /// Any model needs fitting. Provide surface fitting based on this data or should the service pull its own?
-                /// Differently, send prices or underlying?
-                /// Having surfaces fitted & cached allows a sort of preparation...
-                /// Eventually intraday, relying on these prices here. Having this tested during warmup is good.
-                
-                var option = (Option)security;
-
-                if (option.Underlying == null) return;
-                symbol = option.Symbol;
-
-                if (_algo.Cfg.SkipWarmUpSecurity) return;
-
-                var volaSyms = _algo.Securities.Keys.Where(s => s.Underlying == symbol); // Only the volatilityBars have an option as Underlying.
-                var volaSym = volaSyms.Any() ? volaSyms.First() : null;
-                if (volaSym != null)
+                var from = _algo.Cfg.StartDate.AddDays(-10);
+                var to = _algo.Cfg.StartDate;
+                var history = _algo.History<SurfaceSSVI>(underlying.Symbol, from, to).ToList();
+                if (history.Count == 0)
                 {
-                    DateTime end = HistoryRequestEndDate(security);
-                    // One request, not two. The daily series only ever fed IVSpreadSMA, and a daily bar is
-                    // stamped at the start of its day but enumerated at its end, so it can never be
-                    // appended to that forward-only series anyway: 672 extra 60-day requests per run for
-                    // nothing. Warm-up reads the warehouse through the R2 handler, so this is the whole cost
-                    // of the security initializer.
-                    var historyFast = _algo.History<VolatilityQuoteBar>(volaSym, _algo.Periods(days: _algo.Cfg.WarmUpDays), _algo.resolution, fillForward: false);
-
-                    // Hoisted: this loop runs once per volatility bar, millions of times per run.
-                    var ivBid = _algo.IvBids[symbol];
-                    var ivAsk = _algo.IvAsks[symbol];
-                    var ivSpreadSma = _algo.IVSpreadSMA[symbol];
-
-                    int samples = 0;
-                    foreach (VolatilityQuoteBar volBar in historyFast)
-                    {
-                        // Data issue. empty row is loaded.
-                        if (volBar.Ask.Close == 0 && volBar.Bid.Close == 0)
-                        {
-                            continue;
-                        }
-
-                        // Past data served by the handler (R2 iceberg): feed the IVs straight in, no pricer.
-                        // iv_mid rides on the same timestamp as the sides' IVs; both indicators carry it.
-                        ivBid.Update(volBar.EndTime, (double)volBar.Bid.Close, (double)volBar.Mid.Close);
-                        ivAsk.Update(volBar.EndTime, (double)volBar.Ask.Close, (double)volBar.Mid.Close);
-                        // Spreads are intraday here: never append an out-of-order point to the SMA.
-                        if (volBar.Time > ivSpreadSma.Current.Time)
-                        {
-                            ivSpreadSma.Update(new IndicatorDataPoint(volBar.Time, (decimal)(volBar.Ask.Close - volBar.Bid.Close)));
-                        }
-                        samples++;
-                    }
-                    if (samples == 0)
-                    {
-                        _algo.Log($"SecurityInitializer.WarmUpSecurity: {symbol} No VolatilityQuoteBar history returned to warmup indicators with.");
-                    }
+                    _algo.Log($"{_algo.Time} InitializeIVSurfaces: {underlying.Symbol} warm-up seed found no " +
+                              $"surface in {from:yyyy-MM-dd}..{to:yyyy-MM-dd}");
+                    return;
                 }
-                else
+
+                SurfaceSSVI seed = history[^1];
+                var modelParams = new SSVIParamsDictionary();
+                foreach (var (tenor, p) in seed.Tenors)
                 {
-                    _algo.Log($"SecurityInitializer.WarmUpSecurity: {symbol} No VolatilityQuoteBar found to warmup indicators with.");
+                    modelParams[tenor] = new SSVIParamsRecord(p.Theta, p.Rho, p.Psi);
                 }
+                _algo.IvSurfaceSsviMid[underlying].SetModelParams(modelParams);
+                _algo.Log($"{_algo.Time} InitializeIVSurfaces: {underlying.Symbol} warm-up seed from " +
+                          $"{history.Count} surface(s), last {seed.SurfaceId} {seed.Status} " +
+                          $"event={seed.EventTime:yyyy-MM-dd HH:mm:ss} tenors={seed.Tenors.Count}");
+            }
+            catch (Exception exception)
+            {
+                // A missing seed is a degraded start, not a failed initialisation: the first surface
+                // delivered in OnData re-anchors the state anyway.
+                _algo.Log($"{_algo.Time} InitializeIVSurfaces: {underlying.Symbol} warm-up seed failed: " +
+                          exception.Message);
             }
         }
     }
-
 }

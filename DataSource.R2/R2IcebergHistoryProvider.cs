@@ -45,7 +45,7 @@ namespace QuantConnect.Lean.DataSource.R2
         private R2LocalCatalog _catalog;
         private R2TickReader _ticks;
         private R2BarReader _bars;
-        private R2IvReader _iv;
+        private R2SurfaceReader _surfaces;
         private int _dataPointCount;
 
         public override int DataPointCount => _dataPointCount;
@@ -57,7 +57,7 @@ namespace QuantConnect.Lean.DataSource.R2
             _catalog = R2LocalCatalog.Shared;
             _ticks = new R2TickReader(_catalog);
             _bars = new R2BarReader(_catalog);
-            _iv = new R2IvReader(_catalog);
+            _surfaces = new R2SurfaceReader(_catalog);
 
             Log.Trace($"R2IcebergHistoryProvider: {_catalog.DescribeRoutes()}. " +
                       $"({R2Warehouse.AllTables.Count} tables: tick tables for tick requests, " +
@@ -117,71 +117,35 @@ namespace QuantConnect.Lean.DataSource.R2
             // Volatility (IV) history, before the custom-data guard for the same reason OI is:
             // History<VolatilityQuoteBar> arrives with IsCustomData set. Served from the same
             // features table the feed uses, consolidated to the requested resolution.
-            if (R2Warehouse.TryResolveIvTable(request.DataType, out var iv))
+            // Precomputed SSVI surfaces (History<SurfaceSSVI>): same rows as the live subscription
+            // path, one point per event, timestamped at availability.
+            if (R2SurfaceStore.IsRequested(request.DataType))
             {
-                var ivTicker = R2Warehouse.VendorOptionTicker(R2Warehouse.IvUnderlying(request.Symbol));
-                if (ivTicker == null || _catalog.ResolveSymbol(ivTicker, iv.Name) == null)
-                {
-                    Log.Error($"R2IcebergHistoryProvider: {request.Symbol} {request.DataType?.Name}: " +
-                              (ivTicker == null
-                                  ? "no option contract to key the features table by"
-                                  : $"{ivTicker} not carried by {iv.Name}") +
-                              " — returning nothing");
-                    yield break;
-                }
-
-                var ivStartEt = request.StartTimeUtc.ConvertFromUtc(TimeZones.NewYork);
-                var ivEndEt = request.EndTimeUtc.ConvertFromUtc(TimeZones.NewYork);
-
-                var ivRead = 0;
-                var ivInWindow = 0;
-
-                for (var day = ivStartEt.Date; day <= ivEndEt.Date; day = day.AddDays(1))
+                var surfaceId = R2SurfaceStore.ConfiguredSurfaceId();
+                var surfaceStartEt = request.StartTimeUtc.ConvertFromUtc(TimeZones.NewYork);
+                var surfaceEndEt = request.EndTimeUtc.ConvertFromUtc(TimeZones.NewYork);
+                var surfacePoints = 0;
+                for (var day = surfaceStartEt.Date; day <= surfaceEndEt.Date; day = day.AddDays(1))
                 {
                     if (day.DayOfWeek == DayOfWeek.Saturday || day.DayOfWeek == DayOfWeek.Sunday)
                     {
                         continue;
                     }
-
-                    var ivStream = _iv.Read(request.Symbol, ivTicker, iv, request.Resolution, day);
-                    using (var ivEnumerator = ivStream.GetEnumerator())
+                    foreach (var point in _surfaces.Read(request.Symbol, surfaceId, day))
                     {
-                        while (true)
+                        if (point.Time < surfaceStartEt || point.Time > surfaceEndEt)
                         {
-                            BaseData point;
-                            try
-                            {
-                                if (!ivEnumerator.MoveNext())
-                                {
-                                    break;
-                                }
-                                point = ivEnumerator.Current;
-                            }
-                            catch (Exception exception)
-                            {
-                                Log.Error($"R2IcebergHistoryProvider: read failed for {request.Symbol.Value} " +
-                                          $"{day:yyyy-MM-dd} ({iv}) — session skipped: {exception.Message}");
-                                break;
-                            }
-
-                            ivRead++;
-                            if (point.Time < ivStartEt || point.Time > ivEndEt)
-                            {
-                                continue;
-                            }
-
-                            ivInWindow++;
-                            _dataPointCount++;
-                            yield return new Slice(point.Time, new List<BaseData> { point },
-                                point.Time.ConvertToUtc(TimeZones.NewYork));
+                            continue;
                         }
+                        surfacePoints++;
+                        _dataPointCount++;
+                        yield return new Slice(point.Time, new List<BaseData> { point },
+                            point.Time.ConvertToUtc(TimeZones.NewYork));
                     }
                 }
-
-                Log.Trace($"R2IcebergHistoryProvider: {request.Symbol} {request.Resolution} " +
-                          $"{request.DataType?.Name} {request.StartTimeUtc:yyyy-MM-dd}.." +
-                          $"{request.EndTimeUtc:yyyy-MM-dd} <- {iv}: {ivRead} points, {ivInWindow} in " +
-                          $"window {ivStartEt:yyyy-MM-dd HH:mm:ss}..{ivEndEt:yyyy-MM-dd HH:mm:ss} ET");
+                Log.Trace($"R2IcebergHistoryProvider: {request.Symbol} {request.DataType?.Name} " +
+                          $"{request.StartTimeUtc:yyyy-MM-dd}..{request.EndTimeUtc:yyyy-MM-dd} " +
+                          $"<- {R2SurfaceStore.Table}[{surfaceId}]: {surfacePoints} points");
                 yield break;
             }
 

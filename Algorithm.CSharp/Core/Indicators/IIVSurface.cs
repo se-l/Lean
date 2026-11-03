@@ -16,7 +16,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public double AtmIv();
         public double? IVdS(Symbol symbol);
         public double SkewStrike();
-        public void WriteCsvRows();
+        /// <summary>The SSVI parameters as OTLP gauges (one data point per tenor).</summary>
+        public void WriteMetrics();
         public void SetModelParams(SSVIParamsDictionary modelParams);
         public void SetModelParams(object sender, KalmanOnUpdateEventArgs<SSVIParamsDictionary> e);
         

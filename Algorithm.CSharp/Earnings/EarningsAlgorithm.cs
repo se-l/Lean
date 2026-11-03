@@ -34,23 +34,17 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Threading;
 using System.Threading.Tasks;
-using QuantConnect.Indicators;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Earnings
 {
-    /// <summary>
-    /// 
-    /// </summary>
     public class EarningsAlgorithm : Foundations
     {
         private EarningsAlgorithmConfig CfgAlgo;
         private readonly string CfgAlgoName = "EarningsAlgorithmConfig.json";
         private RabbitMQClient rMQClient;
         private bool ExecuteScheduledTargetPortfolioFetch = true;
-        private readonly Dictionary<Symbol, IEnumerable<MarketDataSnapByUnderlyingPb>> MarketDataSnaps = new();
         // private readonly Dictionary<Symbol, bool> FetchingTargetPortfolio = new();
         // Local pricer-cache plane agent (spec: Fino.jl/docs/pricer-cache-dotnet-agent-spec.md):
         // serves IVs from the MQ-fed greek book, falls back to the ZMQ JuliaPricer on miss.
@@ -118,7 +112,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 // serving; serving starts at warmup completion (see OptionContractWrap).
                 // Never let a broker hiccup kill Initialize: Start() fails open into
                 // ZMQ-fallback-only mode on its own.
-                PricerCacheEnabled = true;
+                PricerCacheEnabled = false;
                 PricerCache = new PricerCacheClient(this, CfgAlgo.MQHost, CfgAlgo.MQPort,
                     CfgAlgo.PricerCacheVHost ?? CfgAlgo.MQVirtualHost, CfgAlgo.MQUser, CfgAlgo.MQPass);
                 PricerCache.Start();
@@ -153,8 +147,14 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             foreach (string tickerStr in ticker)
             {
                 Equity equity = Securities[tickerStr] as Equity;
-                UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (sender, e) =>
-                    RequestSSVICalibration((Equity)Securities[e]);
+                if (LiveMode)
+                {
+                    UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent += (sender, e) => RequestSSVICalibration((Equity)Securities[e]);
+                }
+                else
+                {
+                    Log("Backtest: Receiving SVICalibration from R2. Unify via plugin/handler definition in config.");
+                }
 
                 // Schedules Events only if a earnings release is in preparation
                 var releaseDate = NextReleaseDate(equity.Symbol, StartDate);
@@ -163,11 +163,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent +=
                         (object sender, Symbol underlying) =>
                         {
-                            Log(
-                                $"{Time} UnderlyingMovedX: {underlying} 0.5% event fired: FetchTargetPortfolios({underlying})");
+                            Log($"{Time} UnderlyingMovedX: {underlying} 0.5% event fired: FetchTargetPortfolios({underlying})");
                             RequestTargetPortfolios(underlying);
                         };
-                    // UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent += SnapMarketData;
 
                     Schedule.On(DateRules.On(releaseDate), TimeRules.At(new TimeSpan(0, 23, 0, 0)), () =>
                     {
@@ -189,11 +187,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             rMQClient.RegisterEventHandler<ResponsePfRiskScenariosEventArgs>(ChannelPb.RequestPfRiskScenarios, OnResponsePfRiskScenarios);
 
             MarketRegimesChangeEventHandler += (object sender, MarketRegimesChangeEventArgs e) => RequestPfRiskScenarios(e.Symbol);
+            
+            AfterInitializeAlgo();
         }
 
-        public override void OnWarmupFinished()
+        protected override void AfterInitializeAlgo()
         {
-            base.OnWarmupFinished();
+            base.AfterInitializeAlgo();
 
             // Repeating schedules are skipped during warm-up; run them once here, before trading starts.
             SetPricingStrategies();
@@ -212,31 +212,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 .DoForEach(underlying => RequestTargetPortfolios(underlying, force:true));
 
             Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(2)), FetchTargetPortfolios);
-        }
-
-        public void SetTargetHoldingsToPortfolio(Symbol underlying)
-        {
-            foreach (var kvp in Portfolio.Where(kvp => kvp.Key.SecurityType == SecurityType.Option))
-            {
-                TargetHoldings[kvp.Key] = kvp.Value.Quantity;
-            }
-
-            Log(
-                $"SetTargetHoldingsToPortfolio: TargetHoldings: {string.Join(", ", TargetHoldings.Select(kvp => $"{kvp.Key}:{kvp.Value}"))}");
-        }
-
-        public void SnapMarketData(object sender, Symbol underlying)
-        {
-            if (!IsMyMarketOpen(underlying)) return;
-
-            var snap = GetMarketDataSnapByUnderlying(underlying);
-            if (snap == null) return;
-            if (string.IsNullOrEmpty(snap.Ts)) return;
-
-            MarketDataSnaps[underlying] =
-                MarketDataSnaps.TryGetValue(underlying, out IEnumerable<MarketDataSnapByUnderlyingPb> snaps)
-                    ? snaps.Append(snap)
-                    : new List<MarketDataSnapByUnderlyingPb> { snap };
         }
 
         private MarketDataSnapByUnderlyingPb GetMarketDataSnapByUnderlying(Symbol underlying, bool excludeStaleData = true)
@@ -296,28 +271,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
 
             return marketDataSnap;
-        }
-
-        public void ReloadTargetPortfolioOnUnattainableFillIV(Symbol underlying)
-        {
-            if (!IsMyMarketOpen(underlying)) return;
-            double tolerance = 0.01;
-
-            foreach (var kvp in PresumedFillIV.Where(kvp => kvp.Key.Underlying.Symbol == underlying).ToDictionary())
-            {
-                Option option = kvp.Key;
-                double fillIv = kvp.Value;
-                double bidIv = IvBids[option.Symbol].IVBidAsk.IV;
-                double askIv = IvAsks[option.Symbol].IVBidAsk.IV;
-
-                if ((bidIv > fillIv * (1 + tolerance) || askIv < fillIv * (1 - tolerance)))
-                {
-                    Log(
-                        $"{Time} ReloadTargetPortfolioOnUnattainableFillIV: {option}, bidIV={bidIv}, askIV={askIv}, presumedFillIV={fillIv}. Refetching target portfolios.");
-                    RequestTargetPortfolios(underlying);
-                    return;
-                }
-            }
         }
 
         public override void OnData(Slice slice)
@@ -862,24 +815,38 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
 
             Symbol underlying = Securities[e.ResultStressTestDs.Underlying].Symbol;
-            string dsString = string.Join(",\n",
+            string dsString = string.Join("\n",
                 e.ResultStressTestDs.DsDnlv.OrderBy(kvp => kvp.Key).Select(kvp =>
-                    $"dS: {double.Parse(kvp.Key, CultureInfo.InvariantCulture):0.00}:{kvp.Value:0.00} USD"));
-            
+                    $"{double.Parse(kvp.Key, CultureInfo.InvariantCulture):+0.00;-0.00}:{kvp.Value:0.0}USD"));
+
             float holdingUnderlyingQuantity =
                 e.ResultStressTestDs.Holdings.TryGetValue(e.ResultStressTestDs.Underlying, out HoldingPb holdingUnderlying) ? holdingUnderlying.Quantity : 0;
-            
+
+            double deltaAcrossDs = e.ResultStressTestDs.DeltaTotalAcrossDs;   // weighted across the dS curve
+            double deltaSpot = e.ResultStressTestDs.DeltaTotal;               // tangent to the current spot
+
             LastDeltaAcrossDsOptionsOnly[underlying] = e.ResultStressTestDs.DeltaTotalAcrossDs - holdingUnderlyingQuantity;
             decimal deltaTotalOptions = PfRisk.RiskByUnderlying(underlying, Metric.DeltaTotal) - Portfolio[underlying].Quantity;
-            
-            Log($"{Time} OnResultStressTestDs: {e.ResultStressTestDs.Underlying} @ {e.ResultStressTestDs.Ts}, " +
-                $"Pf Quantity {e.ResultStressTestDs.Underlying}: {holdingUnderlyingQuantity}, " +
-                $"DeltaTotalAcrossDs: {e.ResultStressTestDs.DeltaTotalAcrossDs:0.0}, " +
-                $"DeltaTotal OptionsOnly Algo: {deltaTotalOptions:0.0}\n" +
-                $"DeltaTotal StressTest: {e.ResultStressTestDs.DeltaTotal:0.0}\n" +
-                $"{underlying} S: {MidPrice(Securities[underlying].Symbol)}\n" +
-                $"{dsString}"
-            );
+
+            // Hedge that would flatten the across-Ds measure (linear in delta: one share moves it by 1).
+            int hedgeQuantity = (int)Math.Round(-deltaAcrossDs, MidpointRounding.AwayFromZero);
+            double residualAcrossDs = deltaAcrossDs + hedgeQuantity;
+            double deltaSpotAfter = deltaSpot + hedgeQuantity;
+            string action = hedgeQuantity == 0
+                ? "HOLD"
+                : $"{(hedgeQuantity > 0 ? "BUY" : "SELL")} {Math.Abs(hedgeQuantity)} {underlying.Value}";
+            decimal spot = MidPrice(Securities[underlying].Symbol);
+
+            Log(
+                $"{Time} STRESS {e.ResultStressTestDs.Underlying} @ {e.ResultStressTestDs.Ts}  S={spot:0.00}  " +
+                $"underlyingPos={holdingUnderlyingQuantity:0}\n" +
+                $"  RISK NOW     delta_spot={deltaSpot:0.0} (tangent to S)   " +
+                $"delta_across_ds={deltaAcrossDs:0.0} (weighted across dS)   " +
+                $"delta_options_only_algo={deltaTotalOptions:0.0}\n" +
+                $"  AFTER HEDGE  {action} {Math.Abs(hedgeQuantity)} {underlying.Value} at market → " +
+                $"delta_across_ds={residualAcrossDs:0.0}   delta_spot={deltaSpotAfter:0.0}\n" +
+                $"  ACTION       {(hedgeQuantity == 0 ? "nothing to do — across-Ds delta is already ~0" : $"{action} to bring the across-Ds stress test to ~0 (residual {residualAcrossDs:0.0})")}\n" +
+                $"  DS CURVE     \n{dsString}");
         }
 
         public void OnCmdCancelOID(object sender, CmdCancelOID cmdCancelOID)
@@ -1283,14 +1250,30 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             return holdings;
         }
 
+        /// <summary>
+        /// Option contracts held for this underlying, as an absolute contract count — the same unit
+        /// RequestContractsHandler reports for the target portfolio.
+        /// </summary>
+        private int HeldOptionContracts(Symbol underlying) =>
+            Portfolio
+                .Where(kvp => kvp.Key.SecurityType == SecurityType.Option && Underlying(kvp.Key) == underlying)
+                .Sum(kvp => (int)Math.Abs(kvp.Value.Quantity));
+
         private void RequestTargetPortfolios(Symbol underlying, bool force = false)
-        {
-            // ToDo: Need a new class. History of MarketDataSnaps every x% change + latest one when requested. history for skew calculation... 
+        { 
             try
             {
                 HashSet<MarketRegime> regimes = ActiveRegimes.TryGetValue(ToEquity(underlying), out regimes)
                     ? regimes
                     : new HashSet<MarketRegime>();
+
+                // Contracts the solver would be asked for, needed by the gate below.
+                int requestNContracts =
+                    RequestContractsHandlers.TryGetValue(underlying, out RequestContractsHandler contractsHandler)
+                        ? contractsHandler.GetContractsRequested()
+                        : 0;
+                int heldContracts = HeldOptionContracts(underlying);
+
                 if (!force)
                 {
                     // Each of these terms used to return silently. With 50 UnderlyingMovedX triggers
@@ -1304,6 +1287,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     else if (!IsPreparingEarningsRelease(underlying))
                         skip = $"release={NextReleaseDate(underlying):yyyy-MM-dd} is outside the preparation window";
                     else if (!IsPastEarningsEntryStartTime(underlying)) skip = "before the earnings entry start time";
+                    else if (requestNContracts == heldContracts)
+                        skip = $"nothing to solve — the request would ask for {requestNContracts} contracts and the book already holds " +
+                               $"{heldContracts}; the solver cannot produce a different portfolio from the same size";
                     if (skip != null)
                     {
                         Log($"{Time} RequestTargetPortfolios: {underlying} skipped — {skip}. force=False");
@@ -1319,12 +1305,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     return;
                 }
 
-                // Build request
-                //int request_n_contracts = CfgAlgo.RequestTargetPfNContracts.TryGetValue(underlying.Value, out request_n_contracts) ? request_n_contracts : CfgAlgo.RequestTargetPfNContracts[CfgDefault];
-                int requestNContracts =
-                    RequestContractsHandlers.TryGetValue(underlying, out RequestContractsHandler handler)
-                        ? handler.GetContractsRequested()
-                        : 0;
+                // Build request (requestNContracts was resolved above, before the gate).
 
                 RequestTargetPortfoliosPb requestTargetPortfolios = new()
                 {
@@ -1661,12 +1642,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     
                 Option option = Securities[symbol] as Option;
                 double midIv = IvSurfaceSsviMid[e.Equity].IV(option);
-                if (!IVSpreadSMA.TryGetValue(symbol, out SimpleMovingAverage value))
-                {
-                    continue;
-                }
-
-                float ivSpread = (float)value.Current.Value;
+                float ivSpread = (float)(IvAsk(symbol) - IvBid(symbol));
                 float entryIvSsvi = (float)midIv - Math.Sign(orderQ) * ivSpread / 2;
                 decimal midPriceUnderlying = MidPrice(e.Equity.Symbol);
                 double npvEntry = OptionContractWrap.E(this, option, Time.Date).NPV(entryIvSsvi, midPriceUnderlying);

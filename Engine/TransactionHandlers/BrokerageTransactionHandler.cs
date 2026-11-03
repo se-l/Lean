@@ -21,6 +21,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using QuantConnect.Brokerages;
 using QuantConnect.Brokerages.Backtesting;
+using QuantConnect.Configuration;
 using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.Results;
@@ -106,6 +107,26 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
         /// and async events (such as run this code when this order fills)
         /// </summary>
         private readonly ConcurrentDictionary<int, OrderTicket> _completeOrderTickets = new ConcurrentDictionary<int, OrderTicket>();
+
+        /// <summary>
+        /// Wall-clock time of the last applied fill, per symbol.
+        ///
+        /// A brokerage's account-holdings feed lags its order feed: IB pushes an UpdatePortfolio burst
+        /// whose data was captured BEFORE a fill we already processed, and the burst arrives one to two
+        /// seconds AFTER it. Applying that snapshot reverts the holding the fill just produced
+        /// (observed live 2026-10-30, NOW 261127C00175000: fill -1 at 16:29:34 set holdings 1 -> 0, the
+        /// snapshot at 16:29:36 put it back to 1, and the algorithm then re-sold a contract it had
+        /// already closed for the next hour).
+        /// </summary>
+        private readonly ConcurrentDictionary<Symbol, DateTime> _lastFillUtc = new();
+
+        /// <summary>
+        /// A holdings snapshot that contradicts our quantity for a symbol filled within this window is
+        /// stale and is rejected; the next snapshot after the window carries the fill.
+        /// Config: <c>account-holdings-stale-window-s</c>, default 30 s.
+        /// </summary>
+        private readonly TimeSpan _accountHoldingsStaleWindow =
+            TimeSpan.FromSeconds(Math.Max(1, Config.GetInt("account-holdings-stale-window-s", 30)));
 
         /// <summary>
         /// Cache collection of price adjustment modes for each symbol
@@ -1304,6 +1325,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                     {
                         fillsToProcess.Add(orderEvent);
                         Interlocked.Exchange(ref _lastFillTimeTicks, CurrentTimeUtc.Ticks);
+                        _lastFillUtc[orderEvent.Symbol] = DateTime.UtcNow;
 
                         var security = _algorithm.Securities[orderEvent.Symbol];
 
@@ -1513,12 +1535,27 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                     continue;
                 }
 
-                if (holding.Quantity != security.Holdings.Quantity)
+                if (holding.Quantity == security.Holdings.Quantity)
                 {
-                    Log.Trace("BrokerageTransactionHandler.HandleAccountHoldingsChanged(): " + holding);
-
-                    security.Holdings.SetHoldings(holding.AveragePrice, holding.Quantity);
+                    continue;
                 }
+
+                // A snapshot contradicting the quantity a fill just produced was captured before that
+                // fill: the account feed lags the order feed, so the pre-fill position lands after the
+                // post-fill one and would undo it. Reject it and let the next snapshot (which is taken
+                // after the fill) reconcile. See _lastFillUtc for the live case that motivated this.
+                if (_lastFillUtc.TryGetValue(holding.Symbol, out var lastFillUtc)
+                    && utcNow - lastFillUtc < _accountHoldingsStaleWindow)
+                {
+                    Log.Trace("BrokerageTransactionHandler.HandleAccountHoldingsChanged(): rejected stale snapshot for " +
+                        $"{holding.Symbol} (holdings {security.Holdings.Quantity}, snapshot {holding.Quantity}, " +
+                        $"last fill {(utcNow - lastFillUtc).TotalSeconds:F1}s ago)");
+                    continue;
+                }
+
+                Log.Trace("BrokerageTransactionHandler.HandleAccountHoldingsChanged(): " + holding);
+
+                security.Holdings.SetHoldings(holding.AveragePrice, holding.Quantity);
             }
         }
         /// <summary>

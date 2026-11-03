@@ -127,7 +127,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             get => Trade1?.IVBid0 ?? SecurityType switch
             {
-                SecurityType.Option => _algo.IvBids[Symbol].IVBidAsk.IV,
+                SecurityType.Option => _algo.IvBid(Symbol),
                 _ => 0
             };
         }
@@ -135,7 +135,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         {
             get => Trade1?.IVBid0 ?? SecurityType switch
             {
-                SecurityType.Option => _algo.IvAsks[Symbol].IVBidAsk.IV,
+                SecurityType.Option => _algo.IvAsk(Symbol),
                 _ => 0
             };
         }

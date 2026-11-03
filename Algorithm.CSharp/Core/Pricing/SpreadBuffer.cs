@@ -35,18 +35,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             OCW = OptionContractWrap.E(_algo, Option, _algo.Time.Date);
             WorstIV = InitWorstIV();
         }
-        private DateTime _lastSolverFallbackLog = DateTime.MinValue;
         private double IVFromFeedOrSolver(QuoteSide side, decimal price)
         {
-            if (_algo.TryGetFeedIV(Symbol, side, out double iv))
-            {
-                return iv;
-            }
-            if (_algo.Time - _lastSolverFallbackLog > TimeSpan.FromMinutes(1))
-            {
-                _lastSolverFallbackLog = _algo.Time;
-                _algo.Log($"{_algo.Time} SpreadBuffer: No current feed IV for {Symbol} ({side}); falling back to pricer solver.");
-            }
             return OCW.IV(price, Spot, OptionContractWrap.Accuracy);
         }
         private decimal NBBO => Direction == OrderDirection.Buy ? Option.BidPrice : Option.AskPrice;

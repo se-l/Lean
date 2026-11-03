@@ -1,30 +1,33 @@
+using QuantConnect.Logging;
 using QuantConnect.Securities.Equity;
-using QuantConnect.Util;
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
 using System.Linq;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
+    /// <summary>One SSVI tenor slice of a Kalman update: the schema emitted as metrics.</summary>
     public record Record(DateTime Ts, DateTime Expiry, decimal S, double Theta, double Rho, double Psi);
+
+    /// <summary>
+    /// Emits the Kalman-filter SSVI state as OTLP metric gauges instead of appending to
+    /// KalmanFilterSSVI.csv. One data point per tenor per update, dimensioned by underlying and
+    /// expiry, so a run can be sliced by tenor in the backend rather than parsed from a CSV.
+    ///
+    /// Injection is asynchronous (OpenTelemetryLogHandler.Metric enqueues; the export thread does the
+    /// I/O), so a Kalman update on the algorithm thread never blocks on the collector.
+    /// </summary>
     public class KalmanFilterSSVIWriter : IDisposable
     {
+        private const string Prefix = "lean.kalman.";
+
         private readonly Foundations _algo;
         public Equity Equity { get; }
-        private readonly string _path;
-        private readonly StreamWriter _writer;
-        private bool _headerWritten;
 
         public KalmanFilterSSVIWriter(Foundations algo, KalmanFilter<SSVIParamsDictionary> kalmanFilter)
         {
-            _algo = algo;
+            _algo = algo ?? throw new ArgumentNullException(nameof(algo));
             Equity = kalmanFilter.Equity;
-            _path = Path.Combine(Globals.PathAnalytics, Equity.Symbol.Value, "KalmanFilterSSVI.csv");
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(Globals.PathAnalytics, Equity.Symbol.Value)));
-            _writer = new StreamWriter(_path);
             kalmanFilter.OnUpdate += RecordUpdatedKalmanParams;
         }
 
@@ -32,42 +35,37 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         {
             var ts = _algo.Time;
             var s = _algo.MidPrice(Equity.Symbol);
-            List<Record> records = new List<Record>();
-            foreach (var kvp in e.State)
+            var records = e.State
+                .Select(kvp => new Record(ts, kvp.Key, s, kvp.Value.Theta, kvp.Value.Rho, kvp.Value.Psi))
+                .ToList();
+            WriteMetrics(records);
+        }
+
+        public void WriteMetrics(IEnumerable<Record> records)
+        {
+            if (records == null)
             {
-                var key = kvp.Key;
-                var value = kvp.Value;
-                records.Add(new Record(ts, key, s, value.Theta, value.Rho, value.Psi));
+                return;
             }
-            WriteCsvRows(records);
-        }
 
-        public static string ToCsvHeader()
-        {
-            return string.Join(",", typeof(Record).GetProperties().Select(p => p.Name));
-        }
-
-        public static string ToCsv(Record record)
-        {
-            return $"{record.Ts.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture)},{record.Expiry.ToString(DtFmtISO, CultureInfo.InvariantCulture)},{record.S},{record.Theta},{record.Rho},{record.Psi}";
-        }
-
-        public void WriteCsvRows(IEnumerable<Record> records)
-        {
-            if (!_headerWritten)
+            foreach (Record record in records)
             {
-                _writer.WriteLine(ToCsvHeader());
-                _headerWritten = true;
+                var attributes = new[]
+                {
+                    new KeyValuePair<string, object>("lean.underlying", Equity.Symbol.Value),
+                    new KeyValuePair<string, object>("expiry", record.Expiry.ToString("yyyy-MM-dd")),
+                };
+
+                OpenTelemetryLogHandler.Metric(Prefix + "theta", record.Theta, attributes);
+                OpenTelemetryLogHandler.Metric(Prefix + "rho", record.Rho, attributes);
+                OpenTelemetryLogHandler.Metric(Prefix + "psi", record.Psi, attributes);
+                OpenTelemetryLogHandler.Metric(Prefix + "spot", (double)record.S, attributes);
             }
-            records.DoForEach(r => _writer.WriteLine(ToCsv(r)));
-            //_algo.Log($"{_algo.Time} KalmanFilterSSVIWriter: {Equity.Symbol.Value} Wrote {records.Count()} records to {_path}");
         }
 
         public void Dispose()
         {
-            _writer.Flush();
-            _writer.Close();
-            _writer.Dispose();
+            // No file handle: metrics are already handed to the asynchronous OTLP queue.
         }
     }
 }

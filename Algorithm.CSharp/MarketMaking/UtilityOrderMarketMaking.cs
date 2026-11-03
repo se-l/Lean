@@ -1,5 +1,4 @@
 using QuantConnect.Securities.Option;
-using System.Collections.Generic;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk

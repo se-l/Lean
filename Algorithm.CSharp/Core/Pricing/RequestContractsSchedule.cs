@@ -57,6 +57,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private void SetSchedules()
         {
             List<RequestContractsScheduleCfg> cfgSchedules = _algo.Cfg.RequestContractsSchedules.TryGetValue(Underlying.Symbol.Value, out cfgSchedules) ? cfgSchedules : _algo.Cfg.RequestContractsSchedules[CfgDefault];
+            if (!_algo.LiveMode)
+            {
+                foreach (RequestContractsScheduleCfg schedule in  cfgSchedules)
+                {
+                    schedule.NMaximum = _algo.Cfg.RequestContractsSchedulesBacktestNMaximum;
+                }
+                _algo.Log($"SetSchedules(): BacktestMode. Override NMaximum for all schedules to {_algo.Cfg.RequestContractsSchedulesBacktestNMaximum}");
+            }
             _schedules = cfgSchedules.Select(s => new RequestContractsSchedule(s, _algo, Underlying.Symbol)).ToList();
         }
 

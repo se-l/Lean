@@ -43,8 +43,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             PositionsN = Cache(GetPositionsN, () => Time.Trim(TimeSpan.TicksPerSecond), maxKeys: 1);
             AtmIVCached = Cache(GetAtmIV, (Symbol symbol) => (Time.Trim(TimeSpan.TicksPerSecond), symbol));
             IsDeltaHedgeInProgress = Cache(GetIsDeltaHedgeInProgress, (Symbol symbol) => (Time.Trim(TimeSpan.TicksPerSecond), symbol));
-
-            IntrinsicValue = (Option option) => option.GetIntrinsicValue(MidPrice(option.Underlying.Symbol));
         }
         public double AtmIV(Symbol symbol) => AtmIVCached(symbol);
         /// <summary>

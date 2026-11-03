@@ -52,7 +52,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         }
 
         /// <summary>
-        /// <c>UtilityLoop IV:#123(8195) Delta:#40(1639) | IVQuote IV:#80(…) | Other …</c> —
+        /// <c>UtilityLoop IV:#123(8195) Delta:#40(1639) | Other …</c> —
         /// interval delta first, run total in brackets, per caller and per kind.
         /// </summary>
         public static string StatsSinceLast()

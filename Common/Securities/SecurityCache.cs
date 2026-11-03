@@ -261,16 +261,6 @@ namespace QuantConnect.Securities
                     if (quoteBar.LastAskSize != 0) AskSize = quoteBar.LastAskSize;
                 }
             }
-            else if (data.DataType == MarketDataType.VolatilityBar)
-            {
-                var volatilityBar = data as VolatilityQuoteBar;
-                if (volatilityBar != null)
-                {
-                    LastQuoteBarUpdate = data.EndTime;
-                    if (volatilityBar.PriceAsk.Close != 0) AskPrice = volatilityBar.PriceAsk.Close;
-                    if (volatilityBar.PriceBid.Close != 0) BidPrice = volatilityBar.PriceBid.Close;
-                }
-            }
             else if (data.DataType != MarketDataType.Auxiliary)
             {
                 if (data.DataType != MarketDataType.Base || data.Price != 0)

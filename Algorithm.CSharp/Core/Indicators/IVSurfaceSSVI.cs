@@ -17,31 +17,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         public SSVIParamsDictionary ModelParams { get; internal set; }
         public bool IsCalibrated { get; internal set; }
 
-        // CSV writer
-        private readonly string _path;
-        private readonly StreamWriter _writer;
-        private bool _headerWritten;
-
         public IVSurfaceSSVI(Foundations algo, Equity underlying, QuoteSide? side = null, bool createFile = false)
         {
+            // createFile is retained for source compatibility; the surface no longer writes files —
+            // see WriteMetrics().
             _algo = algo;
             Underlying = underlying;
             Side = side;
-
-            if (createFile)
-            {
-                string _side = Side.ToString() ?? "mid";
-                _path = Path.Combine(Globals.PathAnalytics, "IVSurface", Underlying.Symbol.Value, $"{_side}.csv");
-                if (File.Exists(_path))
-                {
-                    File.Delete(_path);
-                }
-                else
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(_path));
-                }                
-                _writer = new StreamWriter(_path, true);
-            }
         }
 
         public void SetModelParams(SSVIParamsDictionary modelParams)
@@ -151,42 +133,34 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return 0;
         }
 
-        public void WriteCsvRows()
+        /// <summary>
+        /// The SSVI parameters as OTLP gauges: one data point per tenor, dimensioned by underlying
+        /// and expiry. Replaces the per-side IVSurface CSV dump.
+        /// </summary>
+        public void WriteMetrics()
         {
-            //var csv = new StringBuilder();
-            //var dict = ToDictionary(binGetter: (bin) => bin.IVEWMA);
-            //if (!dict[OptionRight.Call].Keys.Any()) return;
+            if (ModelParams == null)
+            {
+                return;
+            }
 
-            //if (!_headerWritten)
-            //{
-            //    _writer.Write(GetCsvHeader());
-            //    _headerWritten = true;
-            //}
-
-            //List<decimal> sortedKeys = dict[OptionRight.Call][dict[OptionRight.Call].Keys.First()].Keys.Sorted().ToList();
-
-            //// Smoothened IVs
-            //foreach (OptionRight optionRight in OptionRights)
-            //{
-            //    foreach (var expiry in dict[optionRight].Keys)
-            //    {
-            //        string ts = _algo.Time.ToString(_dateTimeFmt, CultureInfo.InvariantCulture);
-            //        string row = $"{ts},{optionRight},{expiry.ToString(_dateFmt, CultureInfo.InvariantCulture)},{_algo.MidPrice(Underlying)}," + string.Join(",", sortedKeys.Select(d => dict[optionRight][expiry][d]?.ToString(CultureInfo.InvariantCulture)));
-            //        csv.AppendLine(row);
-            //    }
-            //}
-
-            //_writer.Write(csv.ToString());
+            foreach (var kvp in ModelParams)
+            {
+                var attributes = new[]
+                {
+                    new System.Collections.Generic.KeyValuePair<string, object>("lean.underlying", Underlying.Symbol.Value),
+                    new System.Collections.Generic.KeyValuePair<string, object>("expiry", kvp.Key.ToString("yyyy-MM-dd")),
+                    new System.Collections.Generic.KeyValuePair<string, object>("side", Side?.ToString() ?? "mid"),
+                };
+                QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.ivsurface.theta", kvp.Value.Theta, attributes);
+                QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.ivsurface.rho", kvp.Value.Rho, attributes);
+                QuantConnect.Logging.OpenTelemetryLogHandler.Metric("lean.ivsurface.psi", kvp.Value.Psi, attributes);
+            }
         }
 
         public void Dispose()
         {
-            if (_writer != null)
-            {
-                _writer.Flush();
-                _writer.Close();
-                _writer.Dispose();
-            }
+            // No file handle and no unmanaged state: metrics are queued for the OTLP exporter.
         }
     }
 }

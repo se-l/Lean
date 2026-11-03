@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
-using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Securities.Option;
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -69,52 +68,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             try { _ivThread?.Join(500); } catch { }
             _ivThread = null;
         }
-
-        /// <summary>
-        /// Called on the algorithm thread from IVQuoteIndicator when the fast paths (pricer cache,
-        /// feed IV) did not answer and a ZMQ round trip is needed. Returns true when the solve was
-        /// queued — the caller then leaves the indicator untouched until the result is applied.
-        /// </summary>
-        internal bool QueueIvSolve(IVQuoteIndicator indicator, DateTime time, decimal quote, decimal midPriceUnderlying)
-        {
-            if (!IvSolveAsync) return false;
-
-            // One job per contract carries BOTH sides, so the SMA and the limit price see a
-            // consistent pair. Filling the second side into the existing job avoids a re-solve.
-            var job = _ivPending.GetOrAdd(indicator.Symbol, _ => new IvSolveJob
-            {
-                Symbol = indicator.Symbol,
-                Option = indicator.Option,
-                Time = time,
-                Bid = 0m,
-                Ask = 0m,
-                MidUnderlying = midPriceUnderlying
-            });
-
-            if (job.Time != time)
-            {
-                // Newer quote: restart the pair at the new timestamp.
-                job.Time = time;
-                job.Bid = 0m;
-                job.Ask = 0m;
-            }
-
-            if (indicator.Side == QuoteSide.Bid) job.Bid = quote;
-            else job.Ask = quote;
-            job.MidUnderlying = midPriceUnderlying;
-
-            // The worker may have removed this job between GetOrAdd and the writes above; re-add it
-            // so the quote is not silently dropped.
-            if (!_ivPending.TryGetValue(indicator.Symbol, out var current) || !ReferenceEquals(current, job))
-            {
-                _ivPending.TryAdd(indicator.Symbol, job);
-            }
-
-            // One pending signal is enough: the loop drains the whole map on every wake-up.
-            if (_ivSignal.CurrentCount == 0) _ivSignal.Release();
-            return true;
-        }
-
+        
         private void IvSolveLoop()
         {
             while (!_ivStop)
@@ -151,37 +105,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }
 
                     _ivDone.Enqueue(result);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Applies solved IVs on the algorithm thread. Runs before signals and risk in the slice so
-        /// everything downstream sees one consistent set of IVs.
-        /// </summary>
-        public void DrainSolvedIvs()
-        {
-            while (_ivDone.TryDequeue(out IvSolveResult r))
-            {
-                bool applied = false;
-
-                if (IvBids.TryGetValue(r.Symbol, out var ivBid) && !double.IsNaN(r.BidIV))
-                {
-                    ivBid.Update(r.Time, r.Bid, r.MidUnderlying, r.BidIV);
-                    applied |= ivBid.Time == r.Time;
-                }
-                if (IvAsks.TryGetValue(r.Symbol, out var ivAsk) && !double.IsNaN(r.AskIV))
-                {
-                    ivAsk.Update(r.Time, r.Ask, r.MidUnderlying, r.AskIV);
-                    applied |= ivAsk.Time == r.Time;
-                }
-
-                // The SMA and the limit price are what the old synchronous path updated at quote
-                // time; they now run here, once, on the same thread that reads them.
-                if (applied)
-                {
-                    UpdateIvSpread(r.Symbol);
-                    UpdateLimitPrice(r.Symbol);
                 }
             }
         }

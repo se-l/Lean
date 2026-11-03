@@ -34,18 +34,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public decimal ScopeContractStrikeOverUnderlyingMargin { get; set; }
         public int ScopeContractMinDTE { get; set; }
         public int ScopeContractMaxDTE { get; set; }
-        public int ScopeContractIsLiquidDays { get; set; }
         public Dictionary<string, DiscountParams> DiscountParams { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalLong { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalShort { get; set; }
         public Dictionary<string, decimal> TotalDeltaHedgeThresholdIntercept { get; set; }
         public Dictionary<string, decimal> TotalDeltaHedgeThresholdGammaFactor { get; set; }
-        public int WarmUpDays { get; set; }
         public bool LogOrderUpdates { get; set; }
-        public bool SkipWarmUpSecurity { get; set; }
-        public Dictionary<string, List<TargetRisk>> PutCallRatioTargetRisks { get; set; }
-        public Dictionary<string, double> EOD2SODATMIVJumpThreshold { get; set; }
-        public Dictionary<string, double[]> IntradayIVSlopeTrendingRange { get; set; }
         public Dictionary<string, bool> GammaScalpingEnabled { get; set; }
         public Dictionary<string, decimal> TrailingHedgePct { get; set; }
         public Dictionary<string, decimal> MaxOptionOrderQuantity { get; set; }
@@ -71,12 +65,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public decimal MaxSpreadForMarketOrderHedging { get; set; }
         public Dictionary<string, List<SweepScheduleCfg>> SweepSchedules { get; set; }
         public Dictionary<string, List<HedgeScheduleCfg>> HedgeSchedules { get; set; }
-        public Dictionary<string, double> SweepWorstIVUtilityBump { get; set; }
-        public Dictionary<string, List<double>> KalmanScopedMoneyness { get; set; }
-        public Dictionary<string, double> KalmanAlphaBid { get; set; }
-        public Dictionary<string, double> KalmanAlphaAsk { get; set; }
         public Dictionary<string, int> PrepareEarningsPeriodDays { get; set; }
-        public int BacktestingBrokerageLatency {  get; set; }
         public bool BacktestNearRealtimePacingEnabled { get; set; }
         public int MinHistoryDaysUnderlyingForScoping { get; set; }
         public Dictionary<string, double> MaxDelta100BpUSDSignalQuantity { get; set; }
@@ -90,6 +79,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int BufferIntraSpreadWaitingPeriodSeconds {  get; set; }
         public bool BufferIntraSpreadQuotes {  get; set; }
         
+        public int RequestContractsSchedulesBacktestNMaximum;
         public Dictionary<string, List<RequestContractsScheduleCfg>> RequestContractsSchedules;
         public Dictionary<string, int> KalmanMinUpdatesToReady { get; set; }
         /// <summary>
@@ -121,7 +111,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// UtilityOrder.csv dump; switch off if the metric volume is too high.
         /// </summary>
         public bool OtelUtilityMetrics { get; set; } = true;
-        public Dictionary<string, int> IVSpreadSMAPeriod { get; set; }
         public int MaxDesiredOrders { get; set; }
 
         /// <summary>

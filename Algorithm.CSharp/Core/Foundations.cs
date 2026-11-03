@@ -7,10 +7,10 @@ using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Algorithm.CSharp.Core.Utils;
 using QuantConnect.Algorithm.Framework.Selection;
 using QuantConnect.Brokerages;
+using QuantConnect.Configuration;
 using QuantConnect.Data;
 using QuantConnect.Data.Consolidators;
 using QuantConnect.Data.Market;
-using QuantConnect.Indicators;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
@@ -28,7 +28,6 @@ using Trade = QuantConnect.Algorithm.CSharp.Core.Risk.Trade;
 
 namespace QuantConnect.Algorithm.CSharp.Core
 {
-
     public partial class Foundations : QCAlgorithm
     {
         public SecurityInitializerMine securityInitializer;
@@ -62,12 +61,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public bool PricerCacheEnabled;
         public SecurityExchangeHours SecurityExchangeHours;
         private DateTime endOfDay;
-
-        internal Dictionary<Symbol, IVQuoteIndicator> IvBids = new();
-        internal Dictionary<Symbol, IVQuoteIndicator> IvAsks = new();
         public Dictionary<Equity, IIVSurface> IvSurfaceSsviMid = new();
 
         public Dictionary<int, IUtilityOrder> OrderTicket2UtilityOrder = new();
+
+        /// <summary>
+        /// True when the SSVI surface arrives as slice data — i.e. a backtest. Live never subscribes to
+        /// the SurfaceSSVI custom type: it implements no GetSource, so LiveTradingDataFeed throws while
+        /// creating the subscription, and in live the RabbitMQ consumer is the only producer anyway.
+        /// Single source for both the subscription (below) and the warm-up seed (SecurityInitializerMine),
+        /// so the two cannot disagree when surface-mode is left at its default.
+        /// </summary>
+        public bool SurfaceFromSlice => !LiveMode && Config.Get("surface-mode", "slice") == "slice";
         public RiskScenarioHandler RiskScenarioHandler;
         
         public Dictionary<(Symbol, decimal), UnderlyingMovedX> UnderlyingMovedX = new();
@@ -106,10 +111,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, OrderEventWriter> OrderEventWriters = new();
         public TradeWriter TradeWriter;
         public Dictionary<int, Quote<Option>> Quotes = new();
-        public Dictionary<int, double> OrderIdIv = new();
         public ConcurrentDictionary<Symbol, List<Position>> PositionsRealized = new();
-
-        public HashSet<Symbol> embargoedSymbols = new();
 
         public HashSet<OrderStatus> orderStatusFilled = new() { OrderStatus.Filled, OrderStatus.PartiallyFilled };
         public HashSet<OrderStatus> orderCanceledOrPending = new() { OrderStatus.CancelPending, OrderStatus.Canceled };
@@ -127,7 +129,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public HashSet<MarketRegime> beforeEarnings = new() { MarketRegime.PreEarningsReleaseBeforeMarketClose, MarketRegime.PreEarningsRelease };
         public record MMWindow(TimeSpan Start, TimeSpan End);
-        Func<Option, decimal> IntrinsicValue;
         public Dictionary<Symbol, DateTime> SignalsLastRun = new();
         /// <summary>Per-underlying single-flight gate + worker threads for off-thread signal passes.</summary>
         public readonly SignalRunner SignalRunner = new();
@@ -150,7 +151,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Symbol, DateTime> CurrentMarketOpen = new();
         public Dictionary<Symbol, DateTime> NextMarketClose = new();
         public Dictionary<Symbol, RequestContractsHandler> RequestContractsHandlers = new();
-        public Dictionary<Symbol, SimpleMovingAverage> IVSpreadSMA = new();
         public Dictionary<Symbol, Func<QuoteRequest<Option>, decimal>> PricingStrategy = new();
         
         public TaskHandler TaskHandler = new();
@@ -171,8 +171,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 new[] { new KeyValuePair<string, object>("task", name) });
         }
         private DateTime _lastOnDataLagWarningUtc = DateTime.MinValue;
-        
-        public DateTime TimeWarmupFinished = DateTime.MaxValue;
 
         /// <summary>
         /// Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.
@@ -204,6 +202,26 @@ namespace QuantConnect.Algorithm.CSharp.Core
             securityInitializer = new SecurityInitializerMine(BrokerageModel, this, new FuncSecuritySeeder(GetLastKnownPricesTradeOrQuote), Cfg.VolatilityPeriodDays);
             SetSecurityInitializer(securityInitializer);
 
+            // PRECOMPUTED SURFACES AS DATA. One subscription per underlying, answered by the R2 feed
+            // from r2.market.iv_surface_event (the recipe is `surface-id` in config). Each row reaches
+            // OnData at its availability timestamp, so a backtest cannot see a surface before its fit
+            // finished — the engine's clock IS that column. `surface-mode = rabbitmq` keeps the live
+            // consumer as the only producer, so the two never drive the same IIVSurface.
+            if (SurfaceFromSlice)
+            {
+                foreach (string ticker in Cfg.Ticker)
+                {
+                    Security surfaceSecurity = AddData<SurfaceSSVI>(ticker, Resolution.Minute, false);
+                    Log($"{Time} InitializeAlgo: SurfaceSSVI subscription {surfaceSecurity.Symbol} for {ticker} " +
+                        $"(surface-id={Config.Get("surface-id", "<unset>")})");
+                }
+            }
+            else if (LiveMode)
+            {
+                Log($"{Time} InitializeAlgo: SurfaceSSVI slice subscription skipped in live " +
+                    $"(surface-mode={Config.Get("surface-mode", "<unset>")}); the rabbitmq consumer is the producer.");
+            }
+
             AssignCachedFunctions();
             RiskScenarioHandler = new(this);
 
@@ -216,7 +234,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // assembly in the catalog, every chain request would come back empty and the run
             // would "succeed" without options.
             var r2ChainProvider = Composer.Instance.GetExportedValueByTypeName<QuantConnect.Interfaces.IOptionChainProvider>(
-                "QuantConnect.Lean.DataSource.R2.R2OptionChainProvider");
+                "QuantConnect.Lean.DataSource.R2.R2OptionChainProvider");  // move plugin name to config.json
             if (r2ChainProvider == null)
             {
                 throw new InvalidOperationException(
@@ -224,7 +242,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     "the QuantConnect.Lean.DataSource.R2 assembly is missing from the deployment.");
             }
             SetOptionChainProvider(r2ChainProvider);
-
 
             // Subscriptions
             optionTicker = Cfg.Ticker;
@@ -248,8 +265,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     var subscribedSymbols = AddOptionIfScoped(option);
                     subscriptions += subscribedSymbols.Count;
                 }
-                UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (sender, e) => RunSignals(e);
-                UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += (sender, e) => SnapPositions();
+                UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent += (sender, e) => RunSignals(e);
+                UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent += (sender, e) => SnapPositions();
                 //UnderlyingMovedX[(equity.Symbol, 0.002m)].UnderlyingMovedXEvent += RiskProfiles[equity.Symbol].OnDS;
             }
             SecurityExchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, symbolSubscribed, SecurityType.Equity);
@@ -280,12 +297,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Schedule.On("LogRiskSchedule", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
             // Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
 
-            // WARMUP
-            // first digit ensure looking beyond past holidays. Second digit is days of trading days to warm up.
-            var timeSpan = StartDate - QuantConnect.Time.EachTradeableDay(SecurityExchangeHours, StartDate.AddDays(-10), StartDate).TakeLast(Cfg.WarmUpDays + 1).First();
-            Log($"WarmUp TimeSpan: {timeSpan} starting on {StartDate - timeSpan}");
-            SetWarmUp(timeSpan);
-
             // Logging
             RiskRecorder = new(this);
             TradeWriter = new(this);
@@ -297,7 +308,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             NewBidAskEventHandler += OnNewBidAskEventUpdateLimitPrices;
             NewBidAskEventHandler += OnNewBidAskEventCheckRiskLimits;
             NewBidAskEventHandler += AppendQuoteToMarketsDataSnap;
-            NewBidAskEventHandler += OnNewBidAskEventUpdateIVSpread;
 
             RiskLimitExceededEventHandler += OnRiskLimitExceededEventHedge;
 
@@ -351,31 +361,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         Cancel(ticket, tag);
                     }
                 }
-            }
-        }
-
-        public void OnNewBidAskEventUpdateIVSpread(object sender, NewBidAskEventArgs newBidAsk)
-        {
-            // With the async solver the IVs for this quote do not exist yet; the spread is updated
-            // in DrainSolvedIvs, on the same thread, right after they are applied.
-            if (IvSolveAsync) return;
-            UpdateIvSpread(newBidAsk.Symbol);
-        }
-
-        public void UpdateIvSpread(Symbol symbol)
-        {
-            if (symbol.SecurityType != SecurityType.Option) return;
-            // Both sides are registered together, but the async apply can arrive for one side only.
-            if (!IvBids.ContainsKey(symbol) || !IvAsks.ContainsKey(symbol)) return;
-            {
-                double spread = IvAsks[symbol].IVBidAsk.IV - IvBids[symbol].IVBidAsk.IV;
-
-                if (!IVSpreadSMA.ContainsKey(symbol))
-                {
-                    int ivSpreadSMAPeriod = Cfg.IVSpreadSMAPeriod.TryGetValue(symbol, out int period) ? period : Cfg.IVSpreadSMAPeriod[CfgDefault];
-                    IVSpreadSMA[symbol] = new SimpleMovingAverage(ivSpreadSMAPeriod);
-                }
-                IVSpreadSMA[symbol].Update(new IndicatorDataPoint(Time, (decimal)spread));
             }
         }
 
@@ -513,6 +498,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
+        /// <summary>
+        /// The warehouse surface → the SSVI dictionary the algorithm's IIVSurface consumes. The live
+        /// consumer builds the same object from its protobuf payload, so a surface is a surface
+        /// regardless of which producer delivered it.
+        /// </summary>
+        private static SSVIParamsDictionary ToSsviParamsDictionary(SurfaceSSVI surface)
+        {
+            var modelParams = new SSVIParamsDictionary();
+            foreach (var (tenor, p) in surface.Tenors)
+            {
+                modelParams[tenor] = new SSVIParamsRecord(p.Theta, p.Rho, p.Psi);
+            }
+            return modelParams;
+        }
+
         private void OnDataCore(Slice slice)
         {
             // Live config deltas land here, on the algorithm thread: a settings object read by this
@@ -520,32 +520,28 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // the session opens should be in force at the open.
             ConfigUpdates?.ApplyPending();
 
+            // A surface delivered as data: same call the live RabbitMQ consumer makes
+            // (IIVSurface.SetModelParams), so the two producers are interchangeable by construction.
+            // Iterating the slice's dictionary rather than the single-surface property keeps a
+            // multi-underlying config correct.
+            foreach (var (surfaceSymbol, surface) in slice.Get<SurfaceSSVI>())
+            {
+                Log($"{Time} OnDataCore: SurfaceSSVI {surface.SurfaceId} {surface.Status} received.");
+                Equity surfaceEquity = Securities.Values.OfType<Equity>()
+                    .FirstOrDefault(e => e.Symbol.Value == surfaceSymbol.Value);
+                if (surfaceEquity == null || !IvSurfaceSsviMid.TryGetValue(surfaceEquity, out IIVSurface ivSurface))
+                {
+                    continue;
+                }
+
+                ivSurface.SetModelParams(ToSsviParamsDictionary(surface));
+                Log($"{Time} OnData: SurfaceSSVI {surface.SurfaceId} {surface.Status} " +
+                    $"event={surface.EventTime:HH:mm:ss} available={surface.AvailableTime:HH:mm:ss} " +
+                    $"tenors={surface.Tenors.Count} spot={surface.Value} -> {surfaceEquity.Symbol}");
+            }
+
             if (IsWarmingUp) return;
             PaceBacktestNearRealtime();
-            // Feed pre-calculated IVs from disk into IvBid/Ask indicators (backtest only),
-            // bypassing the Julia pricer call that would otherwise be triggered by the consolidator.
-            if (!LiveMode)
-            {
-                foreach (var (key, volBar) in slice.Get<VolatilityQuoteBar>())
-                {
-                    Symbol optionSymbol = key.Underlying; // VolatilityQuoteBar's underlying is the option symbol
-
-                    if (volBar.Bid.Close == 0 && volBar.Ask.Close == 0) continue;
-                    if (!IvBids.ContainsKey(optionSymbol) || !IvAsks.ContainsKey(optionSymbol)) continue;
-
-                    if (volBar.Bid.Close > 0)
-                    {
-                        // iv_mid rides on the same bar/timestamp as the sides' IVs, so both side
-                        // indicators carry it in their IVQuote (TryGetFeedIVMid reads it from there).
-                        IvBids[optionSymbol].Update(volBar.EndTime, (double)volBar.Bid.Close, (double)volBar.Mid.Close);
-                    }
-                    if (volBar.Ask.Close > 0)
-                    {
-                        IvAsks[optionSymbol].Update(volBar.EndTime, (double)volBar.Ask.Close, (double)volBar.Mid.Close);
-                    }
-                }
-            }
-            
             WarnIfProcessedMarketDataIsLagging(slice);
 
             foreach (Symbol symbol in slice.QuoteBars.Keys)
@@ -567,10 +563,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             PfRisk.ResetCache();
-
-            // Quote IVs inverted on the worker during the last slice: apply before risk/signals so
-            // the whole slice sees one consistent set.
-            DrainSolvedIvs();
 
             foreach (Symbol underlying in equities)
             {
@@ -749,9 +741,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     decimal lastClose = historyUnderlying.Last().Close;
                     if (optionInSsviParams || ContractScopedForSubscription(symbol, lastClose, Cfg.ScopeContractStrikeOverUnderlyingMargin))
                     {
-                        // var item = AddData<VolatilityQuoteBar>(symbol, resolution: Resolution.Second, fillForward: false);
-                        // item.IsTradable = false;
-
                         // This line requests quite a bit of past data. Minute and second resolution for a whole month into past.
                         AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false, extendedMarketHours: true);
 
@@ -851,9 +840,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             LogPositions();
         }
 
-        public override void OnWarmupFinished()
+        protected virtual void AfterInitializeAlgo()
         {
-            TimeWarmupFinished = Time;
             IEnumerable<OrderTicket> openTransactions = Transactions.GetOpenOrderTickets();
 
             Log($"Adding Open Transactions to OrderTickets: {openTransactions.Count()}");
@@ -882,9 +870,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             SetActiveMarketRegimes();
             LogRiskSchedule();
 
-            //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeBid[underlying].GetStatus(IVSurfaceRelativeStrike.Status.Smoothings)));
-            //equities.DoForEach(underlying => Log(IVSurfaceRelativeStrikeAsk[underlying].GetStatus(IVSurfaceRelativeStrike.Status.Smoothings)));
-
             OnWarmupFinishedCalled = true;  // bad. remove flag setting design
         }
 
@@ -901,7 +886,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Positions.Values.Where(p => p.Quantity != 0 && Cfg.Ticker.Contains(Underlying(p.Symbol).Value)).DoForEach(p => Snap(p.Symbol));
             foreach (PositionWriter writer in PositionWriters.Values)
             {
-                writer.WriteCsvRows(Positions.Values.Where(p => p.Quantity != 0 && Cfg.Ticker.Contains(Underlying(p.Symbol).Value)));
+                writer.WriteMetrics(Positions.Values.Where(p => p.Quantity != 0 && Cfg.Ticker.Contains(Underlying(p.Symbol).Value)));
             }
         }
 
@@ -909,7 +894,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
 
-            IvSurfaceSsviMid.Values.DoForEach(s => s.WriteCsvRows());
+            IvSurfaceSsviMid.Values.DoForEach(s => s.WriteMetrics());
             //IVSurfaceSSVIBid.Values.Union(IVSurfaceSSVIAsk.Values).DoForEach(s => s.WriteCsvRows());
         }
 
@@ -926,9 +911,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void OnMarketClose()
         {
-            //optionTicker.DoForEach(ticker => IVSurfaceSSVIBid[ticker].OnEODATM());
-            //optionTicker.DoForEach(ticker => IVSurfaceSSVIAsk[ticker].OnEODATM());
-
             Log($"{Time} OptionContractWrap.ClearCache: Removed {OptionContractWrap.ClearCache(Time - TimeSpan.FromDays(3))} instances."); ;
         }
         /// <summary>
@@ -985,64 +967,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
-        /// Feed-first IV lookup: the R2 iceberg feed publishes pre-computed bid/ask IVs — with
-        /// iv_mid riding along on the same timestamp (see <see cref="TryGetFeedIVMid"/>) — covering
-        /// nearly every second of the trading day, so consumers read them instead of round-tripping
-        /// the pricer. Returns false when no current feed IV exists; the caller then falls back to
-        /// the pricer solver.
-        /// </summary>
-        public bool TryGetFeedIV(Symbol optionSymbol, QuoteSide side, out double iv, double maxAgeSeconds = 5)
-        {
-            iv = 0;
-            var indicators = side == QuoteSide.Bid ? IvBids : IvAsks;
-            if (!indicators.TryGetValue(optionSymbol, out IVQuoteIndicator indicator) ||
-                indicator.IVBidAsk.IV <= 0 ||
-                !double.IsFinite(indicator.IVBidAsk.IV))
-            {
-                return false;
-            }
-            if (Time - indicator.IVBidAsk.Time > TimeSpan.FromSeconds(maxAgeSeconds))
-            {
-                return false;
-            }
-            iv = indicator.IVBidAsk.IV;
-            return true;
-        }
-
-        /// <summary>
-        /// Feed-first mid IV lookup: the R2 iceberg feed publishes iv_mid — the IV of the option's
-        /// mid price, not half of the bid/ask IVs, therefore the more stable estimate — alongside
-        /// iv_bid/iv_ask on the same timestamp, and both side indicators carry it in their IVQuote.
-        /// Returns false when no current feed mid IV exists; the caller then falls back to averaging
-        /// the sides or the pricer solver.
-        /// </summary>
-        public bool TryGetFeedIVMid(Symbol optionSymbol, out double ivMid, double maxAgeSeconds = 5)
-        {
-            if ((IvBids.TryGetValue(optionSymbol, out IVQuoteIndicator indicator) && TryGetFeedIVMid(indicator, out ivMid, maxAgeSeconds)) ||
-                (IvAsks.TryGetValue(optionSymbol, out indicator) && TryGetFeedIVMid(indicator, out ivMid, maxAgeSeconds)))
-            {
-                return true;
-            }
-            ivMid = 0;
-            return false;
-        }
-
-        private bool TryGetFeedIVMid(IVQuoteIndicator indicator, out double ivMid, double maxAgeSeconds)
-        {
-            IVQuote quote = indicator.IVBidAsk;
-            if (quote.IVMid <= 0 || !double.IsFinite(quote.IVMid) ||
-                Time - quote.Time > TimeSpan.FromSeconds(maxAgeSeconds))
-            {
-                ivMid = 0;
-                return false;
-            }
-            ivMid = quote.IVMid;
-            return true;
-        }
-
-        private DateTime _midIvSolverFallbackLog = DateTime.MinValue;
-
-        /// <summary>
         /// Mid IV is bad - Always convert from MidPrice
         /// </summary>
         /// <param name="symbol"></param>
@@ -1051,23 +975,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public double MidIV(Symbol symbol)
         {
             if (symbol.SecurityType != SecurityType.Option) return double.NaN;
-            // iv_mid is the IV of the mid price, not the average of the bid/ask IVs, and therefore
-            // the more stable feed estimate: prefer it before averaging the sides.
-            if (TryGetFeedIVMid(symbol, out double midIv))
-            {
-                return midIv;
-            }
-            // Days written before the warehouse carried iv_mid (the column reads NULL there): the
-            // sides' average is the best feed estimate available and beats a pricer round trip.
-            if (TryGetFeedIV(symbol, QuoteSide.Bid, out double bidIv) && TryGetFeedIV(symbol, QuoteSide.Ask, out double askIv))
-            {
-                return (bidIv + askIv) / 2;
-            }
-            if (Time - _midIvSolverFallbackLog > TimeSpan.FromMinutes(1))
-            {
-                _midIvSolverFallbackLog = Time;
-                Log($"{Time} MidIV: No current feed IV for {symbol}; falling back to pricer solver.");
-            }
             decimal mid = MidPrice(symbol);
             return OptionContractWrap.E(this, (Option)Securities[symbol], Time.Date).IV(mid, MidPrice(Underlying(symbol)), 0.0001);
         }
@@ -1548,7 +1455,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (security.Type != SecurityType.Option) continue;
                 var option = (Option)security;
                 if (option.Underlying.Symbol != underlying) continue;
-                // && IvSurfaceSsviMid[equity].HasParams(option)
                 if (!ContractScopedForNewPosition(option)) continue;
 
                 // Pick the side BEFORE building the utilities. Constructing one costs its whole
@@ -1765,13 +1671,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 decimal spot = MidPrice(ticketUnderlying);
 
-                if (ocaGroupByUnderlyingDelta.ContainsKey((ticketUnderlying, 1)) || ocaGroupByUnderlyingDelta.ContainsKey((ticketUnderlying, -1)))
-                {
-                    continue;
-                }
                 double delta = OptionContractWrap.E(this, (Option)Securities[t.Symbol], Time.Date).Delta(MidIV(t.Symbol), spot);
                 if (!double.IsFinite(delta)) continue;
-                var key = (t.Symbol.Underlying, Math.Sign(delta));
+
+                // Group by the delta the FILL would add to the book, not by the option's delta sign:
+                // buying a +0.5 call and selling the same call move portfolio delta in opposite
+                // directions, and putting them in one OCA group makes one block the other.
+                var key = (t.Symbol.Underlying, Math.Sign(delta * (double)t.Quantity));
+                if (ocaGroupByUnderlyingDelta.ContainsKey(key)) continue;   // an older live ticket already donates this group
                 ocaGroupByUnderlyingDelta[key] = t.OcaGroup;
             }
             // Now for every signal, if (underlying, sing(delta)) is found in dict, assign its OCA group to the signal
@@ -1779,7 +1686,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 decimal spot = MidPrice(Underlying(s.Symbol));
                 double delta = OptionContractWrap.E(this, (Option)Securities[s.Symbol], Time.Date).Delta(MidIV(s.Symbol), spot);
-                int deltaSign = double.IsFinite(delta) ? Math.Sign(delta) : 0;
+                // Quantity is signed on the utility order (negative for a sell), so this is the delta
+                // the fill would add to the book.
+                int deltaSign = double.IsFinite(delta) && s.UtilityOrder != null
+                    ? Math.Sign(delta * (double)s.UtilityOrder.Quantity)
+                    : 0;
                 var key = (Underlying(s.Symbol), deltaSign);
                 if (!ocaGroupByUnderlyingDelta.ContainsKey(key))
                 {
@@ -1903,16 +1814,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 !Cfg.Ticker.Contains(underlying.Value)
                 )
             {
-                return;
-            }
-            // This block should not be necessary...
-            if (!OnWarmupFinishedCalled)
-            {
-                OnWarmupFinished();
-            }
-            if (Time - TimeWarmupFinished < TimeSpan.FromMinutes(1))
-            {
-                Log($"{Time} RunSignals. Waiting a minute since warmup before restarting to trade. TimeWarmupFinished={TimeWarmupFinished}");
                 return;
             }
 
@@ -2268,10 +2169,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     orderTickets[orderTicket.Symbol] = new List<OrderTicket>();
                 }
-                ;
                 orderTickets[orderTicket.Symbol].Add(orderTicket);
             }
-            ;
 
             // Start the equity's sweep clock on the first option ticket it gets (see
             // RiskScenarioHandler.NoteOptionTicket - it used to be written from a pricing getter, so
@@ -2548,16 +2447,39 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
         }
 
-        public Func<Symbol, double> FuncVolatility(VolatilityType volatilityType)
+        public double IvBid(Symbol symbol)
         {
-            return volatilityType switch
+            try
             {
-                VolatilityType.HVHedge => (symbol) => (double)Securities[Underlying(symbol)].VolatilityModel.Volatility,
-                VolatilityType.IVMid => (symbol) => MidIV(symbol),
-                VolatilityType.IVBid => (symbol) => IvBids[symbol].IVBidAsk.IV,
-                VolatilityType.IVAsk => (symbol) => IvAsks[symbol].IVBidAsk.IV,
-                _ => throw new NotImplementedException($"VolatilityType {volatilityType} not implemented")
-            };
+                return IvBid((Option)Securities[symbol]);
+            }
+            catch (Exception error)
+            {
+                Log($"{Time} IvBid: {error}");
+                return double.NaN;
+            }
+        }
+
+        public double IvBid(Option option)
+        {
+            return OptionContractWrap.E(this, option, Time.Date).IV(option.BidPrice, MidPrice(Underlying(option)), 0.001);
+        }
+        public double IvAsk(Option option)
+        {
+            return OptionContractWrap.E(this, option, Time.Date).IV(option.AskPrice, MidPrice(Underlying(option)), 0.001);
+        }
+        
+        public double IvAsk(Symbol symbol)
+        {
+            try
+            {
+                return IvAsk((Option)Securities[symbol]);
+            }
+            catch (Exception error)
+            {
+                Log($"{Time} IvAsk: {error}");
+                return double.NaN;
+            }
         }
 
         public decimal EquityHedgeQuantity(Symbol underlying)

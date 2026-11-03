@@ -1,7 +1,9 @@
 using QuantConnect.Algorithm.CSharp.Core.Events;
+using QuantConnect.Logging;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -88,39 +90,84 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
     public class RiskRecorder : Disposable
     {
-        private readonly string _path;
+        private const string Prefix = "lean.risk.";
+
+        /// Property names of <see cref="RiskRecord"/> — kept so callers that log the schema still work.
         public readonly List<string> riskRecordsHeader = typeof(RiskRecord).GetProperties(BindingFlags.Public | BindingFlags.Instance).Select(prop => prop.Name).ToList();
+
         public void OnTradeEvent(object sender, TradeEventArgs e)
         {
             Record(Underlying(e.Trades.First().Symbol));
         }
+
         public RiskRecorder(Foundations algo)
         {
-            _algo = algo;
-            _path = Path.Combine(Globals.PathAnalytics, "RiskRecords.csv");
-            
-            if (File.Exists(_path))
-            {
-                File.Delete(_path);
-            }
-            else
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(_path));
-            }
-            _writer = new(_path, true)
-            {
-                AutoFlush = true
-            };
-            _writer.WriteLine(string.Join(",", riskRecordsHeader));
+            _algo = algo ?? throw new ArgumentNullException(nameof(algo));
         }
 
         public void Record(Symbol symbol) => Record((Equity)_algo.Securities[symbol.Value]);
 
+        /// <summary>
+        /// Snapshot the portfolio risk as OTLP gauges instead of a RiskRecords.csv row. Every public
+        /// property of <see cref="RiskRecord"/> becomes lean.risk.&lt;snake_case&gt; with the
+        /// underlying as its only dimension, so the series stays low-cardinality.
+        /// </summary>
         public void Record(Equity equity)
         {
-            List<RiskRecord> riskRecords = new() { new RiskRecord(_algo, _algo.PfRisk, equity) };
-            string csv = ToCsv(riskRecords, riskRecordsHeader, skipHeader: true);
-            _writer.Write(csv);
+            var record = new RiskRecord(_algo, _algo.PfRisk, equity);
+            var attributes = new[]
+            {
+                new KeyValuePair<string, object>("lean.underlying", equity.Symbol.Value),
+            };
+
+            foreach (PropertyInfo property in RecordProperties.Value)
+            {
+                object value;
+                try
+                {
+                    value = property.GetValue(record);
+                }
+                catch (Exception error)
+                {
+                    // A risk component that throws must not break the recorder.
+                    _algo.Error($"{_algo.Time} RiskRecorder: {property.Name} — {error.Message}");
+                    continue;
+                }
+
+                double sample;
+                switch (value)
+                {
+                    case decimal d: sample = (double)d; break;
+                    case double dbl: sample = dbl; break;
+                    case int i: sample = i; break;
+                    case long l: sample = l; break;
+                    case bool b: sample = b ? 1d : 0d; break;
+                    default: continue;   // strings / nulls have no metric representation
+                }
+                OpenTelemetryLogHandler.Metric(Prefix + Snake(property.Name), sample, attributes);
+            }
+        }
+
+        private static readonly Lazy<PropertyInfo[]> RecordProperties = new(() =>
+            typeof(RiskRecord)
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.GetIndexParameters().Length == 0)
+                .Where(p => p.PropertyType == typeof(decimal) || p.PropertyType == typeof(double)
+                         || p.PropertyType == typeof(int) || p.PropertyType == typeof(long)
+                         || p.PropertyType == typeof(bool) || p.PropertyType == typeof(double?))
+                .OrderBy(p => p.Name, StringComparer.Ordinal)
+                .ToArray());
+
+        private static string Snake(string name)
+        {
+            var builder = new System.Text.StringBuilder(name.Length + 8);
+            for (int i = 0; i < name.Length; i++)
+            {
+                char c = name[i];
+                if (i > 0 && char.IsUpper(c) && !char.IsUpper(name[i - 1])) builder.Append('_');
+                builder.Append(char.ToLowerInvariant(c));
+            }
+            return builder.ToString();
         }
     }
 }

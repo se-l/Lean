@@ -246,33 +246,6 @@ namespace QuantConnect.Lean.DataSource.R2
             }
         }
 
-        /// <summary>
-        /// The route for a volatility subscription: the features table, plus which of the two
-        /// flavours (and therefore which column set) serves it.
-        /// </summary>
-        public static bool TryResolveIvTable(Type dataType, out R2IvTable table)
-        {
-            table = null;
-            if (dataType == typeof(VolatilityQuoteBar))
-            {
-                table = new R2IvTable(FeaturesTable, isQuote: true);
-                return true;
-            }
-            if (dataType == typeof(VolatilityTradeBar))
-            {
-                table = new R2IvTable(FeaturesTable, isQuote: false);
-                return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// The option contract a volatility subscription hangs off. Lean's feed side carries a
-        /// SecurityType.Base symbol whose Underlying is the contract; a history request carries the
-        /// contract itself. Both reduce to the contract here.
-        /// </summary>
-        public static Symbol IvUnderlying(Symbol symbol) => symbol?.Underlying ?? symbol;
-
         // ── units ────────────────────────────────────────────────────────────────
 
         /// <summary>Warehouse basis points (1/10000 dollar) -> dollars, the one place the unit dies.</summary>

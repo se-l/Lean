@@ -37,10 +37,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
 
-using QuantConnect;
 using QuantConnect.Data;
-using QuantConnect.Data.Common;
-using QuantConnect.Data.Market;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.DataFeeds;
@@ -67,7 +64,7 @@ namespace QuantConnect.Lean.DataSource.R2
         private R2LocalCatalog _catalog;
         private R2TickReader _ticks;
         private R2BarReader _bars;
-        private R2IvReader _iv;
+        private R2SurfaceReader _surfaces;
         private volatile bool _exited;
 
         public bool IsActive => !_exited;
@@ -93,7 +90,7 @@ namespace QuantConnect.Lean.DataSource.R2
             _catalog = R2LocalCatalog.Shared;
             _ticks = new R2TickReader(_catalog);
             _bars = new R2BarReader(_catalog);
-            _iv = new R2IvReader(_catalog);
+            _surfaces = new R2SurfaceReader(_catalog);
 
             Log.Trace($"R2IcebergDataFeed: {_catalog.DescribeRoutes()}. " +
                       $"Tables: {R2Warehouse.AllTables.Count} " +
@@ -140,29 +137,20 @@ namespace QuantConnect.Lean.DataSource.R2
             var subscribeWatch = System.Diagnostics.Stopwatch.StartNew();
             long resolveMs = 0;
 
-            if (R2Warehouse.TryResolveIvTable(config.Type, out var iv))
+            // Precomputed SSVI surfaces: one row per event keyed by UNDERLYING + recipe, delivered as
+            // a BaseData point whose EndTime is the availability instant. The recipe is a run-level
+            // setting (surface-id), not a per-subscription argument: the id is the identity of the
+            // fitted product, and a backtest must name the exact product it claims to reproduce.
+            if (R2SurfaceStore.IsRequested(config.Type))
             {
-                var ivTicker = R2Warehouse.VendorOptionTicker(R2Warehouse.IvUnderlying(config.Symbol));
-                if (ivTicker == null || _catalog.ResolveSymbol(ivTicker, iv.Name, startDayEt) == null)
-                {
-                    Log.Error($"R2IcebergDataFeed: {config.Symbol} {config.Type.Name}: " +
-                              (ivTicker == null
-                                  ? "no option contract to key the features table by"
-                                  : $"{ivTicker} not carried by {iv.Name}") +
-                              " — ending subscription");
-                    return SubscriptionUtils.CreateAndScheduleWorker(request, null, _factorFileProvider, false,
-                        _algorithm.Settings.DailyStrictEndTimeEnabled);
-                }
-
-                Log.Trace($"R2IcebergDataFeed: {config.Symbol} {config.Resolution} {config.Type.Name} " +
-                          $"-> {iv} as ticker {ivTicker}");
-
-                var ivResolution = config.Resolution;
-                var ivSymbol = config.Symbol;
-                var ivEnumerator = GetEnumerator(request, iv.ToString(),
-                    day => _iv.Read(ivSymbol, ivTicker, iv, ivResolution, day)).GetEnumerator();
-                return SubscriptionUtils.CreateAndScheduleWorker(request, ivEnumerator, _factorFileProvider, true,
-                    _algorithm.Settings.DailyStrictEndTimeEnabled);
+                var surfaceId = R2SurfaceStore.ConfiguredSurfaceId();
+                var surfaceSymbol = config.Symbol;
+                Log.Trace($"R2IcebergDataFeed: {config.Symbol} {config.Type.Name} " +
+                          $"-> {R2SurfaceStore.Table}[{surfaceId}]");
+                var surfaceEnumerator = GetEnumerator(request, R2SurfaceStore.Table,
+                    day => _surfaces.Read(surfaceSymbol, surfaceId, day)).GetEnumerator();
+                return SubscriptionUtils.CreateAndScheduleWorker(request, surfaceEnumerator,
+                    _factorFileProvider, true, _algorithm.Settings.DailyStrictEndTimeEnabled);
             }
 
             // The subscription shape decides the table, in one place, before any I/O.

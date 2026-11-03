@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Logging;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Risk
 {
+    /// <summary>
+    /// Schema of one position snapshot. Kept as a record so the metric key set has a single
+    /// definition: the writer below turns each instance into OTLP gauges, which replaces the
+    /// Positions.csv dump.
+    /// </summary>
     public record PositionRecord(
         DateTime Ts1,
         Symbol Symbol,
@@ -40,73 +42,36 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         bool IsExercised
     );
 
+    /// <summary>
+    /// Emits every open position as OTLP metric gauges instead of appending to Positions.csv.
+    ///
+    /// Injection is asynchronous: OpenTelemetryLogHandler.Metric only enqueues onto a bounded queue
+    /// with its own export thread, so the algorithm thread never waits on the collector. The writer
+    /// holds no file handle and needs no flush; Dispose stays so the dictionary disposal call sites
+    /// keep compiling.
+    /// </summary>
     public class PositionWriter : IDisposable
     {
+        private const string Prefix = "lean.position.";
+
         private readonly Foundations _algo;
-        private readonly string _path;
-        private readonly StreamWriter _writer;
-        private bool _headerWritten;
 
         public PositionWriter(Foundations algo, string fileName = "Positions.csv")
         {
-            _algo = algo;
-            _path = Path.Combine(Globals.PathAnalytics, fileName);
-            Directory.CreateDirectory(Path.GetDirectoryName(_path));
-            _writer = new StreamWriter(_path);
+            _algo = algo ?? throw new ArgumentNullException(nameof(algo));
         }
 
-        public static string ToCsvHeader()
+        /// <summary>Snapshot every position in <paramref name="positions"/> as metrics.</summary>
+        public void WriteMetrics(IEnumerable<Position> positions)
         {
-            return string.Join(",", typeof(PositionRecord).GetProperties().Select(p => p.Name));
-        }
-
-        public static string ToCsv(PositionRecord record)
-        {
-            return string.Join(",", new object[]
+            if (positions == null)
             {
-                record.Ts1.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-                record.Symbol,
-                record.SecurityType,
-                record.Right,
-                record.UnderlyingSymbol,
-                record.OptionRight,
-                record.Expiry?.ToString(DtFmtISO, CultureInfo.InvariantCulture),
-                record.StrikePrice,
-                record.Multiplier,
-                record.Quantity,
-                record.Mid1,
-                record.Bid1,
-                record.Ask1,
-                record.Mid1Underlying,
-                record.Bid1Underlying,
-                record.Ask1Underlying,
-                record.UnrealizedProfit,
-                record.Spread1,
-                record.IVBid1,
-                record.IVAsk1,
-                record.IVMid1,
-                record.ValueMid,
-                record.ValueWorst,
-                record.DeltaTotal,
-                record.GammaTotal,
-                record.VegaTotal,
-                record.ThetaTotal,
-                record.PnL,
-                record.IsITM1,
-                record.IsExercised
-            });
-        }
-
-        public void WriteCsvRows(IEnumerable<Position> positions)
-        {
-            if (!_headerWritten)
-            {
-                _writer.WriteLine(ToCsvHeader());
-                _headerWritten = true;
+                return;
             }
-            foreach (var pos in positions)
+
+            foreach (Position pos in positions)
             {
-                var rec = new PositionRecord(
+                Emit(new PositionRecord(
                     pos.Ts1,
                     pos.Symbol,
                     pos.SecurityType,
@@ -136,18 +101,46 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                     pos.ThetaTotal(),
                     pos.PnL,
                     pos.IsITM1,
-                    pos.IsExercised
-                );
-                _writer.WriteLine(ToCsv(rec));
+                    pos.IsExercised));
             }
+        }
+
+        private static void Emit(PositionRecord r)
+        {
+            var attributes = new[]
+            {
+                new KeyValuePair<string, object>("lean.underlying", r.UnderlyingSymbol.Value),
+                new KeyValuePair<string, object>("lean.symbol", r.Symbol.Value),
+                new KeyValuePair<string, object>("security_type", r.SecurityType.ToString()),
+                new KeyValuePair<string, object>("right", r.OptionRight?.ToString() ?? "Equity"),
+                new KeyValuePair<string, object>("expiry", r.Expiry?.ToString("yyyy-MM-dd") ?? ""),
+                new KeyValuePair<string, object>("strike", (double)(r.StrikePrice ?? 0m)),
+                new KeyValuePair<string, object>("is_itm", r.IsITM1),
+                new KeyValuePair<string, object>("is_exercised", r.IsExercised),
+            };
+
+            OpenTelemetryLogHandler.Metric(Prefix + "quantity", (double)r.Quantity, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "mid", (double)r.Mid1, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "bid", (double)r.Bid1, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "ask", (double)r.Ask1, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "spread", (double)r.Spread1, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "iv_bid", r.IVBid1, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "iv_ask", r.IVAsk1, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "iv_mid", r.IVMid1, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "delta_total", (double)r.DeltaTotal, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "gamma_total", (double)r.GammaTotal, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "vega_total", (double)r.VegaTotal, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "theta_total", (double)r.ThetaTotal, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "value_mid", (double)r.ValueMid, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "value_worst", (double)r.ValueWorst, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "unrealized_pnl", (double)r.UnrealizedProfit, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "pnl", (double)r.PnL, attributes);
+            OpenTelemetryLogHandler.Metric(Prefix + "mid_underlying", (double)r.Mid1Underlying, attributes);
         }
 
         public void Dispose()
         {
-            _writer.Flush();
-            _writer.Close();
-            _writer.Dispose();
+            // No file handle: metrics are already handed to the asynchronous OTLP queue.
         }
     }
 }
-

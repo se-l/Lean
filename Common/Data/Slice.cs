@@ -96,6 +96,13 @@ namespace QuantConnect.Data
         }
 
         /// <summary>
+        /// Gets the <see cref="SurfaceSSVI"/> delivered with this slice, or null when no surface
+        /// arrived at this instant. One surface per underlying, so the first (and normally only)
+        /// entry is the one the algorithm wants: `if (slice.SurfaceSSVI is { } s) { ... }`.
+        /// </summary>
+        public SurfaceSSVI SurfaceSSVI => Get<SurfaceSSVI>().Values.FirstOrDefault();
+
+        /// <summary>
         /// Gets the <see cref="Ticks"/> for this slice of data
         /// </summary>
         public Ticks Ticks
@@ -612,11 +619,6 @@ namespace QuantConnect.Data
 
                     case MarketDataType.Auxiliary:
                         symbolData.AuxilliaryData.Add(datum);
-                        break;
-
-                    case MarketDataType.VolatilityBar:
-                        symbolData.Type = SubscriptionType.Custom;
-                        symbolData.Custom = (VolatilityQuoteBar)datum;
                         break;
 
                     default:
