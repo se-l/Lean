@@ -214,60 +214,23 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(2)), FetchTargetPortfolios);
         }
 
-        private MarketDataSnapByUnderlyingPb GetMarketDataSnapByUnderlying(Symbol underlying, bool excludeStaleData = true)
+        private MarketDataSnapByUnderlyingPb GetMarketDataSnapUnderlyingOnly(Symbol underlying, bool excludeStaleData = true)
         {
-            Dictionary<string, OptionQuotePb> mapSymbolQuote = new();
             DateTime mostRecentPriceUpdate = DateTime.MinValue;
-
-            foreach (Security option in Securities.Where(kvp => kvp.Key.SecurityType == SecurityType.Option
-                         && kvp.Key.Underlying == underlying
-                         && (!excludeStaleData || !IsPriceStale(kvp.Key))
-                     ).Select(kvp => kvp.Value))
-            {
-                // this seems to have failed. IsPriceStale(symbol)
-                SecurityCache cache = Securities[option.Symbol].Cache;
-                DateTime lastUpdated = cache.LastQuoteBarUpdate > cache.LastOHLCUpdate
-                    ? cache.LastQuoteBarUpdate
-                    : cache.LastOHLCUpdate;
-                mostRecentPriceUpdate = mostRecentPriceUpdate > lastUpdated ? mostRecentPriceUpdate : lastUpdated;
-
-                OptionQuotePb quote = new() { Bid = (float)option.BidPrice, Ask = (float)option.AskPrice };
-                mapSymbolQuote[option.Symbol.Value] = quote;
-            }
 
             MarketDataSnapByUnderlyingPb marketDataSnap = new();
 
             // Return empty snap if no option data is included
-            if (mapSymbolQuote.Count == 0)
-            {
-                Log(
-                    $"{Time} GetMarketDataSnapByUnderlying {underlying}. Returning empty market data because zero quotes fetched. Not subscribed to any options?");
-            }
-            else if (excludeStaleData && (Time - mostRecentPriceUpdate) > TimeSpan.FromMinutes(30))
+            if (excludeStaleData && (Time - mostRecentPriceUpdate) > TimeSpan.FromMinutes(30))
             {
                 Log(
                     $"{Time} GetMarketDataSnapByUnderlying {underlying}. Returning empty market data snap because prices are stale. mostRecentPriceUpdate: {mostRecentPriceUpdate}");
             }
             else
             {
-                // Ensure current holdings are included
-                foreach (var kvp in Portfolio.Where(kvp =>
-                             kvp.Value.Quantity != 0 && kvp.Key.SecurityType == SecurityType.Option &&
-                             kvp.Key.Underlying == underlying))
-                {
-                    string sym = kvp.Key.Value;
-                    if (!mapSymbolQuote.ContainsKey(kvp.Key.Value))
-                    {
-                        OptionQuotePb quote = new()
-                            { Bid = (float)Securities[sym].BidPrice, Ask = (float)Securities[sym].AskPrice };
-                        mapSymbolQuote[kvp.Key.Value] = quote;
-                    }
-                }
-
                 marketDataSnap.Underlying = underlying;
                 marketDataSnap.Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture);
                 marketDataSnap.UnderlyingPrice = (float)Securities[underlying].Price;
-                marketDataSnap.OptionQuotes.Add(mapSymbolQuote);
             }
 
             return marketDataSnap;
@@ -1312,42 +1275,22 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                     Underlying = underlying,
                     NContracts = requestNContracts,
+                    AlgoMode = LiveMode ? AlgoModePb.Live : AlgoModePb.Backtest
                 };
                 requestTargetPortfolios.Holdings.Add(PortfolioOptionHoldings(underlying));
-
-                HashSet<DateTime> scopedSlices = Securities.Values
-                    .Where(k => k.Type == SecurityType.Option && Underlying(k.Symbol) == underlying).Select(k => (Option)k)
-                    .Select(o => o.Expiry).ToHashSet();
+                
                 if (KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> kalmanSsviTp))
                 {
-                    requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying, kalmanSsviTp.GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
+                    requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying, kalmanSsviTp.GetSSVIParams().ToDictionary()));
                 }
                 else
                 {
-                    // Only reachable with force=True: send the request without SSVI params rather
-                    // than dropping it, but say so.
-                    Log($"{Time} RequestTargetPortfolios: {underlying} sending without SSVI params — Kalman filter not initialized yet. force={force}");
+                    Log($"{Time} FetchTargetPortfolios: {underlying}, force={force}. No valid SSVI parameters found. Not fetching target portfolios. Scheduling next try in 1min");
+                    Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(1)), () => RequestTargetPortfolios(underlying));
+                    return;
                 }
-                requestTargetPortfolios.ScopedSymbols.AddRange(Securities.Keys
-                    .Where(k => k.SecurityType == SecurityType.Option && Underlying(k) == underlying).Select(k => k.Value));
 
-                MarketDataSnapByUnderlyingPb snap = GetMarketDataSnapByUnderlying(underlying);
-                if (IsValidMarketDataSnap(snap) || force)  // Before market open use, no need for snap. Use yday's data.
-                {
-                    requestTargetPortfolios.MarketDataSnaps.Add(snap);
-
-                    // Send request - response is handled in WsClient.ResponseReceived -> EventHandlers
-                    Log($"{Time} FetchTargetPortfolios: {underlying}, force={force}");
-
-                    _ = rMQClient.SendMessageAsync(requestTargetPortfolios);
-                }
-                else
-                {
-                    Log(
-                        $"{Time} FetchTargetPortfolios: {underlying}, force={force}. No valid snap found. Not fetching target portfolios. Scheduling next try in 1min");
-                    Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(1)),
-                        () => RequestTargetPortfolios(underlying));
-                }
+                _ = rMQClient.SendMessageAsync(requestTargetPortfolios);
             }
             catch (Exception e)
             {
@@ -1381,9 +1324,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 Underlying = underlying
             };
             request.Holdings.Add(PortfolioOptionHoldings(underlying));
-            HashSet<DateTime> scopedSlices = Securities.Values
-                .Where(k => k.Type == SecurityType.Option && Underlying(k.Symbol) == underlying).Select(k => (Option)k)
-                .Select(o => o.Expiry).ToHashSet();
+            
             // A regime change can fire before the Kalman filter exists for this underlying (it is created
             // when the KalmanInit response arrives), and indexing the dictionary threw
             // "The given key 'NOW' was not present in the dictionary" out of the scheduled event.
@@ -1392,38 +1333,15 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 Log($"{Time} RequestPfRiskScenarios: no Kalman SSVI filter for {underlying} yet — not requesting risk scenarios.");
                 return;
             }
-            request.Params.AddRange(IVSSSVIParamsToPb(underlying,
-                kalmanSsvi.GetSSVIParams().Where(kvp => scopedSlices.Contains(kvp.Key)).ToDictionary()));
+            request.Params.AddRange(IVSSSVIParamsToPb(underlying,kalmanSsvi.GetSSVIParams().ToDictionary()));
 
-            IEnumerable<string> scopedSymbols = TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> targetPortfolios)
-                ? targetPortfolios
-                    .SelectMany(p => p.Holdings.Values)
-                    .Select(h => h.Symbol)
-                    .Where(symbolString =>
-                        SymbolCache.TryGetSymbol(symbolString, out Symbol symbol)
-                        && symbol.SecurityType == SecurityType.Option
-                        && Underlying(symbol) == underlying)
-                    .Distinct()
-                : Enumerable.Empty<string>();
-            request.ScopedSymbols.AddRange(scopedSymbols);
+            var snap = GetMarketDataSnapUnderlyingOnly(underlying);
+            request.MarketDataSnaps.Add(snap);
 
-            var snap = GetMarketDataSnapByUnderlying(underlying);
-            if (IsValidMarketDataSnap(snap))
-            {
-                request.MarketDataSnaps.Add(snap);
+            // Send request - response is handled in WsClient.ResponseReceived -> EventHandlers
+            Log($"{Time} RequestPfRiskScenarios: {underlying}");
 
-                // Send request - response is handled in WsClient.ResponseReceived -> EventHandlers
-                Log($"{Time} RequestPfRiskScenarios: {underlying}");
-
-                _ = rMQClient.SendMessageAsync(request);
-            }
-            else
-            {
-                Log(
-                    $"{Time} RequestPfRiskScenarios: {underlying}. No valid snap found. Not fetching target portfolios. Scheduling next try in 1min");
-                Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(1)),
-                    () => RequestPfRiskScenarios(underlying));
-            }
+            _ = rMQClient.SendMessageAsync(request);
         }
 
         private void RequestStressTestDs()
@@ -1460,133 +1378,37 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Underlying = underlying,
+                AlgoMode = LiveMode ? AlgoModePb.Live : AlgoModePb.Backtest
             };
             requestStressTestDs.Params.AddRange(IVSSSVIParamsToPb(underlying,
                 KalmanFiltersSSVI[ToEquity(underlying)].GetSSVIParams()));
             requestStressTestDs.Holdings.Add(PortfolioUnderlyingHoldings(underlying));
 
-            // var startTime = SubtractBusinessDays(Time, 1);
-            // Historical snaps are used to calculate a smoothened skew. Latest snap's prices is used to calculate the current target portfolio.
-            // requestStressTestDs.MarketDataSnaps.Add(MarketDataSnaps[underlying].Where(s => IsValidMarketDataSnap(s) && DateTimeOffset.Parse(s.Ts, CultureInfo.InvariantCulture) >= startTime));
-            var snap = GetMarketDataSnapByUnderlying(underlying);
-            if (IsValidMarketDataSnap(snap))
-            {
-                requestStressTestDs.MarketDataSnaps.Add(snap);
-                _ = rMQClient.SendMessageAsync(requestStressTestDs);
-            }
-            else
-            {
-                Error($"{Time} RequestStressTestDs: {underlying}. No valid snap found. Not fetching stress test.");
-            }
+            // Stress Test only uses SSVI surface and underlying spot price.
+            var snap = GetMarketDataSnapUnderlyingOnly(underlying);
+            requestStressTestDs.MarketDataSnaps.Add(snap);
+            _ = rMQClient.SendMessageAsync(requestStressTestDs);
         }
 
-        private MarketDataHistoryPb GetMarketDataHistory(Equity underlying, DateTime start, DateTime end)
-        {
-            float lastUnderlyingPrice = (float)MidPrice(underlying.Symbol);
-            
-            MarketDataHistoryPb history = new()
-            {
-                Underlying = underlying.Symbol.Value,
-                TsStart = start.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-                TsEnd = end.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-            };
-
-            Dictionary<string, QuotesPb> quotesMap = new();
-            lock (MarketDataQuotes)
-            {
-                foreach (var kvp in MarketDataQuotes.Where(kvp =>
-                             Underlying(kvp.Key) == underlying.Symbol && kvp.Key.SecurityType == SecurityType.Option))
-                {
-                    QuotesPb quotes = new()
-                    {
-                        Symbol = kvp.Key.Value,
-                        SecurityType = SecurityType2SecurityTypePb(kvp.Key.SecurityType),
-                    };
-                    
-                    quotes.Quotes.Add(kvp.Value.Where(v =>
-                        v != null &&
-                        DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) >= start &&
-                        DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) <= end &&
-                        v.PriceUnderlying > 0 && Math.Abs(v.PriceUnderlying - lastUnderlyingPrice) / lastUnderlyingPrice <= 0.01f
-                    ).ToArray());
-                    quotesMap[kvp.Key.Value] = quotes;
-                }
-            }
-
-            history.Quotes.Add(quotesMap);
-
-            Dictionary<string, TradesPb> tradesMap = new();
-            lock (MarketDataTrades)
-            {
-                foreach (var kvp in MarketDataTrades.Where(kvp =>
-                             Underlying(kvp.Key) == underlying.Symbol && kvp.Key.SecurityType == SecurityType.Option))
-                {
-                    TradesPb trades = new()
-                    {
-                        Symbol = kvp.Key.Value,
-                        SecurityType = SecurityType2SecurityTypePb(kvp.Key.SecurityType),
-                    };
-                    trades.Trades.Add(kvp.Value.Where(v =>
-                        DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) >= start &&
-                        DateTime.ParseExact(v.Ts, DatetTmeFmtProto, CultureInfo.InvariantCulture) <= end &&
-                        v.PriceUnderlying > 0 && Math.Abs(v.PriceUnderlying - lastUnderlyingPrice) / lastUnderlyingPrice <= 0.01f
-                    ).ToArray());
-                    tradesMap[kvp.Key.Value] = trades;
-                }
-            }
-
-            history.Trades.Add(tradesMap);
-
-            return history;
-        }
-
+        /// <summary>
+        /// Only used in LiveMode - Backtests receive surfaces through OnData from warehouse.
+        /// </summary>
+        /// <param name="underlying"></param>
         private void RequestSSVICalibration(Equity underlying)
         {
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
             
-            MarketDataHistoryPb history;
-            // Exclude quotes/trades from the last calibration request
-            DateTime filterStartTime = SubtractBusinessDays(Time, 1);
-            if (LastSSVICalibrationRequestTime.TryGetValue(underlying.Symbol, out DateTime lastCalibrationTime))
-            {
-                filterStartTime = lastCalibrationTime;
-            }
-            
-            try
-            {
-                history = GetMarketDataHistory(underlying, filterStartTime, Time);
-            }
-            catch (Exception e)
-            {
-                Error($"{Time} RequestSSVICalibration: {underlying}. {e.Message}.");
-                return;
-            }
-            // int totalQuotesTenor = history?.Quotes?.Sum(kvp => kvp.Key.Length) ?? 0;
-            int totalQuotes = history?.Quotes?.Sum(kvp => kvp.Value.Quotes.Count) ?? 0;
-            int totalTrades = history?.Trades?.Sum(kvp => kvp.Value.Trades.Count) ?? 0;
-            Log($"{Time} RequestSSVICalibration: {underlying}. # Tenors/Quotes: {totalQuotes}. # Trades: {totalTrades}");
-            
-            const int MinQuotesCount = 500;
-            if (totalQuotes < MinQuotesCount)
-            {
-                Log($"{Time} RequestSSVICalibration: {underlying}. Insufficient regime-filtered quotes ({totalQuotes} < {MinQuotesCount}). Skipping calibration.");
-                return;
-            }
-
             // Build request
             RequestSSVICalibrationPb requestSsviCalibration = new()
             {
                 Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
                 Underlying = underlying.Symbol.Value,
-                MarketDataHistory = history
+                AlgoMode = LiveMode ? AlgoModePb.Live : AlgoModePb.Backtest
             };
 
             _ = rMQClient.SendMessageAsync(requestSsviCalibration);
 
             LastSSVICalibrationRequestTime[underlying.Symbol] = Time;
-            // Now I am storing all past market data in history. That's not too great for memory
-            MarketDataQuotes[underlying.Symbol].Clear();
-            MarketDataTrades[underlying.Symbol].Clear();
         }
 
         private void OnResponseSSVICalibration(object source, ResponseSSVICalibrationEventArgs e)

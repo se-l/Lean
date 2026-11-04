@@ -121,8 +121,6 @@ namespace QuantConnect.Algorithm.CSharp
             LogOrderTickets();
             LogToDisk();
 
-            OnWarmupFinishedCalled = true;  // bad. remove flag setting design
-
             //SetRunTimeError(new System.Exception("Account Snapped. Metrics logged and exported"));
         }
     }

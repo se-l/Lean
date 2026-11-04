@@ -79,20 +79,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<Equity, HashSet<MarketRegime>> ActiveRegimes = new();
         public ConcurrentDictionary<Symbol, List<PositionSnap>> PositionSnaps = new();
         public ConcurrentDictionary<Symbol, List<QuotePb>> MarketDataQuotes = new();
-        public ConcurrentDictionary<Symbol, List<Core.IO.TradePb>> MarketDataTrades = new();
+        public ConcurrentDictionary<Symbol, List<TradePb>> MarketDataTrades = new();
         public ConcurrentDictionary<Symbol, DateTime> LastSSVICalibrationRequestTime = new();
         // End
 
         public RiskRecorder RiskRecorder;
         public TickCounter TickCounterFilter;  // Not in use
         public PortfolioRisk PfRisk;
-        public bool OnWarmupFinishedCalled = false;
         public decimal TotalPortfolioValueSinceStart = 0m;
         public Dictionary<int, OrderFillData> OrderFillDataTN1 = new();
         public Dictionary<Symbol, List<Trade>> Trades = new();
         public Dictionary<Symbol, Position> Positions = new();
         public EarningsAnnouncement[] EarningsAnnouncements;
-        public Dictionary<string, double> DividendYield;
         public Dictionary<string, ManualOrderInstruction> ManualOrderInstructionBySymbol;
         public Dictionary<string, EarningsAnnouncement[]> EarningsBySymbol;
         public FoundationsConfig Cfg;
@@ -262,8 +260,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     var option = QuantConnect.Symbol.CreateCanonicalOption(equity.Symbol, Market.USA, $"?{equity.Symbol}");
                     options.Add(option);
-                    var subscribedSymbols = AddOptionIfScoped(option);
-                    subscriptions += subscribedSymbols.Count;
+                    
+                    // Only subscribing on need-to-know basis: Holdings, contracts in TargetPortfolio
+                    // var subscribedSymbols = AddOptionIfScoped(option);
+                    // subscriptions += subscribedSymbols.Count;
                 }
                 UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent += (sender, e) => RunSignals(e);
                 UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent += (sender, e) => SnapPositions();
@@ -283,7 +283,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // SCHEDULED EVENTS
             Schedule.On("OnMarketOpen", DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
-            Schedule.On("UpdateUniverseSubscriptions", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(60)), UpdateUniverseSubscriptions);
             Schedule.On("ExerciseOnExpiryDate", DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, 120), ExerciseOnExpiryDate);
             Schedule.On("ClearNextMarketOpenClose", DateRules.EveryDay(symbolSubscribed), TimeRules.At(TimeSpan.FromMinutes(0)), ClearNextMarketOpenClose);
             Schedule.On("SetActiveMarketRegimes", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), SetActiveMarketRegimes);  // make event driven. which event?
@@ -723,85 +722,85 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             posToExercise.DoForEach(p => ExerciseIfInTheMoney(p.Symbol, (int)p.Quantity));
         }
-
-        public List<Symbol> AddOptionIfScoped(Symbol optionSymbol)
-        {
-            var contractSymbols = OptionChainProvider.GetOptionContractList(optionSymbol, Time);
-            List<Symbol> subscribedSymbols = new();
-            foreach (var symbol in contractSymbols)
-            {
-                if (Securities.ContainsKey(symbol)) continue;  // already subscribed
-
-                Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
-
-                var historyUnderlying = HistoryWrap(symbolUnderlying, Cfg.MinHistoryDaysUnderlyingForScoping, Resolution.Daily).ToList();
-                bool optionInSsviParams = OptionInSsviParams(symbol);
-                if (historyUnderlying.Any() || optionInSsviParams)
-                {
-                    decimal lastClose = historyUnderlying.Last().Close;
-                    if (optionInSsviParams || ContractScopedForSubscription(symbol, lastClose, Cfg.ScopeContractStrikeOverUnderlyingMargin))
-                    {
-                        // This line requests quite a bit of past data. Minute and second resolution for a whole month into past.
-                        AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false, extendedMarketHours: true);
-
-                        QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
-                        subscribedSymbols.Add(symbol);
-                    }
-                }
-                else
-                {
-                    QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"No history for {symbolUnderlying}. Not subscribing to its options." } });
-                }
-            }
-            return subscribedSymbols;
-        }
-
+        
         public bool OptionInSsviParams(Symbol option)
         {
             Equity equity = (Equity)Securities[option.ID.Underlying.Symbol];
             return KalmanFiltersSSVI.ContainsKey(equity) && KalmanFiltersSSVI[equity].GetSSVIParams().ContainsKey(option.ID.Date);
         }
 
-        public void UpdateUniverseSubscriptions()
-        {
-            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
+        // public List<Symbol> AddOptionIfScoped(Symbol optionSymbol)
+        // {
+        //     var contractSymbols = OptionChainProvider.GetOptionContractList(optionSymbol, Time);
+        //     List<Symbol> subscribedSymbols = new();
+        //     foreach (var symbol in contractSymbols)
+        //     {
+        //         if (Securities.ContainsKey(symbol)) continue;  // already subscribed
+        //
+        //         Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
+        //
+        //         var historyUnderlying = HistoryWrap(symbolUnderlying, Cfg.MinHistoryDaysUnderlyingForScoping, Resolution.Daily).ToList();
+        //         bool optionInSsviParams = OptionInSsviParams(symbol);
+        //         if (historyUnderlying.Any() || optionInSsviParams)
+        //         {
+        //             decimal lastClose = historyUnderlying.Last().Close;
+        //             if (optionInSsviParams || ContractScopedForSubscription(symbol, lastClose, Cfg.ScopeContractStrikeOverUnderlyingMargin))
+        //             {
+        //                 // This line requests quite a bit of past data. Minute and second resolution for a whole month into past.
+        //                 AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false, extendedMarketHours: true);
+        //
+        //                 QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
+        //                 subscribedSymbols.Add(symbol);
+        //             }
+        //         }
+        //         else
+        //         {
+        //             QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"No history for {symbolUnderlying}. Not subscribing to its options." } });
+        //         }
+        //     }
+        //     return subscribedSymbols;
+        // }
 
-            var universeWatch = Stopwatch.StartNew();
-            var securitiesBefore = Securities.Count;
-
-            // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
-            Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
-            {
-                RemoveUniverseSecurity(sec);
-            });
-
-            // Add options that have moved into scope — one chain at a time. This is the phase that
-            // runs at the day boundary and re-subscribes every chain: it can take minutes, and the
-            // overnight gap used to be silent while it ran, so each chain reports progress with a
-            // percentage and an ETA.
-            var chains = options.ToList();
-            var total = chains.Count;
-            var lastReport = TimeSpan.Zero;
-            for (var i = 0; i < total; i++)
-            {
-                AddOptionIfScoped(chains[i]);
-
-                var done = i + 1;
-                if (done == 1 || done == total || done % Math.Max(1, total / 20) == 0 ||
-                    universeWatch.Elapsed - lastReport >= TimeSpan.FromSeconds(10))
-                {
-                    var frac = (double)done / total;
-                    var eta = frac > 0 ? universeWatch.Elapsed.TotalSeconds * (1 - frac) / frac : 0;
-                    Log($"Universe update: {done}/{total} chains ({frac:P1}), " +
-                        $"securities {securitiesBefore} -> {Securities.Count}, " +
-                        $"elapsed {universeWatch.Elapsed.TotalSeconds:0.0}s, eta {eta:0}s");
-                    lastReport = universeWatch.Elapsed;
-                }
-            }
-
-            Log($"Universe update: done in {universeWatch.Elapsed.TotalSeconds:0.0}s; " +
-                $"securities {securitiesBefore} -> {Securities.Count}.");
-        }
+        // public void UpdateUniverseSubscriptions()
+        // {
+        //     if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
+        //
+        //     var universeWatch = Stopwatch.StartNew();
+        //     var securitiesBefore = Securities.Count;
+        //
+        //     // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
+        //     Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
+        //     {
+        //         RemoveUniverseSecurity(sec);
+        //     });
+        //
+        //     // Add options that have moved into scope — one chain at a time. This is the phase that
+        //     // runs at the day boundary and re-subscribes every chain: it can take minutes, and the
+        //     // overnight gap used to be silent while it ran, so each chain reports progress with a
+        //     // percentage and an ETA.
+        //     var chains = options.ToList();
+        //     var total = chains.Count;
+        //     var lastReport = TimeSpan.Zero;
+        //     for (var i = 0; i < total; i++)
+        //     {
+        //         AddOptionIfScoped(chains[i]);
+        //
+        //         var done = i + 1;
+        //         if (done == 1 || done == total || done % Math.Max(1, total / 20) == 0 ||
+        //             universeWatch.Elapsed - lastReport >= TimeSpan.FromSeconds(10))
+        //         {
+        //             var frac = (double)done / total;
+        //             var eta = frac > 0 ? universeWatch.Elapsed.TotalSeconds * (1 - frac) / frac : 0;
+        //             Log($"Universe update: {done}/{total} chains ({frac:P1}), " +
+        //                 $"securities {securitiesBefore} -> {Securities.Count}, " +
+        //                 $"elapsed {universeWatch.Elapsed.TotalSeconds:0.0}s, eta {eta:0}s");
+        //             lastReport = universeWatch.Elapsed;
+        //         }
+        //     }
+        //
+        //     Log($"Universe update: done in {universeWatch.Elapsed.TotalSeconds:0.0}s; " +
+        //         $"securities {securitiesBefore} -> {Securities.Count}.");
+        // }
 
         public override void OnEndOfDay(Symbol symbol)
         {
@@ -866,11 +865,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // The repeating schedules do nothing while warming up (the clock sweeps the span and would fire
             // them hundreds of times for nothing), so run them once here: before trading, right after warm-up.
-            UpdateUniverseSubscriptions();
+            // UpdateUniverseSubscriptions();
             SetActiveMarketRegimes();
             LogRiskSchedule();
-
-            OnWarmupFinishedCalled = true;  // bad. remove flag setting design
         }
 
         public void SnapPositions()
