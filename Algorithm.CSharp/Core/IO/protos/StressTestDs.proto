@@ -17,7 +17,7 @@ message RequestStressTestDsPb {
   
   repeated MarketDataSnapByUnderlyingPb market_data_snaps = 4; 
   repeated SSVIParamsPb params = 5;
-
+  AlgoModePb algo_mode = 6;
 }
 
 message ResultStressTestDsPb {    

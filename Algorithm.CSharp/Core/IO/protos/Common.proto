@@ -113,3 +113,8 @@ message VectorDoublePb
 {
     repeated double values = 1;    
 }
+
+enum AlgoModePb {
+    BACKTEST = 0;
+    LIVE = 1;
+}

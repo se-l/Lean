@@ -74,11 +74,12 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "VUVTVF9DQUNIRV9JVlMQCxIZChVSRVFVRVNUX0xFQU5fUFJJQ0UySVYQDCoq",
             "CghBY3Rpb25QYhINCglTVUJTQ1JJQkUQABIPCgtVTlNVQlNDUklCRRABKiIK",
             "DU9wdGlvblJpZ2h0UGISCAoEQ0FMTBAAEgcKA1BVVBABKigKDlNlY3VyaXR5",
-            "VHlwZVBiEgoKBkVRVUlUWRAAEgoKBk9QVElPThABQiiqAiVRdWFudENvbm5l",
-            "Y3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPYgZwcm90bzM="));
+            "VHlwZVBiEgoKBkVRVUlUWRAAEgoKBk9QVElPThABKiQKCkFsZ29Nb2RlUGIS",
+            "DAoIQkFDS1RFU1QQABIICgRMSVZFEAFCKKoCJVF1YW50Q29ubmVjdC5BbGdv",
+            "cml0aG0uQ1NoYXJwLkNvcmUuSU9iBnByb3RvMw=="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
-          new pbr::GeneratedClrTypeInfo(new[] {typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRightPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityTypePb), }, null, new pbr::GeneratedClrTypeInfo[] {
+          new pbr::GeneratedClrTypeInfo(new[] {typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ChannelPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ActionPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.OptionRightPb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SecurityTypePb), typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb), }, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.MessagePb), global::QuantConnect.Algorithm.CSharp.Core.IO.MessagePb.Parser, new[]{ "Channel", "Id", "Action", "Payload" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb), global::QuantConnect.Algorithm.CSharp.Core.IO.HoldingPb.Parser, new[]{ "Symbol", "Quantity", "SecurityType" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuotePb), global::QuantConnect.Algorithm.CSharp.Core.IO.OptionQuotePb.Parser, new[]{ "Bid", "Ask" }, null, null, null, null),
@@ -124,6 +125,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
   public enum SecurityTypePb {
     [pbr::OriginalName("EQUITY")] Equity = 0,
     [pbr::OriginalName("OPTION")] Option = 1,
+  }
+
+  public enum AlgoModePb {
+    [pbr::OriginalName("BACKTEST")] Backtest = 0,
+    [pbr::OriginalName("LIVE")] Live = 1,
   }
 
   #endregion

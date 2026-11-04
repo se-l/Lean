@@ -26,42 +26,43 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           string.Concat(
             "ChJTdHJlc3NUZXN0RHMucHJvdG8SJVF1YW50Q29ubmVjdC5BbGdvcml0aG0u",
             "Q1NoYXJwLkNvcmUuSU8aDENvbW1vbi5wcm90bxocUmVxdWVzdFNTVklDYWxp",
-            "YnJhdGlvbi5wcm90byKdAwoVUmVxdWVzdFN0cmVzc1Rlc3REc1BiEgoKAnRz",
+            "YnJhdGlvbi5wcm90byLjAwoVUmVxdWVzdFN0cmVzc1Rlc3REc1BiEgoKAnRz",
             "GAEgASgJEhIKCnVuZGVybHlpbmcYAiABKAkSXAoIaG9sZGluZ3MYAyADKAsy",
             "Si5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlJlcXVl",
             "c3RTdHJlc3NUZXN0RHNQYi5Ib2xkaW5nc0VudHJ5El4KEW1hcmtldF9kYXRh",
             "X3NuYXBzGAQgAygLMkMuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAu",
             "Q29yZS5JTy5NYXJrZXREYXRhU25hcEJ5VW5kZXJseWluZ1BiEkMKBnBhcmFt",
             "cxgFIAMoCzIzLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUu",
-            "SU8uU1NWSVBhcmFtc1BiGmEKDUhvbGRpbmdzRW50cnkSCwoDa2V5GAEgASgJ",
-            "Ej8KBXZhbHVlGAIgASgLMjAuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hh",
-            "cnAuQ29yZS5JTy5Ib2xkaW5nUGI6AjgBIpMHChRSZXN1bHRTdHJlc3NUZXN0",
-            "RHNQYhIKCgJ0cxgBIAEoCRISCgp1bmRlcmx5aW5nGAIgASgJElsKCGhvbGRp",
-            "bmdzGAMgAygLMkkuUXVhbnRDb25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29y",
-            "ZS5JTy5SZXN1bHRTdHJlc3NUZXN0RHNQYi5Ib2xkaW5nc0VudHJ5ElgKB2Rz",
-            "X2RubHYYBCADKAsyRy5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5D",
-            "b3JlLklPLlJlc3VsdFN0cmVzc1Rlc3REc1BiLkRzRG5sdkVudHJ5EhMKC2Rl",
-            "bHRhX3RvdGFsGAUgASgBEh0KFWRlbHRhX3RvdGFsX2Fjcm9zc19kcxgGIAEo",
-            "ARIVCg13ZWlnaHRlZF9kbmx2GAcgASgBEn4KG21hcmdpbmFsX3V0aWxpdHlf",
-            "YnlfaG9sZGluZxgIIAMoCzJZLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1No",
-            "YXJwLkNvcmUuSU8uUmVzdWx0U3RyZXNzVGVzdERzUGIuTWFyZ2luYWxVdGls",
-            "aXR5QnlIb2xkaW5nRW50cnkSFwoPdG90YWxfb2JqZWN0aXZlGAkgASgBEo8B",
-            "CiRtYXJnaW5hbF9zY2FsZWRfb2JqZWN0aXZlX2J5X2hvbGRpbmcYCiADKAsy",
-            "YS5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlJlc3Vs",
-            "dFN0cmVzc1Rlc3REc1BiLk1hcmdpbmFsU2NhbGVkT2JqZWN0aXZlQnlIb2xk",
-            "aW5nRW50cnkSEgoKZWxhcHNlZF9tcxgLIAEoDRphCg1Ib2xkaW5nc0VudHJ5",
-            "EgsKA2tleRgBIAEoCRI/CgV2YWx1ZRgCIAEoCzIwLlF1YW50Q29ubmVjdC5B",
-            "bGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uSG9sZGluZ1BiOgI4ARotCgtEc0Ru",
-            "bHZFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBGj8KHU1h",
-            "cmdpbmFsVXRpbGl0eUJ5SG9sZGluZ0VudHJ5EgsKA2tleRgBIAEoCRINCgV2",
-            "YWx1ZRgCIAEoAToCOAEaRwolTWFyZ2luYWxTY2FsZWRPYmplY3RpdmVCeUhv",
-            "bGRpbmdFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBQiiq",
-            "AiVRdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPYgZwcm90",
-            "bzM="));
+            "SU8uU1NWSVBhcmFtc1BiEkQKCWFsZ29fbW9kZRgGIAEoDjIxLlF1YW50Q29u",
+            "bmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uQWxnb01vZGVQYhphCg1I",
+            "b2xkaW5nc0VudHJ5EgsKA2tleRgBIAEoCRI/CgV2YWx1ZRgCIAEoCzIwLlF1",
+            "YW50Q29ubmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uSG9sZGluZ1Bi",
+            "OgI4ASKTBwoUUmVzdWx0U3RyZXNzVGVzdERzUGISCgoCdHMYASABKAkSEgoK",
+            "dW5kZXJseWluZxgCIAEoCRJbCghob2xkaW5ncxgDIAMoCzJJLlF1YW50Q29u",
+            "bmVjdC5BbGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uUmVzdWx0U3RyZXNzVGVz",
+            "dERzUGIuSG9sZGluZ3NFbnRyeRJYCgdkc19kbmx2GAQgAygLMkcuUXVhbnRD",
+            "b25uZWN0LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5SZXN1bHRTdHJlc3NU",
+            "ZXN0RHNQYi5Ec0RubHZFbnRyeRITCgtkZWx0YV90b3RhbBgFIAEoARIdChVk",
+            "ZWx0YV90b3RhbF9hY3Jvc3NfZHMYBiABKAESFQoNd2VpZ2h0ZWRfZG5sdhgH",
+            "IAEoARJ+ChttYXJnaW5hbF91dGlsaXR5X2J5X2hvbGRpbmcYCCADKAsyWS5R",
+            "dWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlJlc3VsdFN0",
+            "cmVzc1Rlc3REc1BiLk1hcmdpbmFsVXRpbGl0eUJ5SG9sZGluZ0VudHJ5EhcK",
+            "D3RvdGFsX29iamVjdGl2ZRgJIAEoARKPAQokbWFyZ2luYWxfc2NhbGVkX29i",
+            "amVjdGl2ZV9ieV9ob2xkaW5nGAogAygLMmEuUXVhbnRDb25uZWN0LkFsZ29y",
+            "aXRobS5DU2hhcnAuQ29yZS5JTy5SZXN1bHRTdHJlc3NUZXN0RHNQYi5NYXJn",
+            "aW5hbFNjYWxlZE9iamVjdGl2ZUJ5SG9sZGluZ0VudHJ5EhIKCmVsYXBzZWRf",
+            "bXMYCyABKA0aYQoNSG9sZGluZ3NFbnRyeRILCgNrZXkYASABKAkSPwoFdmFs",
+            "dWUYAiABKAsyMC5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3Jl",
+            "LklPLkhvbGRpbmdQYjoCOAEaLQoLRHNEbmx2RW50cnkSCwoDa2V5GAEgASgJ",
+            "Eg0KBXZhbHVlGAIgASgBOgI4ARo/Ch1NYXJnaW5hbFV0aWxpdHlCeUhvbGRp",
+            "bmdFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAE6AjgBGkcKJU1h",
+            "cmdpbmFsU2NhbGVkT2JqZWN0aXZlQnlIb2xkaW5nRW50cnkSCwoDa2V5GAEg",
+            "ASgJEg0KBXZhbHVlGAIgASgBOgI4AUIoqgIlUXVhbnRDb25uZWN0LkFsZ29y",
+            "aXRobS5DU2hhcnAuQ29yZS5JT2IGcHJvdG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDsPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDsPb.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps", "Params" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDsPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestStressTestDsPb.Parser, new[]{ "Ts", "Underlying", "Holdings", "MarketDataSnaps", "Params", "AlgoMode" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, }),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDsPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResultStressTestDsPb.Parser, new[]{ "Ts", "Underlying", "Holdings", "DsDnlv", "DeltaTotal", "DeltaTotalAcrossDs", "WeightedDnlv", "MarginalUtilityByHolding", "TotalObjective", "MarginalScaledObjectiveByHolding", "ElapsedMs" }, null, null, null, new pbr::GeneratedClrTypeInfo[] { null, null, null, null, })
           }));
     }
@@ -108,6 +109,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       holdings_ = other.holdings_.Clone();
       marketDataSnaps_ = other.marketDataSnaps_.Clone();
       params_ = other.params_.Clone();
+      algoMode_ = other.algoMode_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -174,6 +176,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       get { return params_; }
     }
 
+    /// <summary>Field number for the "algo_mode" field.</summary>
+    public const int AlgoModeFieldNumber = 6;
+    private global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb algoMode_ = global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb.Backtest;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb AlgoMode {
+      get { return algoMode_; }
+      set {
+        algoMode_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -194,6 +208,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (!Holdings.Equals(other.Holdings)) return false;
       if(!marketDataSnaps_.Equals(other.marketDataSnaps_)) return false;
       if(!params_.Equals(other.params_)) return false;
+      if (AlgoMode != other.AlgoMode) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -206,6 +221,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       hash ^= Holdings.GetHashCode();
       hash ^= marketDataSnaps_.GetHashCode();
       hash ^= params_.GetHashCode();
+      if (AlgoMode != global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb.Backtest) hash ^= AlgoMode.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -235,6 +251,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       holdings_.WriteTo(output, _map_holdings_codec);
       marketDataSnaps_.WriteTo(output, _repeated_marketDataSnaps_codec);
       params_.WriteTo(output, _repeated_params_codec);
+      if (AlgoMode != global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb.Backtest) {
+        output.WriteRawTag(48);
+        output.WriteEnum((int) AlgoMode);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -256,6 +276,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       holdings_.WriteTo(ref output, _map_holdings_codec);
       marketDataSnaps_.WriteTo(ref output, _repeated_marketDataSnaps_codec);
       params_.WriteTo(ref output, _repeated_params_codec);
+      if (AlgoMode != global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb.Backtest) {
+        output.WriteRawTag(48);
+        output.WriteEnum((int) AlgoMode);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -275,6 +299,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       size += holdings_.CalculateSize(_map_holdings_codec);
       size += marketDataSnaps_.CalculateSize(_repeated_marketDataSnaps_codec);
       size += params_.CalculateSize(_repeated_params_codec);
+      if (AlgoMode != global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb.Backtest) {
+        size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) AlgoMode);
+      }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -296,6 +323,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       holdings_.Add(other.holdings_);
       marketDataSnaps_.Add(other.marketDataSnaps_);
       params_.Add(other.params_);
+      if (other.AlgoMode != global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb.Backtest) {
+        AlgoMode = other.AlgoMode;
+      }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -331,6 +361,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             params_.AddEntriesFrom(input, _repeated_params_codec);
             break;
           }
+          case 48: {
+            AlgoMode = (global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb) input.ReadEnum();
+            break;
+          }
         }
       }
     #endif
@@ -364,6 +398,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           }
           case 42: {
             params_.AddEntriesFrom(ref input, _repeated_params_codec);
+            break;
+          }
+          case 48: {
+            AlgoMode = (global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb) input.ReadEnum();
             break;
           }
         }

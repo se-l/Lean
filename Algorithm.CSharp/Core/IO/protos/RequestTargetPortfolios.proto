@@ -26,6 +26,7 @@ message RequestTargetPortfoliosPb {
   int32 n_contracts = 5;
   repeated SSVIParamsPb params = 6;
   repeated string scoped_symbols = 7;
+  AlgoModePb algo_mode = 8;
 }
 
 message ResponseTargetPortfoliosPb {
