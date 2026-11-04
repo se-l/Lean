@@ -104,10 +104,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
                 _algo.Log($"SecurityInitializer.Initialized VolatilityModel: {symbol} Resolution={_algo.resolution}, Periods={totalRollingPeriods}, historySamples={samples}.");
                 
+                // A missing history is a DEGRADED volatility model, not a reason to skip the rest of the
+                // equity wiring. It used to return here, which left UnderlyingMovedX/SignalsLastRun/
+                // RiskProfiles/... unset for any symbol the warehouse does not carry, and the caller
+                // (InitializeAlgo) then threw KeyNotFoundException on UnderlyingMovedX[(symbol, 0.005)].
                 if (samples == 0)
                 {
-                    _algo.Log($"SecurityInitializer.Initialize: {symbol} No history found. Skipping indicator and writer initialization.");
-                    return;
+                    _algo.Log($"SecurityInitializer.Initialize: {symbol} no history found — volatility model " +
+                              "stays empty; continuing with the structural initialization.");
                 }
 
                 // Initialize a Security Specific Hedge Band or Risk Limit object. Constitutes underlying, hence risk limit not just by security but also its derivatives.
