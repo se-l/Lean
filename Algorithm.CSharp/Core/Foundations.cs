@@ -56,6 +56,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public virtual bool HasActiveRequests() => false;
 
+        /// <summary>Broker connectivity, as far as pacing is concerned. Overridden where a client exists.</summary>
+        public virtual bool BrokerConnected => false;
+
+        /// <summary>
+        /// Whether the algo is waiting on an answer it cannot proceed without (the target-portfolio
+        /// response). Telemetry requests do not gate pacing.
+        /// </summary>
+        public virtual bool HasPendingDecisionRequest() => false;
+
+        private bool _pacingUnavailableLogged;
+
         /// <summary>True when the pricer-cache plane runs (set by the algorithm's Initialize).
         /// The IV indicator reads this to decide whether a cache lookup precedes the feed IV.</summary>
         public bool PricerCacheEnabled;
@@ -78,8 +89,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<(Symbol, decimal), UnderlyingMovedX> UnderlyingMovedX = new();
         public Dictionary<Equity, HashSet<MarketRegime>> ActiveRegimes = new();
         public ConcurrentDictionary<Symbol, List<PositionSnap>> PositionSnaps = new();
-        public ConcurrentDictionary<Symbol, List<QuotePb>> MarketDataQuotes = new();
-        public ConcurrentDictionary<Symbol, List<TradePb>> MarketDataTrades = new();
         public ConcurrentDictionary<Symbol, DateTime> LastSSVICalibrationRequestTime = new();
         // End
 
@@ -306,7 +315,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Wiring up events
             NewBidAskEventHandler += OnNewBidAskEventUpdateLimitPrices;
             NewBidAskEventHandler += OnNewBidAskEventCheckRiskLimits;
-            NewBidAskEventHandler += AppendQuoteToMarketsDataSnap;
 
             RiskLimitExceededEventHandler += OnRiskLimitExceededEventHedge;
 
@@ -321,6 +329,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Log($"{Time} ClearTargetPortfolios(): {underlying}");
             
             TargetPortfolios.TryRemove(underlying, out _);
+            SyncOptionSubscriptions(underlying, "ClearTargetPortfolios");
         }
 
         /// <summary>
@@ -336,6 +345,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     TargetHoldings.TryRemove(symbol, out _);
                 }
             }
+            SyncOptionSubscriptions(underlying, "ClearTargetHoldings");
         }
         
         public void CancelOrdersNotAlignedWithTargetPortfolio()
@@ -360,53 +370,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         Cancel(ticket, tag);
                     }
                 }
-            }
-        }
-
-        public void AppendQuoteToMarketsDataSnap(object sender, NewBidAskEventArgs e)
-        {
-            Security security = Securities[e.Symbol];
-            Symbol underlying = security.Type == SecurityType.Option ? ((Option)security).Underlying.Symbol : security.Symbol;
-            if (!Cfg.Ticker.Contains(underlying.Value))
-            {
-                return;
-            }
-
-            QuotePb quote = new()
-            {
-                Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-                Symbol = e.Symbol.Value,
-                SecurityType = SecurityType2SecurityTypePb(security.Type),
-                Bid = (float)security.BidPrice,
-                Ask = (float)security.AskPrice,
-                PriceUnderlying = (float)(security.Type == SecurityType.Option ? ((Option)security).Underlying.Price : 0),
-            };
-            if (MarketDataQuotes.TryGetValue(e.Symbol, out List<QuotePb> quotes))
-            {
-                quotes.Add(quote);
-            }
-        }
-
-        public void AppendTradeToMarketsDataSnap(object sender, NewTradeEventArgs e)
-        {
-            Security security = Securities[e.Symbol];
-            Symbol underlying = security.Type == SecurityType.Option ? ((Option)security).Underlying.Symbol : security.Symbol;
-            if (!Cfg.Ticker.Contains(underlying.Value))
-            {
-                return;
-            }
-
-            TradePb trade = new()
-            {
-                Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-                Symbol = e.Symbol.Value,
-                SecurityType = SecurityType2SecurityTypePb(security.Type),
-                Price = (float)security.Price,
-                PriceUnderlying = (float)(security.Type == SecurityType.Option ? ((Option)security).Underlying.Price : 0),
-            };
-            if (MarketDataTrades.TryGetValue(e.Symbol, out List<TradePb> trades))
-            {
-                trades.Add(trade);
             }
         }
 
@@ -533,9 +496,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     continue;
                 }
 
-                ivSurface.SetModelParams(ToSsviParamsDictionary(surface));
+                // One entry point for every surface: install as-is unless the Kalman path is opted in
+                // and the row says it is a raw fit.
+                ApplySurface(surfaceEquity, ToSsviParamsDictionary(surface), "slice", surface.IsRaw);
                 Log($"{Time} OnData: SurfaceSSVI {surface.SurfaceId} {surface.Status} " +
-                    $"event={surface.EventTime:HH:mm:ss} available={surface.AvailableTime:HH:mm:ss} " +
+                    $"snap={surface.TimeSnap:HH:mm:ss} available={surface.AvailableTime:HH:mm:ss} " +
                     $"tenors={surface.Tenors.Count} spot={surface.Value} -> {surfaceEquity.Symbol}");
             }
 
@@ -556,11 +521,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 PriceCache[symbol] = Securities[symbol].Cache.Clone();
             }
 
-            foreach (Symbol symbol in slice.Bars.Keys)
-            {
-                AppendTradeToMarketsDataSnap(this, new NewTradeEventArgs(symbol));
-            }
-
             PfRisk.ResetCache();
 
             foreach (Symbol underlying in equities)
@@ -575,7 +535,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void PaceBacktestNearRealtime()
         {
-            if (!LiveMode && Cfg.BacktestNearRealtimePacingEnabled && HasActiveRequests())
+            if (LiveMode || !Cfg.BacktestNearRealtimePacingEnabled)
+            {
+                return;
+            }
+
+            // Pacing that silently does nothing is worse than no pacing: a backtest that never waits for
+            // the calc-engine looks exactly like one whose requests came back instantly, and the answers
+            // are then consumed one bar late. Say it once, loudly, when there is no broker to wait on.
+            if (!_pacingUnavailableLogged && !BrokerConnected)
+            {
+                _pacingUnavailableLogged = true;
+                Error($"{Time} PaceBacktestNearRealtime: pacing is enabled but the MQ client is NOT connected — " +
+                      "this backtest will not wait for calc-engine responses. Check MQHost/MQPort in EarningsAlgorithmConfig.json.");
+            }
+
+            if (HasPendingDecisionRequest())
             {
                 // Block until all outstanding calc-engine requests have been answered. Delivery of
                 // each response at sentAtAlgoTime + elapsedMs is handled by the scheduler, so no
@@ -583,7 +558,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 var pacingSinceUtc = DateTime.UtcNow;
                 var lastLogUtc = pacingSinceUtc;
                 Log($"Pacing backtest near realtime: waiting for active calc-engine requests to complete.");
-                while (HasActiveRequests())
+                while (HasPendingDecisionRequest())
                 {
                     System.Threading.Thread.Sleep(100);
                     if ((DateTime.UtcNow - lastLogUtc).TotalSeconds >= 5)
@@ -726,81 +701,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public bool OptionInSsviParams(Symbol option)
         {
             Equity equity = (Equity)Securities[option.ID.Underlying.Symbol];
-            return KalmanFiltersSSVI.ContainsKey(equity) && KalmanFiltersSSVI[equity].GetSSVIParams().ContainsKey(option.ID.Date);
+
+            // The filter is only in the path when opted in; otherwise the surface IS the state.
+            SSVIParamsDictionary parameters = null;
+            // if (KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> filter))
+            // {
+            //     parameters = filter.GetSSVIParams();
+            // }
+            if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
+            {
+                parameters = ssvi.ModelParams;
+            }
+            return parameters != null && parameters.ContainsKey(option.ID.Date);
         }
-
-        // public List<Symbol> AddOptionIfScoped(Symbol optionSymbol)
-        // {
-        //     var contractSymbols = OptionChainProvider.GetOptionContractList(optionSymbol, Time);
-        //     List<Symbol> subscribedSymbols = new();
-        //     foreach (var symbol in contractSymbols)
-        //     {
-        //         if (Securities.ContainsKey(symbol)) continue;  // already subscribed
-        //
-        //         Symbol symbolUnderlying = symbol.ID.Underlying.Symbol;
-        //
-        //         var historyUnderlying = HistoryWrap(symbolUnderlying, Cfg.MinHistoryDaysUnderlyingForScoping, Resolution.Daily).ToList();
-        //         bool optionInSsviParams = OptionInSsviParams(symbol);
-        //         if (historyUnderlying.Any() || optionInSsviParams)
-        //         {
-        //             decimal lastClose = historyUnderlying.Last().Close;
-        //             if (optionInSsviParams || ContractScopedForSubscription(symbol, lastClose, Cfg.ScopeContractStrikeOverUnderlyingMargin))
-        //             {
-        //                 // This line requests quite a bit of past data. Minute and second resolution for a whole month into past.
-        //                 AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false, extendedMarketHours: true);
-        //
-        //                 QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
-        //                 subscribedSymbols.Add(symbol);
-        //             }
-        //         }
-        //         else
-        //         {
-        //             QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"No history for {symbolUnderlying}. Not subscribing to its options." } });
-        //         }
-        //     }
-        //     return subscribedSymbols;
-        // }
-
-        // public void UpdateUniverseSubscriptions()
-        // {
-        //     if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
-        //
-        //     var universeWatch = Stopwatch.StartNew();
-        //     var securitiesBefore = Securities.Count;
-        //
-        //     // Remove securities that have gone out of scope and are not in the portfolio. Cancel any open tickets.
-        //     Securities.Values.Where(sec => sec.Type == SecurityType.Option).DoForEach(sec =>
-        //     {
-        //         RemoveUniverseSecurity(sec);
-        //     });
-        //
-        //     // Add options that have moved into scope — one chain at a time. This is the phase that
-        //     // runs at the day boundary and re-subscribes every chain: it can take minutes, and the
-        //     // overnight gap used to be silent while it ran, so each chain reports progress with a
-        //     // percentage and an ETA.
-        //     var chains = options.ToList();
-        //     var total = chains.Count;
-        //     var lastReport = TimeSpan.Zero;
-        //     for (var i = 0; i < total; i++)
-        //     {
-        //         AddOptionIfScoped(chains[i]);
-        //
-        //         var done = i + 1;
-        //         if (done == 1 || done == total || done % Math.Max(1, total / 20) == 0 ||
-        //             universeWatch.Elapsed - lastReport >= TimeSpan.FromSeconds(10))
-        //         {
-        //             var frac = (double)done / total;
-        //             var eta = frac > 0 ? universeWatch.Elapsed.TotalSeconds * (1 - frac) / frac : 0;
-        //             Log($"Universe update: {done}/{total} chains ({frac:P1}), " +
-        //                 $"securities {securitiesBefore} -> {Securities.Count}, " +
-        //                 $"elapsed {universeWatch.Elapsed.TotalSeconds:0.0}s, eta {eta:0}s");
-        //             lastReport = universeWatch.Elapsed;
-        //         }
-        //     }
-        //
-        //     Log($"Universe update: done in {universeWatch.Elapsed.TotalSeconds:0.0}s; " +
-        //         $"securities {securitiesBefore} -> {Securities.Count}.");
-        // }
 
         public override void OnEndOfDay(Symbol symbol)
         {
@@ -917,7 +830,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public void SetBacktestingHoldings()
         {
-            if (LiveMode || !Cfg.BacktestingHoldings.Any()) return;
+            // if (LiveMode || !Cfg.BacktestingHoldings.Any()) return;
 
             decimal averagePrice = 0m;
             foreach ((string ticker, decimal quantity) in Cfg.BacktestingHoldings.Select(h => (h.Key, h.Value)))
@@ -2047,23 +1960,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 || TargetHoldings.ContainsKey(symbol);
         }
 
-        public void RemoveUniverseSecurity(Security security)
-        {
-            Symbol symbol = security.Symbol;
-            if (
-                    (
-                    Securities[symbol].IsTradable
-                    && !ContractScopedForSubscription(symbol, null, Cfg.ScopeContractStrikeOverUnderlyingMargin)
-                    && Portfolio[symbol].Quantity == 0
-                    )
-                //|| security.IsDelisted
-                )
-            {
-                QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Removing {symbol}. Descoped." } });
-                RemoveSecurity(symbol);  // Open Transaction will be canceled
-            }
-        }
-
         /// <summary>
         /// Last Mile Checks
         /// </summary>
@@ -2121,7 +2017,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             if (symbol.SecurityType == SecurityType.Option && !ContractScopedForSubscription(symbol) && Portfolio[symbol].Quantity == 0)
             {
                 QuickLog(new Dictionary<string, string> { { "topic", "EXECUTION" }, { "msg", $"contract {symbol} is not in scope. Not trading..." } });
-                RemoveUniverseSecurity(Securities[symbol]);
+                RemoveOptionContract(symbol);
                 return false;
             }
 

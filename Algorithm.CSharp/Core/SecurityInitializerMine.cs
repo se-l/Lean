@@ -2,7 +2,6 @@ using System;
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Algorithm.CSharp.Core.RealityModeling;
 using QuantConnect.Brokerages;
-using QuantConnect.Configuration;
 using QuantConnect.Data.Market;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
@@ -44,6 +43,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 _algo.Log($"{_algo.Time} HoldingsOnQuantityChanged(): {symbol} Initialize new Position from Security Holding as Symbol is not present.");
                 _algo.Positions[symbol] = new Position(_algo, e.Security.Holdings);
+            }
+
+            // A holding is the one contract we can never be unsubscribed from: this also re-subscribes
+            // anything that arrived while unsubscribed (assignment, exercise, a fill on a dropped
+            // contract) and lets the diff drop contracts the portfolio no longer names.
+            if (symbol.SecurityType == SecurityType.Option)
+            {
+                _algo.SyncOptionSubscriptions(Underlying(symbol), "holdings update");
             }
         }
 
@@ -122,9 +129,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 InitializeIVSurfaces(equity);
                 _algo.Log($"SecurityInitializer.Initialize: {symbol} WarmedUp Volatility To: PostSurface: {security.VolatilityModel.Volatility}, PreSurface: {vola}");
 
-                _algo.MarketDataQuotes[security.Symbol] = new();
-                _algo.MarketDataTrades[security.Symbol] = new();
-
                 _algo.GammaScalpers[symbol] = new(_algo, equity);
 
                 // Refactor - turn percentages over to some config.
@@ -159,9 +163,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
                 // Initialize a Security Specific Hedge Band or Risk Limit object.
                 option.RiskLimit = new SecurityRiskLimit(option);
-
-                _algo.MarketDataQuotes[security.Symbol] = new();
-                _algo.MarketDataTrades[security.Symbol] = new();
                 
                 foreach (OrderDirection direction in new[] { OrderDirection.Buy, OrderDirection.Sell })
                 {
@@ -214,10 +215,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 {
                     modelParams[tenor] = new SSVIParamsRecord(p.Theta, p.Rho, p.Psi);
                 }
-                _algo.IvSurfaceSsviMid[underlying].SetModelParams(modelParams);
+                // Same entry point as the live rows: the seed is the product unless the filter is on.
+                _algo.ApplySurface(underlying, modelParams, "history seed", seed.IsRaw);
                 _algo.Log($"{_algo.Time} InitializeIVSurfaces: {underlying.Symbol} warm-up seed from " +
                           $"{history.Count} surface(s), last {seed.SurfaceId} {seed.Status} " +
-                          $"event={seed.EventTime:yyyy-MM-dd HH:mm:ss} tenors={seed.Tenors.Count}");
+                          $"event={seed.TimeSnap:yyyy-MM-dd HH:mm:ss} tenors={seed.Tenors.Count}");
             }
             catch (Exception exception)
             {

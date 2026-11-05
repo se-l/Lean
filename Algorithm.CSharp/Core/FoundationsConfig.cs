@@ -13,6 +13,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public HashSet<string> Ticker { get; set; }
         public HashSet<string> LiquidateTicker { get; set; }
         public Dictionary<string, bool> SkipRunSignals { get; set; }
+        public bool DontHedge { get; set; }
 
         /// <summary>
         /// Force the off-thread signal runner in a backtest. Off by default: a backtest applies the
@@ -31,7 +32,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int MaxTargetPortfolios { get; set; } = 5;
         public decimal ScopeContractStrikeOverUnderlyingMax { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMin { get; set; }
-        public decimal ScopeContractStrikeOverUnderlyingMargin { get; set; }
         public int ScopeContractMinDTE { get; set; }
         public int ScopeContractMaxDTE { get; set; }
         public Dictionary<string, DiscountParams> DiscountParams { get; set; }
@@ -70,6 +70,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int MinHistoryDaysUnderlyingForScoping { get; set; }
         public Dictionary<string, double> MaxDelta100BpUSDSignalQuantity { get; set; }
         public bool UseKalmanFilterBeforeEarningsRelease { get; set; }
+
+        /// <summary>
+        /// Put the Kalman filter in the surface path. OFF (default): the incoming surface is the
+        /// product and is installed as-is for every consumer — filtering is upstream's job. ON: a
+        /// `kind = raw` row is filtered here and the surface receives the filtered state.
+        /// The filter code stays in either case; it is just not wired.
+        /// </summary>
+        public bool UseKalmanSurfaces { get; set; }
         public Dictionary<string, bool> PricerOverridePricesWithPresumedIvFillDefensively { get; set; }
         public Dictionary<string, Dictionary<string, string>> TimeRangeReduceAbsDeltaPosition { get; set; }
         public Dictionary<string, string> TimeStartKfBeforeRelease { get; set; }

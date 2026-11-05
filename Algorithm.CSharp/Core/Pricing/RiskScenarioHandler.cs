@@ -3,6 +3,7 @@ using NodaTime;
 using QuantConnect.Algorithm.CSharp.Core.IO;
 using QuantConnect.Data.Market;
 using QuantConnect.Orders;
+using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Option;
 using QuantConnect.Util;
@@ -137,10 +138,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             TradableOptions[equity] = PfRiskScenarios[equity]
                 .Select(s => GetOptionHolding(equity, s.HoldingsHedge))
-                .Select(h => (Option)_algo.Securities[h?.Symbol ?? ""])
+                .Select(h => SubscribedOption(h?.Symbol))
                 // Several scenarios commonly share one hedge contract; the utility loop is keyed by
                 // contract, so duplicates would only re-evaluate the same option with different DS
-                // weights.
+                // weights. Contracts that are not carried yet are dropped until the next rebuild.
+                .Where(option => option != null)
                 .Distinct()
                 .ToArray();
 
@@ -528,6 +530,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 yield return (option, ticket);
             }
         }
+        /// <summary>
+        /// Scenario holdings arrive as contract STRINGS. Resolve through SymbolCache and require an
+        /// actual subscription: indexing Securities with a string goes through Symbol's implicit
+        /// conversion, which parses the text as a SecurityIdentifier and logs an error for every
+        /// contract this run does not carry (the chain is only subscribed on need-to-know).
+        /// </summary>
+        private Option SubscribedOption(string contract)
+        {
+            if (string.IsNullOrEmpty(contract) || !SymbolCache.TryGetSymbol(contract, out Symbol symbol))
+            {
+                return null;
+            }
+            return _algo.Securities.TryGetValue(symbol, out Security security) ? security as Option : null;
+        }
+
         private static IO.HoldingPb GetOptionHolding(Equity underlying, PfRiskScenarioPb pfRiskScenario)
         {
             return pfRiskScenario.HoldingsHedge.FirstOrDefault(h => h.Key != underlying.Symbol.Value).Value;
@@ -567,10 +584,13 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             PfRiskScenarios[equity].DoForEach(x =>
                 {
-                    var sym = GetOptionHolding(equity, x).Symbol;
                     var optionHolding = GetOptionHolding(equity, x);
-                    var option = (Option)_algo.Securities[optionHolding.Symbol];
-                    ScenarioEntryIVs[Tuple.Create(option, Num2Direction(optionHolding.Quantity))] = x.IvEnter[sym];
+                    var option = SubscribedOption(optionHolding.Symbol);
+                    if (option == null)
+                    {
+                        return;   // not carried yet: filled in by the rebuild that follows the subscription sync
+                    }
+                    ScenarioEntryIVs[Tuple.Create(option, Num2Direction(optionHolding.Quantity))] = x.IvEnter[optionHolding.Symbol];
                     ScenarioUtilities[Tuple.Create(option, Num2Direction(optionHolding.Quantity))] = x.Score;
                 }
             );
@@ -584,7 +604,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 .FirstOrDefault();
             
             IO.HoldingPb h = GetOptionHolding(equity, BestScenario[equity]);
-            Option option = (Option)_algo.Securities[h.Symbol];
+            Option option = SubscribedOption(h.Symbol);
+            if (option == null)
+            {
+                // No stale best order: the sweep must not keep working a contract the scenario no longer names.
+                BestOrder.Remove(equity);
+                _algo.Log($"{_algo.Time} SetBestScenario(): {equity.Symbol.Value} best hedge {h.Symbol} is not " +
+                          "subscribed yet — no best order until the next rebuild.");
+                return;
+            }
             OrderDirection direction = Num2Direction(h.Quantity);
 
             BestOrder[equity] = Tuple.Create(option, direction);

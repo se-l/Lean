@@ -68,6 +68,10 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         }
 
         public override bool HasActiveRequests() => rMQClient?.HasActiveRequests() ?? false;
+
+        public override bool BrokerConnected => rMQClient?.IsConnected ?? false;
+
+        public override bool HasPendingDecisionRequest() => rMQClient?.HasPendingDecisionRequest() ?? false;
         public override void Initialize()
         {
             Cfg = JsonConvert.DeserializeObject<FoundationsConfig>(File.ReadAllText(FoundationsConfigFileName));
@@ -121,6 +125,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             UtilityOrderFactory utilityOrderFactory = new (typeof(UtilityOrderEarnings));
             InitializeAlgo(utilityOrderFactory);
+            SetStartDate(CfgAlgo.StartDate);
+            SetEndDate(CfgAlgo.EndDate);
 
             // After release date. Reset the target holdings
             foreach (string s in Cfg.Ticker)
@@ -201,7 +207,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             FetchPfRiskScenarios();
             LogDifferenceTargetHoldingsOrderTickets();
 
-            equities.DoForEach(symbol => RequestKalmanInit(ToEquity(symbol)));
+            // equities.DoForEach(symbol => RequestKalmanInit(ToEquity(symbol)));
 
             Cfg.Ticker.DoForEach(s => SetTargetHoldingsToZeroAfterEarnings(Securities[s].Symbol));
 
@@ -216,22 +222,19 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         private MarketDataSnapByUnderlyingPb GetMarketDataSnapUnderlyingOnly(Symbol underlying, bool excludeStaleData = true)
         {
-            DateTime mostRecentPriceUpdate = DateTime.MinValue;
-
             MarketDataSnapByUnderlyingPb marketDataSnap = new();
+            
+            marketDataSnap.Underlying = underlying;
+            marketDataSnap.Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture);
 
-            // Return empty snap if no option data is included
-            if (excludeStaleData && (Time - mostRecentPriceUpdate) > TimeSpan.FromMinutes(30))
+            // Mid first, last trade as the fallback: the stress test is surface-driven and consumes this
+            // one number as s0, so a zero here silently kills the request on the mind side.
+            decimal spot = MidPrice(underlying);
+            if (spot <= 0)
             {
-                Log(
-                    $"{Time} GetMarketDataSnapByUnderlying {underlying}. Returning empty market data snap because prices are stale. mostRecentPriceUpdate: {mostRecentPriceUpdate}");
+                spot = Securities[underlying].Price;
             }
-            else
-            {
-                marketDataSnap.Underlying = underlying;
-                marketDataSnap.Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture);
-                marketDataSnap.UnderlyingPrice = (float)Securities[underlying].Price;
-            }
+            marketDataSnap.UnderlyingPrice = (float)spot;
 
             return marketDataSnap;
         }
@@ -465,19 +468,25 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             {
                 Log(
                     $"{Time} {underlying} WeightedAvgDNLV: {portfolio.ResultStressTestDs.WeightedDnlv:0.00}, Obj: {portfolio.Objective:0.00}, TargetPortfolio: {Portfolio2String(portfolio)}");
-                foreach (var holding in portfolio.Holdings.Values.Where(h => SymbolCache.TryGetSymbol(h.Symbol, out _)))
+                foreach (var holding in portfolio.Holdings.Values)
                 {
-                    Symbol option = Securities[holding.Symbol].Symbol;
-                    if (Securities[option].Type != SecurityType.Option)
+                    // Resolved WITHOUT requiring a subscription: TargetHoldings is what the subscription
+                    // sync diffs against, so a first-time contract must land here before it is carried.
+                    Symbol option = ResolveOptionContract(underlying, holding.Symbol);
+                    if (option == null || option.SecurityType != SecurityType.Option)
+                    {
+                        Log($"{Time} SetTargetHoldingsFromTargetPortfolios: {underlying} cannot resolve '{holding.Symbol}' from SymbolCache or the session chain. Skipping.");
                         continue;
+                    }
                     decimal quantity = (int)holding.Quantity;
 
                     // Delaying adding highly liquid options to target portfolio until last trading session before release to allow room for spot moves.
-                    Option security = (Option)Securities[option];
-                    bool skipToday = IsPresumablyLiquid(security) && Time.Date < nextReleaseDate && quantity < 0;
+                    // Liquidity is only knowable for a carried contract; one we have not subscribed yet is not delayed.
+                    bool skipToday = Securities.TryGetValue(option, out Security optionSecurity) &&
+                                     optionSecurity is Option security &&
+                                     IsPresumablyLiquid(security) && Time.Date < nextReleaseDate && quantity < 0;
                     if (skipToday)
-                        Log(
-                            $"{Time} {underlying} Skipping {option} from target portfolio because liquid and today is not release day.");
+                        Log($"{Time} {underlying} Skipping {option} from target portfolio because liquid and today is not release day.");
 
                     quantity = (skipToday) ? 0 : quantity;
 
@@ -758,6 +767,17 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             SetTargetHoldingsFromTargetPortfolios();
 
+            // Subscriptions follow the decision state, so this runs AFTER TargetHoldings was rebuilt:
+            // holdings ∪ {target != 0}, diffed against what is already subscribed.
+            SyncOptionSubscriptions(underlying, "target portfolios");
+
+            // The sweeper was built before these subscriptions existed (it runs in the trim loop above),
+            // so every first-time contract was skipped. Rebuild it now that they are carried.
+            if (TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> sweptPortfolios))
+            {
+                SetEquiUtilitySweeperFromTargetPortfolios(sweptPortfolios);
+            }
+
             Log($"{Time} UpdateSweepRatios(): Schedule RunSignals {underlying}");
             Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromSeconds(1)),
                 () => RunSignals(underlying));
@@ -831,7 +851,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// listed: a mapping that captured the initial key list would keep writing every parameter
         /// under the wrong tenor after the insertion point.
         /// </summary>
-        private static Func<IReadOnlyList<DateTime>, Func<Vector<double>, SSVIParamsDictionary>> VecToSsviParamsDictionary()
+        internal static Func<IReadOnlyList<DateTime>, Func<Vector<double>, SSVIParamsDictionary>> VecToSsviParamsDictionary()
         {
             return (IReadOnlyList<DateTime> tenors) =>
             {
@@ -850,6 +870,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         private void OnResponseKalmanInit(object sender, ResponseKalmanInitEventArgs e)
         {
+            if (!Cfg.UseKalmanSurfaces)
+            {
+                Log($"{Time} OnResponseKalmanInit: Kalman is not in the surface path (UseKalmanSurfaces=false). Ignoring.");
+                return;
+            }
+
             Equity equity = (Equity)Securities[e.ResponseKalmanInit.Request.Underlying];
             if (e.ResponseKalmanInit.InitState.Count > 0)
             {
@@ -867,7 +893,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     KalmanFilterSSVIWriters[equity] = new(this, KalmanFiltersSSVI[equity]);
                     PositionWriters[equity] = new(this);
                     IvSurfaceSsviMid[equity].SetModelParams(KalmanFiltersSSVI[equity].GetSSVIParams());
-                    KalmanFiltersSSVI[equity].OnUpdate += OnSSVISurfaceUpdated;
+                    // KalmanFiltersSSVI[equity].OnUpdate += OnKalmanSurfaceUpdated;
                     Log($"{Time} OnResponseKalmanInit: {equity} Kalman filter initialized " +
                         $"({tenors.Count} tenors, {KalmanFiltersSSVI[equity].StateDim} dims).");
                 }
@@ -951,6 +977,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         private void OnWSConnected(object sender, object obj)
         {
+            // The Kalman state is seeded on (re)connect only when the filter is in the surface path;
+            // warm-up used to do this and without it the filters stayed null until the 04:05 reset.
+            if (Cfg.UseKalmanSurfaces)
+            {
+                equities.DoForEach(symbol => RequestKalmanInit(ToEquity(symbol)));
+            }
+
             if (!IsWarmingUp && !IsMyMarketOpen(symbolSubscribed))
             {
                 Log($"{Time} OnWSConnected: Fetching target portfolios.");
@@ -1262,9 +1295,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
                 Equity equity = ToEquity(underlying);
 
-                if (!KalmanFiltersSSVI.ContainsKey(equity) && !force)
+                if (!IvSurfaceSsviMid.ContainsKey(equity) && !force)
                 {
-                    Log($"{Time} RequestTargetPortfolios: {underlying} skipped — Kalman SSVI filter not initialized yet. force=False");
+                    Log($"{Time} RequestTargetPortfolios: {underlying} skipped — SSVI not initialized yet. force=False");
                     return;
                 }
 
@@ -1279,9 +1312,10 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 };
                 requestTargetPortfolios.Holdings.Add(PortfolioOptionHoldings(underlying));
                 
-                if (KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> kalmanSsviTp))
+                SSVIParamsDictionary surfaceParams = CurrentSurfaceParams(equity);
+                if (surfaceParams != null && surfaceParams.Count > 0)
                 {
-                    requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying, kalmanSsviTp.GetSSVIParams().ToDictionary()));
+                    requestTargetPortfolios.Params.AddRange(IVSSSVIParamsToPb(underlying, surfaceParams.ToDictionary()));
                 }
                 else
                 {
@@ -1296,6 +1330,23 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             {
                 Error($"{Time} RequestTargetPortfolios: {underlying}. {e.Message}.");
             }
+        }
+
+        /// <summary>
+        /// The SSVI state consumers are using right now: the Kalman filter when it is in the path,
+        /// otherwise whatever the installed surface holds (raw-first default).
+        /// </summary>
+        private SSVIParamsDictionary CurrentSurfaceParams(Equity equity)
+        {
+            // if (KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> filter))
+            // {
+            //     return filter.GetSSVIParams();
+            // }
+            if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
+            {
+                return ssvi.ModelParams;
+            }
+            return null;
         }
 
         private void RequestPfRiskScenarios(Symbol underlying)
@@ -1328,12 +1379,13 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             // A regime change can fire before the Kalman filter exists for this underlying (it is created
             // when the KalmanInit response arrives), and indexing the dictionary threw
             // "The given key 'NOW' was not present in the dictionary" out of the scheduled event.
-            if (!KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> kalmanSsvi))
+            SSVIParamsDictionary riskParams = CurrentSurfaceParams(equity);
+            if (riskParams == null || riskParams.Count == 0)
             {
-                Log($"{Time} RequestPfRiskScenarios: no Kalman SSVI filter for {underlying} yet — not requesting risk scenarios.");
+                Log($"{Time} RequestPfRiskScenarios: no SSVI state for {underlying} yet — not requesting risk scenarios.");
                 return;
             }
-            request.Params.AddRange(IVSSSVIParamsToPb(underlying,kalmanSsvi.GetSSVIParams().ToDictionary()));
+            request.Params.AddRange(IVSSSVIParamsToPb(underlying, riskParams.ToDictionary()));
 
             var snap = GetMarketDataSnapUnderlyingOnly(underlying);
             request.MarketDataSnaps.Add(snap);
@@ -1369,7 +1421,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             // The SSVI filter is built lazily once calibration params arrive; until then there is
             // nothing to send (this is what threw KeyNotFound for a contract with no filter yet).
             var equity = ToEquity(underlying);
-            if (!KalmanFiltersSSVI.ContainsKey(equity)) return;
+            if (CurrentSurfaceParams(equity) is null) return;
 
             Log($"{Time} RequestStressTestDs: {underlying}");
 
@@ -1381,7 +1433,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 AlgoMode = LiveMode ? AlgoModePb.Live : AlgoModePb.Backtest
             };
             requestStressTestDs.Params.AddRange(IVSSSVIParamsToPb(underlying,
-                KalmanFiltersSSVI[ToEquity(underlying)].GetSSVIParams()));
+                CurrentSurfaceParams(equity)));
             requestStressTestDs.Holdings.Add(PortfolioUnderlyingHoldings(underlying));
 
             // Stress Test only uses SSVI surface and underlying spot price.
@@ -1414,41 +1466,19 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         private void OnResponseSSVICalibration(object source, ResponseSSVICalibrationEventArgs e)
         {
             Equity underlying = (Equity)Securities[e.ResponseSSVICalibration.Request.Underlying];
-            if (!KalmanFiltersSSVI.TryGetValue(underlying, out var kalmanFilter))
+            SSVIParamsDictionary responseParams = new(e.ResponseSSVICalibration.Params.ToArray());
+            if (responseParams.Count == 0)
             {
-                Log($"{Time} OnResponseSSVICalibration: {underlying} Kalman filter not found. Ignoring.");
+                Log($"{Time} OnResponseSSVICalibration: {underlying} empty calibration. Ignoring.");
                 return;
             }
-            SSVIParamsDictionary responseParams = new(e.ResponseSSVICalibration.Params.ToArray());
 
-            // A newly listed expiry GROWS the state (tenors never contract). The existing covariance
-            // blocks are carried over BY TENOR and the params mapping is rebuilt inside Grow, so a
-            // tenor inserted in the middle cannot shift the parameters that follow it.
-            int tenorsBefore = kalmanFilter.Tenors.Count;
-            var additions = responseParams
-                .Where(kvp => kvp.Value != null && !kalmanFilter.Tenors.Contains(kvp.Key))
-                .Select(kvp => (kvp.Key, kvp.Value.Theta, kvp.Value.Rho, kvp.Value.Psi))
-                .ToList();
-            bool grew = additions.Count > 0 && kalmanFilter.Grow(additions);
-
-            // Feed the RAW calibration as the observation, union-aligned to the (possibly grown)
-            // tenor list: tenors this response does not carry stay NaN and the filter does a
-            // predict-only step for them. The old `currentStateParams.Update(responseParams)`
-            // copied the current state into those slots, which fabricated observations equal to
-            // the state and shrank the covariance as if data had arrived.
-            Vector<double> observation = responseParams.ToVector(kalmanFilter.Tenors);
-            kalmanFilter.Update(observation, Time);
-
-            Log($"{Time} OnResponseSSVICalibration: {underlying} Kalman update: observed " +
-                $"{kalmanFilter.LastObservations}/{kalmanFilter.StateDim} dims, " +
-                $"|z|/sigma med={kalmanFilter.MedianStandardizedInnovation:0.0} " +
-                $"p90={kalmanFilter.P90StandardizedInnovation:0.0} " +
-                $"max={kalmanFilter.MaxStandardizedInnovation:0.0} @{kalmanFilter.WorstInnovationParam}, " +
-                $"tenors {tenorsBefore}{(grew ? $"->{kalmanFilter.Tenors.Count}" : string.Empty)} " +
-                $"(response {responseParams.Count})");
+            // One entry point with the warehouse rows: the calibration is the product unless the Kalman
+            // path is opted in, in which case ApplySurface filters it first.
+            ApplySurface(underlying, responseParams, "ssvi calibration", raw: true);
         }
 
-        private void OnSSVISurfaceUpdated(object sender, KalmanOnUpdateEventArgs<SSVIParamsDictionary> e)
+        protected override void OnSurfaceUpdated(object sender, KalmanOnUpdateEventArgs<SSVIParamsDictionary> e)
         {
             if (!ActiveRegimes.TryGetValue(e.Equity, out var regimes)) return;
             // if (!ActiveRegimes.TryGetValue(e.Equity, out var regimes) || !regimes.Contains(MarketRegime.PostEarningsRelease)) return;
@@ -1595,6 +1625,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 string pfAfterStr = string.Join(", ",
                     TargetHoldings.Where(h => Underlying(h.Key) == underlying).Select(kvp => $"{kvp.Key}={kvp.Value}"));
                 Log($"{Time} SetTargetHoldingsToZeroAfterEarnings: {underlying} {pfBeforeStr} -> {pfAfterStr}");
+                SyncOptionSubscriptions(underlying, "SetTargetHoldingsToZeroAfterEarnings");
             }
         }
 

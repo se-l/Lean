@@ -88,18 +88,18 @@ namespace QuantConnect.Lean.DataSource.R2
             var lo = dayEt.Date;
             var hi = lo.AddDays(1);
             var sql =
-                "SELECT ts_end, ts_available, spot, env_hash, cnt_quotes, surface, calibration_meta " +
+                "SELECT ts_snap, ts_available, spot, surface " +
                 $"FROM {R2SurfaceStore.Table} " +
                 $"WHERE underlying = '{symbol.Value}' AND surface_id = '{surfaceId}' " +
-                $"AND ts_end >= TIMESTAMP '{lo:yyyy-MM-dd} 00:00:00' " +
-                $"AND ts_end < TIMESTAMP '{hi:yyyy-MM-dd} 00:00:00' " +
-                "AND surface IS NOT NULL ORDER BY ts_end";
+                $"AND ts_available >= TIMESTAMP '{lo:yyyy-MM-dd} 00:00:00' " +
+                $"AND ts_available < TIMESTAMP '{hi:yyyy-MM-dd} 00:00:00' " +
+                "AND surface IS NOT NULL ORDER BY ts_available";
 
             foreach (var row in _catalog.Rows(sql))
             {
                 // A short row means a NULL cell the filter did not catch; skip it rather than
                 // let a parse exception kill the session.
-                if (row.Length < 6 || string.IsNullOrEmpty(row[5]))
+                if (row.Length < 4 || string.IsNullOrEmpty(row[3]))
                 {
                     continue;
                 }

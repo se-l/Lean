@@ -313,6 +313,25 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             return true;
         }
 
+        /// <summary>
+        /// Prior covariance for a state seeded from a single observation: `priorScale * R` per
+        /// parameter on the block diagonal — exactly the confidence `Grow` gives a newly
+        /// listed tenor, so a filter created from its first observation is not over-confident.
+        /// </summary>
+        public Matrix<double> NewPriorCovariance(int tenorCount)
+        {
+            double priorScale = (_algo?.Cfg?.KalmanNewTenorPriorScale) is double s && s > 0 ? s : 1.0;
+            var prior = Matrix<double>.Build.Dense(tenorCount * 3, tenorCount * 3);
+            for (int i = 0; i < tenorCount; i++)
+            {
+                for (int k = 0; k < 3; k++)
+                {
+                    prior[i * 3 + k, i * 3 + k] = _rStd[k] * _rStd[k] * priorScale;
+                }
+            }
+            return prior;
+        }
+
         private double[] ResolveStd(IReadOnlyDictionary<string, double> overrideStd, double[] defaults, string cfgName)
         {
             var outStd = (double[])defaults.Clone();

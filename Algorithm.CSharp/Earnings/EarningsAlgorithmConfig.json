@@ -1,7 +1,8 @@
 {
-  "StartDate": "2026-05-05",
-  "EndDate": "2026-05-06",
-  "Ticker": [ "PLTR" ],
+  "StartDate": "2026-08-06",
+  "EndDate": "2026-08-07",
+  "Ticker": [ "NET" ],
+  "MQHost": "127.0.0.1",
   "MQPort": 5672,
   "MQVirtualHost": "dev",
   "MQUser": "rabbit",
@@ -9,7 +10,7 @@
   "PricerProtocol": "tcp",
   "PricerHost": "127.0.0.1",
   "PricerPort": 8103,
-  "PricerCacheEnabled": true,
+  "PricerCacheEnabled": false,
   "PricerCacheVHost": "dev",
   "EarningsEntryStartTime": {
     "_": [ 9, 45 ]

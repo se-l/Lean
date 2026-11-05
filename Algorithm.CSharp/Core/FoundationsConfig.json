@@ -1,23 +1,23 @@
 {
-  "StartDate": "2026-05-05",
-  "EndDate": "2026-05-06",
-  "Ticker": [ "PLTR" ],
+  "StartDate": "2026-08-06",
+  "EndDate": "2026-08-07",
+  "Ticker": [ "NET" ],
   "LiquidateTicker": [],
   "SkipRunSignals": {
     "_": false
   },
+  "DontHedge": false, // backtest only
   "ExecuteManualOrderInstructions": true,
   "BacktestingHoldings": {
-//    "PLTR  260508C00148000": -1,
-//    "PLTR  260508P00170000": 2,
-//    "PLTR  260508P00172500": 1,
-//    "PLTR  260605C00129000": 2,
-//    "PLTR  260612C00120000": 3,
-//    "PLTR  260612C00126000": 1,
-//    "PLTR  261016P00175000": -2,
-//    "PLTR  261016C00175000": -4,
-//    "PLTR  261016C00180000": -4,
-//    "PLTR": -2
+    //    "NOW   260724C00082000": 3,
+    //    "NOW   260724C00086000": 4,
+    //    "NOW   260724C00087000": 1,
+    //    "NOW   260731P00107000": -1,
+    //    "NOW   260807C00080000": -4,
+    //    "NOW   260807C00084000": -4,
+    //    "NOW   270617C00082000": -1,
+    //    "NOW   270617P00105000": -2,
+    //    "NOW": -111
   },
   "LogOrderUpdates": true,
   "VolatilityPeriodDays": 3,
@@ -25,7 +25,6 @@
   /// Scoping Contracts for data feed subscription
   "ScopeContractStrikeOverUnderlyingMax": 1.35,
   "ScopeContractStrikeOverUnderlyingMin": 0.65,
-  "ScopeContractStrikeOverUnderlyingMargin": 0.05,
   "ScopeContractMinDTE": 0,
   "ScopeContractMaxDTE": 730,
   ///
@@ -260,6 +259,9 @@
     ]
   },
   "KalmanMinUpdatesToReady": { "_": 15 },
+  // Kalman is NOT in the surface path by default: surfaces arrive as the finished product and are
+  // installed as-is. Enable only when filtering here has been validated against the upstream product.
+  "UseKalmanSurfaces": false,
   "KalmanProcessStd": { "theta": 0.002, "rho": 0.02, "psi": 0.05 },
   "KalmanMeasurementStd": { "theta": 0.008, "rho": 0.06, "psi": 0.12 },
   "KalmanNewTenorPriorScale": 1.0,

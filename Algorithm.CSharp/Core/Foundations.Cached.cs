@@ -262,6 +262,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void ExecuteHedge(Symbol symbol, decimal quantity, OrderType? orderType = null)
         {
+            if (!LiveMode && Cfg.DontHedge) return;
             // // Quickly Test algo performance without any hedge on July 11 2024
             // if (Time.Date == new DateTime(2024, 7, 11).Date)
             // {

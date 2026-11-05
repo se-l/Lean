@@ -93,6 +93,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             };
         }
 
+        /// <summary>True while the broker connection and reply channel are open.</summary>
+        public bool IsConnected => _connection is { IsOpen: true } && _channel is { IsOpen: true };
+
         /// <summary>
         /// True while a channel's in-flight submission still awaits a response. With one request
         /// in flight per channel (see <see cref="SendMessageAsync{T}"/>) this is at most one per
@@ -111,6 +114,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 }
             }
             return false;
+        }
+
+        /// <summary>
+        /// True while a request the ALGO cannot proceed without is in flight. Backtest pacing waits on
+        /// this, not on every channel: an unanswered telemetry request (StressTestDs, a calibration) must
+        /// not cost the run a full <c>mq-response-timeout-s</c>, which is exactly what happened when mind
+        /// stopped answering StressTestDs — the backtest waited 400 s per try, expired, sent again.
+        /// </summary>
+        public bool HasPendingDecisionRequest()
+        {
+            ExpireUnansweredRequests();
+            return _lastSentIds.TryGetValue(ChannelPb.TargetPortfolio, out var id) && _activeRequests.ContainsKey(id);
         }
 
         /// <summary>
