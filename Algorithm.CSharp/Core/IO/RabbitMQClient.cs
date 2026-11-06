@@ -202,9 +202,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     type: ExchangeType.Topic,
                     durable: true);
 
-                // Exclusive reply queue — bind to the OUTBOUND exchange
+                // Exclusive reply queue — bind to the OUTBOUND exchange.
+                //
+                // The name must be unique PER PROCESS: Mind conflates requests per (channel, reply_to)
+                // and routes the answer with routing_key = reply_to (MQContext.reply_to), so this queue
+                // is the client's identity. A server-generated name (`queue: ""`) is unique per
+                // connection, but it reads as `amq.gen-…` in the broker and in Mind's logs, which makes
+                // two traders on one vhost indistinguishable. Name it explicitly instead: host + pid +
+                // guid is still collision-free, and `exclusive`/`autoDelete` keep the lifetime bound to
+                // this connection (the queue disappears on disconnect, no residue to clean up).
+                // Topic routing keys treat '*' and '#' as wildcards, so a hostname containing them
+                // would turn the binding into a pattern; keep the id to a safe charset.
+                string hostId = System.Text.RegularExpressions.Regex.Replace(Environment.MachineName, "[^A-Za-z0-9._-]", "-");
+                string replyQueue = $"lean.{hostId}.{Environment.ProcessId}.{Guid.NewGuid():N}";
                 var queueResult = await _channel.QueueDeclareAsync(
-                    queue: "",
+                    queue: replyQueue,
                     durable: false,
                     exclusive: true,
                     autoDelete: true);
@@ -213,7 +225,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                 await _channel.QueueBindAsync(
                     queue: _replyQueueName,
                     exchange: ExchangeOut,
-                    routingKey: "#");          // catch all responses; narrow if needed
+                    // Replies are published with routing_key = the client's own reply_to, so bind to the
+                    // queue name, NOT "#". The catch-all delivered every client's replies to every client,
+                    // which only worked because OnMessageReceivedAsync filters by correlation id.
+                    routingKey: _replyQueueName);
 
                 var consumer = new AsyncEventingBasicConsumer(_channel);
                 consumer.ReceivedAsync += OnMessageReceivedAsync;
@@ -223,7 +238,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                     autoAck: true,
                     consumer: consumer);
 
-                _algo.Log("RabbitMqClient: Connected.");
+                _algo.Log($"RabbitMqClient: Connected. replyQueue={_replyQueueName} (exclusive, autoDelete) " +
+                          $"broker={host}:{port} vhost={virtualHost} pid={Environment.ProcessId}.");
                 EventHandlerConnected?.Invoke(this, EventArgs.Empty);
             }
             finally

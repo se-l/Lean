@@ -290,7 +290,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // SCHEDULED EVENTS
             Schedule.On("OnMarketOpen", DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed), OnMarketOpen);
-            Schedule.On("ExerciseOnExpiryDate", DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, 120), ExerciseOnExpiryDate);
+            // Schedule.On("ExerciseOnExpiryDate", DateRules.EveryDay(symbolSubscribed), TimeRules.AfterMarketOpen(symbolSubscribed, 120), ExerciseOnExpiryDate);  // Unable to handle for other client-ids. TWS side cancelation triggered event that crashed exercising lean client.
             Schedule.On("ClearNextMarketOpenClose", DateRules.EveryDay(symbolSubscribed), TimeRules.At(TimeSpan.FromMinutes(0)), ClearNextMarketOpenClose);
             Schedule.On("SetActiveMarketRegimes", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(1)), SetActiveMarketRegimes);  // make event driven. which event?
 
