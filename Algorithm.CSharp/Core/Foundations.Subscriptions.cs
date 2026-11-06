@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
@@ -75,7 +76,70 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     Log($"{Time} ResolveOptionContract: {underlying} chain loaded, {chain.Count} contracts for {Time.Date:yyyy-MM-dd} (symbol cache primed).");
                 }
             }
-            return chain.TryGetValue(contract, out Symbol resolved) ? resolved : null;
+            if (chain.TryGetValue(contract, out Symbol resolved))
+            {
+                return resolved;
+            }
+
+            // Not in today's chain — a rolled/expired contract, or a value from another session. Mint the
+            // Symbol from the value itself: Symbol.CreateOption only builds the SID (it caches nothing and
+            // subscribes nothing), so the cache is primed explicitly. That is what keeps every later
+            // SymbolCache.TryGetSymbol off the SID-parse path, without touching QuantConnect core.
+            if (TryParseContractValue(contract, out OptionRight right, out DateTime expiry, out decimal strike))
+            {
+                Symbol built = QuantConnect.Symbol.CreateOption(underlying, underlying.Value, underlying.ID.Market,
+                    OptionStyle.American, right, strike, expiry);
+                SymbolCache.Set(contract, built);
+                SymbolCache.Set(built.Value, built);
+                Log($"{Time} ResolveOptionContract: {contract} is not in the {underlying} chain for {Time.Date:yyyy-MM-dd} — " +
+                    $"built from the value (expiry={expiry:yyyy-MM-dd}, {right}, strike={strike}) and cached.");
+                return built;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// "NET   260807P00287500" -> (right, expiry, strike). The value is fixed width: the ticker is
+        /// padded, then yyMMdd, then the right, then the strike * 1000 on eight digits.
+        /// </summary>
+        private static bool TryParseContractValue(string contract, out OptionRight right, out DateTime expiry, out decimal strike)
+        {
+            right = default;
+            expiry = default;
+            strike = default;
+            if (string.IsNullOrWhiteSpace(contract))
+            {
+                return false;
+            }
+
+            string value = contract.Trim();
+            const int tailLength = 15;                       // yyMMdd (6) + C/P (1) + strike*1000 (8)
+            if (value.Length < tailLength)
+            {
+                return false;
+            }
+            string tail = value.Substring(value.Length - tailLength);
+
+            if (!DateTime.TryParseExact(tail.Substring(0, 6), "yyMMdd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out expiry))
+            {
+                return false;
+            }
+
+            char rightChar = tail[6];
+            if (rightChar != 'C' && rightChar != 'P')
+            {
+                return false;
+            }
+            right = rightChar == 'C' ? OptionRight.Call : OptionRight.Put;
+
+            if (!decimal.TryParse(tail.Substring(7), NumberStyles.None, CultureInfo.InvariantCulture, out decimal strikeMilli))
+            {
+                return false;
+            }
+            strike = strikeMilli / 1000m;
+            return true;
         }
 
         /// <summary>

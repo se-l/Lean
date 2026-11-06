@@ -4,7 +4,8 @@
   "Ticker": [ "NET" ],
   "LiquidateTicker": [],
   "SkipRunSignals": {
-    "_": false
+    "_": false,
+    "NET": true
   },
   "DontHedge": false, // backtest only
   "ExecuteManualOrderInstructions": true,
@@ -184,11 +185,9 @@
     "_": 1
   },
   "BacktestNearRealtimePacingEnabled": true,
-  "MinHistoryDaysUnderlyingForScoping": 2,
   "MaxDelta100BpUSDSignalQuantity": {
     "_": 150
   },
-  "UseKalmanFilterBeforeEarningsRelease": true,
   "PricerOverridePricesWithPresumedIvFillDefensively": { "_": false },
   "TimeRangeReduceAbsDeltaPosition": {
     "_": {
@@ -258,13 +257,6 @@
       }
     ]
   },
-  "KalmanMinUpdatesToReady": { "_": 15 },
-  // Kalman is NOT in the surface path by default: surfaces arrive as the finished product and are
-  // installed as-is. Enable only when filtering here has been validated against the upstream product.
-  "UseKalmanSurfaces": false,
-  "KalmanProcessStd": { "theta": 0.002, "rho": 0.02, "psi": 0.05 },
-  "KalmanMeasurementStd": { "theta": 0.008, "rho": 0.06, "psi": 0.12 },
-  "KalmanNewTenorPriorScale": 1.0,
   "MinutesBeforeMarketCloseHedgeDeltaFlat": 2,
   "MinutesAfterOpenMMWindowStarts": 1,
   "MinutesBeforeCloseMMWindowEnds": 5,

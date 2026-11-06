@@ -8,6 +8,16 @@ using System.Linq;
 
 namespace QuantConnect.Algorithm.CSharp.Core.Indicators
 {
+    public class IVSurfaceSSVIOnUpdateEventArgs<T> : EventArgs
+    {
+        public T State { get; }
+        public Equity Equity { get; }
+        public IVSurfaceSSVIOnUpdateEventArgs(T state, Equity equity)
+        {
+            State = state;
+            Equity = equity;
+        }
+    }
     public record SSVIParamsRecord(double Theta, double Rho, double Psi);
     public class IVSurfaceSSVI : IIVSurface, IDisposable
     {
@@ -33,7 +43,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             IsCalibrated = true;
         }
 
-        public void SetModelParams(object sender, KalmanOnUpdateEventArgs<SSVIParamsDictionary> e)
+        public void SetModelParams(object sender, IVSurfaceSSVIOnUpdateEventArgs<SSVIParamsDictionary> e)
         {
             SetModelParams(e.State);
         }
@@ -82,7 +92,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
             // callers' IsFinite guards.
             if (ModelParams == null)
             {
-                // The surface has never been calibrated (e.g. the KalmanInit/SSVI response timed out).
+                // The surface has never been calibrated (e.g. the SSVI response timed out).
                 return double.NaN;
             }
 

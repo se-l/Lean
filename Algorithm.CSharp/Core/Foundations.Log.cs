@@ -7,6 +7,7 @@ using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Securities.Option;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
@@ -15,6 +16,24 @@ namespace QuantConnect.Algorithm.CSharp.Core
 {
     public partial class Foundations: QCAlgorithm
     {
+        private readonly ConcurrentDictionary<string, DateTime> _logOncePerDay = new();
+
+        /// <summary>
+        /// Log a line at most once per (key, session day). For state that holds all day and would
+        /// otherwise repeat on every call — e.g. a per-underlying feature switch that is checked once
+        /// per second. A race can emit the line twice; it can never suppress a changed day.
+        /// </summary>
+        public void LogOncePerDay(string key, string message)
+        {
+            DateTime today = Time.Date;
+            if (_logOncePerDay.TryGetValue(key, out DateTime last) && last == today)
+            {
+                return;
+            }
+            _logOncePerDay[key] = today;
+            Log(message);
+        }
+
         public string Humanize(Dictionary<string, string> kwargs)
         {
             return string.Join(", ", kwargs.Select(kv => $"{kv.Key}={kv.Value}"));

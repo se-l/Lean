@@ -1,6 +1,6 @@
 {
   "StartDate": "2026-08-06",
-  "EndDate": "2026-08-07",
+  "EndDate": "2026-08-10",
   "Ticker": [ "NET" ],
   "MQHost": "127.0.0.1",
   "MQPort": 5672,

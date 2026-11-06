@@ -144,10 +144,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             Schedule.On("LogDifferenceTargetHoldingsOrderTickets", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(5)), LogDifferenceTargetHoldingsOrderTickets);
             Schedule.On("FetchTargetPortfolios", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), FetchTargetPortfolios); // Only runs if marketRegime is matching. refactor
             Schedule.On("FetchPfRiskScenarios", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), FetchPfRiskScenarios); // Only runs if marketRegime is matching. refactor
-            // The Kalman state is not persisted across sessions: re-init each session from the
-            // previous session's EM fit (04:05, before the 04:00 pre-market data is used for
-            // trading; the guard inside makes it idempotent when warm-up already initialised).
-            Schedule.On("ResetKalmanDaily", DateRules.EveryDay(symbolSubscribed), TimeRules.At(4, 5), ResetKalmanDaily);
             ScheduleRegularRequestStressTestDs(startTime: new TimeSpan(0, 15, 50, 0), endTime: new TimeSpan(0, 16, 10, 0));
 
             foreach (string tickerStr in ticker)
@@ -187,7 +183,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             rMQClient.EventHandlerConnected += OnWSConnected;
             rMQClient.RegisterEventHandler<TargetPortfoliosEventArgs>(ChannelPb.TargetPortfolio, OnResponseTargetPortfolios);
             rMQClient.RegisterEventHandler<ResultStressTestDsEventArgs>(ChannelPb.StressTestDs, OnResultStressTestDs);
-            rMQClient.RegisterEventHandler<ResponseKalmanInitEventArgs>(ChannelPb.KalmanInit, OnResponseKalmanInit);
             rMQClient.RegisterEventHandler<CmdCfgOverrideEventArgs>(ChannelPb.CmdCfgOverride, OnCmdCfgOverride);
             rMQClient.RegisterEventHandler<ResponseSSVICalibrationEventArgs>(ChannelPb.RequestSsviCalibration, OnResponseSSVICalibration);
             rMQClient.RegisterEventHandler<ResponsePfRiskScenariosEventArgs>(ChannelPb.RequestPfRiskScenarios, OnResponsePfRiskScenarios);
@@ -206,8 +201,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             FetchTargetPortfolios();
             FetchPfRiskScenarios();
             LogDifferenceTargetHoldingsOrderTickets();
-
-            // equities.DoForEach(symbol => RequestKalmanInit(ToEquity(symbol)));
 
             Cfg.Ticker.DoForEach(s => SetTargetHoldingsToZeroAfterEarnings(Securities[s].Symbol));
 
@@ -846,10 +839,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         }
 
         /// <summary>
-        /// Builds the state-vector -> params mapping for a GIVEN tenor list. It is a factory rather
-        /// than a closure over one dictionary because the Kalman state grows when a new expiry is
-        /// listed: a mapping that captured the initial key list would keep writing every parameter
-        /// under the wrong tenor after the insertion point.
+        /// Builds the state-vector -> params mapping for a GIVEN tenor list.
         /// </summary>
         internal static Func<IReadOnlyList<DateTime>, Func<Vector<double>, SSVIParamsDictionary>> VecToSsviParamsDictionary()
         {
@@ -866,61 +856,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     return result;
                 };
             };
-        }
-
-        private void OnResponseKalmanInit(object sender, ResponseKalmanInitEventArgs e)
-        {
-            if (!Cfg.UseKalmanSurfaces)
-            {
-                Log($"{Time} OnResponseKalmanInit: Kalman is not in the surface path (UseKalmanSurfaces=false). Ignoring.");
-                return;
-            }
-
-            Equity equity = (Equity)Securities[e.ResponseKalmanInit.Request.Underlying];
-            if (e.ResponseKalmanInit.InitState.Count > 0)
-            {
-                if (!KalmanFiltersSSVI.ContainsKey(equity))
-                {
-                    SSVIParamsDictionary ssviParamsDct = new(e.ResponseKalmanInit.InitState.ToArray());
-                    Matrix<double> init_covariance =
-                        Matrix<double>.Build.DenseOfRowArrays(
-                            e.ResponseKalmanInit.InitCovariance.Select(row => row.Values.ToArray()));
-
-                    List<DateTime> tenors = ssviParamsDct.GetSortedKeys();
-                    KalmanFiltersSSVI[equity] = new KalmanFilter<SSVIParamsDictionary>(this, equity,
-                        tenors, ssviParamsDct.ToVector(), init_covariance, VecToSsviParamsDictionary());
-                    KalmanFiltersSSVI[equity].OnUpdate += IvSurfaceSsviMid[equity].SetModelParams;
-                    KalmanFilterSSVIWriters[equity] = new(this, KalmanFiltersSSVI[equity]);
-                    PositionWriters[equity] = new(this);
-                    IvSurfaceSsviMid[equity].SetModelParams(KalmanFiltersSSVI[equity].GetSSVIParams());
-                    // KalmanFiltersSSVI[equity].OnUpdate += OnKalmanSurfaceUpdated;
-                    Log($"{Time} OnResponseKalmanInit: {equity} Kalman filter initialized " +
-                        $"({tenors.Count} tenors, {KalmanFiltersSSVI[equity].StateDim} dims).");
-                }
-                else
-                {
-                    // Daily reset path: keep the object — and therefore every OnUpdate subscriber
-                    // (the surface, the CSV writer, the scenario publisher) — and replace its state.
-                    // Re-creating the filter would silently drop those subscriptions.
-                    SSVIParamsDictionary ssviParamsDct = new(e.ResponseKalmanInit.InitState.ToArray());
-                    Matrix<double> init_covariance =
-                        Matrix<double>.Build.DenseOfRowArrays(
-                            e.ResponseKalmanInit.InitCovariance.Select(row => row.Values.ToArray()));
-                    List<DateTime> tenors = ssviParamsDct.GetSortedKeys();
-
-                    KalmanFiltersSSVI[equity].Reset(tenors, ssviParamsDct.ToVector(), init_covariance);
-                    if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface))
-                    {
-                        surface.SetModelParams(KalmanFiltersSSVI[equity].GetSSVIParams());
-                    }
-                    Log($"{Time} OnResponseKalmanInit: {equity} Kalman filter re-initialized " +
-                        $"({tenors.Count} tenors, {KalmanFiltersSSVI[equity].StateDim} dims).");
-                }
-            }
-            else
-            {
-                Log($"{Time} OnResponseKalmanInit: {equity} No init state received. Ignoring.");
-            }
         }
 
         internal void OnCmdCfgOverride(object sender, CmdCfgOverrideEventArgs e)
@@ -977,68 +912,10 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         private void OnWSConnected(object sender, object obj)
         {
-            // The Kalman state is seeded on (re)connect only when the filter is in the surface path;
-            // warm-up used to do this and without it the filters stayed null until the 04:05 reset.
-            if (Cfg.UseKalmanSurfaces)
-            {
-                equities.DoForEach(symbol => RequestKalmanInit(ToEquity(symbol)));
-            }
-
             if (!IsWarmingUp && !IsMyMarketOpen(symbolSubscribed))
             {
                 Log($"{Time} OnWSConnected: Fetching target portfolios.");
                 FetchTargetPortfolios();
-            }
-        }
-
-        /// <summary>Session date the Kalman state was last (re)initialised for; guards the daily job.</summary>
-        private DateTime _lastKalmanInitDate = DateTime.MinValue;
-
-        private void RequestKalmanInit(Equity underlying, DateTime? fitDate = null)
-        {
-            DateTime start = fitDate ?? SubtractBusinessDays(Time.Date, 1);
-            RequestKalmanInitPb requestKalmanInit = new()
-            {
-                Underlying = underlying.Symbol.Value,
-                DateFitStart = start.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-                DateFitEnd = start.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-                Ts = Time.ToString(DatetTmeFmtProto, CultureInfo.InvariantCulture),
-            };
-
-            _lastKalmanInitDate = Time.Date;
-            _ = rMQClient.SendMessageAsync(requestKalmanInit);
-        }
-
-        /// <summary>
-        /// Start-of-session re-initialisation. The Kalman state is NOT persisted across sessions and
-        /// must not carry overnight: each session begins from Fino's EM fit over the previous
-        /// session's surfaces. Any expiry listed since that fit is added intraday by
-        /// KalmanFilter.Grow — which is why the init's tenor set being one session stale is fine.
-        /// </summary>
-        private void ResetKalmanDaily()
-        {
-            if (IsWarmingUp) return;
-            if (_lastKalmanInitDate >= Time.Date)
-            {
-                return;   // already initialised for this session (e.g. warm-up finished today)
-            }
-
-            foreach (string tickerStr in Cfg.Ticker)
-            {
-                if (!Securities.ContainsKey(tickerStr)) continue;
-                Equity equity = ToEquity(Securities[tickerStr].Symbol);
-
-                // Drop the previous session's parameters BEFORE the new init lands: if the mind
-                // service does not answer, the surface must read as uncalibrated (pricer fallback)
-                // rather than keep pricing yesterday's smile into a new session.
-                if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
-                {
-                    ssvi.IsCalibrated = false;
-                }
-
-                Log($"{Time} ResetKalmanDaily: {equity} re-initialising the Kalman state for " +
-                    $"{Time.Date:yyyy-MM-dd} (fit on {SubtractBusinessDays(Time.Date, 1):yyyy-MM-dd}).");
-                RequestKalmanInit(equity);
             }
         }
 
@@ -1325,7 +1202,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 }
 
                 Log($"{Time} RequestTargetPortfolios: {underlying} sending {requestTargetPortfolios.Params.Count} surface " +
-                    $"params, source={(KalmanFiltersSSVI.ContainsKey(equity) ? "kalman" : "surface")}, force={force}.");
+                    $"params, force={force}.");
                 _ = rMQClient.SendMessageAsync(requestTargetPortfolios);
             }
             catch (Exception e)
@@ -1335,15 +1212,10 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         }
 
         /// <summary>
-        /// The SSVI state consumers are using right now: the Kalman filter when it is in the path,
-        /// otherwise whatever the installed surface holds (raw-first default).
+        /// The SSVI state consumers are using right now
         /// </summary>
         private SSVIParamsDictionary CurrentSurfaceParams(Equity equity)
         {
-            // if (KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> filter))
-            // {
-            //     return filter.GetSSVIParams();
-            // }
             if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
             {
                 return ssvi.ModelParams;
@@ -1378,9 +1250,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             };
             request.Holdings.Add(PortfolioOptionHoldings(underlying));
             
-            // A regime change can fire before the Kalman filter exists for this underlying (it is created
-            // when the KalmanInit response arrives), and indexing the dictionary threw
-            // "The given key 'NOW' was not present in the dictionary" out of the scheduled event.
+            // A regime change can fire before the IVSurface exists for this underlying, and indexing the dictionary threw
             SSVIParamsDictionary riskParams = CurrentSurfaceParams(equity);
             if (riskParams == null || riskParams.Count == 0)
             {
@@ -1475,12 +1345,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 return;
             }
 
-            // One entry point with the warehouse rows: the calibration is the product unless the Kalman
-            // path is opted in, in which case ApplySurface filters it first.
+            // One entry point with the warehouse rows: the calibration is the product
             ApplySurface(underlying, responseParams, "ssvi calibration", raw: true);
         }
 
-        protected override void OnSurfaceUpdated(object sender, KalmanOnUpdateEventArgs<SSVIParamsDictionary> e)
+        protected override void OnSurfaceUpdated(object sender, IVSurfaceSSVIOnUpdateEventArgs<SSVIParamsDictionary> e)
         {
             if (!ActiveRegimes.TryGetValue(e.Equity, out var regimes)) return;
             // if (!ActiveRegimes.TryGetValue(e.Equity, out var regimes) || !regimes.Contains(MarketRegime.PostEarningsRelease)) return;

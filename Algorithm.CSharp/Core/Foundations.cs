@@ -151,8 +151,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public readonly ConcurrentDictionary<Holding, double> MarginalUtility = new();
         //public ConcurrentDictionary<Symbol, ConcurrentDictionary<OrderDirection, Sweep>> SweepState = new();
         public Dictionary<OrderDirection, ConcurrentDictionary<Symbol, SpreadBuffer>> SpreadBuffers = new() { { OrderDirection.Buy, new() }, { OrderDirection.Sell, new() } };
-        public Dictionary<Equity, KalmanFilter<SSVIParamsDictionary>> KalmanFiltersSSVI = new();
-        public Dictionary<Equity, KalmanFilterSSVIWriter> KalmanFilterSSVIWriters = new();
         public Dictionary<Equity, PositionWriter> PositionWriters = new();
         public ConcurrentDictionary<Option, double> PresumedFillIV = new();
         public Dictionary<Symbol, DateTime> CurrentMarketOpen = new();
@@ -496,8 +494,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     continue;
                 }
 
-                // One entry point for every surface: install as-is unless the Kalman path is opted in
-                // and the row says it is a raw fit.
+                // One entry point for every surface
                 ApplySurface(surfaceEquity, ToSsviParamsDictionary(surface), "slice", surface.IsRaw);
                 Log($"{Time} OnData: SurfaceSSVI {surface.SurfaceId} {surface.Status} " +
                     $"snap={surface.TimeSnap:HH:mm:ss} available={surface.AvailableTime:HH:mm:ss} " +
@@ -525,7 +522,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             foreach (Symbol underlying in equities)
             {
-                if (SignalsLastRun[underlying] < Time - TimeSpan.FromMinutes(5)) RunSignals(underlying);
+                // Seeded to DateTime.MinValue at initialization, so an entry normally always exists. A
+                // MISSING entry must schedule a pass, never throw: a bare indexer here took the whole run
+                // down with KeyNotFoundException 'NET'.
+                if (!SignalsLastRun.TryGetValue(underlying, out DateTime lastRun) || lastRun < Time - TimeSpan.FromMinutes(5))
+                {
+                    RunSignals(underlying);
+                }
             }
 
             // Results of any off-thread signal pass, applied here on the algorithm thread.
@@ -704,10 +707,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // The filter is only in the path when opted in; otherwise the surface IS the state.
             SSVIParamsDictionary parameters = null;
-            // if (KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> filter))
-            // {
-            //     parameters = filter.GetSSVIParams();
-            // }
             if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
             {
                 parameters = ssvi.ModelParams;
@@ -731,7 +730,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             RiskRecorder.Dispose();
             IvSurfaceSsviMid.Values.DoForEach(s => s.Dispose());
             PositionWriters.Values.DoForEach(w => w.Dispose());
-            KalmanFilterSSVIWriters.Values.DoForEach(w => w.Dispose());
             RiskProfiles.Values.DoForEach(s => s.Dispose());
             OrderEventWriters.Values.DoForEach(s => s.Dispose());
             TradeWriter.Dispose();
@@ -1249,7 +1247,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             Equity equity = ToEquity(o);
 
-            HashSet<MarketRegime> regimes = ActiveRegimes[equity];
+            // Same class of bug as the OnData indexer: ActiveRegimes is filled by a 1-minute schedule, so
+            // the FIRST signal pass of the session had no entry and this bare indexer threw — surfacing as
+            // "RunSignals(NET): scope capture failed: The given key 'NET' was not present in the dictionary".
+            if (!ActiveRegimes.TryGetValue(equity, out HashSet<MarketRegime> regimes) || regimes == null)
+            {
+                regimes = GetMarketRegimes(equity.Symbol);
+            }
             if (!regimes.Any()) return false;
 
             return OptionIsTradeable(o)
@@ -1294,10 +1298,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (TimeToMarketClose(underlying).TotalMinutes < Cfg.MinutesBeforeCloseIsPreEarningsReleaseEOD)
                 {
                     regimes.Add(MarketRegime.PreEarningsReleaseBeforeMarketClose);
-                }
-                else if (Cfg.UseKalmanFilterBeforeEarningsRelease && Time.TimeOfDay >= TimeStartKfBeforeRelease(underlying.Value))
-                {
-                    regimes.Add(MarketRegime.PreEarningsRelease);
                 }
                 else
                 {
@@ -1733,7 +1733,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             bool skipRunSignals = Cfg.SkipRunSignals.TryGetValue(underlying.Value, out skipRunSignals) ? skipRunSignals : Cfg.SkipRunSignals[CfgDefault];
-            if (skipRunSignals) return;
+            if (skipRunSignals)
+            {
+                // Do NOT touch SignalsLastRun here: OnData reads it as a plain indexer, and removing the
+                // entry is what produced KeyNotFoundException 'NET' on the next tick.
+                LogOncePerDay($"SkipRunSignals:{underlying.Value}",
+                    $"{Time} RunSignals: {underlying} skipped — SkipRunSignals is true (option trading disabled, equity hedging unaffected).");
+                return;
+            }
 
             // Per-underlying single-flight gate. A second request while a pass is in flight is
             // dropped with a log — same scope, and its result would only duplicate submissions.

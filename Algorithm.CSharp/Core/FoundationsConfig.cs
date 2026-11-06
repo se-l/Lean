@@ -67,17 +67,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, List<HedgeScheduleCfg>> HedgeSchedules { get; set; }
         public Dictionary<string, int> PrepareEarningsPeriodDays { get; set; }
         public bool BacktestNearRealtimePacingEnabled { get; set; }
-        public int MinHistoryDaysUnderlyingForScoping { get; set; }
         public Dictionary<string, double> MaxDelta100BpUSDSignalQuantity { get; set; }
-        public bool UseKalmanFilterBeforeEarningsRelease { get; set; }
-
-        /// <summary>
-        /// Put the Kalman filter in the surface path. OFF (default): the incoming surface is the
-        /// product and is installed as-is for every consumer — filtering is upstream's job. ON: a
-        /// `kind = raw` row is filtered here and the surface receives the filtered state.
-        /// The filter code stays in either case; it is just not wired.
-        /// </summary>
-        public bool UseKalmanSurfaces { get; set; }
         public Dictionary<string, bool> PricerOverridePricesWithPresumedIvFillDefensively { get; set; }
         public Dictionary<string, Dictionary<string, string>> TimeRangeReduceAbsDeltaPosition { get; set; }
         public Dictionary<string, string> TimeStartKfBeforeRelease { get; set; }
@@ -89,24 +79,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         
         public int RequestContractsSchedulesBacktestNMaximum;
         public Dictionary<string, List<RequestContractsScheduleCfg>> RequestContractsSchedules;
-        public Dictionary<string, int> KalmanMinUpdatesToReady { get; set; }
-        /// <summary>
-        /// Per-parameter process noise std (keyed "theta"/"rho"/"psi"), in the parameters' own
-        /// units, at the 600 s reference cadence. Null falls back to KalmanFilter's defaults.
-        /// </summary>
-        public Dictionary<string, double> KalmanProcessStd { get; set; }
-        /// <summary>
-        /// Per-parameter measurement noise std (keyed "theta"/"rho"/"psi") for a single snapshot
-        /// calibration. Null falls back to KalmanFilter's defaults.
-        /// </summary>
-        public Dictionary<string, double> KalmanMeasurementStd { get; set; }
-        /// <summary>
-        /// Prior variance for a newly listed tenor's 3x3 covariance block, as a multiple of that
-        /// parameter's measurement variance R (default 1.0 = "one observation's worth of
-        /// confidence"). Only used when the Kalman state grows mid-session; the rest of P0 comes
-        /// from Fino's EM fit.
-        /// </summary>
-        public double KalmanNewTenorPriorScale { get; set; } = 1.0;
         public int MinutesBeforeMarketCloseHedgeDeltaFlat { get; set; }
         public int MinutesAfterOpenMMWindowStarts { get; set; }
         public int MinutesBeforeCloseMMWindowEnds { get; set; }

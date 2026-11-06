@@ -19,7 +19,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
         /// <summary>The SSVI parameters as OTLP gauges (one data point per tenor).</summary>
         public void WriteMetrics();
         public void SetModelParams(SSVIParamsDictionary modelParams);
-        public void SetModelParams(object sender, KalmanOnUpdateEventArgs<SSVIParamsDictionary> e);
+        public void SetModelParams(object sender, IVSurfaceSSVIOnUpdateEventArgs<SSVIParamsDictionary> e);
         
         /// <summary>
         /// Returns true and a valid, finite IV when the surface is calibrated and has

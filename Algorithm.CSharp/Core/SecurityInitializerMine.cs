@@ -190,7 +190,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // just created. The engine's own warm-up window for a custom type is a couple of calendar
             // days and lands on the weekend before a Monday release, so the anchor is fetched
             // explicitly — the PREVIOUS session's surfaces, whose LAST one is the state this session
-            // starts from (the Kalman design carries uncertainty across the day boundary).
+            // starts.
             // The SEED is a history read, not a subscription: it is served by the same warehouse
             // provider in live as in backtest, so live also starts from the previous session's surface.
             // Without it a live run has no params until the first non-empty calibration response, and a

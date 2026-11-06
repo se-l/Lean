@@ -230,9 +230,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 if (!Cfg.HedgeSchedules.TryGetValue(CfgDefault, out schedules) || schedules == null) return (null, null, null);
             }
 
-            HashSet<MarketRegime> regimes = ActiveRegimes.TryGetValue((Equity)Securities[equitySymbol], out HashSet<MarketRegime> active)
-                ? active
-                : new HashSet<MarketRegime>();
+            // COMPUTE the regime, do not read the dictionary. ActiveRegimes is refreshed by a 1-minute
+            // schedule and only while IsMyMarketOpen is true, so at 09:30:00 it still holds the PRE-OPEN
+            // set: a "Hold" window starting at the open matched nothing and the algo hedged into it.
+            HashSet<MarketRegime> regimes;
+            try
+            {
+                regimes = GetMarketRegimes(equitySymbol);
+            }
+            catch
+            {
+                regimes = ActiveRegimes.TryGetValue((Equity)Securities[equitySymbol], out HashSet<MarketRegime> active)
+                    ? active
+                    : new HashSet<MarketRegime>();
+            }
 
             TimeSpan now = Time.TimeOfDay;
             HedgeScheduleCfg hold = null, buy = null, sell = null;

@@ -373,13 +373,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
                         DispatchResponse(msg.Channel, requestSentTime, 0,
                             new CmdCfgOverrideEventArgs(CmdCfgOverride.Parser.ParseFrom(msg.Payload)));
                         break;
-                    case ChannelPb.KalmanInit:
-                    {
-                        var response = ResponseKalmanInitPb.Parser.ParseFrom(msg.Payload);
-                        DispatchResponse(msg.Channel, requestSentTime, response.ElapsedMs,
-                            new ResponseKalmanInitEventArgs(response));
-                        break;
-                    }
                     case ChannelPb.RequestSsviCalibration:
                     {
                         var response = ResponseSSVICalibrationPb.Parser.ParseFrom(msg.Payload);
@@ -474,7 +467,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             return typeof(T) switch
             {
                 _ when typeof(T) == typeof(RequestTargetPortfoliosPb) => ChannelPb.TargetPortfolio,
-                _ when typeof(T) == typeof(RequestKalmanInitPb) => ChannelPb.KalmanInit,
                 _ when typeof(T) == typeof(RequestStressTestDsPb) => ChannelPb.StressTestDs,
                 _ when typeof(T) == typeof(RequestSSVICalibrationPb) => ChannelPb.RequestSsviCalibration,
                 _ when typeof(T) == typeof(RequestPfRiskScenariosPb) => ChannelPb.RequestPfRiskScenarios,

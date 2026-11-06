@@ -52,16 +52,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
         public CmdCfgOverride CmdCfgOverride { get; }
     }
 
-    public class ResponseKalmanInitEventArgs : EventArgs
-    {
-        public ResponseKalmanInitEventArgs(ResponseKalmanInitPb responseKalmanInit)
-        {
-            ResponseKalmanInit = responseKalmanInit;
-        }
-
-        public ResponseKalmanInitPb ResponseKalmanInit { get; }
-    }
-
     public class ResponseSSVICalibrationEventArgs : EventArgs
     {
         public ResponseSSVICalibrationEventArgs(ResponseSSVICalibrationPb responseSSVICalibration)

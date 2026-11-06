@@ -30,7 +30,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // Set the pricing strategy based on the market regime
             HashSet<MarketRegime> regimes = ActiveRegimes.TryGetValue(ToEquity(underlying), out regimes) ? regimes : new HashSet<MarketRegime>();
 
-            if (regimes.Contains(MarketRegime.PreEarningsRelease)) { return GetPricePreEarningsReleasePricerKalman; }
+            if (regimes.Contains(MarketRegime.PreEarningsRelease)) { return GetPricePreEarningsReleasePricer; }
             if (regimes.Contains(MarketRegime.PreEarningsReleaseBeforeMarketClose)) { return GetPricePreEarningsReleaseBeforeMarketClose; }
             if (regimes.Contains(MarketRegime.PostEarningsRelease)) { return GetPricePostEarningsReleasePricer; }
             return GetPriceNoTraderPricer;
@@ -41,7 +41,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return 0;
         }
 
-        private decimal GetPricePreEarningsReleasePricerKalman(QuoteRequest<Option> qr)
+        private decimal GetPricePreEarningsReleasePricer(QuoteRequest<Option> qr)
         {
             if (qr == null || IsUtilityGtMin(qr)) return 0;
 
@@ -61,7 +61,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return 0;
             }
 
-            decimal kfPrice = GetKalmanQuote(qr) ?? 0;
+            decimal kfPrice = GetSurfaceQuote(qr) ?? 0;
             decimal priceModel = TakeAggressivePrice(qr.OrderDirection, kfPrice, priceSweep);
 
             // The sweep curve IS the quote policy: at ratio 0 it rests on the passive touch (ask for a
@@ -80,7 +80,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (price == 0)
             {
-                Log($"{Time} GetPricePreEarningsReleasePricerKalman(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, no sweep and no model price - not quoting. bid={bid}, ask={ask}");
+                Log($"{Time} GetPricePreEarningsReleasePricer(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, no sweep and no model price - not quoting. bid={bid}, ask={ask}");
                 return 0;
             }
 
@@ -102,7 +102,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // reaching the worse execution price.
             bool bufferApplied = priceSweep == 0;
 
-            Log($"{Time} GetPricePreEarningsReleasePricerKalman(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, utility={qr.UtilityOrder.Utility:0.00}, sweepTargetIV={sweepTargetIv:0.000}, sweepRatio={sweepRatio:0.000}, sweepEntry={sweepEntry:0.0000}, sweepTarget={sweepTargetPrice:0.0000}, sweepPrice={priceSweep:0.0000}, kfPrice={kfPrice:0.0000}, aggressivePrice={priceModel:0.0000}, priceSource={(priceSweep != 0 ? "sweep" : "model")}, bufferApplied={bufferApplied}, preBboPrice={priceBeforeBboCap:0.0000}, finalPrice={price:0.0000}, bid={bid:0.0000}, ask={ask:0.0000}, spread={spread:0.0000}, aggressiveCrossRatio={aggressiveCrossRatio:0.000}, finalCrossRatio={finalCrossRatio:0.000}");
+            Log($"{Time} GetPricePreEarningsReleasePricer(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, utility={qr.UtilityOrder.Utility:0.00}, sweepTargetIV={sweepTargetIv:0.000}, sweepRatio={sweepRatio:0.000}, sweepEntry={sweepEntry:0.0000}, sweepTarget={sweepTargetPrice:0.0000}, sweepPrice={priceSweep:0.0000}, kfPrice={kfPrice:0.0000}, aggressivePrice={priceModel:0.0000}, priceSource={(priceSweep != 0 ? "sweep" : "model")}, bufferApplied={bufferApplied}, preBboPrice={priceBeforeBboCap:0.0000}, finalPrice={price:0.0000}, bid={bid:0.0000}, ask={ask:0.0000}, spread={spread:0.0000}, aggressiveCrossRatio={aggressiveCrossRatio:0.000}, finalCrossRatio={finalCrossRatio:0.000}");
             if (bufferApplied)
             {
                 price = BufferPriceCrossingSpread(qr, price);
@@ -136,9 +136,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <summary>
         /// Post-release quoting. The sweep schedule in FoundationsConfig has PostEarningsRelease
         /// entries (Sell 09:45-11:30, Buy 11:30-14:30, Sell 14:00-16:00), so the same policy as the
-        /// pre-release Kalman pricer applies: the schedule drives the limit from the passive touch
+        /// pre-release pricer applies: the schedule drives the limit from the passive touch
         /// inward over its Duration, BufferPriceCrossingSpread rate-limits how fast the quote is
-        /// allowed to walk, and the Kalman model price is only the fallback when no sweep exists.
+        /// allowed to walk, and the surface model price is only the fallback when no sweep exists.
         ///
         /// This path used to (a) collapse the sweep onto the model mid with TakeAggressivePrice,
         /// (b) leave the spread buffer commented out, and (c) log nothing at all - which is why a
@@ -156,10 +156,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal sweepTargetPrice = sweep?.TargetPrice ?? 0;
 
             // Convert IV to a price
-            decimal kfPrice = GetKalmanQuote(qr) ?? 0;
+            decimal kfPrice = GetSurfaceQuote(qr) ?? 0;
             decimal priceModel = TakeAggressivePrice(qr.OrderDirection, priceSweep, kfPrice);
 
-            // Sweep first, model only as the fallback - see GetPricePreEarningsReleasePricerKalman.
+            // Sweep first, model only as the fallback - see GetPricePreEarningsReleasePricer.
             decimal price = priceSweep != 0 ? priceSweep : kfPrice;
 
             decimal bid = qr.Option.BidPrice;
@@ -177,7 +177,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             price = LimitPriceToBBO(qr, price);
 
             // Sweep-priced quotes are paced by the schedule; the spread buffer only paces a model-priced
-            // fallback (see GetPricePreEarningsReleasePricerKalman).
+            // fallback (see GetPricePreEarningsReleasePricer).
             bool bufferApplied = priceSweep == 0;
 
             Log($"{Time} GetPricePostEarningsReleasePricer(): symbol={qr.Option.Symbol.Value}, direction={qr.OrderDirection}, utility={qr.UtilityOrder.Utility:0.00}, sweepTargetIV={sweepTargetIv:0.000}, sweepRatio={sweepRatio:0.000}, sweepEntry={sweepEntry:0.0000}, sweepTarget={sweepTargetPrice:0.0000}, sweepPrice={priceSweep:0.0000}, kfPrice={kfPrice:0.0000}, modelPrice={priceModel:0.0000}, priceSource={(priceSweep != 0 ? "sweep" : "model")}, bufferApplied={bufferApplied}, preBufferPrice={priceBeforeBuffer:0.0000}, priceInSpread={price:0.0000}, sweepCrossRatio={CrossRatio(qr.OrderDirection, priceSweep, bid, ask):0.000}, modelCrossRatio={CrossRatio(qr.OrderDirection, priceModel, bid, ask):0.000}, bid={bid:0.0000}, ask={ask:0.0000}, spread={spread:0.0000}");
@@ -189,20 +189,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             return price;
-        }
-
-        private TimeSpan TimeStartKfBeforeRelease(string underlying)
-        {
-            try
-            {
-                return AlgoConfig.GetTimeSpan(AlgoConfig.GetEntry(Cfg.TimeStartKfBeforeRelease, underlying));
-            }
-            catch (Exception e)
-            {
-                Error($"{Time} GetQuote: {e.Message}");
-                Log(Environment.StackTrace);
-                return new TimeSpan(0, 23, 0, 0);
-            }
         }
 
         private decimal? PriceModelPresumedFill(QuoteRequest<Option> qr)
@@ -289,7 +275,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <summary>
         /// // Defensive: IV Model price override
         /// Somewhat temporary and to be refactored. Limit the price to the presumedFillIV coming from the model - a discount dependent on the utility.
-        /// Essentially, both KalmanFilter price and this PresumedIV-utility based price must be good enough to offer competitive quotes.
+        /// Essentially, both Surface price and this PresumedIV-utility based price must be good enough to offer competitive quotes.
         /// </summary>
         private bool IsPricerOverridePricesWithPresumedIvFillDefensively(string underlying)
         {
@@ -334,11 +320,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             };
         }
 
-        private decimal? GetKalmanQuote(QuoteRequest<Option> qr)
+        private decimal? GetSurfaceQuote(QuoteRequest<Option> qr)
         {
             if (!IvSurfaceSsviMid.TryGetValue((Equity)Securities[qr.Underlying], out IIVSurface ivs))
             {
-                Log($"{Time} GetKalmanQuote(): {qr.Underlying} No KalmanFilter found for {qr.Underlying}");
+                Log($"{Time} GetSurfaceQuote(): {qr.Underlying} No IV Surface found for {qr.Underlying}");
                 return null;
             }
 
@@ -364,7 +350,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 OrderDirection.Sell => ocw.NPV(modelIv, null),
                 _ => throw new ArgumentException($"Unknown order direction {qr.OrderDirection}")
             };
-            Log($"{Time} GetKalmanQuote(): direction={qr.OrderDirection} option={qr.Option}, kfPriceMid={kfPriceMid:0.0000}, kfModelIV={modelIv:0.00}, kfPriceWSpread={kfPriceWSpread:0.0000}, bidPrice={qr.Option.BidPrice}, bidIV={IvBid(qr.Option):0.00}, askPrice={qr.Option.AskPrice}, askIV={IvAsk(qr.Option):0.00}, spot={MidPrice(qr.Option.Underlying.Symbol)}");
+            Log($"{Time} GetSurfaceQuote(): direction={qr.OrderDirection} option={qr.Option}, kfPriceMid={kfPriceMid:0.0000}, kfModelIV={modelIv:0.00}, kfPriceWSpread={kfPriceWSpread:0.0000}, bidPrice={qr.Option.BidPrice}, bidIV={IvBid(qr.Option):0.00}, askPrice={qr.Option.AskPrice}, askIV={IvAsk(qr.Option):0.00}, spot={MidPrice(qr.Option.Underlying.Symbol)}");
             return (decimal?)kfPriceWSpread;
         }
 
