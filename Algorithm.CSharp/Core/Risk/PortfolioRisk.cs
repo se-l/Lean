@@ -59,17 +59,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Metric.EquityDPriceMidTotal => positions.Where(p => p.SecurityType == SecurityType.Equity).Sum(p => p.DPMidTotal),
                 Metric.OptionDPriceMidTotal => positions.Where(p => p.SecurityType == SecurityType.Option).Sum(p => p.DPMidTotal),
 
-                Metric.Gamma => (decimal)positions.Sum(p => p.Gamma(volatility)),
+                Metric.Gamma => SafeDecimal(positions.Sum(p => p.Gamma(volatility))),
                 Metric.GammaTotal => positions.Sum(p => p.GammaTotal(volatility)),
                 Metric.GammaXBpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(dX ?? 0)),
                 Metric.Gamma100BpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(100)),
                 Metric.Gamma500BpUSDTotal => positions.Sum(p => p.GammaXBpUSDTotal(500)),
                 Metric.SpeedXBpUSDTotal => positions.Sum(p => p.SpeedXBpUSDTotal(dX ?? 0)),
-                Metric.Vega => (decimal)positions.Sum(p => p.Vega()),
+                Metric.Vega => SafeDecimal(positions.Sum(p => p.Vega())),
                 Metric.VegaTotal => positions.Sum(p => p.VegaTotal()),
                 Metric.VegaXBpUSDTotal => positions.Sum(p => p.VegaXBpUSDTotal(dX ?? 0)),
                 Metric.VannaTotal => positions.Sum(p => p.VannaTotal()),
-                Metric.VannaXBpUSDTotal => positions.Sum(p => p.VannaXBpUSDTotal((decimal)(dX ?? 0))),
+                Metric.VannaXBpUSDTotal => positions.Sum(p => p.VannaXBpUSDTotal(SafeDecimal(dX ?? 0))),
                 Metric.Vanna100BpUSDTotal => positions.Sum(p => p.VannaXBpUSDTotal(100)),
                 Metric.BsmIVdSTotal => positions.Sum(p => p.BsmIVdSTotal()),
                 Metric.DeltaIVdSTotal => positions.Sum(p => p.DeltaIVdSTotal()),
@@ -77,10 +77,28 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Metric.VolgaXpUSDTotal => positions.Sum(p => p.VolgaXBpUSDTotal(dX ?? 0)),
                 Metric.Volga100BpUSDTotal => positions.Sum(p => p.VolgaXBpUSDTotal(100)),
                 Metric.ThetaTotal => positions.Sum(p => p.ThetaTotal()),
-                Metric.PosWeightedIV => positions.Any() ? positions.Sum(p => (decimal)p.IVMid1 * Math.Abs(p.Quantity)) / positions.Sum(p => Math.Abs(p.Quantity)) : 0,
+                Metric.PosWeightedIV => PositionWeightedIv(positions),
 
                 _ => throw new NotImplementedException(metric.ToString()),
             };
+        }
+
+        /// <summary>
+        /// Quantity-weighted average IV. A position whose IV was never computed carries NaN, and a plain
+        /// (decimal) cast of that is a System.OverflowException — inside the ORDER EVENT handler, which
+        /// takes the whole algorithm down. NaN/Inf count as 0 instead.
+        /// </summary>
+        private static decimal PositionWeightedIv(IEnumerable<Position> positions)
+        {
+            decimal weighted = 0m;
+            decimal total = 0m;
+            foreach (Position p in positions)
+            {
+                decimal weight = Math.Abs(p.Quantity);
+                weighted += SafeDecimal(p.IVMid1) * weight;
+                total += weight;
+            }
+            return total == 0m ? 0m : weighted / total;
         }
 
         public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, double? dX = null, bool skipCache = false)

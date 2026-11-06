@@ -191,11 +191,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // days and lands on the weekend before a Monday release, so the anchor is fetched
             // explicitly — the PREVIOUS session's surfaces, whose LAST one is the state this session
             // starts from (the Kalman design carries uncertainty across the day boundary).
-            // `surface-mode = rabbitmq` leaves the seed to the live consumer.
-            if (!_algo.SurfaceFromSlice)
-            {
-                return;
-            }
+            // The SEED is a history read, not a subscription: it is served by the same warehouse
+            // provider in live as in backtest, so live also starts from the previous session's surface.
+            // Without it a live run has no params until the first non-empty calibration response, and a
+            // target-portfolio request built in that window carries no surface at all. Only the
+            // AddData<SurfaceSSVI> subscription is backtest-only (see SurfaceFromSlice).
 
             try
             {

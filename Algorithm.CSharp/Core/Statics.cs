@@ -241,6 +241,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
+        /// <summary>
+        /// Double -> decimal that cannot throw. NaN, +/-Infinity and anything outside the decimal range
+        /// map to 0: those come from greeks/IVs that were never computed (no surface, no quote) and must
+        /// read as "no information" instead of taking down the order-event handler.
+        /// </summary>
+        public static decimal SafeDecimal(double value) =>
+            double.IsFinite(value) && value <= (double)decimal.MaxValue && value >= (double)decimal.MinValue
+                ? (decimal)value
+                : 0m;
+
         public static decimal RoundTick(decimal x, decimal tickSize, bool? ceil = null, decimal? reference = null)
         {
             if (reference != null && Math.Abs((decimal)(reference - x)) < (tickSize / 2))

@@ -814,6 +814,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             foreach (Symbol symbol in ticker.Select(tickerStr => Securities[tickerStr].Symbol))
             {
+                if (!HasSsviSurface(symbol))
+                {
+                    Log($"{Time} HedgeDeltaFlat: {symbol} skipped — no SSVI surface yet, so option delta is not measurable and the hedge would be sized off the equity position alone.");
+                    continue;
+                }
                 Log($"{Time} HedgeDeltaFlat: {symbol}");
                 HedgeOptionWithUnderlying(symbol);
             }

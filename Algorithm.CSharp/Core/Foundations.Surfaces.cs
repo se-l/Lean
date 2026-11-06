@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MathNet.Numerics.LinearAlgebra;
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
+using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -137,6 +138,30 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 $"{filter.LastObservations}/{filter.StateDim} dims, tenors {tenorsBefore}{(grew ? $"->{filter.Tenors.Count}" : string.Empty)}, " +
                 $"|z|/sigma med={filter.MedianStandardizedInnovation:0.0} p90={filter.P90StandardizedInnovation:0.0} " +
                 $"max={filter.MaxStandardizedInnovation:0.0} @{filter.WorstInnovationParam}");
+        }
+
+        /// <summary>
+        /// True when the SSVI surface for `symbol` carries parameters, i.e. option greeks are measurable.
+        ///
+        /// Before the first surface/calibration arrives the option deltas are not information — the
+        /// pricer has no IV to work from — so a delta computed in that window is the EQUITY position's
+        /// delta plus zeros, and a hedge sized off it is a guess. That is what fired on the first second
+        /// of live: a hedge taken before any surface existed, sized off an equity-only delta.
+        /// </summary>
+        public bool HasSsviSurface(Symbol symbol)
+        {
+            if (symbol == null) return false;
+            if (symbol.SecurityType != SecurityType.Equity && symbol.SecurityType != SecurityType.Option) return false;
+            Symbol underlying = symbol.SecurityType == SecurityType.Option ? symbol.Underlying : symbol;
+            if (!Securities.TryGetValue(underlying, out Security security) || security is not Equity equity) return false;
+
+            if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) &&
+                surface is IVSurfaceSSVI ssvi && ssvi.IsCalibrated && ssvi.ModelParams is { Count: > 0 })
+            {
+                return true;
+            }
+            return KalmanFiltersSSVI.TryGetValue(equity, out KalmanFilter<SSVIParamsDictionary> filter) &&
+                   filter.GetSSVIParams() is { Count: > 0 };
         }
     }
 }

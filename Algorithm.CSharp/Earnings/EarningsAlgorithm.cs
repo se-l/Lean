@@ -1324,6 +1324,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     return;
                 }
 
+                Log($"{Time} RequestTargetPortfolios: {underlying} sending {requestTargetPortfolios.Params.Count} surface " +
+                    $"params, source={(KalmanFiltersSSVI.ContainsKey(equity) ? "kalman" : "surface")}, force={force}.");
                 _ = rMQClient.SendMessageAsync(requestTargetPortfolios);
             }
             catch (Exception e)

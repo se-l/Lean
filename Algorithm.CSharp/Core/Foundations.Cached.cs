@@ -20,6 +20,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Func<Symbol, Symbol, int, Resolution, double> Correlation;
         public Func<Symbol, int, Resolution, bool> IsLiquid;
         public VoidFunction HedgeWithIndex;
+        /// <summary>Symbols with a hedge submission between the ticket check and the order call.</summary>
+        private readonly HashSet<Symbol> hedgeSubmitting = new();
+
         public VoidArg1Function<Symbol> HedgeOptionWithUnderlying;
         public Func<Symbol, int, Resolution, IEnumerable<TradeBar>> HistoryWrap;
         public Func<Symbol, int, Resolution, IEnumerable<QuoteBar>> HistoryWrapQuote;
@@ -281,6 +284,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 Log($"{Time} ExecuteHedge: Not hedging {equity} because quantity={quantity}.");
                 return;
             }
+            if (!HasSsviSurface(symbol))
+            {
+                // Greeks need the surface. Without it the delta that produced `quantity` is the equity
+                // leg plus zeros — hedging on that is what put a wrong hedge out on the first second of
+                // live, before the first calibration arrived.
+                Log($"{Time} ExecuteHedge: Not hedging {equity} because no SSVI surface is present yet (requested quantity={quantity}).");
+                return;
+            }
 
             // Hedge schedules: a matching "Hold" schedule suppresses hedging for its window (that is
             // what keeps the algo out of the market for the first minutes after a release). Buy/Sell
@@ -307,7 +318,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     tickets.Where(t => t.OrderType == OrderType.Limit).ToList().ForEach(t => Cancel(t, $"Requested a market order on {equity}"));
                 }
 
-                liveTickets = tickets.Where(t => orderTypeMarketLimit.Contains(t.OrderType) && orderNewSubmittedPartialFilledUpdated.Contains(t.Status)).ToList();
+                // ANY non-terminal ticket blocks a new hedge. The status filter used to require
+                // New/Submitted/Partial/UpdateSubmitted, but a ticket returned by LimitOrder() in LIVE
+                // sits in OrderStatus.None until the brokerage transaction handler acknowledges it —
+                // and that window is exactly how a second hedge order went out a second later: the
+                // first ticket existed, was stored, and still did not count as "live".
+                liveTickets = tickets
+                    .Where(t => t != null && orderTypeMarketLimit.Contains(t.OrderType) && !orderFilledCanceledInvalid.Contains(t.Status))
+                    .ToList();
                 isLiveTickets = liveTickets.Any();
 
                 if (liveTickets.Where(t => t.OrderType == OrderType.Limit).Any() && orderType == OrderType.Market)
@@ -318,16 +336,39 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             if (!isLiveTickets)
             {
-                OrderType _orderType = orderType ?? GetEquityHedgeOrderType(equity);
-                price = GetEquityHedgePrice(equity, _orderType, quantity);
+                // The ticket list is read, then order submission happens: without this lease two
+                // triggers interleaved on different threads (fill handler + scheduled hedge) both saw an
+                // empty list and both submitted.
+                lock (hedgeSubmitting)
+                {
+                    if (!hedgeSubmitting.Add(symbol))
+                    {
+                        Log($"{Time} ExecuteHedge: {equity} qty={quantity} skipped — another hedge submission for this symbol is in flight.");
+                        return;
+                    }
+                }
 
-                QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New OrderEquity" }, { "f", $"ExecuteHedge" },
-                            { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
-                OrderEquity(symbol, quantity, price, _orderType);
+                try
+                {
+                    OrderType _orderType = orderType ?? GetEquityHedgeOrderType(equity);
+                    price = GetEquityHedgePrice(equity, _orderType, quantity);
+
+                    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New OrderEquity" }, { "f", $"ExecuteHedge" },
+                                { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
+                    OrderEquity(symbol, quantity, price, _orderType);
+                }
+                finally
+                {
+                    lock (hedgeSubmitting)
+                    {
+                        hedgeSubmitting.Remove(symbol);
+                    }
+                }
             }
             else
             {
-                string msg = $"{Time} ExecuteHedge: Not hedging {equity} because quantity={quantity}, isLiveTickets={isLiveTickets}, OrderId={string.Join(",", liveTickets.Select(t => t.OrderId))}.";
+                string msg = $"{Time} ExecuteHedge: Not hedging {equity} because quantity={quantity}, isLiveTickets={isLiveTickets}, " +
+                             $"pending=[{string.Join(", ", liveTickets.Select(t => $"id={t.OrderId} status={t.Status} qty={t.Quantity}"))}].";
                 Log(msg);
             }
         }
@@ -337,11 +378,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         /// <param name="equity"></param>
         /// <returns></returns>
-        public OrderType GetEquityHedgeOrderType(Equity equity) 
+        public OrderType GetEquityHedgeOrderType(Equity equity)
         {
-            bool isTinySpread = Spread(equity) <= Cfg.MaxSpreadForMarketOrderHedging;
-            // bool isMarketAboutToClose = Time.TimeOfDay > Cfg.MarketCloseTime - Cfg.MarketCloseTimeBuffer;
-            return isTinySpread ? OrderType.Market : OrderType.Limit;
+            // Hedges are ALWAYS limit orders. A tight spread used to become a market order; instead the
+            // limit price is placed at the touch (ask to buy, bid to sell) in GetEquityHedgePrice, which
+            // pays the same spread but keeps the order cancellable and its price visible.
+            return OrderType.Limit;
         }
 
         enum EquityHedgeMode {
@@ -361,6 +403,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
             OrderDirection direction = quantity > 0 ? OrderDirection.Buy : OrderDirection.Sell;
 
             bool isPriceMovingAway = (ticket != null && ticket.UpdateRequests.Count > Cfg.LimitOrderUpdateBeforeMarketOrderConversion);
+            // A spread tight enough that we would previously have crossed it with a market order is paid
+            // with a limit AT the touch instead — same fill odds, no market order in the book.
+            bool isTinySpread = Spread(equity) <= Cfg.MaxSpreadForMarketOrderHedging;
             int modeInt = Cfg.EquityHedgeMode.TryGetValue(equity.Symbol.Value, out modeInt) ? modeInt : Cfg.EquityHedgeMode[CfgDefault];
             // An active hedge schedule dictates the mode for its window (byte in the config, the same
             // 0/1/2 encoding as EquityHedgeMode); otherwise the per-underlying setting applies.
@@ -369,7 +414,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             int maxMode = Enum.GetValues(typeof(EquityHedgeMode)).Length - 1;
             modeInt = Math.Min(Math.Max(modeInt, 0), maxMode);
             EquityHedgeMode mode = (EquityHedgeMode)Enum.GetValues(typeof(EquityHedgeMode)).GetValue(modeInt);
-            mode = isPriceMovingAway ? EquityHedgeMode.Agressive : mode;
+            mode = (isPriceMovingAway || isTinySpread) ? EquityHedgeMode.Agressive : mode;
 
             switch (orderType)
             {
