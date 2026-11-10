@@ -322,7 +322,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         private decimal? GetSurfaceQuote(QuoteRequest<Option> qr)
         {
-            if (!IvSurfaceSsviMid.TryGetValue((Equity)Securities[qr.Underlying], out IIVSurface ivs))
+            if (!IvSurfaceSsviExecution.TryGetValue((Equity)Securities[qr.Underlying], out IIVSurface ivs))
             {
                 Log($"{Time} GetSurfaceQuote(): {qr.Underlying} No IV Surface found for {qr.Underlying}");
                 return null;

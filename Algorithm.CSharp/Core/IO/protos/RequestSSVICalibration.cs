@@ -34,26 +34,27 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             "aW5nGAEgASgJEkMKBXJpZ2h0GAIgASgOMjQuUXVhbnRDb25uZWN0LkFsZ29y",
             "aXRobS5DU2hhcnAuQ29yZS5JTy5PcHRpb25SaWdodFBiEhAKCHRlbm9yX2R0",
             "GAMgASgJEk4KDG1vZGVsX3BhcmFtcxgEIAEoCzI4LlF1YW50Q29ubmVjdC5B",
-            "bGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uU1NWSU1vZGVsUGFyYW1zUGIi2QEK",
+            "bGdvcml0aG0uQ1NoYXJwLkNvcmUuSU8uU1NWSU1vZGVsUGFyYW1zUGIi7QEK",
             "GFJlcXVlc3RTU1ZJQ2FsaWJyYXRpb25QYhIKCgJ0cxgBIAEoCRISCgp1bmRl",
             "cmx5aW5nGAIgASgJElcKE21hcmtldF9kYXRhX2hpc3RvcnkYAyABKAsyOi5R",
             "dWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLk1hcmtldERh",
             "dGFIaXN0b3J5UGISRAoJYWxnb19tb2RlGAQgASgOMjEuUXVhbnRDb25uZWN0",
-            "LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5BbGdvTW9kZVBiItIBChlSZXNw",
-            "b25zZVNTVklDYWxpYnJhdGlvblBiEgoKAnRzGAEgASgJElAKB3JlcXVlc3QY",
-            "AiABKAsyPy5RdWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklP",
-            "LlJlcXVlc3RTU1ZJQ2FsaWJyYXRpb25QYhJDCgZwYXJhbXMYAyADKAsyMy5R",
-            "dWFudENvbm5lY3QuQWxnb3JpdGhtLkNTaGFycC5Db3JlLklPLlNTVklQYXJh",
-            "bXNQYhISCgplbGFwc2VkX21zGAQgASgNQiiqAiVRdWFudENvbm5lY3QuQWxn",
-            "b3JpdGhtLkNTaGFycC5Db3JlLklPYgZwcm90bzM="));
+            "LkFsZ29yaXRobS5DU2hhcnAuQ29yZS5JTy5BbGdvTW9kZVBiEhIKCnN1cmZh",
+            "Y2VfaWQYBSABKAki5gEKGVJlc3BvbnNlU1NWSUNhbGlicmF0aW9uUGISCgoC",
+            "dHMYASABKAkSUAoHcmVxdWVzdBgCIAEoCzI/LlF1YW50Q29ubmVjdC5BbGdv",
+            "cml0aG0uQ1NoYXJwLkNvcmUuSU8uUmVxdWVzdFNTVklDYWxpYnJhdGlvblBi",
+            "EkMKBnBhcmFtcxgDIAMoCzIzLlF1YW50Q29ubmVjdC5BbGdvcml0aG0uQ1No",
+            "YXJwLkNvcmUuSU8uU1NWSVBhcmFtc1BiEhIKCmVsYXBzZWRfbXMYBCABKA0S",
+            "EgoKc3VyZmFjZV9pZBgFIAEoCUIoqgIlUXVhbnRDb25uZWN0LkFsZ29yaXRo",
+            "bS5DU2hhcnAuQ29yZS5JT2IGcHJvdG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::QuantConnect.Algorithm.CSharp.Core.IO.CommonReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIModelParamsPb), global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIModelParamsPb.Parser, new[]{ "Theta", "Rho", "Psi" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb), global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsPb.Parser, new[]{ "Underlying", "TenorDt", "ModelParams" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsByRightPb), global::QuantConnect.Algorithm.CSharp.Core.IO.SSVIParamsByRightPb.Parser, new[]{ "Underlying", "Right", "TenorDt", "ModelParams" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationPb.Parser, new[]{ "Ts", "Underlying", "MarketDataHistory", "AlgoMode" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseSSVICalibrationPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseSSVICalibrationPb.Parser, new[]{ "Ts", "Request", "Params", "ElapsedMs" }, null, null, null, null)
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationPb), global::QuantConnect.Algorithm.CSharp.Core.IO.RequestSSVICalibrationPb.Parser, new[]{ "Ts", "Underlying", "MarketDataHistory", "AlgoMode", "SurfaceId" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseSSVICalibrationPb), global::QuantConnect.Algorithm.CSharp.Core.IO.ResponseSSVICalibrationPb.Parser, new[]{ "Ts", "Request", "Params", "ElapsedMs", "SurfaceId" }, null, null, null, null)
           }));
     }
     #endregion
@@ -942,6 +943,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       underlying_ = other.underlying_;
       marketDataHistory_ = other.marketDataHistory_ != null ? other.marketDataHistory_.Clone() : null;
       algoMode_ = other.algoMode_;
+      surfaceId_ = other.surfaceId_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -999,6 +1001,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
     }
 
+    /// <summary>Field number for the "surface_id" field.</summary>
+    public const int SurfaceIdFieldNumber = 5;
+    private string surfaceId_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string SurfaceId {
+      get { return surfaceId_; }
+      set {
+        surfaceId_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -1018,6 +1032,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Underlying != other.Underlying) return false;
       if (!object.Equals(MarketDataHistory, other.MarketDataHistory)) return false;
       if (AlgoMode != other.AlgoMode) return false;
+      if (SurfaceId != other.SurfaceId) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -1029,6 +1044,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (Underlying.Length != 0) hash ^= Underlying.GetHashCode();
       if (marketDataHistory_ != null) hash ^= MarketDataHistory.GetHashCode();
       if (AlgoMode != global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb.Backtest) hash ^= AlgoMode.GetHashCode();
+      if (SurfaceId.Length != 0) hash ^= SurfaceId.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -1063,6 +1079,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(32);
         output.WriteEnum((int) AlgoMode);
       }
+      if (SurfaceId.Length != 0) {
+        output.WriteRawTag(42);
+        output.WriteString(SurfaceId);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -1089,6 +1109,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(32);
         output.WriteEnum((int) AlgoMode);
       }
+      if (SurfaceId.Length != 0) {
+        output.WriteRawTag(42);
+        output.WriteString(SurfaceId);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -1110,6 +1134,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       if (AlgoMode != global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb.Backtest) {
         size += 1 + pb::CodedOutputStream.ComputeEnumSize((int) AlgoMode);
+      }
+      if (SurfaceId.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(SurfaceId);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -1137,6 +1164,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
       if (other.AlgoMode != global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb.Backtest) {
         AlgoMode = other.AlgoMode;
+      }
+      if (other.SurfaceId.Length != 0) {
+        SurfaceId = other.SurfaceId;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -1172,6 +1202,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             AlgoMode = (global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb) input.ReadEnum();
             break;
           }
+          case 42: {
+            SurfaceId = input.ReadString();
+            break;
+          }
         }
       }
     #endif
@@ -1204,6 +1238,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           }
           case 32: {
             AlgoMode = (global::QuantConnect.Algorithm.CSharp.Core.IO.AlgoModePb) input.ReadEnum();
+            break;
+          }
+          case 42: {
+            SurfaceId = input.ReadString();
             break;
           }
         }
@@ -1251,6 +1289,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       request_ = other.request_ != null ? other.request_.Clone() : null;
       params_ = other.params_.Clone();
       elapsedMs_ = other.elapsedMs_;
+      surfaceId_ = other.surfaceId_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -1307,6 +1346,18 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       }
     }
 
+    /// <summary>Field number for the "surface_id" field.</summary>
+    public const int SurfaceIdFieldNumber = 5;
+    private string surfaceId_ = "";
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public string SurfaceId {
+      get { return surfaceId_; }
+      set {
+        surfaceId_ = pb::ProtoPreconditions.CheckNotNull(value, "value");
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -1326,6 +1377,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (!object.Equals(Request, other.Request)) return false;
       if(!params_.Equals(other.params_)) return false;
       if (ElapsedMs != other.ElapsedMs) return false;
+      if (SurfaceId != other.SurfaceId) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -1337,6 +1389,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       if (request_ != null) hash ^= Request.GetHashCode();
       hash ^= params_.GetHashCode();
       if (ElapsedMs != 0) hash ^= ElapsedMs.GetHashCode();
+      if (SurfaceId.Length != 0) hash ^= SurfaceId.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -1368,6 +1421,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(32);
         output.WriteUInt32(ElapsedMs);
       }
+      if (SurfaceId.Length != 0) {
+        output.WriteRawTag(42);
+        output.WriteString(SurfaceId);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -1391,6 +1448,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
         output.WriteRawTag(32);
         output.WriteUInt32(ElapsedMs);
       }
+      if (SurfaceId.Length != 0) {
+        output.WriteRawTag(42);
+        output.WriteString(SurfaceId);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -1410,6 +1471,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       size += params_.CalculateSize(_repeated_params_codec);
       if (ElapsedMs != 0) {
         size += 1 + pb::CodedOutputStream.ComputeUInt32Size(ElapsedMs);
+      }
+      if (SurfaceId.Length != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeStringSize(SurfaceId);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -1435,6 +1499,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
       params_.Add(other.params_);
       if (other.ElapsedMs != 0) {
         ElapsedMs = other.ElapsedMs;
+      }
+      if (other.SurfaceId.Length != 0) {
+        SurfaceId = other.SurfaceId;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -1470,6 +1537,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
             ElapsedMs = input.ReadUInt32();
             break;
           }
+          case 42: {
+            SurfaceId = input.ReadString();
+            break;
+          }
         }
       }
     #endif
@@ -1502,6 +1573,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO {
           }
           case 32: {
             ElapsedMs = input.ReadUInt32();
+            break;
+          }
+          case 42: {
+            SurfaceId = input.ReadString();
             break;
           }
         }

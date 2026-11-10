@@ -21,6 +21,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         private Func<double, decimal, decimal, double> VegaDecayCached { get; }
         private Func<double, decimal, decimal, double> VannaCached { get; }
         private Func<double, decimal, decimal, double> VolgaCached { get; }
+        private Func<double, decimal, decimal, double[]> GreeksBatch { get; }
+
+        /// <summary>One request for every greek of this node; null when the pricer has no batch command.</summary>
+        private double[] JuliaGreeks(double sigma, decimal? s = null, decimal? p = null, string yieldCurve = "YC")
+        {
+            double _s = (double)(s ?? _algo.MidPrice(UnderlyingSymbol));
+            double _p = (double)(p ?? _algo.MidPrice(Contract.Symbol));
+            if (InvalidInputs(_p, _s, sigma)) return null;
+            return _algo.julia.Greeks(isCall, _s, k, T(), sigma, _p, GetCalcTimeUtc(), UnderlyingSymbol.Value, yieldCurve);
+        }
 
         private double Tenor { get; set; }
         private const int Multiplier = 100;
@@ -50,6 +60,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             ThetaDecayCached = Cache((double iv, decimal s, decimal p) => JuliaThetaDecay(iv, s, p), (iv, s, p) => (iv, s, p));
             VegaDecayCached  = Cache((double iv, decimal s, decimal p) => JuliaVegaDecay(iv, s, p),  (iv, s, p) => (iv, s, p));
             VannaCached    = Cache((double iv, decimal s, decimal p) => JuliaVanna(iv, s, p),         (iv, s, p) => (iv, s, p));
+            GreeksBatch    = Cache((double iv, decimal s, decimal p) => JuliaGreeks(iv, s, p),        (iv, s, p) => (iv, s, p));
             VolgaCached    = Cache((double iv, decimal s, decimal p) => JuliaVolga(iv, s, p),         (iv, s, p) => (iv, s, p));
 
             this.calculationDate = calculationDate.TimeOfDay.TotalSeconds == 0
@@ -294,6 +305,26 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// ZMQ path answers; after warmup completes, the book serves. In both modes the publish is
         /// non-blocking and Lean's own OCW value caches keep filling as before.
         /// </summary>
+        /// <summary>
+        /// One request per (iv, spot, price) node fills EVERY greek at once: a utility order that touches
+        /// delta/gamma/vega/theta/... paid one round trip per greek (~40 per contract, 5.6 ms each);
+        /// this pays one. Falls back to the individual greek when the pricer image predates
+        /// Command.Greeks, or when the batch value is non-finite.
+        /// </summary>
+        private double FromBatch(int index, double volatility, Func<double> fallback)
+        {
+            if (!_algo.Cfg.PricerBatchGreeks) return fallback();
+            double[] greeks = GreeksBatch(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            if (greeks == null || greeks.Length <= index || !double.IsFinite(greeks[index])) return fallback();
+            return greeks[index];
+        }
+
+        private static class GreekIndex
+        {
+            public const int Delta = 0, Gamma = 1, Theta = 2, Vega = 3, Speed = 4, GammaDecay = 5,
+                GammaVol = 6, ThetaDecay = 7, VegaDecay = 8, Vanna = 9, Volga = 10;
+        }
+
         private double GreekViaCache(string metric, Func<double> zmqCall, double sigma)
         {
             PricingCallSite.Count(metric);
@@ -323,7 +354,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         }
 
         public double Delta(double volatility) =>
-            GreekViaCache(nameof(Delta), () => DeltaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
+            GreekViaCache(nameof(Delta), () => FromBatch(GreekIndex.Delta, volatility, () => DeltaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null))), volatility);
 
         public double DeltaXBpUSD(double volatility, decimal dS = 100) =>
             Delta(volatility) * (double)(EffectiveSpot(null) * dS * BP) * Multiplier;
@@ -335,7 +366,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         }
 
         public double Gamma(double volatility) =>
-            GreekViaCache(nameof(Gamma), () => GammaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
+            GreekViaCache(nameof(Gamma), () => FromBatch(GreekIndex.Gamma, volatility, () => GammaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null))), volatility);
 
         public double Theta(double volatility, decimal spot)
         {
@@ -344,16 +375,16 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         }
 
         public double Theta(double volatility) =>
-            GreekViaCache(nameof(Theta), () => ThetaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
+            GreekViaCache(nameof(Theta), () => FromBatch(GreekIndex.Theta, volatility, () => ThetaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null))), volatility);
 
         public double Vega(double volatility) =>
-            GreekViaCache(nameof(Vega), () => VegaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)), volatility);
+            GreekViaCache(nameof(Vega), () => FromBatch(GreekIndex.Vega, volatility, () => VegaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null))), volatility);
 
         // ── Higher-order greeks ──────────────────────────────────────────────────
 
         /// <summary>dGamma/dS (Speed)</summary>
         public double DS3(double volatility) =>
-            SpeedCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            FromBatch(GreekIndex.Speed, volatility, () => SpeedCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)));
 
         public double Speed(double volatility)
         {
@@ -365,33 +396,33 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         public double GammaDecay(double volatility)
         {
             PricingCallSite.Count(nameof(GammaDecay));
-            return GammaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            return FromBatch(GreekIndex.GammaDecay, volatility, () => GammaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)));
         }
 
         /// <summary>dGamma/dSigma</summary>
         public double DS2dIV(double volatility)
         {
             PricingCallSite.Count("GammaVol");
-            return GammaVolCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            return FromBatch(GreekIndex.GammaVol, volatility, () => GammaVolCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)));
         }
 
         /// <summary>dTheta/dt</summary>
         public double ThetaDecay(double volatility)
         {
             PricingCallSite.Count(nameof(ThetaDecay));
-            return ThetaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            return FromBatch(GreekIndex.ThetaDecay, volatility, () => ThetaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)));
         }
 
         /// <summary>dVega/dt (Veta)</summary>
         public double VegaDecay(double volatility)
         {
             PricingCallSite.Count(nameof(VegaDecay));
-            return VegaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            return FromBatch(GreekIndex.VegaDecay, volatility, () => VegaDecayCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)));
         }
 
         /// <summary>dDelta/dSigma (Vanna)</summary>
         public double DDeltadIV(double volatility) =>
-            VannaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            FromBatch(GreekIndex.Vanna, volatility, () => VannaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)));
 
         public double Vanna(double volatility)
         {
@@ -401,7 +432,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
         /// <summary>dVega/dSigma (Volga / Vomma)</summary>
         public double DIV2(double volatility) =>
-            VolgaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null));
+            FromBatch(GreekIndex.Volga, volatility, () => VolgaCached(volatility, EffectiveSpot(null), EffectiveContractPrice(null)));
 
         public double Volga(double volatility) =>
             GreekViaCache(nameof(Volga), () => DIV2(volatility), volatility);

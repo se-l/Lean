@@ -303,7 +303,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             // Existing holdings may include symbols that are not configured in Cfg.Ticker and therefore
             // do not have an initialized IV surface in the algorithm state.
-            if (!_algo.Cfg.Ticker.Contains(UnderlyingSymbol.Value) || !_algo.IvSurfaceSsviMid.TryGetValue(Equity, out IIVSurface ivSurface))
+            if (!_algo.Cfg.Ticker.Contains(UnderlyingSymbol.Value) || !_algo.IvSurfaceSsviRisk.TryGetValue(Equity, out IIVSurface ivSurface))
             {
                 SurfaceIVdS = 0;
                 return;

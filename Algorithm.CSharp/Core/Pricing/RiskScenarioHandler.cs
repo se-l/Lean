@@ -62,7 +62,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             public double UtilityStart;  // USD utility of trading at PriceStart
         }
 
-        private readonly Dictionary<(Symbol Symbol, OrderDirection Direction), SweepState> _sweeps = new();
+        // Concurrent: the pricing path quotes contracts in parallel and ClearSweep runs on order events.
+        private readonly ConcurrentDictionary<(Symbol Symbol, OrderDirection Direction), SweepState> _sweeps = new();
         private readonly ConcurrentDictionary<(Symbol, DateTime), double> _vegaByBar = new();
 
         // Two throttles for the sweep's diagnostics: one line per contract per minute saying WHY a
@@ -120,7 +121,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             PfRiskScenarios[equity] = scenarios
                 .Where(s => s.Score > 0)
-                .Where(s => _algo.Securities.ContainsKey(GetOptionHolding(equity, s.HoldingsHedge)?.Symbol ?? ""))
+                .Where(s => SubscribedOption(equity, GetOptionHolding(equity, s.HoldingsHedge)?.Symbol) != null)
                 // Only the best scenarios are actionable, and every survivor costs a full utility
                 // evaluation in GetDesiredOrders (two utilities, each with a greek vector across DS
                 // buckets: 736 scenarios measured ~94 s of compute per pass). Keeping the top 100 by
@@ -138,7 +139,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             TradableOptions[equity] = PfRiskScenarios[equity]
                 .Select(s => GetOptionHolding(equity, s.HoldingsHedge))
-                .Select(h => SubscribedOption(h?.Symbol))
+                .Select(h => SubscribedOption(equity, h?.Symbol))
                 // Several scenarios commonly share one hedge contract; the utility loop is keyed by
                 // contract, so duplicates would only re-evaluate the same option with different DS
                 // weights. Contracts that are not carried yet are dropped until the next rebuild.
@@ -173,10 +174,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             var curve = ComputeSweepCurve(option, direction);
 
             var (juliaCalls, juliaMs) = JuliaPricingClient.Delta(juliaCallsBefore, juliaMsBefore);
+            // The clock is the first thing to look at when a sweep pays too much spread: ratio is
+            // elapsed/duration, so a start time that predates the order means the clock ran without one.
+            string clock = _sweeps.TryGetValue((option.Symbol, direction), out SweepState state)
+                ? $"clock={(_algo.Time - state.StartTime).ToString(@"hh\:mm\:ss")}/{state.Duration} start={state.StartTime:HH:mm:ss} live={LiveTicket(option.Symbol) != null}"
+                : "clock=none";
             _algo.Log($"{_algo.Time} RiskScenarioHandler.SweepIV(): Sweeping {option.Symbol.Value}, direction={direction}, " +
                       (curve.HasValue
-                          ? $"targetIv={curve.Value.TargetIv:0.000}, entry={curve.Value.EntryPrice:0.0000}, target={curve.Value.TargetPrice:0.0000}, ratio={curve.Value.Ratio:0.000}, price={curve.Value.Price:0.0000}"
-                          : "no sweep (see the sweep source line for the reason)"));
+                          ? $"targetIv={curve.Value.TargetIv:0.000}, entry={curve.Value.EntryPrice:0.0000}, target={curve.Value.TargetPrice:0.0000}, ratio={curve.Value.Ratio:0.000}, price={curve.Value.Price:0.0000}, {clock}"
+                          : $"no sweep (see the sweep source line for the reason), {clock}"));
             _algo.Log($"{_algo.Time} RiskScenarioHandler.SweepIvTiming: {option.Symbol.Value}, {direction}, total={sw.ElapsedMilliseconds}ms, juliaCalls={juliaCalls}, juliaMs={juliaMs:0}");
             return curve;
         }
@@ -244,7 +250,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 ivTarget = state.IvStart;
             }
 
-            double ratio = degenerate ? 0 : SweepRatio(state, equity, direction, option, ivTarget);
+            double ratio = degenerate ? 0 : SweepRatio(state, option, ivTarget);
             double ivNow = state.IvStart + ratio * (ivTarget - state.IvStart);
 
             decimal price = Npv(ivNow, option);
@@ -261,17 +267,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// <summary>
         /// Sweep ratio for this contract at this instant.
         ///
-        /// The contract with the highest USD utility is the FRONTIER and sweeps on its own clock,
-        /// r_f = elapsed / duration. Every other contract is priced by the EQUI-UTILITY solve: the
-        /// frontier's consumed USD (100 * vega_f * |iv_f - iv_start_f|) is transferred onto this
-        /// contract's own utility budget, converted to IV with ITS vega, expressed as a fraction of its
-        /// own range, and capped by r_f. Consequences:
+        /// Every contract sweeps on ITS OWN clock, r = elapsed / duration, and is additionally capped by
+        /// its equi-utility budget: the USD it can spend (100 * vega * |range|) buys at most that fraction
+        /// of its own IV range. Consequences:
         ///   * at t = 0 every contract sits exactly on its frozen anchor (nothing jumps into the spread);
-        ///   * a contract with a lower USD utility can never be swept further than the frontier;
-        ///   * a contract whose utility budget is exhausted stops (utility 0 = the MinUtility boundary).
+        ///   * a contract whose utility budget is exhausted stops (utility 0 = the MinUtility boundary);
+        ///   * a contract that enters the sweep late starts at its anchor, not where its siblings are.
         /// All quote in parallel - there is no gate.
         /// </summary>
-        private double SweepRatio(SweepState state, Equity equity, OrderDirection direction, Option option, double ivTarget)
+        private double SweepRatio(SweepState state, Option option, double ivTarget)
         {
             double range = ivTarget - state.IvStart;
             if (Math.Abs(range) < 1e-9)
@@ -285,12 +289,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 return 0;
             }
 
-            // PACE comes from the schedule: the GROUP's elapsed fraction. One clock per
-            // (equity, direction), seeded by the earliest live instance and inherited by every later
-            // ticket, so a fresh ticket cannot restart the group (it did: the group froze on 68 of 899
-            // sampled timestamps and a lower-utility contract sat ahead of the frontier on 69).
-            List<(Symbol Symbol, SweepState State)> live = LiveSweeps(equity, direction);
-            double rGroup = live.Count > 0 ? live.Max(i => ElapsedRatio(i.State)) : ElapsedRatio(state);
+            // PACE comes from the schedule on THIS contract's own clock. The group max was removed: a
+            // contract that joined the sweep late inherited the group's elapsed fraction and crossed the
+            // entire spread on its first submission (NOW 270521C00180000: ratio=1.000 at entry). Group
+            // alignment is preserved downwards - a contract can never be swept ahead of its own clock.
+            double rOwn = ElapsedRatio(state);
 
             // DEPTH comes from the equi-utility constraint: this contract's USD utility buys at most
             // budgetFraction of its OWN range (100 * vega * |range| USD is what the whole range costs).
@@ -302,21 +305,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             double rangeUsd = 100.0 * vega * Math.Abs(range);
             double budgetFraction = rangeUsd > 0 ? Math.Max(0.0, state.UtilityStart) / rangeUsd : 1.0;
 
-            return Math.Clamp(Math.Min(rGroup, budgetFraction), 0, 1);
-        }
-
-        /// <summary>Live sweep instances of this equity and direction (a terminal ticket leaves the group).</summary>
-        private List<(Symbol Symbol, SweepState State)> LiveSweeps(Equity equity, OrderDirection direction)
-        {
-            List<(Symbol, SweepState)> live = new();
-            foreach (var kvp in _sweeps)
-            {
-                if (kvp.Key.Direction != direction) continue;
-                if (kvp.Key.Symbol.Underlying != equity.Symbol) continue;
-                if (LiveTicket(kvp.Key.Symbol) == null) continue;
-                live.Add((kvp.Key.Symbol, kvp.Value));
-            }
-            return live;
+            return Math.Clamp(Math.Min(rOwn, budgetFraction), 0, 1);
         }
 
         /// <summary>
@@ -329,7 +318,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             var key = (option.Symbol, direction);
             if (_sweeps.TryGetValue(key, out SweepState existing))
             {
-                return existing;
+                // A sweep state is created by the PRICING path, which runs before any ticket exists and
+                // also for contracts that never get an order. While this contract has no live order of its
+                // own the clock must not run: it was re-used as-is, so a contract first priced an hour
+                // before it was finally submitted started its sweep at ratio 1 and crossed the whole
+                // spread on the first tick (NOW 270521C00180000, 12:33:24, entry 1.24 -> 1.91). Drop the
+                // state instead: the anchors are stale too, so recreate them from the live touch below.
+                if (LiveTicket(key.Symbol) != null)
+                {
+                    return existing;
+                }
+                _sweeps.TryRemove(key, out _);
             }
 
             decimal startPrice = Favourable(direction, nearTouch, surfacePrice);
@@ -354,10 +353,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
 
             Equity equity = _algo.ToEquity(Underlying(option.Symbol));
 
-            // Inherit the group clock: a new ticket must not restart the sweep for the whole group, but
-            // its instance still dies with its own ticket (ClearSweep on Filled/Canceled/Invalid).
-            List<(Symbol Symbol, SweepState State)> live = equity == null ? new() : LiveSweeps(equity, direction);
-            DateTime startTime = live.Count > 0 ? live.Min(i => i.State.StartTime) : _algo.Time;
+            // The clock belongs to THIS contract and starts now: it is armed by the first quote that is
+            // actually priced for a submitted order. Inheriting the oldest live sibling's clock meant a
+            // contract joining a group late started its sweep part-way through - at the extreme, on the
+            // schedule's last tick, so its very first quote was the full-cross target.
+            DateTime startTime = _algo.Time;
 
             SweepState state = new()
             {
@@ -378,7 +378,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             foreach (var key in _sweeps.Keys.Where(k => k.Symbol == symbol).ToList())
             {
-                if (_sweeps.Remove(key, out SweepState removed))
+                if (_sweeps.TryRemove(key, out SweepState removed))
                 {
                     _algo.Log($"{_algo.Time} RiskScenarioHandler.ClearSweep(): {key.Symbol.Value} {key.Direction} sweep clock removed (started {removed.StartTime:HH:mm:ss}).");
                 }
@@ -408,7 +408,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         /// <summary>Price implied by the current SSVI mid surface for this contract.</summary>
         private decimal? SurfacePrice(Option option)
         {
-            double modelIv = _algo.MidIVSsvi(option.Symbol);
+            double modelIv = _algo.MidIVSsviExecution(option.Symbol);
             if (!(modelIv > 0) || !double.IsFinite(modelIv)) return null;
             decimal price = Npv(modelIv, option);
             return price > 0 ? price : (decimal?)null;
@@ -435,7 +435,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             {
                 if (_algo.Securities.TryGetValue(symbol, out var security) && security is Option option)
                 {
-                    vega = OptionContractWrap.E(_algo, option, _algo.Time.Date).Vega(_algo.MidIVSsvi(symbol));
+                    vega = OptionContractWrap.E(_algo, option, _algo.Time.Date).Vega(_algo.MidIVSsviExecution(symbol));
                 }
             }
             catch (Exception error)
@@ -531,14 +531,20 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             }
         }
         /// <summary>
-        /// Scenario holdings arrive as contract STRINGS. Resolve through SymbolCache and require an
-        /// actual subscription: indexing Securities with a string goes through Symbol's implicit
-        /// conversion, which parses the text as a SecurityIdentifier and logs an error for every
-        /// contract this run does not carry (the chain is only subscribed on need-to-know).
+        /// Scenario holdings arrive as contract STRINGS. Resolve through the session chain
+        /// (<see cref="Foundations.ResolveOptionContract"/>) and require an actual subscription:
+        /// indexing Securities with a string goes through Symbol's implicit conversion, which parses
+        /// the text as a SecurityIdentifier and both logs an error and can throw for every contract
+        /// this run does not carry (the chain is only subscribed on need-to-know).
         /// </summary>
-        private Option SubscribedOption(string contract)
+        private Option SubscribedOption(Equity equity, string contract)
         {
-            if (string.IsNullOrEmpty(contract) || !SymbolCache.TryGetSymbol(contract, out Symbol symbol))
+            if (string.IsNullOrEmpty(contract))
+            {
+                return null;
+            }
+            Symbol symbol = _algo.ResolveOptionContract(equity.Symbol, contract);
+            if (symbol == null)
             {
                 return null;
             }
@@ -585,7 +591,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             PfRiskScenarios[equity].DoForEach(x =>
                 {
                     var optionHolding = GetOptionHolding(equity, x);
-                    var option = SubscribedOption(optionHolding.Symbol);
+                    var option = SubscribedOption(equity, optionHolding.Symbol);
                     if (option == null)
                     {
                         return;   // not carried yet: filled in by the rebuild that follows the subscription sync
@@ -604,7 +610,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 .FirstOrDefault();
             
             IO.HoldingPb h = GetOptionHolding(equity, BestScenario[equity]);
-            Option option = SubscribedOption(h.Symbol);
+            Option option = SubscribedOption(equity, h.Symbol);
             if (option == null)
             {
                 // No stale best order: the sweep must not keep working a contract the scenario no longer names.

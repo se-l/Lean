@@ -17,6 +17,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 using QuantConnect.Configuration;
@@ -62,6 +63,31 @@ namespace QuantConnect.Lean.DataSource.R2
             }
             return id;
         }
+
+        /// <summary>
+        /// Every surface recipe a run needs: the execution product (`surface-id`) and, when it differs,
+        /// the risk product (`risk-surface-id`). One warehouse read serves both — each row carries its
+        /// own `surface_id`, and the algorithm routes by id.
+        /// </summary>
+        public static IReadOnlyList<string> ConfiguredSurfaceIds()
+        {
+            var ids = new List<string> { ConfiguredSurfaceId() };
+            var risk = (Config.Get("risk-surface-id", string.Empty) ?? string.Empty).Trim();
+            if (risk.Length == 0)
+            {
+                return ids;
+            }
+            if (!IdPattern.IsMatch(risk))
+            {
+                throw new InvalidOperationException(
+                    $"R2SurfaceStore: \"risk-surface-id\" = '{risk}' is not a surface id (ivs_ + 12 hex).");
+            }
+            if (!ids.Contains(risk))
+            {
+                ids.Add(risk);
+            }
+            return ids;
+        }
     }
 
     /// <summary>
@@ -83,14 +109,20 @@ namespace QuantConnect.Lean.DataSource.R2
         /// <param name="symbol">The underlying.</param>
         /// <param name="surfaceId">The recipe, already validated.</param>
         /// <param name="dayEt">The session date, New York.</param>
-        public IEnumerable<BaseData> Read(Symbol symbol, string surfaceId, DateTime dayEt)
+        public IEnumerable<BaseData> Read(Symbol symbol, IReadOnlyList<string> surfaceIds, DateTime dayEt)
         {
+            if (surfaceIds == null || surfaceIds.Count == 0)
+            {
+                yield break;
+            }
+
             var lo = dayEt.Date;
             var hi = lo.AddDays(1);
+            var inIds = string.Join(", ", surfaceIds.Select(id => $"'{id}'"));
             var sql =
-                "SELECT ts_snap, ts_available, spot, surface " +
+                "SELECT ts_snap, ts_available, spot, surface, surface_id " +
                 $"FROM {R2SurfaceStore.Table} " +
-                $"WHERE underlying = '{symbol.Value}' AND surface_id = '{surfaceId}' " +
+                $"WHERE underlying = '{symbol.Value}' AND surface_id IN ({inIds}) " +
                 $"AND ts_available >= TIMESTAMP '{lo:yyyy-MM-dd} 00:00:00' " +
                 $"AND ts_available < TIMESTAMP '{hi:yyyy-MM-dd} 00:00:00' " +
                 "AND surface IS NOT NULL ORDER BY ts_available";
@@ -103,7 +135,10 @@ namespace QuantConnect.Lean.DataSource.R2
                 {
                     continue;
                 }
-                yield return SurfaceSSVI.FromRow(row, symbol, surfaceId);
+                // The row's OWN id, not the requested one: one read can carry both products and the
+                // algorithm routes on SurfaceSSVI.SurfaceId.
+                string rowId = row.Length > 4 && !string.IsNullOrEmpty(row[4]) ? row[4] : surfaceIds[0];
+                yield return SurfaceSSVI.FromRow(row, symbol, rowId);
             }
         }
     }

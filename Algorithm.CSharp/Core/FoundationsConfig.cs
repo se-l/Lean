@@ -91,6 +91,38 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// UtilityOrder.csv dump; switch off if the metric volume is too high.
         /// </summary>
         public bool OtelUtilityMetrics { get; set; } = true;
+        /// <summary>
+        /// One pricer round trip for ALL greeks of a node (Command.Greeks) instead of one per greek.
+        /// Off falls back to the historical per-greek calls (useful against an old pricer image).
+        /// </summary>
+        public bool PricerBatchGreeks { get; set; } = true;
+
+        /// <summary>
+        /// Smile term in the hedge delta: "surface" adds vega × dσ/dS from the RISK surface to the
+        /// sticky-strike delta; "none" keeps the historical sticky-strike-only hedge.
+        /// </summary>
+        public string DeltaHedgeSkewTerm { get; set; } = "surface";
+
+        /// <summary>
+        /// Multiplier on the smile term. 1 = the surface's own dσ/dS. The fitted surface is parameterised
+        /// in k = ln(K/F), so its spot derivative is the sticky-moneyness slope; the empirical spot/vol
+        /// relation (leverage) can carry the opposite sign. Use -1 / a smaller magnitude to calibrate the
+        /// term against hedge PnL without a rebuild.
+        /// </summary>
+        public decimal DeltaHedgeSkewScale { get; set; } = 1.0m;
+
+        /// <summary>Utility orders are reused per (contract, quantity, spot bucket, iv bucket, portfolio version).</summary>
+        public bool UtilityCacheEnabled { get; set; } = true;
+
+        /// <summary>Spot grid width for the utility cache, in basis points (5 = 0.05%).</summary>
+        public double UtilityCacheSpotBucketBps { get; set; } = 5.0;
+
+        /// <summary>IV grid width for the utility cache in vol points (0.01 = 1 vol point).</summary>
+        public double UtilityCacheIvBucket { get; set; } = 0.01;
+
+        /// <summary>Entries kept before the oldest half is dropped.</summary>
+        public int UtilityCacheMaxKeys { get; set; } = 20000;
+
         public int MaxDesiredOrders { get; set; }
 
         /// <summary>

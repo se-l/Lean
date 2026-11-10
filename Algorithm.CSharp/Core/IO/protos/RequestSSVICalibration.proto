@@ -35,6 +35,7 @@ message RequestSSVICalibrationPb {
     string underlying = 2;  
     MarketDataHistoryPb market_data_history = 3;
     AlgoModePb algo_mode = 4;
+    string surface_id = 5;
 }
 
 message ResponseSSVICalibrationPb {
@@ -42,4 +43,5 @@ message ResponseSSVICalibrationPb {
   RequestSSVICalibrationPb request = 2;
   repeated SSVIParamsPb params = 3;
   uint32 elapsed_ms = 4;
+  string surface_id = 5;
 }

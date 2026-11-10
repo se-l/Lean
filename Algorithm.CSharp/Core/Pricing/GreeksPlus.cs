@@ -50,7 +50,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
         {
             Option contract = OCW?.Contract;
             if (contract == null) return null;
-            if (!_algo.IvSurfaceSsviMid.TryGetValue(_algo.ToEquity(contract), out var surface)) return null;
+            if (!_algo.IvSurfaceSsviRisk.TryGetValue(_algo.ToEquity(contract), out var surface)) return null;
             return surface.TryGetIV(contract, out double iv) ? iv : null;
         }
 

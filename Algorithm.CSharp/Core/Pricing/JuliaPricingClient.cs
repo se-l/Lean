@@ -105,7 +105,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             VegaDecay  = 0x0A,
             Vanna      = 0x0B,
             Volga      = 0x0C,
-            MnyFwd     = 0x0D
+            MnyFwd     = 0x0D,
+            Greeks     = 0x0E   // batch: every greek of ONE node in one round trip
         }
 
         /// <param name="maxInFlight">
@@ -578,6 +579,62 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             int timeSteps = 0, int spaceSteps = 0)
             => double.IsNaN(sigma) ? double.NaN : Send(Command.Price, isCall, s, k, t, sigma, price, calcTimeUtc, ticker, yieldCurve,
                     dSpot, dSigma, dTime, timeSteps, spaceSteps);
+
+        /// <summary>
+        /// Number of values in a <see cref="Command.Greeks"/> reply, in the server's fixed order:
+        /// delta, gamma, theta, vega, speed, gamma_decay, gamma_vol, theta_decay, vega_decay, vanna, volga.
+        /// </summary>
+        public const int GreekCount = 11;
+
+        /// <summary>
+        /// Every greek of one node in ONE round trip (was: one round trip per greek, ~40 per contract at
+        /// 5.6 ms each). Returns null when the server predates the command — its single-Float32 NaN reply
+        /// decodes to a one-element array — so callers fall back to the per-greek calls.
+        /// </summary>
+        public double[] Greeks(bool isCall, double s, double k, double t, double sigma, double price,
+            long calcTimeUtc, string ticker, string yieldCurve = "YC",
+            double dSpot = 0.0, double dSigma = 0.0, double dTime = 0.0,
+            int timeSteps = 0, int spaceSteps = 0)
+        {
+            if (double.IsNaN(sigma)) return null;
+            return SendGreeks(isCall, s, k, t, sigma, price, calcTimeUtc, ticker, yieldCurve,
+                dSpot, dSigma, dTime, timeSteps, spaceSteps);
+        }
+
+        private double[] SendGreeks(bool isCall, double s, double k, double t, double sigma, double price,
+            long calcTimeUtc, string ticker, string yieldCurve,
+            double dSpot, double dSigma, double dTime, int timeSteps, int spaceSteps)
+        {
+            byte[] payload = BuildPayload(Command.Greeks, isCall, s, k, t, sigma, price, calcTimeUtc,
+                ticker, yieldCurve, dSpot, dSigma, dTime, timeSteps, spaceSteps);
+
+            var sw = Stopwatch.StartNew();
+            byte[] reply = CallAsync(payload, CallTimeout, Command.Greeks, ticker, PricerPriority.Normal)
+                .GetAwaiter().GetResult();
+            RecordCall(Command.Greeks, ticker, sw.Elapsed.TotalMilliseconds);
+            return ParseGreeksReply(reply);
+        }
+
+        private static double[] ParseGreeksReply(byte[] reply)
+        {
+            if (reply == null || reply.Length < 1 + sizeof(float)) return null;
+            if (reply[0] == 0x03)
+            {
+                throw new InvalidOperationException(
+                    $"Julia pricing error: {Encoding.UTF8.GetString(reply, 1, reply.Length - 1)}");
+            }
+            if (reply[0] != 0x02) return null;
+
+            int count = (reply.Length - 1) / sizeof(float);
+            if (count != GreekCount) return null;   // old server: one NaN, no batch support
+
+            var result = new double[count];
+            for (int i = 0; i < count; i++)
+            {
+                result[i] = MemoryMarshal.Read<float>(reply.AsSpan(1 + i * sizeof(float)));
+            }
+            return result;
+        }
 
         /// <param name="price">Market price of the option (used to back out IV).</param>
         public double IV(bool isCall, double s, double k, double t,

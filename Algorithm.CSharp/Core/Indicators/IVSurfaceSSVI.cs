@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
+using QuantConnect.Securities;
 using QuantConnect.Securities.Option;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Securities.Equity;
@@ -133,14 +134,77 @@ namespace QuantConnect.Algorithm.CSharp.Core.Indicators
                 );
         }
 
+        /// <summary>
+        /// dσ/dS along the fitted surface, per $1 of spot — the term a sticky-strike delta omits.
+        ///
+        ///   w(k)   = ½(θ + ρψk + √((ψk+θρ)² + θ²(1-ρ²))),   k = ln(K/F)
+        ///   dw/dk  = ½ψ(ρ + (ψk+θρ)/√((ψk+θρ)² + θ²(1-ρ²)))
+        ///   dσ/dk  = dw/dk / (2σT)
+        ///   dσ/dS  = dσ/dk · dk/dS,   dk/dS = −1/S (the forward scales with spot)
+        ///
+        /// Returns null when there is no surface for this contract (nothing to differentiate);
+        /// returns 0 for a degenerate fit. Non-finite inputs are rejected, but extreme-but-finite
+        /// IVs (0 or 5) are processed rather than special-cased.
+        /// </summary>
         public double? IVdS(Symbol symbol)
         {
-            return null;
+            if (ModelParams == null || symbol == null) return null;
+            if (!_algo.Securities.TryGetValue(symbol, out Security security) || security is not Option option) return null;
+            if (!ModelParams.TryGetValue(option.Expiry, out SSVIParamsRecord p) || p == null) return null;
+
+            double spot = (double)_algo.MidPrice(option.Underlying.Symbol);
+            double tenor = ToTenor(option.Expiry, _algo.Time.Date);
+            if (!double.IsFinite(spot) || spot <= 0 || !double.IsFinite(tenor) || tenor <= 0) return null;
+
+            double k = OptionContractWrap.E(_algo, option, _algo.Time.Date).MoneynessFwdLn();
+            if (!double.IsFinite(k)) return null;
+
+            double w = SsviTotalVariance(k, p);
+            if (!double.IsFinite(w) || w <= 0) return 0.0;
+
+            double sigma = Math.Sqrt(w / tenor);
+            if (!double.IsFinite(sigma) || sigma <= 0) return 0.0;
+
+            double a = p.Psi * k + p.Theta * p.Rho;
+            double b = Math.Sqrt(a * a + p.Theta * p.Theta * (1 - p.Rho * p.Rho));
+            if (!double.IsFinite(b) || b <= 0) return 0.0;
+
+            double dwdk = 0.5 * p.Psi * (p.Rho + a / b);
+            double dsigmadk = dwdk / (2 * sigma * tenor);
+            double ivds = -dsigmadk / spot;
+            return double.IsFinite(ivds) ? ivds : 0.0;
         }
 
+        /// <summary>
+        /// ATM skew dσ/dk (k = ln(K/F)) of the nearest calibrated tenor beyond a week: the number that
+        /// says how much vol moves per unit moneyness, independent of the spot scaling in IVdS.
+        /// </summary>
         public double SkewStrike()
         {
-            return 0;
+            if (ModelParams == null) return 0;
+            DateTime[] tenors = ModelParams
+                .Where(kvp => kvp.Value != null && kvp.Key > _algo.Time.Date.AddDays(7))
+                .Select(kvp => kvp.Key)
+                .OrderBy(d => d)
+                .ToArray();
+            if (tenors.Length == 0) return 0;
+
+            SSVIParamsRecord p = ModelParams[tenors[0]];
+            double tenor = ToTenor(tenors[0], _algo.Time.Date);
+            if (!double.IsFinite(tenor) || tenor <= 0) return 0;
+
+            double w0 = SsviTotalVariance(0, p);
+            if (!double.IsFinite(w0) || w0 <= 0) return 0;
+            double sigma = Math.Sqrt(w0 / tenor);
+            if (!double.IsFinite(sigma) || sigma <= 0) return 0;
+
+            double a = p.Theta * p.Rho;
+            double b = Math.Sqrt(a * a + p.Theta * p.Theta * (1 - p.Rho * p.Rho));
+            if (!double.IsFinite(b) || b <= 0) return 0;
+
+            double dwdk = 0.5 * p.Psi * (p.Rho + a / b);
+            double dsigmadk = dwdk / (2 * sigma * tenor);
+            return double.IsFinite(dsigmadk) ? dsigmadk : 0;
         }
 
         /// <summary>

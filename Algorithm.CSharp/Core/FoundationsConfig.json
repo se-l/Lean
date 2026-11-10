@@ -263,6 +263,18 @@
   "MinutesBeforeCloseHedgeToAcrossDs": 3,
   "MinutesBeforeCloseIsPreEarningsReleaseEOD": 30,
   "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread;  1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
-  "MaxDesiredOrders": 10,
+  "MaxDesiredOrders": 20,
+  // One pricer round trip for every greek of a node (was: one per greek, ~40 per contract).
+  // Hedge delta composition: "surface" adds the vega × dσ/dS smile term (risk surface) to the
+  // sticky-strike delta; "none" keeps the historical sticky-strike-only hedge.
+  "DeltaHedgeSkewTerm": "surface",
+  // Multiplier on the smile term; -1 flips the sticky-moneyness sign, 0 mutes it without editing the mode.
+  "DeltaHedgeSkewScale": 1.0,
+  "PricerBatchGreeks": true,
+  // Reuse a utility order while spot (bps grid), IV (vol-point grid) and the portfolio are unchanged.
+  "UtilityCacheEnabled": true,
+  "UtilityCacheSpotBucketBps": 5.0,
+  "UtilityCacheIvBucket": 0.01,
+  "UtilityCacheMaxKeys": 20000,
   "MaxSignalBatchAgeMs": 5000
 }

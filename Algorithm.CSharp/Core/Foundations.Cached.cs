@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using Accord.Statistics;
 using QuantConnect.Data.Market;
 using QuantConnect.Securities.Equity;
@@ -54,7 +55,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public double GetAtmIV(Symbol symbol)
         {
-            return IvSurfaceSsviMid.TryGetValue(ToEquity(Underlying(symbol)), out IIVSurface ivs) ? ivs.AtmIv() : 0;
+            return IvSurfaceSsviRisk.TryGetValue(ToEquity(Underlying(symbol)), out IIVSurface ivs) ? ivs.AtmIv() : 0;
         }
 
         private double GetBeta(Symbol index, Symbol asset, int periods, Resolution resolution = Resolution.Daily)
@@ -184,17 +185,35 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
+        private readonly ConcurrentDictionary<Symbol, (decimal Sticky, decimal Skew)> _lastDeltaSplit = new();
+
+        /// <summary>
+        /// The two hedge-delta constituents, in shares: sticky-strike (σ held fixed) and the smile term
+        /// (vega × dσ/dS from the RISK surface). The split is cached per underlying so the hedge log can
+        /// report it without recomputing the whole risk pass.
+        /// </summary>
+        public (decimal Sticky, decimal Skew) DeltaMVSplit(Symbol symbol)
+        {
+            decimal sticky = PfRisk.RiskByUnderlying(symbol, HedgeMetric(Underlying(symbol)));
+
+            decimal skew = 0m;
+            if (string.Equals(Cfg.DeltaHedgeSkewTerm?.Trim(), "surface", StringComparison.OrdinalIgnoreCase))
+            {
+                skew = Cfg.DeltaHedgeSkewScale * PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);
+            }
+
+            _lastDeltaSplit[Underlying(symbol)] = (sticky, skew);
+            return (sticky, skew);
+        }
+
+        /// <summary>Last constituents computed for this underlying (0,0 before the first risk pass).</summary>
+        public (decimal Sticky, decimal Skew) LastDeltaSplit(Symbol symbol) =>
+            _lastDeltaSplit.TryGetValue(Underlying(symbol), out (decimal Sticky, decimal Skew) split) ? split : (0m, 0m);
+
         public decimal DeltaMV(Symbol symbol)
         {
-            decimal deltaMVTotal = 0;
-            decimal deltaTotal = PfRisk.RiskByUnderlying(symbol, HedgeMetric(Underlying(symbol)));
-            
-            // decimal deltaIVdSTotal = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);  // MV
-
-            deltaMVTotal += deltaTotal;
-            // deltaMVTotal += deltaIVdSTotal;
-            // Log($"{Time} DeltaMV {symbol}: deltaMVTotal={deltaMVTotal}, deltaTotal={deltaTotal}, deltaIVdSTotal={deltaIVdSTotal}");
-            return deltaMVTotal;
+            (decimal sticky, decimal skew) = DeltaMVSplit(symbol);
+            return sticky + skew;
         }
         /// <summary>
         /// Adjusting Heding Frequency by adjusting volatilty. Not making sense to me how adjust vola helps with hedging frequency, but can adjust the threhold...
@@ -364,8 +383,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     OrderType _orderType = orderType ?? GetEquityHedgeOrderType(equity);
                     price = GetEquityHedgePrice(equity, _orderType, quantity);
 
+                    (decimal stickyDelta, decimal skewDelta) = LastDeltaSplit(symbol);
                     QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New OrderEquity" }, { "f", $"ExecuteHedge" },
-                                { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
+                                { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "stickyDelta", stickyDelta.ToString("0") },
+                                { "skewDelta", skewDelta.ToString("0") }, { "skewMode", Cfg.DeltaHedgeSkewTerm ?? "none" },
+                                { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
                     OrderEquity(symbol, quantity, price, _orderType);
                 }
                 finally

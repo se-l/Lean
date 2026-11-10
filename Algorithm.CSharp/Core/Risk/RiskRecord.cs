@@ -62,7 +62,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         public decimal MidPriceUnderlying => _algo.MidPrice(Symbol);
         public decimal HistoricalVolatility => _algo.Securities[Symbol].VolatilityModel.Volatility;
-        public double? SkewStrike => _algo.IvSurfaceSsviMid[_equity].SkewStrike();
+        public double? SkewStrike => _algo.IvSurfaceSsviRisk[_equity].SkewStrike();
         public decimal PosWeightedIV => _pfRisk.RiskByUnderlying(Symbol, Metric.PosWeightedIV);
         public decimal DeltaIVdSTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdSTotal);
         public decimal DeltaIVdS100BpUSDTotal => _pfRisk.RiskByUnderlying(Symbol, Metric.DeltaIVdS100BpUSDTotal);

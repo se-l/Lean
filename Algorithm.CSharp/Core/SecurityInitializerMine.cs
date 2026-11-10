@@ -178,12 +178,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         private void InitializeIVSurfaces(Equity underlying)
         {
-            if (_algo.IvSurfaceSsviMid.ContainsKey(underlying))
+            if (!_algo.IvSurfaceSsviExecution.ContainsKey(underlying))
             {
-                return;
+                _algo.IvSurfaceSsviExecution[underlying] = new IVSurfaceSSVI(_algo, underlying, null, false);
             }
-
-            _algo.IvSurfaceSsviMid[underlying] = new IVSurfaceSSVI(_algo, underlying, null, false);
+            if (!_algo.IvSurfaceSsviRisk.ContainsKey(underlying))
+            {
+                _algo.IvSurfaceSsviRisk[underlying] = new IVSurfaceSSVI(_algo, underlying, null, false);
+            }
 
             // ONE-SHOT WARM-UP SEED. Here because this is the one place that knows the underlying's
             // surface object exists: the equity security is being initialized and its IIVSurface was
@@ -197,10 +199,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // target-portfolio request built in that window carries no surface at all. Only the
             // AddData<SurfaceSSVI> subscription is backtest-only (see SurfaceFromSlice).
 
+            if (!_algo.SurfaceSeedEnabled)
+            {
+                _algo.Log($"{_algo.Time} InitializeIVSurfaces: {underlying.Symbol} history seed skipped " +
+                          $"(surface-mode={_algo.SurfaceMode}, surface-seed=false) — surfaces must come from the MQ producer.");
+                return;
+            }
+
             try
             {
-                var from = _algo.Cfg.StartDate.AddDays(-10);
-                var to = _algo.Cfg.StartDate;
+                // ANCHOR ON THE LIVE SESSION, not on Cfg.StartDate. In live that config still carries the
+                // BACKTEST window (StartDate 2026-08-06), so the seed used to install the 2026-08-05
+                // surface into a November session: its tenors are Aug/Sep expiries, the book holds
+                // Nov/Dec/Jan, the coverage check rejects it and every hedge is skipped as "no surface".
+                DateTime to = _algo.LiveMode ? _algo.Time.Date : _algo.Cfg.StartDate;
+                var from = to.AddDays(-10);
                 var history = _algo.History<SurfaceSSVI>(underlying.Symbol, from, to).ToList();
                 if (history.Count == 0)
                 {
@@ -209,17 +222,30 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return;
                 }
 
-                SurfaceSSVI seed = history[^1];
-                var modelParams = new SSVIParamsDictionary();
-                foreach (var (tenor, p) in seed.Tenors)
+                // The read can carry BOTH products (execution id and, when configured, the risk id), so
+                // seed each store from its OWN last row instead of applying one id's state to both.
+                foreach (var group in history.GroupBy(h => h.SurfaceId))
                 {
-                    modelParams[tenor] = new SSVIParamsRecord(p.Theta, p.Rho, p.Psi);
+                    bool forExecution = _algo.SurfaceIdMatches(group.Key, _algo.ExecutionSurfaceId);
+                    bool forRisk = _algo.SurfaceIdMatches(group.Key, _algo.RiskSurfaceId);
+                    if (!forExecution && !forRisk)
+                    {
+                        continue;
+                    }
+
+                    SurfaceSSVI seed = group.Last();
+                    var modelParams = new SSVIParamsDictionary();
+                    foreach (var (tenor, p) in seed.Tenors)
+                    {
+                        modelParams[tenor] = new SSVIParamsRecord(p.Theta, p.Rho, p.Psi);
+                    }
+                    // Same entry point as the live rows: the seed is the product unless the filter is on.
+                    _algo.ApplySurface(underlying, modelParams, $"history seed {seed.SurfaceId}", seed.IsRaw, forExecution, forRisk);
+                    _algo.Log($"{_algo.Time} InitializeIVSurfaces: {underlying.Symbol} warm-up seed from " +
+                              $"{group.Count()} surface(s), last {seed.SurfaceId} {seed.Status} " +
+                              $"event={seed.TimeSnap:yyyy-MM-dd HH:mm:ss} tenors={seed.Tenors.Count} " +
+                              $"as={(forExecution ? "execution" : "")}{(forExecution && forRisk ? "+" : "")}{(forRisk ? "risk" : "")}");
                 }
-                // Same entry point as the live rows: the seed is the product unless the filter is on.
-                _algo.ApplySurface(underlying, modelParams, "history seed", seed.IsRaw);
-                _algo.Log($"{_algo.Time} InitializeIVSurfaces: {underlying.Symbol} warm-up seed from " +
-                          $"{history.Count} surface(s), last {seed.SurfaceId} {seed.Status} " +
-                          $"event={seed.TimeSnap:yyyy-MM-dd HH:mm:ss} tenors={seed.Tenors.Count}");
             }
             catch (Exception exception)
             {

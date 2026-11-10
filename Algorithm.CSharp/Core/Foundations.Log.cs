@@ -159,7 +159,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 { "IVPrice", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(e.Status == OrderStatus.Filled ? e.FillPrice : e.LimitPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
                 { "IVBid", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(Securities[e.Symbol].BidPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
                 { "IVAsk", e.Symbol.SecurityType == SecurityType.Option ? Math.Round(OptionContractWrap.E(this, (Option)Securities[e.Symbol], Time.Date).IV(Securities[e.Symbol].AskPrice, MidPrice(underlying), 0.001), 3).ToString() : "" },
-                { "IVMidSSVI", e.Symbol.SecurityType == SecurityType.Option ? IvSurfaceSsviMid[equity].IV((Option)Securities[symbol]).ToString() : "" },
+                { "IVMidSSVI", e.Symbol.SecurityType == SecurityType.Option ? IvSurfaceSsviExecution[equity].IV((Option)Securities[symbol]).ToString() : "" },
             });
             Log(tag);
 

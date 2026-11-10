@@ -121,7 +121,7 @@ namespace QuantConnect.Lean.DataSource.R2
             // path, one point per event, timestamped at availability.
             if (R2SurfaceStore.IsRequested(request.DataType))
             {
-                var surfaceId = R2SurfaceStore.ConfiguredSurfaceId();
+                var surfaceIds = R2SurfaceStore.ConfiguredSurfaceIds();
                 var surfaceStartEt = request.StartTimeUtc.ConvertFromUtc(TimeZones.NewYork);
                 var surfaceEndEt = request.EndTimeUtc.ConvertFromUtc(TimeZones.NewYork);
                 var surfacePoints = 0;
@@ -131,7 +131,7 @@ namespace QuantConnect.Lean.DataSource.R2
                     {
                         continue;
                     }
-                    foreach (var point in _surfaces.Read(request.Symbol, surfaceId, day))
+                    foreach (var point in _surfaces.Read(request.Symbol, surfaceIds, day))
                     {
                         if (point.Time < surfaceStartEt || point.Time > surfaceEndEt)
                         {
@@ -145,7 +145,7 @@ namespace QuantConnect.Lean.DataSource.R2
                 }
                 Log.Trace($"R2IcebergHistoryProvider: {request.Symbol} {request.DataType?.Name} " +
                           $"{request.StartTimeUtc:yyyy-MM-dd}..{request.EndTimeUtc:yyyy-MM-dd} " +
-                          $"<- {R2SurfaceStore.Table}[{surfaceId}]: {surfacePoints} points");
+                          $"<- {R2SurfaceStore.Table}[{string.Join(",", surfaceIds)}]: {surfacePoints} points");
                 yield break;
             }
 

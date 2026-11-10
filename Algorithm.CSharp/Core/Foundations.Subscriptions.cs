@@ -42,61 +42,122 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// Turn a contract string from a target portfolio into a Symbol WITHOUT requiring it to be
         /// subscribed: SymbolCache only knows symbols Lean has already created, so a contract we are
         /// being asked to trade for the first time resolves through the session chain instead.
+        ///
+        /// This is the ONLY entry point for a contract string that came off the wire, and it does not
+        /// ask <see cref="SymbolCache"/> first on purpose. On a miss that lookup falls through to
+        /// <see cref="SecurityIdentifier.TryParse"/>, which decodes a fixed-width option value as a
+        /// base36 "symbol properties" pair. The 15-char tail overflows <c>ulong</c>, so the decoded
+        /// SecurityType (properties % 100) is garbage: usually an invalid type — one ERROR line plus a
+        /// stack trace per value, cached as null. About one value in 25 decodes to
+        /// FutureOption/Option/IndexOption, and for one of those in ~25 the market field is registered
+        /// too (~1 contract in 700 of a real chain); then <c>new Symbol(sid, sid.Symbol)</c> dereferences
+        /// a null underlying in <see cref="Symbol.GetAlias"/> and throws NullReferenceException out of
+        /// the caller. That is what killed OnResponseTargetPortfolios: the response was dropped before
+        /// TargetHoldings were set, so nothing was subscribed and no orders were requested.
         /// </summary>
         public Symbol ResolveOptionContract(Symbol underlying, string contract)
         {
-            if (string.IsNullOrEmpty(contract))
+            if (string.IsNullOrEmpty(contract) || underlying == null)
             {
                 return null;
             }
-            if (SymbolCache.TryGetSymbol(contract, out Symbol cached) && Underlying(cached) == underlying)
+            if (underlying.SecurityType != SecurityType.Equity)
             {
-                return cached;
-            }
-
-            (Symbol, DateTime) key = (underlying, Time.Date);
-            Dictionary<string, Symbol> chain;
-            lock (_chainByValue)
-            {
-                if (!_chainByValue.TryGetValue(key, out chain))
+                if (underlying.SecurityType != SecurityType.Option)
                 {
-                    chain = new Dictionary<string, Symbol>(StringComparer.Ordinal);
-                    foreach (Symbol symbol in OptionChainProvider.GetOptionContractList(underlying, Time.Date))
-                    {
-                        chain[symbol.Value] = symbol;
-
-                        // Prime Lean's symbol cache with the CATALOGUE, not just the subscriptions: this
-                        // registers the Symbol (value -> Symbol) without creating a subscription. Every
-                        // other resolver in the algo (SymbolCache.TryGetSymbol on a target-portfolio
-                        // holding string, in the sweeper, in the compatibility checks) then answers with a
-                        // real Symbol instead of a cache miss, and nothing has to be carried to be known.
-                        SymbolCache.Set(symbol.Value, symbol);
-                    }
-                    _chainByValue[key] = chain;
-                    Log($"{Time} ResolveOptionContract: {underlying} chain loaded, {chain.Count} contracts for {Time.Date:yyyy-MM-dd} (symbol cache primed).");
+                    return null;   // Underlying() throws for anything that is neither an equity nor an option.
                 }
-            }
-            if (chain.TryGetValue(contract, out Symbol resolved))
-            {
-                return resolved;
+                underlying = Underlying(underlying);
             }
 
-            // Not in today's chain — a rolled/expired contract, or a value from another session. Mint the
-            // Symbol from the value itself: Symbol.CreateOption only builds the SID (it caches nothing and
-            // subscribes nothing), so the cache is primed explicitly. That is what keeps every later
-            // SymbolCache.TryGetSymbol off the SID-parse path, without touching QuantConnect core.
+            // Value-shaped ("NET   260807P00287500"): the chain, else the value itself.
             if (TryParseContractValue(contract, out OptionRight right, out DateTime expiry, out decimal strike))
             {
+                string key = NormalizeContractValue(contract);
+                Dictionary<string, Symbol> chain = ChainFor(underlying);
+                if (chain.TryGetValue(key, out Symbol resolved))
+                {
+                    return resolved;
+                }
+
+                // Not in today's chain — a rolled/expired contract, or a value from another session.
+                // Symbol.CreateOption only builds the SID (it caches nothing and subscribes nothing),
+                // so the cache is primed explicitly under every spelling we have seen, and the symbol is
+                // remembered in the day's catalogue so one value is minted once, not once per response.
                 Symbol built = QuantConnect.Symbol.CreateOption(underlying, underlying.Value, underlying.ID.Market,
                     OptionStyle.American, right, strike, expiry);
                 SymbolCache.Set(contract, built);
+                SymbolCache.Set(key, built);
                 SymbolCache.Set(built.Value, built);
+                lock (_chainByValue)
+                {
+                    if (_chainByValue.TryGetValue((underlying, Time.Date), out Dictionary<string, Symbol> dayChain))
+                    {
+                        dayChain[key] = built;
+                    }
+                }
                 Log($"{Time} ResolveOptionContract: {contract} is not in the {underlying} chain for {Time.Date:yyyy-MM-dd} — " +
                     $"built from the value (expiry={expiry:yyyy-MM-dd}, {right}, strike={strike}) and cached.");
                 return built;
             }
 
+            // Not a contract value: a plain ticker or a real SecurityIdentifier string. Still guarded —
+            // a malformed identifier must answer "unresolvable", never throw out of a handler.
+            try
+            {
+                if (SymbolCache.TryGetSymbol(contract, out Symbol cached) &&
+                    cached.SecurityType == SecurityType.Option &&
+                    Underlying(cached) == underlying)
+                {
+                    return cached;
+                }
+            }
+            catch (Exception exception)
+            {
+                Log($"{Time} ResolveOptionContract: '{contract}' is not a resolvable identifier ({exception.Message}).");
+            }
+
             return null;
+        }
+
+        /// <summary>
+        /// The session's contract catalogue for an underlying, keyed by
+        /// <see cref="NormalizeContractValue"/>. Loading it also primes <see cref="SymbolCache"/> with
+        /// the CATALOGUE, not just the subscriptions: every contract becomes known (value -> Symbol)
+        /// without creating a subscription, so later lookups are dictionary hits.
+        /// </summary>
+        private Dictionary<string, Symbol> ChainFor(Symbol underlying)
+        {
+            (Symbol, DateTime) key = (underlying, Time.Date);
+            lock (_chainByValue)
+            {
+                if (_chainByValue.TryGetValue(key, out Dictionary<string, Symbol> cached))
+                {
+                    return cached;
+                }
+
+                var chain = new Dictionary<string, Symbol>(StringComparer.OrdinalIgnoreCase);
+                foreach (Symbol symbol in OptionChainProvider.GetOptionContractList(underlying, Time.Date))
+                {
+                    chain[NormalizeContractValue(symbol.Value)] = symbol;
+                    SymbolCache.Set(symbol.Value, symbol);
+                }
+                _chainByValue[key] = chain;
+                Log($"{Time} ResolveOptionContract: {underlying} chain loaded, {chain.Count} contracts for {Time.Date:yyyy-MM-dd} (symbol cache primed).");
+                return chain;
+            }
+        }
+
+        /// <summary>
+        /// "CRWV  270917C00072500" -> "CRWV270917C00072500". The wire string, <see cref="Symbol.Value"/>
+        /// and the chain catalogue agree on the digits but not always on the ticker padding, so keys are
+        /// compared without whitespace.
+        /// </summary>
+        internal static string NormalizeContractValue(string contract)
+        {
+            return contract == null
+                ? string.Empty
+                : string.Concat(contract.Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
         }
 
         /// <summary>

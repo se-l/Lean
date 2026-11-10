@@ -22,6 +22,7 @@ using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Algorithm.CSharp.Core.IO;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Algorithm.CSharp.Core.Risk;
+using QuantConnect.Configuration;
 using QuantConnect.Data;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
@@ -44,6 +45,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         private EarningsAlgorithmConfig CfgAlgo;
         private readonly string CfgAlgoName = "EarningsAlgorithmConfig.json";
         private RabbitMQClient rMQClient;
+        private SurfaceStreamClient _surfaceStreamClient;
+        private readonly Dictionary<(Symbol Symbol, string SurfaceId), DateTime> _lastSurfaceStreamTs = new();
+        private readonly object _surfaceStreamGate = new();
         private bool ExecuteScheduledTargetPortfolioFetch = true;
         // private readonly Dictionary<Symbol, bool> FetchingTargetPortfolio = new();
         // Local pricer-cache plane agent (spec: Fino.jl/docs/pricer-cache-dotnet-agent-spec.md):
@@ -149,13 +153,35 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             foreach (string tickerStr in ticker)
             {
                 Equity equity = Securities[tickerStr] as Equity;
-                if (LiveMode)
+                if (UseSurfaceStream)
                 {
+                    // LIVE PUSH: the surface producer publishes both products to surface.<UNDERLYING>
+                    // on the config's own event grid. No request is sent from here; the subscription
+                    // is started once, after the ticker loop.
+                    Log($"{Time} InitializeAlgo: live surfaces from MQ stream " +
+                        $"(execution={ExecutionSurfaceId}, risk={RiskSurfaceId}); no calibration requests.");
+                }
+                else if (SurfaceFromRabbitMq)
+                {
+                    // MQ BACKTEST ONLY: a 0.5% move asks the calc-engine for a fresh calibration.
+                    // This used to be wired only when LiveMode, so a backtest with
+                    // surface-mode=rabbitmq never sent a single request.
                     UnderlyingMovedX[(equity.Symbol, 0.005m)].UnderlyingMovedXEvent += (sender, e) => RequestSSVICalibration((Equity)Securities[e]);
+
+                    // A quiet tape sends nothing, which makes the MQ path untestable in a backtest.
+                    // A fixed cadence is opt-in: 0 disables it.
+                    int calibrationIntervalMinutes = Config.GetInt("ssvi-calibration-interval-minutes", 0);
+                    if (calibrationIntervalMinutes > 0)
+                    {
+                        Schedule.On($"RequestSsviCalibration-{equity.Symbol.Value}", DateRules.EveryDay(equity.Symbol),
+                            TimeRules.Every(TimeSpan.FromMinutes(calibrationIntervalMinutes)),
+                            () => RequestSSVICalibration(equity));
+                        Log($"{Time} InitializeAlgo: SSVI calibration requested every {calibrationIntervalMinutes} min for {equity.Symbol} (plus 0.5% moves).");
+                    }
                 }
                 else
                 {
-                    Log("Backtest: Receiving SVICalibration from R2. Unify via plugin/handler definition in config.");
+                    Log($"{Time} Backtest: surfaces arrive as slice data (surface-mode={SurfaceMode}); no MQ calibration requests.");
                 }
 
                 // Schedules Events only if a earnings release is in preparation
@@ -186,6 +212,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             rMQClient.RegisterEventHandler<CmdCfgOverrideEventArgs>(ChannelPb.CmdCfgOverride, OnCmdCfgOverride);
             rMQClient.RegisterEventHandler<ResponseSSVICalibrationEventArgs>(ChannelPb.RequestSsviCalibration, OnResponseSSVICalibration);
             rMQClient.RegisterEventHandler<ResponsePfRiskScenariosEventArgs>(ChannelPb.RequestPfRiskScenarios, OnResponsePfRiskScenarios);
+
+            if (UseSurfaceStream)
+            {
+                StartSurfaceStream(ticker);
+            }
 
             MarketRegimesChangeEventHandler += (object sender, MarketRegimesChangeEventArgs e) => RequestPfRiskScenarios(e.Symbol);
             
@@ -509,8 +540,36 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 $"{Time} SetTargetHoldingsFromTargetPortfolios: Underlying={underlying}, TargetHoldings={string.Join(", ",  TargetHoldings.Select(kvp => $"{kvp.Key}:{kvp.Value}"))}");
         }
 
+        /// <summary>
+        /// Resolve every contract string a target-portfolio response carries into a Symbol and leave it
+        /// in the cache, before any filter or state update reads one. Nothing is subscribed here:
+        /// TargetHoldings (holdings ∪ target != 0) decides that, and SyncOptionSubscriptions does the
+        /// AddOptionContract for the contracts we can act on.
+        /// </summary>
+        private void PrimeContractSymbols(IEnumerable<TargetPortfolioPb> portfolios, Symbol underlying)
+        {
+            int resolved = 0;
+            int unresolved = 0;
+            foreach (TargetPortfolioPb portfolio in portfolios)
+            {
+                foreach (var holding in portfolio.Holdings.Values)
+                {
+                    if (ResolveOptionContract(underlying, holding.Symbol) == null)
+                    {
+                        unresolved++;
+                    }
+                    else
+                    {
+                        resolved++;
+                    }
+                }
+            }
+            Log($"{Time} PrimeContractSymbols: {underlying} {resolved} contract symbol(s) cached from the response ({unresolved} unresolved).");
+        }
+
         private IEnumerable<TargetPortfolioPb> TargetPortfoliosWithoutOppositeQuantities(
-            IEnumerable<TargetPortfolioPb> portfolios
+            IEnumerable<TargetPortfolioPb> portfolios,
+            Symbol underlying
             )
         {
             List<TargetPortfolioPb> result = new();
@@ -525,7 +584,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 bool introducesOppositeQuantities = false;
                 foreach (var holding in portfolio.Holdings.Values)
                 {
-                    if (SymbolCache.TryGetSymbol(holding.Symbol, out Symbol symbol))
+                    Symbol symbol = ResolveOptionContract(underlying, holding.Symbol);
+                    if (symbol != null)
                     {
                         decimal quantity = (int)holding.Quantity;
 
@@ -566,7 +626,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// <summary>
         /// SetRiskScenario as a handler for sweeping across all target holdings respective equiUtilityBoundary.
         /// </summary>
-        private void SetEquiUtilitySweeperFromTargetPortfolios(List<TargetPortfolioPb> TargetPortfolios)
+        private void SetEquiUtilitySweeperFromTargetPortfolios(List<TargetPortfolioPb> TargetPortfolios, Symbol underlying)
         {
             // For each entry, pick the <symbol, quantity> and maximum utility.
             List<TradeUtility> tradeUtilities = new();
@@ -575,15 +635,17 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             {
                 foreach (var kvp in targetPortfolio.Holdings)
                 {
-                    if (!SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol) || !Securities.ContainsKey(symbol))
+                    Symbol symbol = ResolveOptionContract(underlying, kvp.Key);
+                    if (symbol == null || !Securities.ContainsKey(symbol))
                     {
                         Log($"{Time} SetEquiUtilitySweeperFromTargetPortfolios: Holding symbol '{kvp.Key}' not subscribed. Skipping.");
                         continue;
                     }
-                    Symbol underlying = Underlying(symbol);
                     decimal quantity = (int)kvp.Value.Quantity;
                     double utility = CollectionExtensions.GetValueOrDefault(targetPortfolio.ResultStressTestDs.MarginalUtilityByHolding, kvp.Key, 0);
-                    double entryIv = CollectionExtensions.GetValueOrDefault(targetPortfolio.Ivs, symbol.Value, 0);
+                    // The IV map is keyed by the wire string, which need not match Symbol.Value spacing.
+                    double entryIv = CollectionExtensions.GetValueOrDefault(targetPortfolio.Ivs, symbol.Value,
+                        CollectionExtensions.GetValueOrDefault(targetPortfolio.Ivs, kvp.Key, 0));
                     tradeUtilities.Add(new TradeUtility(underlying, symbol, quantity, utility, entryIv));
                 }
             }
@@ -644,7 +706,16 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 return; // Avoids Running Signals after warmup has finished and a test fetch is scheduled.
             }
 
-            var targetPfs = TargetPortfoliosWithoutOppositeQuantities(e.ResponseTargetPortfolios.TargetPortfolios).ToArray();
+            Symbol underlying = Securities[underlyingTicker].Symbol;
+
+            // Every contract this response names goes into the Symbol cache BEFORE any filter reads it.
+            // The response is strings only, and an unresolved string is what sent the lookup into
+            // SymbolCache's SID-parse fallback (see ResolveOptionContract) — that path both spams an
+            // ERROR per contract and, for ~4% of values, throws NullReferenceException and takes the
+            // whole response down with it.
+            PrimeContractSymbols(e.ResponseTargetPortfolios.TargetPortfolios, underlying);
+
+            var targetPfs = TargetPortfoliosWithoutOppositeQuantities(e.ResponseTargetPortfolios.TargetPortfolios, underlying).ToArray();
             Log($"{Time} OnTargetPortfolios: {targetPfs.Length} portfolios received. IsLastTransmission: {e.ResponseTargetPortfolios.IsLastTransmission}");
             if (!targetPfs.Any())
             {
@@ -659,8 +730,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
                 return;
             }
-
-            Symbol underlying = Securities[underlyingTicker].Symbol;
 
             foreach (string pfUnderlying in targetPfs.Select((p) => p.Underlying).Distinct())
             {
@@ -681,20 +750,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 {
                     continue;
                 }
-                //pf.Ivs.DoForEach(kvp =>
-                //{
-                //    if (!SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol))
-                //    {
-                //        var item = AddData<VolatilityQuoteBar>(symbol, resolution: Resolution.Second, fillForward: false);
-                //        item.IsTradable = false;
 
-                //        // This line requests quite a bit of past data. Minute and second resolution for a whole month into past.
-                //        AddOptionContract(symbol, resolution: Resolution.Second, fillForward: false, extendedMarketHours: true);
+                Symbol pfSymbol = string.IsNullOrEmpty(pf.Underlying) || !Securities.ContainsKey(pf.Underlying)
+                    ? underlying
+                    : Securities[pf.Underlying].Symbol;
 
-                //        QuickLog(new Dictionary<string, string>() { { "topic", "UNIVERSE" }, { "msg", $"Adding {symbol}. Scoped." } });
-                //    }
-                //});
-                
                 if (!loggedBestPresumedIv)
                 {
                     Log($"{Time} OnTargetPortfolios, Presumed Fill IVs:\n{string.Join("\n", pf.Ivs.Select(kvp => $"{kvp.Key}: {kvp.Value:0.000}"))}");
@@ -703,7 +763,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 
                 pf.Ivs.DoForEach(kvp =>
                 {
-                    if (SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol) && Securities.ContainsKey(symbol))
+                    Symbol symbol = ResolveOptionContract(pfSymbol, kvp.Key);
+                    if (symbol != null && Securities.ContainsKey(symbol))
                     {
                         if (Securities[symbol].Type != SecurityType.Option) return;
                         Option option = (Option)Securities[symbol];
@@ -716,7 +777,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     Log($"{Time} OnTargetPortfolios: Underlying '{pf.Underlying}' not subscribed. Skipping portfolio: {Portfolio2String(pf)}");
                     continue;
                 }
-                underlying = Securities[pf.Underlying].Symbol;
+                underlying = pfSymbol;
                 if (TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> list))
                 {
                     list.Add(pf);
@@ -728,7 +789,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
                 foreach (var kvp in pf.ResultStressTestDs.MarginalUtilityByHolding) // Includes dNLV and a utility for going delta neutral (should split)
                 {
-                    if (SymbolCache.TryGetSymbol(kvp.Key, out Symbol symbol) &&
+                    Symbol symbol = ResolveOptionContract(underlying, kvp.Key);
+                    if (symbol != null &&
                         pf.ResultStressTestDs.Holdings.TryGetValue(kvp.Key, out HoldingPb holdingPb))
                     {
                         // MarginalUtility can be for either adding or removing a symbol from the portfolio. Marginal is not just for adding. Done this way as utility is non-linear. Direction is chosen based on TargetPortfolio.
@@ -755,7 +817,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                     .OrderByDescending(pf => pf.Objective)
                     .Take(Math.Max(1, Cfg.MaxTargetPortfolios))
                     .ToList();
-                SetEquiUtilitySweeperFromTargetPortfolios(TargetPortfolios[kvp.Key]);
+                SetEquiUtilitySweeperFromTargetPortfolios(TargetPortfolios[kvp.Key], kvp.Key);
             }
 
             SetTargetHoldingsFromTargetPortfolios();
@@ -768,7 +830,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             // so every first-time contract was skipped. Rebuild it now that they are carried.
             if (TargetPortfolios.TryGetValue(underlying, out List<TargetPortfolioPb> sweptPortfolios))
             {
-                SetEquiUtilitySweeperFromTargetPortfolios(sweptPortfolios);
+                SetEquiUtilitySweeperFromTargetPortfolios(sweptPortfolios, underlying);
             }
 
             Log($"{Time} UpdateSweepRatios(): Schedule RunSignals {underlying}");
@@ -953,23 +1015,25 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             // and smaller in absolute size (the remaining quantity is the order). If the algo holds an
             // option the portfolio does not list, the portfolio does not describe the book any more.
             //
-            // Portfolios are keyed by symbol string in the response; resolve through SymbolCache and
-            // fall back to the raw text so a padded/OSI variant does not silently drop every holding.
+            // Portfolios are keyed by symbol string in the response; resolve them through the session
+            // chain (see ResolveOptionContract) and keep a whitespace-insensitive text map so a
+            // padded/OSI variant cannot silently drop every holding.
+            if (string.IsNullOrEmpty(portfolio.Underlying) || !Securities.ContainsKey(portfolio.Underlying))
+            {
+                return false;
+            }
+            Symbol underlying = Securities[portfolio.Underlying].Symbol;
+
             var bySymbol = new Dictionary<Symbol, float>();
-            var byText = new Dictionary<string, float>(StringComparer.Ordinal);
+            var byText = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
             foreach (var holding in portfolio.Holdings.Values)
             {
-                byText[holding.Symbol] = holding.Quantity;
-                if (SymbolCache.TryGetSymbol(holding.Symbol, out Symbol resolved))
+                byText[NormalizeContractValue(holding.Symbol)] = holding.Quantity;
+                Symbol resolved = ResolveOptionContract(underlying, holding.Symbol);
+                if (resolved != null)
                 {
                     bySymbol[resolved] = holding.Quantity;
                 }
-            }
-
-            if (!SymbolCache.TryGetSymbol(portfolio.Underlying, out Symbol underlying) ||
-                !Securities.ContainsKey(underlying))
-            {
-                return false;
             }
 
             var currentOptions = Portfolio
@@ -982,7 +1046,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             {
                 var option = kvp.Key;
                 if (!bySymbol.TryGetValue(option, out var targetQuantity) &&
-                    !byText.TryGetValue(option.Value, out targetQuantity))
+                    !byText.TryGetValue(NormalizeContractValue(option.Value), out targetQuantity))
                 {
                     return false;
                 }
@@ -1033,7 +1097,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             {
                 foreach (var holding in portfolio.Holdings.Values)
                 {
-                    if (SymbolCache.TryGetSymbol(holding.Symbol, out Symbol held))
+                    Symbol held = ResolveOptionContract(underlying, holding.Symbol);
+                    if (held != null)
                     {
                         heldBySurvivors.Add(held);
                     }
@@ -1172,7 +1237,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
                 Equity equity = ToEquity(underlying);
 
-                if (!IvSurfaceSsviMid.ContainsKey(equity) && !force)
+                if (!IvSurfaceSsviExecution.ContainsKey(equity) && !force)
                 {
                     Log($"{Time} RequestTargetPortfolios: {underlying} skipped — SSVI not initialized yet. force=False");
                     return;
@@ -1216,7 +1281,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         /// </summary>
         private SSVIParamsDictionary CurrentSurfaceParams(Equity equity)
         {
-            if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
+            // The EXECUTION surface: this is the surface0 Mind prices the book off. The risk surface exists
+            // to damp Lean-side greeks; it is not the optimisation input.
+            if (IvSurfaceSsviExecution.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
             {
                 return ssvi.ModelParams;
             }
@@ -1315,6 +1382,88 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         }
 
         /// <summary>
+        /// Start the live surface stream consumer. One stream per underlying; both the execution and
+        /// the risk surface id arrive on it and are routed by id.
+        /// </summary>
+        private void StartSurfaceStream(IEnumerable<string> underlyings)
+        {
+            var options = new SurfaceStreamOptions
+            {
+                Host = CfgAlgo.MQHost,
+                Port = CfgAlgo.MQPort,
+                User = CfgAlgo.MQUser,
+                Pass = CfgAlgo.MQPass,
+                VirtualHost = CfgAlgo.MQVirtualHost,
+                Exchange = Config.Get("surface-stream-exchange", "surfaces"),
+                QueuePrefix = Config.Get("surface-stream-prefix", "surface."),
+                Offset = Config.Get("surface-stream-offset", "first"),
+                Prefetch = (ushort)Math.Max(1, Config.GetInt("surface-stream-prefetch", 200)),
+            };
+            _surfaceStreamClient = new SurfaceStreamClient(options, msg => Log(msg));
+            _ = _surfaceStreamClient.StartAsync(underlyings, OnSurfaceStreamEvent);
+        }
+
+        /// <summary>
+        /// One live surface event from the stream. `surface_id` selects the destination: the execution
+        /// id prices resting orders, the risk id feeds greeks/hedging. Replayed overlaps after a
+        /// reconnect are dropped by (symbol, id, ts_snap).
+        /// </summary>
+        private void OnSurfaceStreamEvent(SurfaceEventPb e)
+        {
+            if (string.IsNullOrEmpty(e.Underlying) ||
+                !Securities.TryGetValue(e.Underlying, out Security security) ||
+                security is not Equity equity)
+            {
+                return;
+            }
+
+            if (string.Equals(e.Status, "failed", StringComparison.OrdinalIgnoreCase))
+            {
+                LogOncePerDay($"SurfaceStreamFailed:{e.Underlying}:{e.SurfaceId}",
+                    $"{Time} OnSurfaceStreamEvent: {e.Underlying} {e.SurfaceId} status=failed; ignored.");
+                return;
+            }
+
+            bool forExecution = SurfaceIdMatches(e.SurfaceId, ExecutionSurfaceId);
+            bool forRisk = SurfaceIdMatches(e.SurfaceId, RiskSurfaceId);
+            if (!forExecution && !forRisk)
+            {
+                LogOncePerDay($"SurfaceStreamUnexpected:{e.SurfaceId}",
+                    $"{Time} OnSurfaceStreamEvent: {e.Underlying} {e.SurfaceId} ignored — neither " +
+                    $"the execution ({ExecutionSurfaceId}) nor the risk ({RiskSurfaceId}) surface id.");
+                return;
+            }
+
+            if (!DateTime.TryParseExact(e.TsSnap, DatetTmeFmtProto, CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out DateTime ts))
+            {
+                return;
+            }
+
+            var key = (equity.Symbol, e.SurfaceId);
+            lock (_surfaceStreamGate)
+            {
+                if (_lastSurfaceStreamTs.TryGetValue(key, out DateTime last) && ts <= last)
+                {
+                    return;
+                }
+                _lastSurfaceStreamTs[key] = ts;
+            }
+
+            SSVIParamsDictionary parameters = SurfaceStreamClient.ToParams(e);
+            if (parameters.Count == 0)
+            {
+                return;
+            }
+
+            ApplySurface(equity, parameters, $"stream {e.SurfaceId}", raw: e.Kind == "raw",
+                execution: forExecution, risk: forRisk);
+            Log($"{Time} OnSurfaceStreamEvent: {equity} {e.SurfaceId} {e.Kind} {e.Status} " +
+                $"snap={e.TsSnap} tenors={parameters.Count} spot={e.Spot} -> " +
+                $"{(forExecution ? "execution" : "")}{(forExecution && forRisk ? "+" : "")}{(forRisk ? "risk" : "")}");
+        }
+
+        /// <summary>
         /// Only used in LiveMode - Backtests receive surfaces through OnData from warehouse.
         /// </summary>
         /// <param name="underlying"></param>
@@ -1337,6 +1486,11 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
         private void OnResponseSSVICalibration(object source, ResponseSSVICalibrationEventArgs e)
         {
+            if (UseSurfaceStream)
+            {
+                return;   // live push path: no calibration responses are requested
+            }
+
             Equity underlying = (Equity)Securities[e.ResponseSSVICalibration.Request.Underlying];
             SSVIParamsDictionary responseParams = new(e.ResponseSSVICalibration.Params.ToArray());
             if (responseParams.Count == 0)
@@ -1345,8 +1499,18 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 return;
             }
 
-            // One entry point with the warehouse rows: the calibration is the product
-            ApplySurface(underlying, responseParams, "ssvi calibration", raw: true);
+            // One entry point with the warehouse rows: the calibration is the product.
+            // A calibration response carries ONE surface and no id, so it is the EXECUTION product. Mirror
+            // it into the risk store only while both roles share an id — with a distinct risk-surface-id
+            // the risk state must come from its own feed, never from the execution stream.
+            bool alsoRisk = !RiskSurfaceIsDistinct;
+            ApplySurface(underlying, responseParams, "ssvi calibration", raw: true, execution: true, risk: alsoRisk);
+            if (!alsoRisk)
+            {
+                LogOncePerDay($"RiskSurfaceSourceMissing:{underlying.Symbol.Value}",
+                    $"{Time} OnResponseSSVICalibration: {underlying} risk surface ({RiskSurfaceId}) has no live source yet — " +
+                    $"only the execution surface ({ExecutionSurfaceId}) is being updated from calibration responses.");
+            }
         }
 
         protected override void OnSurfaceUpdated(object sender, IVSurfaceSSVIOnUpdateEventArgs<SSVIParamsDictionary> e)
@@ -1364,7 +1528,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 if (orderQ == 0) continue;
                     
                 Option option = Securities[symbol] as Option;
-                double midIv = IvSurfaceSsviMid[e.Equity].IV(option);
+                double midIv = IvSurfaceSsviExecution[e.Equity].IV(option);
                 float ivSpread = (float)(IvAsk(symbol) - IvBid(symbol));
                 float entryIvSsvi = (float)midIv - Math.Sign(orderQ) * ivSpread / 2;
                 decimal midPriceUnderlying = MidPrice(e.Equity.Symbol);
@@ -1503,6 +1667,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         public override void OnEndOfAlgorithm()
         {
             base.OnEndOfAlgorithm();
+            _surfaceStreamClient?.Dispose();
             rMQClient.Dispose();
         }
     }

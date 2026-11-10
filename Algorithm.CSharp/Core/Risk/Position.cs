@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using QuantConnect.Algorithm.CSharp.Core.Indicators;
 using QuantConnect.Algorithm.CSharp.Core.Pricing;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
@@ -312,7 +313,23 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         public decimal BsmIVdS() => ToDecimal(GetGreeks1().IVdS);
 
         public decimal BsmIVdSTotal() => BsmIVdS() * Multiplier * Quantity;
-        public decimal SurfaceIVdS => Trade1?.SurfaceIVdS ?? ToDecimal(_algo.IvSurfaceSsviMid[Equity].IVdS(Symbol) ?? 0);
+        /// <summary>
+        /// dσ/dS from the RISK surface. Executed prices must use the execution surface; risk and hedging
+        /// read the smoother product, so the skew term is consistent with the delta it adjusts.
+        /// </summary>
+        public decimal SurfaceIVdS
+        {
+            get
+            {
+                if (Trade1 != null) return Trade1.SurfaceIVdS;
+                if (_algo.IvSurfaceSsviRisk.TryGetValue(Equity, out IIVSurface surface))
+                {
+                    double? ivds = surface.IVdS(Symbol);
+                    if (ivds.HasValue && double.IsFinite(ivds.Value)) return ToDecimal(ivds.Value);
+                }
+                return 0m;
+            }
+        }
         public decimal SurfacedIVdSTotal => SurfaceIVdS * Multiplier * Quantity;
         /// <summary>
         /// From Derman, The volatility smile. Chapter 22, Heston model minmize PnL Variance.
@@ -331,15 +348,33 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (iv * spotNna == 0) { return 0; }
             return rho * vv * vega / iv * spotNna;
         }
+        /// <summary>Vega per 1.00 of vol, evaluated at the RISK-surface IV (the same σ the hedge delta uses).</summary>
+        private double SurfaceVega()
+        {
+            if (SecurityType != SecurityType.Option) return 0;
+            double iv = _algo.MidIVSsvi(Symbol);
+            if (!double.IsFinite(iv) || iv <= 0) return 0;
+            return OptionContractWrap.E(_algo, (Option)Security, _algo.Time.Date).Vega(iv);
+        }
+
+        /// <summary>
+        /// Minimum-variance delta term: vega × dσ/dS. The sticky-strike delta holds σ fixed; this is the
+        /// part of dP/dS that comes from the smile moving with spot. 0 when the surface has no skew for
+        /// this contract, or when either factor is non-finite.
+        /// </summary>
         public decimal DeltaIVdSTotal()
-        {            
-            return DeltaMVTerm() * Multiplier * Quantity;
-            //return ToDecimal(GetGreeks1().Vega) * SurfaceIVdS * Multiplier * Quantity;
+        {
+            double ivds = (double)SurfaceIVdS;
+            double vega = SurfaceVega();
+            if (!double.IsFinite(ivds) || !double.IsFinite(vega)) return 0m;
+            return ToDecimal(vega * ivds) * Multiplier * Quantity;
         }
         public decimal DeltaIVdSXBpUSDTotal(decimal dS = 100)
         {
-            return DeltaMVTerm(Mid1Underlying * dS * BP) * Multiplier * Quantity;
-            //return ToDecimal(GetGreeks1().Vega) * SurfaceIVdS * Mid1Underlying * dS * BP * Multiplier * Quantity;
+            double ivds = (double)SurfaceIVdS;
+            double vega = SurfaceVega();
+            if (!double.IsFinite(ivds) || !double.IsFinite(vega)) return 0m;
+            return ToDecimal(vega * ivds * (double)(Mid1Underlying * dS * BP)) * Multiplier * Quantity;
         }
         public decimal SpeedXBpUSDTotal(double dS = 100, double? volatility = null)
         {

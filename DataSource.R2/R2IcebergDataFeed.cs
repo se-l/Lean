@@ -143,12 +143,14 @@ namespace QuantConnect.Lean.DataSource.R2
             // fitted product, and a backtest must name the exact product it claims to reproduce.
             if (R2SurfaceStore.IsRequested(config.Type))
             {
-                var surfaceId = R2SurfaceStore.ConfiguredSurfaceId();
+                // Both recipes in ONE read when they differ: rows carry their own surface_id and the
+                // algorithm routes them (execution -> pricing, risk -> greeks/hedging).
+                var surfaceIds = R2SurfaceStore.ConfiguredSurfaceIds();
                 var surfaceSymbol = config.Symbol;
                 Log.Trace($"R2IcebergDataFeed: {config.Symbol} {config.Type.Name} " +
-                          $"-> {R2SurfaceStore.Table}[{surfaceId}]");
+                          $"-> {R2SurfaceStore.Table}[{string.Join(",", surfaceIds)}]");
                 var surfaceEnumerator = GetEnumerator(request, R2SurfaceStore.Table,
-                    day => _surfaces.Read(surfaceSymbol, surfaceId, day)).GetEnumerator();
+                    day => _surfaces.Read(surfaceSymbol, surfaceIds, day)).GetEnumerator();
                 return SubscriptionUtils.CreateAndScheduleWorker(request, surfaceEnumerator,
                     _factorFileProvider, true, _algorithm.Settings.DailyStrictEndTimeEnabled);
             }

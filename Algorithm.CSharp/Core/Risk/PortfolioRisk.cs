@@ -217,13 +217,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             Symbol underlying = Underlying(symbol);
 
-            var riskDeltaTotal = _algo.DeltaMV(symbol);
+            (decimal stickyDelta, decimal skewDelta) = _algo.DeltaMVSplit(symbol);
+            decimal riskDeltaTotal = stickyDelta + skewDelta;
 
             decimal riskPutCallRatio = 0;  // _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
             riskDeltaTotal += riskPutCallRatio;
 
             CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
-            bool exceeded = IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal);
+            bool exceeded = IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal, stickyDelta, skewDelta);
             if (exceeded)
             {
                 _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
@@ -231,7 +232,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }            
             return false;
         }
-        public bool IsUnderlyingDeltaExceedingBand(Symbol symbol, decimal riskDeltaTotal)
+        public bool IsUnderlyingDeltaExceedingBand(Symbol symbol, decimal riskDeltaTotal,
+            decimal stickyDelta = 0m, decimal skewDelta = 0m)
         {
             if (_algo.IsWarmingUp) return false;
 
@@ -247,7 +249,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (Math.Abs(riskDeltaTotal) > totalDeltaHedgeThreshold)
             {
                 string gammaScalpingStatus = _algo.GammaScalpers.TryGetValue(underlying, out GammaScalper gs) ? gs.StatusShort() : "NoGammaScalper";
-                _algo.Log($"{_algo.Time} IsPortfolioDeltExceedingBand: totalDeltaHedgeThreshold={totalDeltaHedgeThreshold}, riskDSTotal={riskDeltaTotal}, MidUnderlying={_algo.MidPrice(underlying)}, gammaTotal={gammaTotal}, {gammaScalpingStatus}");
+                _algo.Log($"{_algo.Time} IsPortfolioDeltExceedingBand: totalDeltaHedgeThreshold={totalDeltaHedgeThreshold}, " +
+                          $"riskDSTotal={riskDeltaTotal}, stickyDelta={stickyDelta}, skewDelta={skewDelta}, " +
+                          $"skewMode={_algo.Cfg.DeltaHedgeSkewTerm ?? "none"}, MidUnderlying={_algo.MidPrice(underlying)}, " +
+                          $"gammaTotal={gammaTotal}, {gammaScalpingStatus}");
                 return true;
             }
             return false;

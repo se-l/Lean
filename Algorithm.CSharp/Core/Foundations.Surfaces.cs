@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
+using QuantConnect.Configuration;
 using QuantConnect.Securities;
 using QuantConnect.Securities.Equity;
 
@@ -11,7 +12,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
     /// RAW surface handling: one observation in, filtered surface out.
     ///
     /// DEFAULT: the incoming surface IS the product. It is installed as-is into
-    /// `IvSurfaceSsviMid` and every consumer reads it — no filter, no smoothing, backtest and live
+    /// `IvSurfaceSsviExecution` and every consumer reads it — no filter, no smoothing, backtest and live
     /// identical because both receive the same finished calibrations (filtering happens upstream).
     ///
     /// OPT-IN (`Cfg.UseSurfaces`): a row whose fit records `kind = raw` is treated as an
@@ -21,6 +22,38 @@ namespace QuantConnect.Algorithm.CSharp.Core
     /// </summary>
     public partial class Foundations
     {
+        /// <summary>Execution surface recipe (`surface-id`): what prices resting limit orders.</summary>
+        public string ExecutionSurfaceId => (Config.Get("surface-id", "") ?? string.Empty).Trim();
+
+        /// <summary>
+        /// Risk surface recipe (`risk-surface-id`): what feeds greeks, risk metrics and the delta hedge.
+        /// Defaults to the execution id, so a run that only sets `surface-id` uses one surface everywhere.
+        /// </summary>
+        public string RiskSurfaceId
+        {
+            get
+            {
+                string risk = (Config.Get("risk-surface-id", "") ?? string.Empty).Trim();
+                return risk.Length > 0 ? risk : ExecutionSurfaceId;
+            }
+        }
+
+        /// <summary>True when the two roles point at different products.</summary>
+        public bool RiskSurfaceIsDistinct =>
+            !string.Equals(RiskSurfaceId, ExecutionSurfaceId, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// True when LIVE surfaces arrive from the RabbitMQ stream (push) instead of the calibration
+        /// request/response (pull). Backtest never uses this: it reads the warehouse.
+        /// </summary>
+        public bool UseSurfaceStream =>
+            SurfaceFromRabbitMq && LiveMode && Config.GetBool("surface-stream-enabled", false);
+
+        /// <summary>True when `rowId` is the surface id configured for a role.</summary>
+        public bool SurfaceIdMatches(string rowId, string roleId) =>
+            !string.IsNullOrEmpty(roleId) && !string.IsNullOrEmpty(rowId) &&
+            string.Equals(rowId.Trim(), roleId.Trim(), StringComparison.OrdinalIgnoreCase);
+
         /// <summary>Hook for subclasses that react to every applied surface (scenario publishing).</summary>
         protected virtual void OnSurfaceUpdated(object sender, IVSurfaceSSVIOnUpdateEventArgs<SSVIParamsDictionary> e)
         {
@@ -30,23 +63,35 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// Install one surface for consumers: the single entry point for slice rows, the history seed
         /// and live calibration responses.
         /// </summary>
-        public void ApplySurface(Equity equity, SSVIParamsDictionary parameters, string source, bool raw)
+        public void ApplySurface(Equity equity, SSVIParamsDictionary parameters, string source, bool raw,
+                                 bool execution = true, bool risk = true)
         {
             if (equity == null || parameters == null || parameters.Count == 0)
             {
                 return;
             }
-            if (!IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface))
+
+            IIVSurface updated = null;
+            if (execution && IvSurfaceSsviExecution.TryGetValue(equity, out IIVSurface executionSurface))
+            {
+                executionSurface.SetModelParams(parameters);
+                updated = executionSurface;
+            }
+            if (risk && IvSurfaceSsviRisk.TryGetValue(equity, out IIVSurface riskSurface))
+            {
+                riskSurface.SetModelParams(parameters);
+                updated ??= riskSurface;
+            }
+            if (updated == null)
             {
                 Log($"{Time} ApplySurface: {equity.Symbol} has no IV surface object yet — dropped ({source}).");
                 return;
             }
 
-            surface.SetModelParams(parameters);
-
-            // Downstream (scenario publishing) hangs off one event per applied surface, no matter
-            // which path filled it.
-            OnSurfaceUpdated(surface, new IVSurfaceSSVIOnUpdateEventArgs<SSVIParamsDictionary>(parameters, equity));
+            // Downstream (scenario publishing) hangs off one event per applied surface, no matter which
+            // path filled it. Fired ONCE per row: the two stores hold identical params until the risk id
+            // differs, and a double event would publish the scenario twice.
+            OnSurfaceUpdated(updated, new IVSurfaceSSVIOnUpdateEventArgs<SSVIParamsDictionary>(parameters, equity));
         }
 
         /// <summary>
@@ -64,7 +109,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             Symbol underlying = symbol.SecurityType == SecurityType.Option ? symbol.Underlying : symbol;
             if (!Securities.TryGetValue(underlying, out Security security) || security is not Equity equity) return false;
 
-            if (!IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) ||
+            if (!IvSurfaceSsviRisk.TryGetValue(equity, out IIVSurface surface) ||
                 surface is not IVSurfaceSSVI ssvi || !ssvi.IsCalibrated || ssvi.ModelParams is not { Count: > 0 })
             {
                 return false;

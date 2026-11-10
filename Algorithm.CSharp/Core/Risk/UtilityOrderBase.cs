@@ -521,7 +521,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             
             // Prefer SSVI surface IV for vol0; fall back to IVPrice
             Equity equity = _algo.ToEquity(underlying);
-            double vol0 = (_algo.IvSurfaceSsviMid.TryGetValue(equity, out var surface) && surface.TryGetIV(_option, out double surfaceIv))
+            double vol0 = (_algo.IvSurfaceSsviRisk.TryGetValue(equity, out var surface) && surface.TryGetIV(_option, out double surfaceIv))
                 ? surfaceIv
                 : IVPrice;
 

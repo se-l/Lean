@@ -72,7 +72,14 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public bool PricerCacheEnabled;
         public SecurityExchangeHours SecurityExchangeHours;
         private DateTime endOfDay;
-        public Dictionary<Equity, IIVSurface> IvSurfaceSsviMid = new();
+        /// <summary>EXECUTION surface — prices resting limit orders (`GetSurfaceQuote`, sweep model IV/vega).</summary>
+        public Dictionary<Equity, IIVSurface> IvSurfaceSsviExecution = new();
+
+        /// <summary>
+        /// RISK surface — greeks, risk metrics, the delta hedge. Optionally a smoother/laggier product
+        /// (`risk-surface-id`); identical to the execution surface until that config value differs.
+        /// </summary>
+        public Dictionary<Equity, IIVSurface> IvSurfaceSsviRisk = new();
 
         public Dictionary<int, IUtilityOrder> OrderTicket2UtilityOrder = new();
 
@@ -83,7 +90,44 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// Single source for both the subscription (below) and the warm-up seed (SecurityInitializerMine),
         /// so the two cannot disagree when surface-mode is left at its default.
         /// </summary>
-        public bool SurfaceFromSlice => !LiveMode && Config.Get("surface-mode", "slice") == "slice";
+        /// <summary>
+        /// Where surfaces come from: `slice` (backtest default — <c>AddData&lt;SurfaceSSVI&gt;</c> answered by
+        /// the R2 feed) or `rabbitmq` (every surface is requested from the calc-engine over MQ, exactly as
+        /// in live). Live is ALWAYS `rabbitmq`.
+        /// </summary>
+        public string SurfaceMode
+        {
+            get
+            {
+                string mode = (Config.Get("surface-mode", "") ?? string.Empty).Trim().ToLowerInvariant();
+                if (mode.Length > 0) return mode;
+                return LiveMode ? "rabbitmq" : "slice";
+            }
+        }
+
+        /// <summary>Backtest whose surfaces arrive as slice data (the default backtest producer).</summary>
+        public bool SurfaceFromSlice => !LiveMode && SurfaceMode == "slice";
+
+        /// <summary>Surfaces are produced by MQ calibration requests — live, or a backtest under test.</summary>
+        public bool SurfaceFromRabbitMq => LiveMode || SurfaceMode == "rabbitmq";
+
+        /// <summary>
+        /// Whether the one-shot history seed runs at start-up. Default: everywhere EXCEPT a backtest that
+        /// is explicitly exercising the MQ producer — there a seed would hide a broken request path.
+        /// Override with <c>"surface-seed": true|false</c>.
+        /// </summary>
+        public bool SurfaceSeedEnabled
+        {
+            get
+            {
+                string configured = (Config.Get("surface-seed", "") ?? string.Empty).Trim().ToLowerInvariant();
+                if (configured.Length > 0)
+                {
+                    return configured is "1" or "true" or "yes" or "on";
+                }
+                return !(!LiveMode && SurfaceMode == "rabbitmq");
+            }
+        }
         public RiskScenarioHandler RiskScenarioHandler;
         
         public Dictionary<(Symbol, decimal), UnderlyingMovedX> UnderlyingMovedX = new();
@@ -301,7 +345,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // Logging events
             Schedule.On("LogRiskSchedule", DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), LogRiskSchedule);
-            // Schedule.On(DateRules.EveryDay(symbolSubscribed), TimeRules.Every(TimeSpan.FromMinutes(15)), ExportRiskRecords);
 
             // Logging
             RiskRecorder = new(this);
@@ -486,19 +529,31 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // multi-underlying config correct.
             foreach (var (surfaceSymbol, surface) in slice.Get<SurfaceSSVI>())
             {
-                Log($"{Time} OnDataCore: SurfaceSSVI {surface.SurfaceId} {surface.Status} received.");
                 Equity surfaceEquity = Securities.Values.OfType<Equity>()
                     .FirstOrDefault(e => e.Symbol.Value == surfaceSymbol.Value);
-                if (surfaceEquity == null || !IvSurfaceSsviMid.TryGetValue(surfaceEquity, out IIVSurface ivSurface))
+                if (surfaceEquity == null)
                 {
                     continue;
                 }
 
+                // ROUTE BY ID. One data stream can carry both products: the execution surface prices
+                // limit orders, the risk surface feeds greeks/hedging. Today both ids are the same value,
+                // so every row lands in both stores.
+                bool forExecution = SurfaceIdMatches(surface.SurfaceId, ExecutionSurfaceId);
+                bool forRisk = SurfaceIdMatches(surface.SurfaceId, RiskSurfaceId);
+                if (!forExecution && !forRisk)
+                {
+                    Log($"{Time} OnDataCore: SurfaceSSVI {surface.SurfaceId} {surface.Status} ignored — neither " +
+                        $"the execution ({ExecutionSurfaceId}) nor the risk ({RiskSurfaceId}) surface id.");
+                    continue;
+                }
+
                 // One entry point for every surface
-                ApplySurface(surfaceEquity, ToSsviParamsDictionary(surface), "slice", surface.IsRaw);
+                ApplySurface(surfaceEquity, ToSsviParamsDictionary(surface), "slice", surface.IsRaw, forExecution, forRisk);
                 Log($"{Time} OnData: SurfaceSSVI {surface.SurfaceId} {surface.Status} " +
                     $"snap={surface.TimeSnap:HH:mm:ss} available={surface.AvailableTime:HH:mm:ss} " +
-                    $"tenors={surface.Tenors.Count} spot={surface.Value} -> {surfaceEquity.Symbol}");
+                    $"tenors={surface.Tenors.Count} spot={surface.Value} -> {surfaceEquity.Symbol} " +
+                    $"as={(forExecution ? "execution" : "")}{(forExecution && forRisk ? "+" : "")}{(forRisk ? "risk" : "")}");
             }
 
             if (IsWarmingUp) return;
@@ -707,7 +762,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // The filter is only in the path when opted in; otherwise the surface IS the state.
             SSVIParamsDictionary parameters = null;
-            if (IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
+            if (IvSurfaceSsviExecution.TryGetValue(equity, out IIVSurface surface) && surface is IVSurfaceSSVI ssvi)
             {
                 parameters = ssvi.ModelParams;
             }
@@ -728,7 +783,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             OnEndOfDay();
             PositionWriters.Keys.DoForEach(RiskRecorder.Record);
             RiskRecorder.Dispose();
-            IvSurfaceSsviMid.Values.DoForEach(s => s.Dispose());
+            IvSurfaceSsviExecution.Values.DoForEach(s => s.Dispose());
+            IvSurfaceSsviRisk.Values.DoForEach(s => s.Dispose());
             PositionWriters.Values.DoForEach(w => w.Dispose());
             RiskProfiles.Values.DoForEach(s => s.Dispose());
             OrderEventWriters.Values.DoForEach(s => s.Dispose());
@@ -802,7 +858,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
 
-            IvSurfaceSsviMid.Values.DoForEach(s => s.WriteMetrics());
+            IvSurfaceSsviExecution.Values.DoForEach(s => s.WriteMetrics());
+            // Identical params when the ids match: writing both would emit every gauge twice under the
+            // same dimensions.
+            if (RiskSurfaceIsDistinct) IvSurfaceSsviRisk.Values.DoForEach(s => s.WriteMetrics());
             //IVSurfaceSSVIBid.Values.Union(IVSurfaceSSVIAsk.Values).DoForEach(s => s.WriteCsvRows());
         }
 
@@ -892,13 +951,27 @@ namespace QuantConnect.Algorithm.CSharp.Core
             return OptionContractWrap.E(this, (Option)Securities[symbol], Time.Date).IV(mid, MidPrice(Underlying(symbol)), 0.0001);
         }
 
-        public double MidIVSsvi(Symbol symbol, double defaultSpread = 0.005)
+        /// <summary>
+        /// RISK-surface IV: greeks, risk metrics and the delta hedge read this one. When a distinct
+        /// `risk-surface-id` is configured it is the smoother/laggier product, so hedges do not chase
+        /// execution-surface noise.
+        /// </summary>
+        public double MidIVSsvi(Symbol symbol, double defaultSpread = 0.005) =>
+            MidIVSsviFrom(IvSurfaceSsviRisk, symbol);
+
+        /// <summary>
+        /// EXECUTION-surface IV: the pricing path (`GetSurfaceQuote`, sweep model IV/vega) reads this one.
+        /// </summary>
+        public double MidIVSsviExecution(Symbol symbol) =>
+            MidIVSsviFrom(IvSurfaceSsviExecution, symbol);
+
+        private double MidIVSsviFrom(Dictionary<Equity, IIVSurface> surfaces, Symbol symbol)
         {
             if (symbol.SecurityType != SecurityType.Option) return 0;
 
             Option option = (Option)Securities[symbol];
             Equity equity = (Equity)option.Underlying;
-            if (!IvSurfaceSsviMid.TryGetValue(equity, out IIVSurface ivSurface) || ivSurface is not IVSurfaceSSVI ssviSurface || !ssviSurface.IsCalibrated || !ssviSurface.HasParams(option))
+            if (!surfaces.TryGetValue(equity, out IIVSurface ivSurface) || ivSurface is not IVSurfaceSSVI ssviSurface || !ssviSurface.IsCalibrated || !ssviSurface.HasParams(option))
             {
                 return MidIV(symbol);
             }
@@ -1358,9 +1431,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         private List<ScopedOption> CaptureScope(Symbol underlying)
         {
             Equity equity = ToEquity(underlying);
-            if (!IvSurfaceSsviMid.ContainsKey(equity))
+            if (!IvSurfaceSsviExecution.ContainsKey(equity))
             {
-                Log($"{Time} GetDesiredOrders: {underlying} IVSurfaceSSVIMid not ready.");
+                Log($"{Time} GetDesiredOrders: {underlying} execution IV surface not ready.");
                 return null;
             }
 
@@ -1461,10 +1534,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // BuySell Distinction is insufficient. Scenario: We are delta short, gamma long. Would only want to buy/sell options reducing both, unless the utility is calculated better to compare weight 
             // beneficial risk and detrimental risk against each other. That's what the RiskDiscounts are for.
             IUtilityOrder utilSell = scoped.SellAllowed
-                ? UtilityOrderFactory.Create(this, scoped.Option, scoped.QuantitySell, scoped.AskPrice)
+                ? CreateUtility(scoped.Option, scoped.QuantitySell, scoped.AskPrice)
                 : null;
             IUtilityOrder utilBuy = scoped.BuyAllowed
-                ? UtilityOrderFactory.Create(this, scoped.Option, scoped.QuantityBuy, scoped.BidPrice)
+                ? CreateUtility(scoped.Option, scoped.QuantityBuy, scoped.BidPrice)
                 : null;
 
             if (utilSell != null && utilSell.Utility >= minUtility &&
@@ -1513,6 +1586,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             var pricerCache = (this as Earnings.EarningsAlgorithm)?.PricerCache;
             if (pricerCache != null)
             {
+                Log($"{Time} GetDesiredOrders: {underlying}. UtilityCache since last report: {UtilityCacheStatsSinceLast()}");
                 Log($"{Time} GetDesiredOrders: {underlying}. PricerCache since last report (run totals in brackets): {pricerCache.StatsByKindSinceLast()}");
                 Log($"{Time} GetDesiredOrders: {underlying}. Pricing by caller since last report (run totals in brackets): {PricingCallSite.StatsSinceLast()}");
             }
@@ -1683,8 +1757,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
                 List<OrderTicket> remainingLiveTickets = liveTickets.Where(t => !ticketsToCancel.Contains(t)).ToList();
 
-                // Sort the signals. Risk reducing first, then risk accepting. Can be done based on their UtilMargin. The larger the safer.
-                IEnumerable<Signal> signalByUnderlying = group.OrderByDescending(g => g.UtilityOrder.UtilityMargin);
+                // Order by OVERALL utility, not UtilityMargin: UtilityMargin returned a hard-coded 0 for
+                // every order (see GetUtilityMargin), so this sort was a no-op and the Take() below kept
+                // an arbitrary subset — liquid ATM contracts won by default while wing protection lagged.
+                IEnumerable<Signal> signalByUnderlying = group.OrderByDescending(g => g.UtilityOrder.Utility);
                 // Pick only the n best orders because othrewise too risky
                 signalByUnderlying = signalByUnderlying.Take(Cfg.MaxDesiredOrders);
 
@@ -2256,7 +2332,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                         Cancel(ticket, tag: $"orderQuantity={orderQuantity}");
                         return;
                     }
-                    IUtilityOrder utilityOrder = UtilityOrderFactory.Create(this, option, orderQuantity);
+                    IUtilityOrder utilityOrder = CreateUtility(option, orderQuantity);
                     Quote<Option> quote = GetQuote(new QuoteRequest<Option>(option, orderQuantity, utilityOrder));
 
                     decimal idealLimitPrice = quote.Price;
@@ -2585,7 +2661,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             try
             {
-                IUtilityOrder utilityOrder = UtilityOrderFactory.Create(this, option, quantity, price);
+                IUtilityOrder utilityOrder = CreateUtility(option, quantity, price);
                 if (utilityOrder == null) return 0;
 
                 double utility = utilityOrder.Utility;
@@ -2811,7 +2887,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <param name="underlying"></param>
         /// <param name="days"></param>
         /// <returns></returns>
-        public bool IsAfterEarningsRelease(Symbol underlying, int days = 30)
+        public bool IsAfterEarningsRelease(Symbol underlying, int days = 60)
         {
             DateTime prevReleaseDate = PreviouReleaseDate(underlying);
             return Time.Date > prevReleaseDate.Date && Time.Date <= (prevReleaseDate + TimeSpan.FromDays(days)).Date;

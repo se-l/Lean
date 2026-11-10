@@ -1,7 +1,7 @@
 {
-  "StartDate": "2026-08-06",
-  "EndDate": "2026-08-10",
-  "Ticker": [ "NET" ],
+  "StartDate": "2026-08-11",
+  "EndDate": "2026-08-12",
+  "Ticker": [ "CRWV" ],
   "MQHost": "127.0.0.1",
   "MQPort": 5672,
   "MQVirtualHost": "dev",

@@ -97,7 +97,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 IVBid0 = IVAsk0 = 0;
             }            
             _ = Greeks;
-            SurfaceIVdS = (decimal)(_algo.IvSurfaceSsviMid[Equity].IVdS(Symbol) ?? 0);
+            SurfaceIVdS = (decimal)(_algo.IvSurfaceSsviRisk[Equity].IVdS(Symbol) ?? 0);
         }
     }
 }
