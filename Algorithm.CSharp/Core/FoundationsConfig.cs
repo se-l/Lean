@@ -29,7 +29,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// How many target portfolios per underlying are kept after a response: the best by
         /// objective (maxObjective), the rest dropped. Live-tunable over the config channel.
         /// </summary>
-        public int MaxTargetPortfolios { get; set; } = 5;
+        public int MaxTargetPortfolios { get; set; } = 10;
         public decimal ScopeContractStrikeOverUnderlyingMax { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMin { get; set; }
         public int ScopeContractMinDTE { get; set; }

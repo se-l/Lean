@@ -357,8 +357,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         internal Quote<Option> GetQuote(QuoteRequest<Option> qr)
         {
-            
-            decimal price = PricingStrategy[qr.Underlying](qr);
+            // Lazy registration. The dictionary is seeded from Cfg.Ticker strings, whose implicit
+            // string->Symbol conversion can produce a different SID than the Symbol carried by the
+            // option contract (map-file resolution), and a dynamic subscription can introduce an
+            // underlying that was never seeded. A plain indexer turned either case into
+            // KeyNotFoundException 'PEP' on the algorithm thread at startup; resolve on first use and
+            // say so once, with the keys that were actually registered.
+            if (!PricingStrategy.TryGetValue(qr.Underlying, out var pricingStrategy))
+            {
+                pricingStrategy = GetPricingStrategy(qr.Underlying);
+                PricingStrategy[qr.Underlying] = pricingStrategy;
+                Log($"{Time} GetQuote: no pricing strategy for {qr.Underlying} " +
+                    $"(sid={qr.Underlying.ID}); resolved on first use. Registered keys: " +
+                    $"{string.Join(", ", PricingStrategy.Keys.Select(k => k.Value + "/" + k.ID))}.");
+            }
+
+            decimal price = pricingStrategy(qr);
 
             // Defensive rounding and adjustments
             decimal priceRounded = RoundTick(price, TickSize(qr.Symbol), qr.OrderDirection == OrderDirection.Sell);

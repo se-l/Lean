@@ -242,6 +242,15 @@ namespace QuantConnect.Algorithm.CSharp.Core
             UniverseSettings.Leverage = 10;
             Portfolio.MarginCallModel = MarginCallModel.Null;
 
+            // Buying-power protection off. The portfolio only carries the underlying this job is scoped
+            // to (the brokerage hides every other underlying's holdings and orders), so cash and margin
+            // are partial by design and Lean's margin arithmetic is meaningless here — it kept refusing
+            // orders against a MarginRemaining of a few hundred dollars. Single-position groups already
+            // fall through to the security's model (BuyingPowerModel.Null, see SecurityInitializerMine);
+            // what still enforced margin was the option-strategy grouping, so drop grouping altogether.
+            // In live, IB remains the real margin authority and rejects with 201/103.
+            Portfolio.SetPositions(QuantConnect.Securities.Positions.SecurityPositionGroupModel.Null);
+
             EarningsAnnouncements = JsonConvert.DeserializeObject<EarningsAnnouncement[]>(File.ReadAllText(Path.Combine(Globals.DataFolder, "symbol-properties", "EarningsAnnouncements.json")));
 
             // To be handled with API.Essentially get in realtime positions out of algo and ingest orders in realtime
