@@ -34,6 +34,35 @@ namespace QuantConnect.Tests.Common.Data
         private readonly DateTime _dataTime = DateTime.UtcNow;
 
         [Test]
+        public void SurfaceSSVIsKeepsEverySurfaceOfTheSameUnderlying()
+        {
+            var now = DateTime.UtcNow;
+            // The engine groups data by TIME, not by recipe: one instant can carry the execution
+            // recipe and the risk recipe, or a raw fit and its filtered product. They all share the
+            // underlying Symbol, so Slice.Get<T>() would keep only the last one.
+            var execution = new SurfaceSSVI { Symbol = Symbols.SPY, Time = now, SurfaceId = "ivs_aaaaaaaaaaaa", Kind = "kalman", Status = "ok" };
+            var risk = new SurfaceSSVI { Symbol = Symbols.SPY, Time = now, SurfaceId = "ivs_bbbbbbbbbbbb", Kind = "raw", Status = "ok" };
+            var noKind = new SurfaceSSVI { Symbol = Symbols.SPY, Time = now, SurfaceId = "ivs_cccccccccccc", Kind = string.Empty, Status = "ok" };
+
+            var slice = new Slice(now, new BaseData[] { execution, risk, noKind }, now);
+
+            // Every row survives, in arrival order.
+            Assert.AreEqual(3, slice.SurfaceSSVIs.Count);
+            Assert.AreEqual(
+                new[] { "ivs_aaaaaaaaaaaa", "ivs_bbbbbbbbbbbb", "ivs_cccccccccccc" },
+                slice.SurfaceSSVIs.Select(s => s.SurfaceId).ToArray());
+
+            // The consumer routes on surface id and can tell raw from filtered via kind.
+            Assert.AreEqual("kalman", slice.SurfaceSSVIs[0].Kind);
+            Assert.AreEqual("raw", slice.SurfaceSSVIs[1].Kind);
+            Assert.AreEqual(string.Empty, slice.SurfaceSSVIs[2].Kind);
+            Assert.IsTrue(slice.SurfaceSSVIs[1].IsRaw);
+
+            // The single-surface convenience property stays usable and returns the first row.
+            Assert.AreSame(execution, slice.SurfaceSSVI);
+        }
+
+        [Test]
         public void AccessesByDataType()
         {
             var now = DateTime.UtcNow;

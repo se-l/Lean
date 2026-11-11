@@ -213,7 +213,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // surface into a November session: its tenors are Aug/Sep expiries, the book holds
                 // Nov/Dec/Jan, the coverage check rejects it and every hedge is skipped as "no surface".
                 DateTime to = _algo.LiveMode ? _algo.Time.Date : _algo.Cfg.StartDate;
-                var from = to.AddDays(-10);
+                var from = to.AddDays(-1);  // On intraday restart serving old one from R2. Better to query RabbitMQ Stream then or eventually ClickHouse.
                 var history = _algo.History<SurfaceSSVI>(underlying.Symbol, from, to).ToList();
                 if (history.Count == 0)
                 {

@@ -26,7 +26,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             else if (newBidAsk.Symbol.SecurityType == SecurityType.Equity)
             {
-                // LogOnEventNewBidAsk(newBidAsk);  // Because Backtest and LiveTrading differ significantly in price update logs.
                 var scopedTickets = orderTickets.Keys.ToList().Where(k => k.SecurityType == SecurityType.Option && k.Underlying == newBidAsk.Symbol && orderTickets[k].Count > 0).ToHashSet();  // ToHashSet(): ToList, avoid concurrent modification error
                 scopedTickets.Add(newBidAsk.Symbol);
                 scopedTickets.DoForEach(UpdateLimitPrice);
@@ -61,15 +60,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     HedgeOptionWithUnderlying(e.Symbol);
                     break;
             }
-        }
-
-        public void StoreRealizedPosition(Position position)
-        {
-            if (!PositionsRealized.ContainsKey(position.Symbol))
-            {
-                PositionsRealized[position.Symbol] = new();
-            };
-            PositionsRealized[position.Symbol].Add(position);
         }
     }
 }

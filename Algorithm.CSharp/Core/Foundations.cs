@@ -23,6 +23,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using NodaTime;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
 using Trade = QuantConnect.Algorithm.CSharp.Core.Risk.Trade;
 
@@ -186,6 +187,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <summary>Backtests run the pass inline (deterministic); live runs it off-thread.</summary>
         public bool AsyncSignals = false;
         public readonly ConcurrentQueue<Signal> _signalQueue = new();
+        public readonly TimeSpan OffsetToMarketOpen = new(0, 0, -120);
         public int ocaGroupId;
         public int SignalQuantityDflt = 9999;
         public ConcurrentDictionary<Symbol, decimal> TargetHoldings = new();
@@ -425,20 +427,17 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public DateTime GetCurrentMarketOpen(Symbol symbol)
         {
-            var security = Securities[symbol];
             var exchangeHours = MarketHoursDatabase.GetEntry(symbol.ID.Market, symbol, symbol.SecurityType).ExchangeHours;
             DateTime nextMarketOpen = exchangeHours.GetNextMarketOpen(Time, false);
             return Time.Date == nextMarketOpen.Date && Time.TimeOfDay < nextMarketOpen.TimeOfDay ? nextMarketOpen : exchangeHours.GetNextMarketOpen(Time.Subtract(TimeSpan.FromDays(1)), false);
         }
         public DateTime GetNextMarketClose(Symbol symbol)
         {
-            var security = Securities[symbol];
             var exchangeHours = MarketHoursDatabase.GetEntry(symbol.ID.Market, symbol, symbol.SecurityType).ExchangeHours;
             return exchangeHours.GetNextMarketClose(Time, false);
-            //return exchangeHours.GetNextMarketClose(Time, security.IsExtendedMarketHours);
         }
 
-        public bool IsMyMarketOpen(Symbol symbol)
+        public bool IsMyMarketOpen(Symbol symbol, TimeSpan? offsetToOpen=null)
         {
             if (!NextMarketClose.TryGetValue(symbol, out DateTime nextMarketClose))
             {
@@ -448,7 +447,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             {
                 CurrentMarketOpen[symbol] = currentMarketOpen = GetCurrentMarketOpen(symbol);
             }
-            return Time >= currentMarketOpen && Time < nextMarketClose;
+            DateTime openTime = offsetToOpen is null ? currentMarketOpen : currentMarketOpen.Add((TimeSpan)offsetToOpen);
+            return Time >= openTime && Time < nextMarketClose;
         }
 
         public void ClearNextMarketOpenClose()
@@ -534,35 +534,43 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             // A surface delivered as data: same call the live RabbitMQ consumer makes
             // (IIVSurface.SetModelParams), so the two producers are interchangeable by construction.
-            // Iterating the slice's dictionary rather than the single-surface property keeps a
-            // multi-underlying config correct.
-            foreach (var (surfaceSymbol, surface) in slice.Get<SurfaceSSVI>())
+            // ONE SLICE CAN CARRY SEVERAL SURFACES for the same underlying (execution surface, risk
+            // surface, a raw fit and its filtered product), so read the slice's full surface list and
+            // let this loop do the routing. slice.Get<SurfaceSSVI>() is keyed by Symbol and keeps
+            // only the last row per underlying — using it silently drops every other product.
+            // Guarded by SurfaceFromSlice: live never subscribes to the type, so this avoids an
+            // AllData scan per slice on the live path.
+            if (SurfaceFromSlice)
             {
-                Equity surfaceEquity = Securities.Values.OfType<Equity>()
-                    .FirstOrDefault(e => e.Symbol.Value == surfaceSymbol.Value);
-                if (surfaceEquity == null)
+                foreach (SurfaceSSVI surface in slice.SurfaceSSVIs)
                 {
-                    continue;
-                }
+                    Equity surfaceEquity = Securities.Values.OfType<Equity>()
+                        .FirstOrDefault(e => e.Symbol.Value == surface.Symbol.Value);
+                    if (surfaceEquity == null)
+                    {
+                        continue;
+                    }
 
-                // ROUTE BY ID. One data stream can carry both products: the execution surface prices
-                // limit orders, the risk surface feeds greeks/hedging. Today both ids are the same value,
-                // so every row lands in both stores.
-                bool forExecution = SurfaceIdMatches(surface.SurfaceId, ExecutionSurfaceId);
-                bool forRisk = SurfaceIdMatches(surface.SurfaceId, RiskSurfaceId);
-                if (!forExecution && !forRisk)
-                {
-                    Log($"{Time} OnDataCore: SurfaceSSVI {surface.SurfaceId} {surface.Status} ignored — neither " +
-                        $"the execution ({ExecutionSurfaceId}) nor the risk ({RiskSurfaceId}) surface id.");
-                    continue;
-                }
+                    // ROUTE BY ID. One data stream can carry both products: the execution surface prices
+                    // limit orders, the risk surface feeds greeks/hedging. Today both ids are the same value,
+                    // so every row lands in both stores. `kind` is carried on the row for diagnostics and for
+                    // the raw/filtered decision; the routing key is the surface id.
+                    bool forExecution = SurfaceIdMatches(surface.SurfaceId, ExecutionSurfaceId);
+                    bool forRisk = SurfaceIdMatches(surface.SurfaceId, RiskSurfaceId);
+                    if (!forExecution && !forRisk)
+                    {
+                        Log($"{Time} OnDataCore: SurfaceSSVI {surface.SurfaceId} kind={surface.Kind} {surface.Status} ignored — neither " +
+                            $"the execution ({ExecutionSurfaceId}) nor the risk ({RiskSurfaceId}) surface id.");
+                        continue;
+                    }
 
-                // One entry point for every surface
-                ApplySurface(surfaceEquity, ToSsviParamsDictionary(surface), "slice", surface.IsRaw, forExecution, forRisk);
-                Log($"{Time} OnData: SurfaceSSVI {surface.SurfaceId} {surface.Status} " +
-                    $"snap={surface.TimeSnap:HH:mm:ss} available={surface.AvailableTime:HH:mm:ss} " +
-                    $"tenors={surface.Tenors.Count} spot={surface.Value} -> {surfaceEquity.Symbol} " +
-                    $"as={(forExecution ? "execution" : "")}{(forExecution && forRisk ? "+" : "")}{(forRisk ? "risk" : "")}");
+                    // One entry point for every surface
+                    ApplySurface(surfaceEquity, ToSsviParamsDictionary(surface), "slice", surface.IsRaw, forExecution, forRisk);
+                    Log($"{Time} OnData: SurfaceSSVI {surface.SurfaceId} kind={surface.Kind} {surface.Status} " +
+                        $"snap={surface.TimeSnap:HH:mm:ss} available={surface.AvailableTime:HH:mm:ss} " +
+                        $"tenors={surface.Tenors.Count} spot={surface.Value} -> {surfaceEquity.Symbol} " +
+                        $"as={(forExecution ? "execution" : "")}{(forExecution && forRisk ? "+" : "")}{(forRisk ? "risk" : "")}");
+                }
             }
 
             if (IsWarmingUp) return;
@@ -1355,7 +1363,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
             foreach (var underlying in equities)
             {
-                if (IsMyMarketOpen(underlying))
+                if (IsMyMarketOpen(underlying, OffsetToMarketOpen))
                 {
                     var regimes = GetMarketRegimes(underlying);
                     Equity equity = ToEquity(underlying);

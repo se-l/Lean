@@ -49,6 +49,8 @@ namespace QuantConnect.Data
         private Lazy<DataDictionary<SymbolData>> _data;
         // UnlinkedData -> DataDictonary<UnlinkedData>
         private Dictionary<Type, object> _dataByType;
+        // SurfaceSSVI rows in this slice, in arrival order (see SurfaceSSVIs)
+        private IReadOnlyList<SurfaceSSVI> _surfaceSSVIs;
 
         /// <summary>
         /// All the data hold in this slice
@@ -96,11 +98,25 @@ namespace QuantConnect.Data
         }
 
         /// <summary>
-        /// Gets the <see cref="SurfaceSSVI"/> delivered with this slice, or null when no surface
-        /// arrived at this instant. One surface per underlying, so the first (and normally only)
-        /// entry is the one the algorithm wants: `if (slice.SurfaceSSVI is { } s) { ... }`.
+        /// Gets the FIRST <see cref="SurfaceSSVI"/> delivered with this slice, or null when no
+        /// surface arrived at this instant. Prefer <see cref="SurfaceSSVIs"/>: a slice can carry
+        /// several surfaces for the same underlying and this property hides all but one of them.
         /// </summary>
-        public SurfaceSSVI SurfaceSSVI => Get<SurfaceSSVI>().Values.FirstOrDefault();
+        public SurfaceSSVI SurfaceSSVI => SurfaceSSVIs.FirstOrDefault();
+
+        /// <summary>
+        /// EVERY <see cref="SurfaceSSVI"/> delivered with this slice, in arrival order. A single
+        /// slice can carry several surfaces for the same underlying — the execution recipe and the
+        /// risk recipe, a raw fit and its filtered product — because the engine groups by time, not
+        /// by recipe. <see cref="Get{T}"/> is keyed by <see cref="Symbol"/> and keeps only the last
+        /// custom point per symbol, so it cannot be used for this; this reads the slice's raw
+        /// <see cref="AllData"/> instead. The consumer filters on <see cref="SurfaceSSVI.SurfaceId"/>
+        /// (and may consult <see cref="SurfaceSSVI.Kind"/>) to pick the row it needs.
+        /// </summary>
+        public IReadOnlyList<SurfaceSSVI> SurfaceSSVIs =>
+            _surfaceSSVIs ??= AllData == null
+                ? Array.Empty<SurfaceSSVI>()
+                : AllData.OfType<SurfaceSSVI>().ToList();
 
         /// <summary>
         /// Gets the <see cref="Ticks"/> for this slice of data
@@ -540,6 +556,8 @@ namespace QuantConnect.Data
 
             if (inputSlice.AllData.Count != 0)
             {
+                // the surface rows moved with the data, so a cached projection is stale
+                _surfaceSSVIs = null;
                 if (AllData.Count == 0)
                 {
                     AllData = inputSlice.AllData;
