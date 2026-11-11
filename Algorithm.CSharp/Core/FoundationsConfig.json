@@ -195,7 +195,7 @@
   "BufferIntraSpreadRatioSpreadThreshold": 0.05,
   "BufferIntraSpreadWaitingPeriodSeconds": 15,
   "BufferIntraSpreadQuotes": true,
-  "RequestContractsSchedulesBacktestNMaximum": 20,
+  "RequestContractsSchedulesBacktestNMaximum": 10,
   "RequestContractsSchedules": {
     "_": [
       {

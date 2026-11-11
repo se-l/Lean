@@ -1142,6 +1142,12 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                         : 0;
                 int heldContracts = HeldOptionContracts(underlying);
 
+                if (!LiveMode && requestNContracts <= heldContracts)
+                {
+                    Log($"{Time} RequestTargetPortfolios(): Backtest mode. Already reached backtest limit of {Cfg.RequestContractsSchedulesBacktestNMaximum} for contracts. heldContracts={heldContracts}");
+                    return;
+                }
+
                 if (!force)
                 {
                     // Each of these terms used to return silently. With 50 UnderlyingMovedX triggers
