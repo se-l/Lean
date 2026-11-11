@@ -1,15 +1,11 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
 using Accord.Statistics;
 using QuantConnect.Data.Market;
 using QuantConnect.Securities.Equity;
 using QuantConnect.Orders;
-using QuantConnect.Securities;
 using static QuantConnect.Algorithm.CSharp.Core.Statics;
-using QuantConnect.Securities.Option;
-using QuantConnect.Algorithm.CSharp.Core.Risk;
 using QuantConnect.Algorithm.CSharp.Core.Indicators;
 
 namespace QuantConnect.Algorithm.CSharp.Core
@@ -17,34 +13,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
     public partial class Foundations : QCAlgorithm
     {
         // Cached Methods
-        public Func<Symbol, Symbol, int, Resolution, double> Beta;
-        public Func<Symbol, Symbol, int, Resolution, double> Correlation;
-        public Func<Symbol, int, Resolution, bool> IsLiquid;
-        public VoidFunction HedgeWithIndex;
         /// <summary>Symbols with a hedge submission between the ticket check and the order call.</summary>
         private readonly HashSet<Symbol> hedgeSubmitting = new();
 
         public VoidArg1Function<Symbol> HedgeOptionWithUnderlying;
         public Func<Symbol, int, Resolution, IEnumerable<TradeBar>> HistoryWrap;
-        public Func<Symbol, int, Resolution, IEnumerable<QuoteBar>> HistoryWrapQuote;
         public Func<Symbol, decimal> TickSize;
-        public Func<decimal> PositionsTotal;
-        public Func<int> PositionsN;
         public Func<Symbol, double> AtmIVCached;
         public Func<Symbol, bool> IsDeltaHedgeInProgress;
 
         public void AssignCachedFunctions()
         {
-            Beta = Cache(GetBeta, (Symbol symbol1, Symbol symbol2, int periods, Resolution resolution) => (symbol1, symbol2, periods, resolution, Time.Date));  // not correct for resolution < daily
-            Correlation = Cache(GetCorrelation, (Symbol symbol1, Symbol symbol2, int periods, Resolution resolution) => (symbol1, symbol2, periods, resolution, Time.Date));  // not correct for resolution < daily
-            IsLiquid = Cache(GetIsLiquid, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
             //HedgeWithIndex = Cache(GetHedgeWithIndex, () => Time, maxKeys: 1);
             HedgeOptionWithUnderlying = Cache(GetHedgeOptionWithUnderlying, (Symbol symbol) => (Time.Trim(TimeSpan.TicksPerSecond), Underlying(symbol)));
             HistoryWrap = Cache(GetHistoryWrap, (Symbol symbol, int window, Resolution resolution) => (Time.Date, symbol, window, resolution));  // not correct for resolution < daily
-            HistoryWrapQuote = Cache(GetHistoryWrapQuote, (Symbol contract, int window, Resolution resolution) => (Time.Date, contract, window, resolution));
             TickSize = Cache(GetTickSize, (Symbol symbol) => symbol, maxKeys: 1);
-            PositionsTotal = Cache(GetPositionsTotal, () => Time.Trim(TimeSpan.TicksPerSecond), maxKeys: 1);
-            PositionsN = Cache(GetPositionsN, () => Time.Trim(TimeSpan.TicksPerSecond), maxKeys: 1);
             AtmIVCached = Cache(GetAtmIV, (Symbol symbol) => (Time.Trim(TimeSpan.TicksPerSecond), symbol));
             IsDeltaHedgeInProgress = Cache(GetIsDeltaHedgeInProgress, (Symbol symbol) => (Time.Trim(TimeSpan.TicksPerSecond), symbol));
         }
@@ -75,34 +58,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
             return Covariance(logReturnsAsset, logReturnsIndex, periods) / logReturnsIndex.Variance(unbiased: true);
         }
-        private double GetCorrelation(Symbol symbol1, Symbol symbol2, int periods = 20, Resolution resolution = Resolution.Daily)
-        {
-            var logReturnsSymbol1 = LogReturns(HistoryWrap(symbol1, periods, resolution).Select(tb => (double)tb.Close).ToArray());
-            var logReturnsSymbol2 = LogReturns(HistoryWrap(symbol2, periods, resolution).Select(tb => (double)tb.Close).ToArray());
-
-            int minSize = Math.Min(logReturnsSymbol1.Length, logReturnsSymbol2.Length);
-
-            if (minSize != periods - 1)  // Log returns removes 1.
-            {
-                Debug($"Error: The window size {minSize} is smaller than the requested periods, likely due to missing historical data for request {symbol1}. {symbol2} {periods} {resolution}");
-            }
-
-            if (minSize != 0)
-            {
-                logReturnsSymbol1 = logReturnsSymbol1.TakeLast(minSize).ToArray();
-                logReturnsSymbol2 = logReturnsSymbol2.TakeLast(minSize).ToArray();
-            }
-            else // (minSize == 0)
-            {
-                return 0;
-            }
-
-            double corrPearson = MathNet.Numerics.Statistics.Correlation.Pearson(logReturnsSymbol1, logReturnsSymbol2);
-            //double correlation = Covariance(logReturnsSymbol1, logReturnsSymbol2, periods) / (logReturnsSymbol1.Variance(unbiased: true) * logReturnsSymbol2.Variance(unbiased: true));
-
-            Debug($"Correlation.Pearson({symbol1},{symbol2},{periods}: Pearson: {corrPearson}");
-            return corrPearson;
-        }
 
         private bool GetIsDeltaHedgeInProgress(Symbol underlying)
         {
@@ -131,8 +86,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 }
                 return;
             }
-
-            decimal deltaTotal = DeltaMV(symbol);
+            
+            decimal deltaTotal = PfRisk.RiskByUnderlying(underlying, HedgeMetric(underlying));
             if (PfRisk.IsUnderlyingDeltaExceedingBand(symbol, deltaTotal))
             {
                 ExecuteHedge(underlying, EquityHedgeQuantity(underlying));
@@ -155,66 +110,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 && Time.TimeOfDay  >= hedgeToAcrossDs
                 && nextReleaseDate == Time.Date;
         }
-
-        /// <summary>
-        /// Closely related to GedHedgeWithIndex, but hedges with the underlying instead of the index.
-        /// To avoid dynamic over hedging, best used rarely. For example once per fill only.
-        /// To be refactored with a more generic hedging function searching for the best hedge given the current portfolio.
-        /// </summary>
-        private void GetHedgeOptionWithUnderlyingUSD(Symbol symbol)
-        {
-            if (IsWarmingUp || !IsMyMarketOpen(symbolSubscribed)) return;
-
-            decimal riskDelta100BpUSD = 0;
-            Symbol underlying = Underlying(symbol);
-
-            decimal delta100BpUSDTotal = PfRisk.RiskByUnderlying(symbol, Metric.Delta100BpUSDTotal);
-            riskDelta100BpUSD += delta100BpUSDTotal;
-            decimal deltaIVdS100BpUSD = PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdS100BpUSDTotal);  // MV
-            riskDelta100BpUSD += deltaIVdS100BpUSD;
-
-            SecurityRiskLimit riskLimit = Securities[underlying].RiskLimit;
-
-            if (riskDelta100BpUSD > riskLimit.Delta100BpLong || riskDelta100BpUSD < riskLimit.Delta100BpShort)
-            {
-                ExecuteHedge(underlying, EquityHedgeQuantity(underlying));
-            }
-            else
-            {
-                Log($"{Time} GetHedgeOptionWithUnderlying. Not hedging because riskDelta100BpUSD={riskDelta100BpUSD}, delta100BpUSDTotal={delta100BpUSDTotal}, deltaIVdS100BpUSD={deltaIVdS100BpUSD} for symbol={symbol}.");
-            }
-        }
-
-        private readonly ConcurrentDictionary<Symbol, (decimal Sticky, decimal Skew)> _lastDeltaSplit = new();
-
-        /// <summary>
-        /// The two hedge-delta constituents, in shares: sticky-strike (σ held fixed) and the smile term
-        /// (vega × dσ/dS from the RISK surface). The split is cached per underlying so the hedge log can
-        /// report it without recomputing the whole risk pass.
-        /// </summary>
-        public (decimal Sticky, decimal Skew) DeltaMVSplit(Symbol symbol)
-        {
-            decimal sticky = PfRisk.RiskByUnderlying(symbol, HedgeMetric(Underlying(symbol)));
-
-            decimal skew = 0m;
-            if (string.Equals(Cfg.DeltaHedgeSkewTerm?.Trim(), "surface", StringComparison.OrdinalIgnoreCase))
-            {
-                skew = Cfg.DeltaHedgeSkewScale * PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);
-            }
-
-            _lastDeltaSplit[Underlying(symbol)] = (sticky, skew);
-            return (sticky, skew);
-        }
-
-        /// <summary>Last constituents computed for this underlying (0,0 before the first risk pass).</summary>
-        public (decimal Sticky, decimal Skew) LastDeltaSplit(Symbol symbol) =>
-            _lastDeltaSplit.TryGetValue(Underlying(symbol), out (decimal Sticky, decimal Skew) split) ? split : (0m, 0m);
-
-        public decimal DeltaMV(Symbol symbol)
-        {
-            (decimal sticky, decimal skew) = DeltaMVSplit(symbol);
-            return sticky + skew;
-        }
+        
         /// <summary>
         /// Adjusting Heding Frequency by adjusting volatilty. Not making sense to me how adjust vola helps with hedging frequency, but can adjust the threhold...
         /// Vola Bias (Vola up -> All Deltas closer to 0.5 (C) / -0.5 (P))
@@ -295,13 +191,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void ExecuteHedge(Symbol symbol, decimal quantity, OrderType? orderType = null)
         {
-            if (!LiveMode && Cfg.DontHedge) return;
-            // // Quickly Test algo performance without any hedge on July 11 2024
-            // if (Time.Date == new DateTime(2024, 7, 11).Date)
-            // {
-            //     Log($"{Time} ExecuteHedge: Skipping hedge for performance test.");
-            //     return;
-            // }
             Equity equity = (Equity)Securities[symbol];
 
             if (!Cfg.Ticker.Contains(equity.ToString()))
@@ -383,11 +272,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     OrderType _orderType = orderType ?? GetEquityHedgeOrderType(equity);
                     price = GetEquityHedgePrice(equity, _orderType, quantity);
 
-                    (decimal stickyDelta, decimal skewDelta) = LastDeltaSplit(symbol);
-                    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New OrderEquity" }, { "f", $"ExecuteHedge" },
-                                { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, { "stickyDelta", stickyDelta.ToString("0") },
-                                { "skewDelta", skewDelta.ToString("0") }, { "skewMode", Cfg.DeltaHedgeSkewTerm ?? "none" },
-                                { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
+                    QuickLog(new Dictionary<string, string>() { { "topic", "HEDGE" }, { "action", "New OrderEquity" }, 
+                        { "f", $"ExecuteHedge" }, { "Symbol", symbol}, { "riskDeltaTotal", quantity.ToString() }, 
+                        { "OrderQuantity", quantity.ToString() }, { "Position", Portfolio[symbol].Quantity.ToString() } });
                     OrderEquity(symbol, quantity, price, _orderType);
                 }
                 finally
@@ -431,8 +318,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         public decimal GetEquityHedgePrice(Equity equity, OrderType orderType, decimal quantity, OrderTicket? ticket = null)
         {
-            decimal touchPrice;
-            decimal price;
             OrderDirection direction = quantity > 0 ? OrderDirection.Buy : OrderDirection.Sell;
 
             bool isPriceMovingAway = (ticket != null && ticket.UpdateRequests.Count > Cfg.LimitOrderUpdateBeforeMarketOrderConversion);
@@ -471,12 +356,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
         }
 
-        private bool GetIsLiquid(Symbol contract, int window = 3, Resolution resolution = Resolution.Daily)
-        {
-            var trade_bars = HistoryWrap(contract, window, resolution).ToList();
-            return trade_bars.Sum(bar => bar.Volume) > 0;
-        }
-
         private IEnumerable<TradeBar> GetHistoryWrap(Symbol symbol, int periods, Resolution resolution
             //, bool? fillForward = null, bool? extendedMarketHours = null, DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null, int? contractDepthOffset = null
             )
@@ -485,39 +364,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
             //fillForward, extendedMarketHours, dataMappingMode, dataNormalizationMode, contractDepthOffset
         }
 
-        private IEnumerable<QuoteBar> GetHistoryWrapQuote(Symbol symbol, int periods, Resolution resolution
-            //, bool? fillForward = null, bool? extendedMarketHours = null, DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null, int? contractDepthOffset = null
-            )
-        {
-            return History<QuoteBar>(symbol, periods, resolution);
-            //fillForward, extendedMarketHours, dataMappingMode, dataNormalizationMode, contractDepthOffset
-        }
-
-        private IEnumerable<QuoteBar> GetHistoryWrapQuote(Symbol symbol, DateTime start, DateTime end, Resolution resolution, bool? fillForward = false
-            //, bool? fillForward = null, bool? extendedMarketHours = null, DataMappingMode? dataMappingMode = null, DataNormalizationMode? dataNormalizationMode = null, int? contractDepthOffset = null
-            )
-        {
-            return History<QuoteBar>(symbol, start, end, resolution, fillForward: fillForward);
-            //extendedMarketHours, dataMappingMode, dataNormalizationMode, contractDepthOffset
-        }
-
         private decimal GetTickSize(Symbol symbol)
         {
             //Log($"GetTickSize called {symbol}");
             var sec = Securities[symbol];
             return sec.SymbolProperties.MinimumPriceVariation;
-        }
-
-
-        private decimal GetPositionsTotal()
-        {
-            return Portfolio.TotalHoldingsValue;
-            //return Portfolio.Values.Where(s => s.Invested).Sum(s => s.HoldingsValue);
-        }
-        private int GetPositionsN()
-        {
-            // Filter out securities that are not invested
-            return Portfolio.Values.Count(s => s.Invested);
         }
     }
 }

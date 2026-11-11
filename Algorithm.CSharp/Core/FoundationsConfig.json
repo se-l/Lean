@@ -7,7 +7,6 @@
     "_": false,
     "NET": true
   },
-  "DontHedge": false, // backtest only
   "ExecuteManualOrderInstructions": true,
   "BacktestingHoldings": {
     //    "NOW   260724C00082000": 3,
@@ -83,14 +82,6 @@
   "EquityShortingRate": 0.1,
   "DiscountRatePortfolioCAGR": 0.0435,
   "DiscountRateMarket": 0.0435, // https://www.bloomberg.com/markets/rates-bonds/government-bonds/us.  Needs to become a TS.
-
-  // To be implied from Heston if it were to fit market data well...
-  "CorrelationSpotVolatility": {
-    "_": 0
-  },
-  "VolatilityOfVolatility": {
-    "_": 0
-  },
 
   /// OrderUtils Discounting Spread
   "MarginUtilScaleFactor": {
@@ -175,7 +166,7 @@
         "Start": "09:30",
         "End": "09:31",
         "Direction": "Hold",
-        "EquityHedgeMode": 1
+        "EquityHedgeMode": 4
       }
     ]
   },
@@ -191,12 +182,9 @@
   "PricerOverridePricesWithPresumedIvFillDefensively": { "_": false },
   "TimeRangeReduceAbsDeltaPosition": {
     "_": {
-      "Start": "11:00",
-      "End": "23:59"
+      "Start": "00:00",
+      "End": "00:59"
     }
-  },
-  "TimeStartKfBeforeRelease": {
-    "_": "09:30"
   },
   "EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy": {
     "_": "11:30"
@@ -262,7 +250,7 @@
   "MinutesBeforeCloseMMWindowEnds": 5,
   "MinutesBeforeCloseHedgeToAcrossDs": 3,
   "MinutesBeforeCloseIsPreEarningsReleaseEOD": 30,
-  "EquityHedgeMode": { "_": 1 }, // 0-Aggressive pay spread;  1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
+  "EquityHedgeMode": { "_": 4 }, // 0-Aggressive pay spread;  1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
   "MaxDesiredOrders": 20,
   // One pricer round trip for every greek of a node (was: one per greek, ~40 per contract).
   // Hedge delta composition: "surface" adds the vega × dσ/dS smile term (risk surface) to the
@@ -276,5 +264,5 @@
   "UtilityCacheSpotBucketBps": 5.0,
   "UtilityCacheIvBucket": 0.01,
   "UtilityCacheMaxKeys": 20000,
-  "MaxSignalBatchAgeMs": 5000
+  "MaxSignalBatchAgeMs": 50000
 }

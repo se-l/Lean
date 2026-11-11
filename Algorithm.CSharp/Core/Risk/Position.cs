@@ -191,17 +191,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }
         }
 
-        public double DeltaMVRealized => DS == 0 ? 0 : ((double)DPMid - DeltaRealizedThetaContribution) / (double)DS;
-
-        public double DeltaRealizedThetaContribution => Greeks1.Theta * DTDays;
-
-        public decimal TaylorTerm()
-        {
-            // delta/gamma gamma is unitless sensitivity. No scaling here.
-            Option contract = (Option)Security;
-            return contract.ContractMultiplier * Mid1Underlying;
-        }
-
         public double DeltaAdjusted(double? volatility = null)
         {
             switch (SecurityType)
@@ -330,24 +319,6 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 return 0m;
             }
         }
-        public decimal SurfacedIVdSTotal => SurfaceIVdS * Multiplier * Quantity;
-        /// <summary>
-        /// From Derman, The volatility smile. Chapter 22, Heston model minmize PnL Variance.
-        /// </summary>
-        /// <param name="spot"></param>
-        /// <returns></returns>
-        public decimal DeltaMVTerm(decimal? spot = null)
-        {
-            decimal spotNna = spot ?? Mid1Underlying;
-            double ivRaw = _algo.MidIV(Symbol);
-            if (!double.IsFinite(ivRaw) || ivRaw <= 0 || spotNna == 0) { return 0; }
-            decimal vega = (decimal)GetGreeks1().Vega;
-            decimal iv = (decimal)ivRaw;
-            decimal vv = _algo.Cfg.VolatilityOfVolatility.TryGetValue(UnderlyingSymbol, out vv) ? vv : _algo.Cfg.VolatilityOfVolatility[CfgDefault];
-            decimal rho = _algo.Cfg.CorrelationSpotVolatility.TryGetValue(UnderlyingSymbol, out rho) ? rho : _algo.Cfg.CorrelationSpotVolatility[CfgDefault];
-            if (iv * spotNna == 0) { return 0; }
-            return rho * vv * vega / iv * spotNna;
-        }
         /// <summary>Vega per 1.00 of vol, evaluated at the RISK-surface IV (the same σ the hedge delta uses).</summary>
         private double SurfaceVega()
         {
@@ -364,10 +335,15 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// </summary>
         public decimal DeltaIVdSTotal()
         {
-            double ivds = (double)SurfaceIVdS;
-            double vega = SurfaceVega();
-            if (!double.IsFinite(ivds) || !double.IsFinite(vega)) return 0m;
-            return ToDecimal(vega * ivds) * Multiplier * Quantity;
+            decimal skew = 0m;
+            if (string.Equals(_algo.Cfg.DeltaHedgeSkewTerm?.Trim(), "surface", StringComparison.OrdinalIgnoreCase))
+            {
+                double ivds = (double)SurfaceIVdS;
+                double vega = SurfaceVega();
+                if (!double.IsFinite(ivds) || !double.IsFinite(vega)) return 0m;
+                skew = _algo.Cfg.DeltaHedgeSkewScale * ToDecimal(vega * ivds) * Multiplier * Quantity;
+            }
+            return skew;
         }
         public decimal DeltaIVdSXBpUSDTotal(decimal dS = 100)
         {

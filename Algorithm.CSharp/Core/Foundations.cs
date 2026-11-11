@@ -2030,7 +2030,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return true;
                 }
 
-                double pfDeltaTotal = (double)DeltaMV(underlying);
+                decimal pfDeltaTotal = PfRisk.RiskByUnderlying(symbol, HedgeMetric(symbol));
 
                 return Math.Sign(delta) != Math.Sign(pfDeltaTotal);
             }
@@ -2430,6 +2430,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             return GetHedgingMode(symbol) switch
             {
+                HedgingMode.MvDelta => Metric.MvDeltaTotal,
                 HedgingMode.FwdRealizedVolatility or HedgingMode.HistoricalVolatility => Metric.DeltaTotal,
                 HedgingMode.ImpliedVolatility => Metric.DeltaImpliedTotal,
                 HedgingMode.ImpliedVolatilitySSVI => Metric.DeltaImpliedSSVITotal,
@@ -2476,8 +2477,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         {
             decimal quantity;
             decimal deltaTotal = PfRisk.RiskByUnderlying(underlying, HedgeMetric(underlying));
-
-            //decimal deltaIVdSTotal = 0;// PfRisk.RiskByUnderlying(underlying, Metric.DeltaIVdSTotal, HedgeVolatility(underlying));  // MV
+            
             quantity = -deltaTotal;
 
             // subtract pending Market order fills

@@ -52,6 +52,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             HistoricalVolatility,
             ImpliedVolatility,
             ImpliedVolatilitySSVI,
+            MvDelta
         }
 
         public static Dictionary<int, HedgingMode> HedgingModeMap { get; } = new()
@@ -60,6 +61,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             { 1, HedgingMode.HistoricalVolatility },
             { 2, HedgingMode.ImpliedVolatility },
             { 3, HedgingMode.ImpliedVolatilitySSVI },
+            { 4, HedgingMode.MvDelta },
         };
 
         public static HashSet<Type> PrimitiveTypes = new()
@@ -179,6 +181,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             DeltaTotal,
             DeltaImpliedTotal,
             DeltaImpliedSSVITotal,
+            MvDeltaTotal,
 
             Delta100BpUSDTotal,
             Delta500BpUSDTotal,           
@@ -222,17 +225,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             VannaXBpUSDTotal,
             VolgaXpUSDTotal,
         }
-        public static Metric[] DSMetrics = new Metric[] { Metric.DeltaXBpUSDTotal, Metric.GammaXBpUSDTotal, Metric.SpeedXBpUSDTotal };
-        public static Metric[] DIVMetrics = new Metric[] { Metric.VegaXBpUSDTotal, Metric.VannaXBpUSDTotal, Metric.VolgaXpUSDTotal };
-
-        public enum VolatilityType
-        {
-            HVHedge,
-            IVMid,
-            IVATM,
-            IVBid,
-            IVAsk,
-        }
+        public static Metric[] DSMetrics = { Metric.DeltaXBpUSDTotal, Metric.GammaXBpUSDTotal, Metric.SpeedXBpUSDTotal };
+        public static Metric[] DIVMetrics = { Metric.VegaXBpUSDTotal, Metric.VannaXBpUSDTotal, Metric.VolgaXpUSDTotal };
         public static IEnumerable<T> ToIEnumerable<T>(this IEnumerator<T> enumerator)
         {
             while (enumerator.MoveNext())
@@ -673,7 +667,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
         /// Runtime form of `HedgeScheduleCfg`: parsed regime/direction, time window as TimeSpans,
         /// and the equity hedge mode the schedule imposes while it is active.
-        public class HedgeSchedule
+        public class HedgeSchedule  // Linter not right. Used dynamically.
         {
             public MarketRegime MarketRegime;
             public TimeSpan Start;

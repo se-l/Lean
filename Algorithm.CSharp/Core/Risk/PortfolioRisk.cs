@@ -51,6 +51,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Metric.DeltaTotal => positions.Sum(p => p.DeltaTotal(volatility)),
                 Metric.DeltaImpliedTotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIV(p.Symbol))),
                 Metric.DeltaImpliedSSVITotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIVSsvi(symbol))),
+                Metric.MvDeltaTotal => positions.Sum(p => p.DeltaTotal(volatility)) + positions.Sum(p => p.DeltaIVdSTotal()),
 
                 Metric.DeltaXBpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(dX ?? 0)),
                 Metric.Delta100BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(100)),
@@ -216,15 +217,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (_algo.IsWarmingUp || !_algo.IsMyMarketOpen(symbol)) return false;
 
             Symbol underlying = Underlying(symbol);
-
-            (decimal stickyDelta, decimal skewDelta) = _algo.DeltaMVSplit(symbol);
-            decimal riskDeltaTotal = stickyDelta + skewDelta;
+            
+            decimal riskDeltaTotal = _algo.PfRisk.RiskByUnderlying(underlying, _algo.HedgeMetric(underlying));
 
             decimal riskPutCallRatio = 0;  // _algo.Risk100BpRisk2USDDelta(underlying, _algo.TargetRiskPutCallRatio(underlying));
             riskDeltaTotal += riskPutCallRatio;
 
             CancelDeltaIncreasingEquityTickets(underlying, riskDeltaTotal);
-            bool exceeded = IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal, stickyDelta, skewDelta);
+            bool exceeded = IsUnderlyingDeltaExceedingBand(symbol, riskDeltaTotal);
             if (exceeded)
             {
                 _algo.Publish(new RiskLimitExceededEventArgs(symbol, RiskLimitType.Delta, RiskLimitScope.Underlying));
@@ -232,8 +232,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             }            
             return false;
         }
-        public bool IsUnderlyingDeltaExceedingBand(Symbol symbol, decimal riskDeltaTotal,
-            decimal stickyDelta = 0m, decimal skewDelta = 0m)
+        public bool IsUnderlyingDeltaExceedingBand(Symbol symbol, decimal riskDeltaTotal)
         {
             if (_algo.IsWarmingUp) return false;
 
@@ -248,6 +247,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
             if (Math.Abs(riskDeltaTotal) > totalDeltaHedgeThreshold)
             {
+                decimal stickyDelta = _algo.PfRisk.RiskByUnderlying(symbol, Metric.DeltaTotal);
+                decimal skewDelta = _algo.PfRisk.RiskByUnderlying(symbol, Metric.DeltaIVdSTotal);
                 string gammaScalpingStatus = _algo.GammaScalpers.TryGetValue(underlying, out GammaScalper gs) ? gs.StatusShort() : "NoGammaScalper";
                 _algo.Log($"{_algo.Time} IsPortfolioDeltExceedingBand: totalDeltaHedgeThreshold={totalDeltaHedgeThreshold}, " +
                           $"riskDSTotal={riskDeltaTotal}, stickyDelta={stickyDelta}, skewDelta={skewDelta}, " +

@@ -178,7 +178,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
                 decimal deltaPfTotal = _algo.LastDeltaAcrossDsOptionsOnly.TryGetValue(Underlying, out double lastDeltaAcrossDsOptionsOnly)
                     ? (decimal)lastDeltaAcrossDsOptionsOnly
-                    : _algo.DeltaMV(Symbol);
+                    : _algo.PfRisk.RiskByUnderlying(Symbol, _algo.HedgeMetric(Underlying));
 
                 double totalOptionsDelta = (double)(deltaPfTotal - _algo.Securities[Underlying].Holdings.Quantity);
                 double orderDelta = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, _algo.HedgeMetric(Underlying));

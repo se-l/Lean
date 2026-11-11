@@ -214,7 +214,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             decimal targetMaxEquityPositionUSD = _algo.Cfg.TargetMaxEquityPositionUSD.TryGetValue(Underlying.Value, out targetMaxEquityPositionUSD) ? targetMaxEquityPositionUSD : _algo.Cfg.TargetMaxEquityPositionUSD[CfgDefault];
             double targetAbsMaxEquityQuantity = (double)Math.Abs((targetMaxEquityPositionUSD / SecurityUnderlying.Price));
 
-            decimal deltaPfTotal = _algo.DeltaMV(Symbol);
+            decimal deltaPfTotal = _algo.PfRisk.RiskByUnderlying(Symbol, _algo.HedgeMetric(Symbol));
             double optionDelta = (double)(-_algo.Securities[Underlying].Holdings.Quantity + deltaPfTotal);
             double orderDelta = (double)_algo.PfRisk.RiskIfFilled(Symbol, Quantity, _algo.HedgeMetric(Underlying));
 

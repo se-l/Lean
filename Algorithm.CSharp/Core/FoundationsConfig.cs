@@ -13,7 +13,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public HashSet<string> Ticker { get; set; }
         public HashSet<string> LiquidateTicker { get; set; }
         public Dictionary<string, bool> SkipRunSignals { get; set; }
-        public bool DontHedge { get; set; }
 
         /// <summary>
         /// Force the off-thread signal runner in a backtest. Off by default: a backtest applies the
@@ -58,8 +57,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public decimal DiscountRatePortfolioCAGR { get; set; }
         public decimal DiscountRateMarket { get; set; }
         public Dictionary<string, double> MinUtility { get; set; }
-        public Dictionary<string, decimal> CorrelationSpotVolatility { get; set; }
-        public Dictionary<string, decimal> VolatilityOfVolatility { get; set; }
         public Dictionary<string, Dictionary<string, List<double>>> DeltaAdjustmentParameters { get; set; }
         public int LimitOrderUpdateBeforeMarketOrderConversion { get; set; }
         public decimal MaxSpreadForMarketOrderHedging { get; set; }
@@ -70,7 +67,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public Dictionary<string, double> MaxDelta100BpUSDSignalQuantity { get; set; }
         public Dictionary<string, bool> PricerOverridePricesWithPresumedIvFillDefensively { get; set; }
         public Dictionary<string, Dictionary<string, string>> TimeRangeReduceAbsDeltaPosition { get; set; }
-        public Dictionary<string, string> TimeStartKfBeforeRelease { get; set; }
         public Dictionary<string, string> EarningsUtilityTargetHoldingsAfterReleaseStartTimeBuy { get; set; }
         public Dictionary<string, string> EarningsUtilityTargetHoldingsAfterReleaseStartTimeSell { get; set; }
         public double BufferIntraSpreadRatioSpreadThreshold {  get; set; }

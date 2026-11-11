@@ -75,7 +75,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         /// <param name="symbol"></param>
         private void ReviewScalper()
         {
-            decimal deltaTotal = _algo.DeltaMV(Symbol);
+            decimal deltaTotal = _algo.PfRisk.RiskByUnderlying(Symbol, _algo.HedgeMetric(Equity.Symbol));
 
             // Restart scalping after hedging given the new option fill altered delta significantly,
             // UNLESS band threshold is not exceeeded.
@@ -84,7 +84,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
             if (
                 gammaTotal <= 0 ||
                 (
-                !IsScalping && _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, _algo.DeltaMV(Symbol)) ||  // hedge to delta zero before starting to scalp.// The way of checking needs to be centralized...
+                !IsScalping && _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, _algo.PfRisk.RiskByUnderlying(Symbol, _algo.HedgeMetric(Equity.Symbol))) ||  // hedge to delta zero before starting to scalp.// The way of checking needs to be centralized...
                 ScalpingDirection != Num2Direction(deltaTotal)  // around delta zero or after a trade, scalping direction may have changed
                 ) ||
                 (!IsScalping && _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, deltaTotal))
@@ -130,7 +130,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         private bool RiskBandExceeded()
         {
-            return _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, _algo.DeltaMV(Symbol));
+            return _algo.PfRisk.IsUnderlyingDeltaExceedingBand(Symbol, _algo.PfRisk.RiskByUnderlying(Symbol, _algo.HedgeMetric(Equity.Symbol)));
         }
         private void Reset()
         {
@@ -141,7 +141,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         private void SetNewTriggerPrices()
         {
-            decimal deltaTotal = _algo.DeltaMV(Symbol);
+            decimal deltaTotal = _algo.PfRisk.RiskByUnderlying(Symbol, _algo.HedgeMetric(Equity.Symbol));
             ScalpingDirection = Num2Direction(deltaTotal);
             _startingPrice = MidPrice;
             _triggerPrice = GetTriggerPrice();
@@ -171,7 +171,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         private void UpdateTriggerPrices()
         {
-            decimal deltaTotal = _algo.DeltaMV(Symbol);
+            decimal deltaTotal = _algo.PfRisk.RiskByUnderlying(Symbol, _algo.HedgeMetric(Equity.Symbol));
             if (Num2Direction(deltaTotal) != ScalpingDirection)
             {
                 _algo.Log($"{_algo.Time} GammaScalper.UpdateTriggerPrices: Delta sign has changed. Resetting scalper.");
@@ -211,7 +211,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
 
         private bool DoScalpingGainsExceedTransactionCosts()
         {
-            decimal deltaTotal = _algo.DeltaMV(Symbol);
+            decimal deltaTotal = _algo.PfRisk.RiskByUnderlying(Symbol, _algo.HedgeMetric(Equity.Symbol));
 
             decimal gammaTotal = _algo.PfRisk.RiskByUnderlying(Symbol, Metric.GammaTotal);
             if (gammaTotal <= 0)

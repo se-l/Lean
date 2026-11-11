@@ -241,6 +241,9 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 .Where(underlying => IsPreparingEarningsRelease(underlying))
                 .DoForEach(underlying => RequestTargetPortfolios(underlying, force:true));
 
+            // Given symbols are now lazily subscribed to, became necessary to call this after holdings from IB have been loaded. Likely want to have this as a callback not time scheduled.
+            Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(1)), () => Cfg.Ticker.DoForEach(s => SetTargetHoldingsToZeroAfterEarnings(Securities[s].Symbol)));  // patch PEP
+            
             Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromMinutes(2)), FetchTargetPortfolios);
         }
 
@@ -746,11 +749,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             
             foreach (TargetPortfolioPb pf in targetPfs.OrderBy(pf => pf.Objective).Reverse())
             {
-                if (!IsTargetPortfolioCompatibleWithHoldings(pf))
-                {
-                    continue;
-                }
-
                 Symbol pfSymbol = string.IsNullOrEmpty(pf.Underlying) || !Securities.ContainsKey(pf.Underlying)
                     ? underlying
                     : Securities[pf.Underlying].Symbol;
@@ -809,7 +807,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             foreach (var kvp in TargetPortfolios)
             {
                 TargetPortfolios[kvp.Key] = kvp.Value
-                    .Where(IsTargetPortfolioCompatibleWithHoldings)
+                    // To be moved upstream
                     // Best objective first, and only the best 20: the response carries hundreds of
                     // candidate portfolios and every one of them is carried through the utility and
                     // stress-test paths. The set is already ranked by objective (maxObjective), so
@@ -1003,73 +1001,6 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
         }
 
         /// <summary>
-        /// Target Portfolio calculator received holdings H, but decided to kick one out. Wouldnt want to reject it all, rather set that to zero.
-        /// Far reason, setting to true for now, hence switching off any removal.
-        /// </summary>
-        /// <param name="portfolio"></param>
-        /// <returns></returns>
-        internal bool IsTargetPortfolioCompatibleWithHoldings(TargetPortfolioPb portfolio)
-        {
-            // A portfolio is still reachable from the current book when, for EVERY option it holds,
-            // the algo's position is either already equal (nothing left to trade) or on the same side
-            // and smaller in absolute size (the remaining quantity is the order). If the algo holds an
-            // option the portfolio does not list, the portfolio does not describe the book any more.
-            //
-            // Portfolios are keyed by symbol string in the response; resolve them through the session
-            // chain (see ResolveOptionContract) and keep a whitespace-insensitive text map so a
-            // padded/OSI variant cannot silently drop every holding.
-            if (string.IsNullOrEmpty(portfolio.Underlying) || !Securities.ContainsKey(portfolio.Underlying))
-            {
-                return false;
-            }
-            Symbol underlying = Securities[portfolio.Underlying].Symbol;
-
-            var bySymbol = new Dictionary<Symbol, float>();
-            var byText = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-            foreach (var holding in portfolio.Holdings.Values)
-            {
-                byText[NormalizeContractValue(holding.Symbol)] = holding.Quantity;
-                Symbol resolved = ResolveOptionContract(underlying, holding.Symbol);
-                if (resolved != null)
-                {
-                    bySymbol[resolved] = holding.Quantity;
-                }
-            }
-
-            var currentOptions = Portfolio
-                .Where(kvp => kvp.Key.SecurityType == SecurityType.Option
-                              && kvp.Value.Quantity != 0
-                              && kvp.Key.Underlying == underlying)
-                .ToList();
-
-            foreach (var kvp in currentOptions)
-            {
-                var option = kvp.Key;
-                if (!bySymbol.TryGetValue(option, out var targetQuantity) &&
-                    !byText.TryGetValue(NormalizeContractValue(option.Value), out targetQuantity))
-                {
-                    return false;
-                }
-
-                var algoQuantity = (float)kvp.Value.Quantity;
-                if (targetQuantity == algoQuantity)
-                {
-                    continue;   // already executed on this leg
-                }
-                if (Math.Sign(targetQuantity) != Math.Sign(algoQuantity))
-                {
-                    return false;
-                }
-                if (Math.Abs(targetQuantity) < Math.Abs(algoQuantity))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        /// <summary>
         /// Keeps only the cached target portfolios still reachable from the current holdings, then
         /// re-derives everything that depends on the set (utility sweeper, target holdings). Used
         /// after a fill or a cancellation, where the previous code cleared the whole cache and left
@@ -1081,9 +1012,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             {
                 return;
             }
-
-            var kept = cached.Where(IsTargetPortfolioCompatibleWithHoldings).ToList();
-            TargetPortfolios[underlying] = kept;
+            
+            TargetPortfolios[underlying] = cached;
 
             // SetEquiUtilitySweeperFromTargetPortfolios(kept);
             // SetTargetHoldingsFromTargetPortfolios(underlying);
@@ -1093,7 +1023,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             // there forever (CancelOrdersNotAlignedWithTargetPortfolio only looks at TargetHoldings,
             // which no longer contains it).
             var heldBySurvivors = new HashSet<Symbol>();
-            foreach (var portfolio in kept)
+            foreach (var portfolio in cached)
             {
                 foreach (var holding in portfolio.Holdings.Values)
                 {
@@ -1127,7 +1057,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             }
 
             var fillText = fillSymbol == null ? string.Empty : $" after fill {fillSymbol} qty={fillQuantity}";
-            Log($"{Time} ReduceTargetPortfolios({underlying}){fillText}: {cached.Count} -> {kept.Count} targets reachable, " +
+            Log($"{Time} ReduceTargetPortfolios({underlying}){fillText}: {cached.Count} targets reachable, " +
                 $"{orphans.Count} orphan ticket(s) cancelled.");
         }
 
