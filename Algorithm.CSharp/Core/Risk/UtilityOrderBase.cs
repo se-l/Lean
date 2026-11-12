@@ -237,6 +237,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
         }
         protected virtual double GetUtilityRiskScenario()
         {
+            // Pricing-only utility. UtilityAt() evaluates a utility to price a sweep anchor/target; that
+            // evaluation must not ask the sweep what it is worth at that price, or the two call each
+            // other forever (NBIS backtest 2026-11-11, "Stack overflow"). Every other term still applies.
+            if (Foundations.UtilityRiskScenarioSuppressed)
+            {
+                return 0;
+            }
+
             if (MarketRegimes.Contains(MarketRegime.PreEarningsReleaseBeforeMarketClose))
             {
                 return _algo.RiskScenarioHandler.GetEquiUtility(_option, OrderDirection) ?? -2000;

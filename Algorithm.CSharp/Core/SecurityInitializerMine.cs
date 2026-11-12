@@ -34,15 +34,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // This method is only meant to take care of fills for which algo had no order tickets.
             // Ideally becomes an OrderEvent... but there's no order!!!
             Symbol symbol = e.Security.Symbol;
-            if (_algo.Positions.TryGetValue(symbol, out Position position) && position.Quantity != e.Security.Holdings.Quantity)
+            // Same lock the readers take (PortfolioRisk, SnapPositions): this fires on the fill/data
+            // thread while the signal pass and the risk pass enumerate the dictionary.
+            lock (_algo.Positions)
             {
-                _algo.Log($"{_algo.Time} HoldingsOnQuantityChanged(): {symbol} Initialize new Position from Security Holding as Quantity differs. Previously: {position.Quantity}, Now: {e.Security.Holdings.Quantity}. May impact post trade reporting.");
-                _algo.Positions[symbol] = new Position(_algo, e.Security.Holdings);
-            }
-            else if (!_algo.Positions.ContainsKey(symbol))
-            {
-                _algo.Log($"{_algo.Time} HoldingsOnQuantityChanged(): {symbol} Initialize new Position from Security Holding as Symbol is not present.");
-                _algo.Positions[symbol] = new Position(_algo, e.Security.Holdings);
+                if (_algo.Positions.TryGetValue(symbol, out Position position) && position.Quantity != e.Security.Holdings.Quantity)
+                {
+                    _algo.Log($"{_algo.Time} HoldingsOnQuantityChanged(): {symbol} Initialize new Position from Security Holding as Quantity differs. Previously: {position.Quantity}, Now: {e.Security.Holdings.Quantity}. May impact post trade reporting.");
+                    _algo.Positions[symbol] = new Position(_algo, e.Security.Holdings);
+                }
+                else if (!_algo.Positions.ContainsKey(symbol))
+                {
+                    _algo.Log($"{_algo.Time} HoldingsOnQuantityChanged(): {symbol} Initialize new Position from Security Holding as Symbol is not present.");
+                    _algo.Positions[symbol] = new Position(_algo, e.Security.Holdings);
+                }
             }
 
             // A holding is the one contract we can never be unsubscribed from: this also re-subscribes
