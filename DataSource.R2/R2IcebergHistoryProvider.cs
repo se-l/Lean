@@ -220,7 +220,11 @@ namespace QuantConnect.Lean.DataSource.R2
                             break;
                         }
 
-                        if (point.Time < startEt || point.Time > endEt)
+                        // Completeness, not just the stamp. A bar is stamped at its period START but
+                        // carries the period's LAST value (a daily bar holds the day's close), so a
+                        // mid-session request would otherwise return the in-progress bucket: that is
+                        // how the 09:45 seeder read got the 16:00 quote (48.8/58.0) as "last known".
+                        if (point.Time < startEt || point.EndTime > endEt)
                         {
                             continue;
                         }
