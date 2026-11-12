@@ -90,7 +90,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             decimal priceBeforeBboCap = price;
-            price = ClampInsideSpread(qr, price);
             price = LimitPriceToBBO(qr, price);
 
             decimal finalCrossRatio = CrossRatio(qr.OrderDirection, price, bid, ask);
@@ -126,7 +125,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 // No risk scenario, no price.
                 return 0;
             }
-            price = ClampInsideSpread(qr, price);
             price = LimitPriceToBBO(qr, price);
 
             return price;
@@ -173,7 +171,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
             }
 
             decimal priceBeforeBuffer = price;
-            price = ClampInsideSpread(qr, price);
             price = LimitPriceToBBO(qr, price);
 
             // Sweep-priced quotes are paced by the schedule; the spread buffer only paces a model-priced
@@ -236,23 +233,6 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
-        /// Clamps a quote into the live NBBO. A sweep IV taken from the scenario surface can price a
-        /// contract outside the touch - above the ask for a sell, below the bid for a buy - and a
-        /// limit there is not "passive", it is off-market and never fills. The passive edge of every
-        /// quote is the touch; LimitPriceToBBO then guards the aggressive edge.
-        /// </summary>
-        private static decimal ClampInsideSpread(QuoteRequest<Option> qr, decimal price)
-        {
-            decimal bid = qr.Option.BidPrice;
-            decimal ask = qr.Option.AskPrice;
-            if (bid <= 0 || ask <= bid)
-            {
-                return price;
-            }
-            return Math.Min(Math.Max(price, bid), ask);
-        }
-
-        /// <summary>
         /// Fraction of the spread the quote has crossed, measured from the passive touch:
         /// 0 = resting on the ask (sell) / bid (buy), 1 = at the opposite touch, &gt;1 = out of the
         /// book. May be negative when a price sits outside the touch on the passive side; logged raw
@@ -307,7 +287,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
         }
 
         /// <summary>
-        /// // Don't hit deep order book wasting money.
+        /// The only clamp between a model/sweep price and the book, and one-sided on purpose: a buy
+        /// can be capped at the ask and a sell floored at the bid, but nothing may move a quote
+        /// toward paying up. A symmetric clamp into [bid, ask] looks protective and is not - when
+        /// fair value sits outside the touch it lifts the quote onto the far side of the spread, so a
+        /// seeded previous-close book turned a 36.80 model price into a 48.80 buy limit that crossed
+        /// the real 40.30 ask on the first tick. Don't hit deep order book wasting money.
         /// </summary>
         private static decimal LimitPriceToBBO(QuoteRequest<Option> qr, decimal price)
         {

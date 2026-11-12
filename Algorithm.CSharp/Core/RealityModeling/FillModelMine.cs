@@ -38,6 +38,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             //}
             //Get the range of prices in the last bar:
             var orderDirection = order.Direction;
+            // Not anymore interested in profiting from trades crossing the spread. Useful for Equity, unrealistic for options.
             var prices = GetPrices(asset, orderDirection);
             var pricesEndTime = prices.EndTime.ConvertToUtc(asset.Exchange.TimeZone);
 
@@ -49,8 +50,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
             {
                 case OrderDirection.Buy:
 
-                    if (prices.Low <= limitPrice
-                        || (asset.AskPrice <= limitPrice)
+                    if (
+                        // prices.Low <= limitPrice || //Dont trigger on backtest trades anymore. 
+                        (asset.AskPrice <= limitPrice)
                         )
                     {
                         //Set order fill:
@@ -65,9 +67,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
                     break;
                 case OrderDirection.Sell:
 
-                    if (prices.High > limitPrice 
-                        || (prices.High == limitPrice && asset.AskPrice > limitPrice)  // better: if AskPrice was lowered after my limitPrice, I should be filled, first in order book.
-                        || (asset.BidPrice >= limitPrice)
+                    if (
+                        // prices.High > limitPrice || //Dont trigger on backtest trades anymore. 
+                        // (prices.High == limitPrice && asset.AskPrice > limitPrice) ||  // better: if AskPrice was lowered after my limitPrice, I should be filled, first in order book.
+                        (asset.BidPrice >= limitPrice)
                         )
                     {
                         fill.Status = OrderStatus.Filled;

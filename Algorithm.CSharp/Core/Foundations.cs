@@ -150,8 +150,9 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public FoundationsConfig Cfg;
 
         /// <summary>
-        /// Live configuration deltas (RabbitMQ "config.#"). Started in Initialize; applied on the
-        /// algorithm thread at the top of OnData, so settings never change mid-cycle.
+        /// Live configuration deltas (RabbitMQ "config.all" / "config.&lt;ALGO_INSTANCE_ID&gt;").
+        /// Started in Initialize; applied on the algorithm thread at the top of OnData, so settings
+        /// never change mid-cycle.
         /// </summary>
         public ConfigUpdateChannel ConfigUpdates;
         public string FoundationsConfigFileName = "FoundationsConfig.json";
@@ -864,10 +865,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 return;
             }
             
-            Positions.Values.Where(p => p.Quantity != 0 && Cfg.Ticker.Contains(Underlying(p.Symbol).Value)).DoForEach(p => Snap(p.Symbol));
+            // Snapshot under the lock. This runs from an indicator update on the data thread while the
+            // signal pass (Parallel.For) and the order/fill handlers add and replace entries, so a live
+            // enumeration over Positions.Values threw "Collection was modified" and killed the run
+            // (2026-11-11 14:47:58). `Snap` also calls back into risk/pricing, which is exactly the kind
+            // of call-out that must not happen mid-enumeration.
+            List<Position> snapshot;
+            lock (Positions)
+            {
+                snapshot = Positions.Values
+                    .Where(p => p.Quantity != 0 && Cfg.Ticker.Contains(Underlying(p.Symbol).Value))
+                    .ToList();
+            }
+
+            snapshot.DoForEach(p => Snap(p.Symbol));
             foreach (PositionWriter writer in PositionWriters.Values)
             {
-                writer.WriteMetrics(Positions.Values.Where(p => p.Quantity != 0 && Cfg.Ticker.Contains(Underlying(p.Symbol).Value)));
+                writer.WriteMetrics(snapshot);
             }
         }
 
@@ -1252,15 +1266,18 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     return;
                 }
 
-                if (!Positions.ContainsKey(trade.Symbol))
+                lock (Positions)
                 {
-                    // Brand new position                    
-                    Positions[trade.Symbol] = new(null, trade, this, null, Securities[trade.Symbol].Holdings.Quantity);
-                }
-                else
-                {
-                    // Trade modifies / operates on existing position.
-                    Positions[trade.Symbol] = new(Positions[trade.Symbol], trade, this, null, Securities[trade.Symbol].Holdings.Quantity);
+                    if (!Positions.ContainsKey(trade.Symbol))
+                    {
+                        // Brand new position
+                        Positions[trade.Symbol] = new(null, trade, this, null, Securities[trade.Symbol].Holdings.Quantity);
+                    }
+                    else
+                    {
+                        // Trade modifies / operates on existing position.
+                        Positions[trade.Symbol] = new(Positions[trade.Symbol], trade, this, null, Securities[trade.Symbol].Holdings.Quantity);
+                    }
                 }
             }
         }
@@ -2669,6 +2686,16 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// </summary>
         private readonly Dictionary<Symbol, DateTime> _lastUtilityAtErrorLog = new();
 
+        /// <summary>
+        /// Depth of UtilityAt() frames on this flow. UtilityAt prices a FULL utility to answer "what is
+        /// this order worth at this price", and that utility's risk-scenario term prices the sweep,
+        /// which calls UtilityAt again - a loop with no base case (NBIS backtest 2026-11-11: "Stack
+        /// overflow", container exit 139, uncatchable). While the depth is non-zero the nested utility
+        /// is pricing-only: same terms, minus the risk scenario it is being priced against.
+        /// </summary>
+        private static readonly System.Threading.AsyncLocal<int> _utilityRiskScenarioDepth = new();
+        internal static bool UtilityRiskScenarioSuppressed => _utilityRiskScenarioDepth.Value > 0;
+
         public double UtilityAt(Option option, OrderDirection direction, decimal price)
         {
             if (option == null || direction == OrderDirection.Hold) return 0;
@@ -2676,6 +2703,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
             decimal quantity = SignalQuantity(option.Symbol, direction);
             if (quantity == 0) return 0;
 
+            _utilityRiskScenarioDepth.Value++;
             try
             {
                 IUtilityOrder utilityOrder = CreateUtility(option, quantity, price);
@@ -2696,6 +2724,10 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     Log($"{Time} UtilityAt(): utility unavailable for {option.Symbol.Value} {direction} at {price} ({error.GetType().Name}: {error.Message}) - treated as 0.");
                 }
                 return 0;
+            }
+            finally
+            {
+                _utilityRiskScenarioDepth.Value--;
             }
         }
 
@@ -2760,13 +2792,19 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public void InitializePositionsFromPortfolioHoldings()
         {
-            // Setting internal positions from algo state. takes a min+ in debug
-            Positions = new Dictionary<Symbol, Position>();
+            // Setting internal positions from algo state. takes a min+ in debug.
+            // Built off to the side and swapped under the lock: replacing the reference while another
+            // thread enumerates the old dictionary is the same "Collection was modified" failure.
+            var rebuilt = new Dictionary<Symbol, Position>();
             foreach (var holding in Portfolio.Values.Where(x => securityTypeOptionEquity.Contains(x.Type)))
             {
                 Log($"Initialized Position {holding.Symbol} with Holding: {holding}");
                 // refactor: make this event driven. Publish a trade -> Trades and Positions are updated.
-                Positions[holding.Symbol] = new(this, holding);
+                rebuilt[holding.Symbol] = new(this, holding);
+            }
+            lock (Positions)
+            {
+                Positions = rebuilt;
             }
         }
         public void InitializeTradesFromPortfolioHoldings()
@@ -2906,6 +2944,11 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <returns></returns>
         public bool IsAfterEarningsRelease(Symbol underlying, int days = 60)
         {
+            // The post-release window must not extend into the next release's prep window:
+            // a quarter shorter than `days` would otherwise put us "after" the previous release
+            // on the next release's entry day (CBRS: 06-23 → 08-12, 50 days).
+            if (IsPreparingEarningsRelease(underlying)) return false;
+
             DateTime prevReleaseDate = PreviouReleaseDate(underlying);
             return Time.Date > prevReleaseDate.Date && Time.Date <= (prevReleaseDate + TimeSpan.FromDays(days)).Date;
         }

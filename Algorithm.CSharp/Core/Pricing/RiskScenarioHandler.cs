@@ -60,6 +60,10 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             public double IvStart;       // frozen: IV(favourable(near touch, surface price)) at start
             public decimal PriceStart;   // NPV(IvStart), the price at ratio 0
             public double UtilityStart;  // USD utility of trading at PriceStart
+            // True only while UtilityStart is being priced. Pricing it means evaluating a full utility,
+            // whose risk-scenario term comes straight back into this sweep; the re-entrant call has to
+            // see the state and return it, not treat it as stale and build another one.
+            public bool IsPricing;
         }
 
         // Concurrent: the pricing path quotes contracts in parallel and ClearSweep runs on order events.
@@ -318,6 +322,14 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
             var key = (option.Symbol, direction);
             if (_sweeps.TryGetValue(key, out SweepState existing))
             {
+                // Re-entrant pricing pass: we are inside our own UtilityStart computation, so hand back
+                // the state being built. Without this the recursion has no base case (NBIS backtest
+                // 2026-11-11: "Stack overflow", container exit 139).
+                if (existing.IsPricing)
+                {
+                    return existing;
+                }
+
                 // A sweep state is created by the PRICING path, which runs before any ticket exists and
                 // also for contracts that never get an order. While this contract has no live order of its
                 // own the clock must not run: it was re-used as-is, so a contract first priced an hour
@@ -365,9 +377,21 @@ namespace QuantConnect.Algorithm.CSharp.Core.Pricing
                 Duration = ResolveSweepDuration(equity, direction),
                 IvStart = ivStart,
                 PriceStart = startPrice,
-                UtilityStart = _algo.UtilityAt(option, direction, startPrice),
             };
+
+            // Publish BEFORE pricing. UtilityStart is a full utility and its risk-scenario term prices
+            // this very sweep; computing it inline (before the state existed) meant the nested call
+            // found nothing, created another sweep, and recursed until the stack was gone.
+            state.IsPricing = true;
             _sweeps[key] = state;
+            try
+            {
+                state.UtilityStart = _algo.UtilityAt(option, direction, startPrice);
+            }
+            finally
+            {
+                state.IsPricing = false;
+            }
 
             _algo.Log($"{_algo.Time} RiskScenarioHandler.GetOrCreateSweep(): {option.Symbol.Value} {direction} startIv={ivStart:0.000} startPrice={startPrice:0.0000} surface={surfacePrice:0.0000} nearTouch={nearTouch:0.0000} utilityStart={state.UtilityStart:0.00} duration={state.Duration}.");
             return state;

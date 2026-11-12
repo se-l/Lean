@@ -73,7 +73,7 @@ namespace QuantConnect.Algorithm.CSharp.Core.RealityModeling
                 ? (limitPrice - asset.BidPrice) / spread
                 : (asset.AskPrice - limitPrice) / spread);
             double spreadCrossedPc = Math.Clamp(rawSpreadCrossedPc, 0d, 1d);
-            if (spreadCrossedPc <= 0)
+            if (spreadCrossedPc <= 0.5)  // During actual trading, rarely filling before mid and additionally, this algo is moving mid adversely.
             {
                 return fill;
             }

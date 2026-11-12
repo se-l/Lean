@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using QuantConnect.Configuration;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -18,10 +19,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
     /// <summary>
     /// Live configuration deltas over RabbitMQ.
     ///
-    /// Publish a JSON object of key/value pairs to the exchange <c>calc_engine</c> with a routing
-    /// key starting <c>config.</c>:
+    /// Publish a JSON object of key/value pairs to the exchange <c>calc_engine</c> with routing
+    /// key <c>config.all</c> (every algo) or <c>config.&lt;instanceId&gt;</c> (one algo):
     ///
     ///     {"MaxDesiredOrders": 8, "SomeFlag": true, "Nested.Thing": 12.5}
+    ///
+    /// Routing:
+    ///  - Each algo declares its own durable queue <c>lean.config.update.&lt;instanceId&gt;</c>,
+    ///    bound to <c>config.all</c> and <c>config.&lt;instanceId&gt;</c>. The instance id comes
+    ///    from the ALGO_INSTANCE_ID environment variable (set per container in deploy/stacks);
+    ///    per-algo queues copy a message to every matching algo instead of competing on one
+    ///    shared queue.
     ///
     /// Semantics:
     ///  - DELTAS, never a full config: only the keys present are touched, everything else stays.
@@ -45,8 +53,9 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
     {
         private const string ExchangeIn = "calc_engine";
         private const string ExchangeOut = "calc_engine.responses";
-        private const string QueueName = "lean.config.update";
-        private const string BindingKey = "config.#";
+        private const string QueuePrefix = "lean.config.update.";
+        private const string BindingPrefix = "config.";
+        private const string BroadcastBindingKey = "config.all";
         private const int MaxQueuedMessages = 256;
 
         private static readonly JsonSerializerOptions ChannelJsonOptions = new()
@@ -60,6 +69,8 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
         private readonly Foundations _algo;
         private readonly ConcurrentQueue<PendingUpdate> _pending = new();
+        private readonly string _instanceId;
+        private readonly string _queueName;
         private IConnection _connection;
         private IChannel _channel;
 
@@ -77,9 +88,84 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
             public string RoutingKey { get; }
         }
 
-        public ConfigUpdateChannel(Foundations algo)
+        public ConfigUpdateChannel(Foundations algo, string instanceId)
         {
             _algo = algo ?? throw new ArgumentNullException(nameof(algo));
+            _instanceId = NormalizeInstanceId(instanceId);
+            _queueName = QueuePrefix + _instanceId;
+        }
+
+        /// <summary>
+        /// Sanitizes ALGO_INSTANCE_ID into a queue/routing-key fragment. Keeps [A-Za-z0-9._-],
+        /// collapses runs of anything else (commas in a multi-ticker Ticker, spaces, #/*) to one
+        /// '-', and falls back to "default" when nothing usable remains.
+        /// </summary>
+        private static string NormalizeInstanceId(string instanceId)
+        {
+            if (string.IsNullOrWhiteSpace(instanceId))
+            {
+                return "default";
+            }
+
+            var normalized = new StringBuilder(instanceId.Length);
+            var separator = false;
+            foreach (var c in instanceId.Trim())
+            {
+                var keep = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                           (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
+                if (keep)
+                {
+                    normalized.Append(c);
+                    separator = false;
+                }
+                else if (!separator)
+                {
+                    // A comma in Ticker (e.g. "NET,CSCO") becomes one '-'. Neither # nor *
+                    // may survive: they are topic wildcards in the binding key.
+                    normalized.Append('-');
+                    separator = true;
+                }
+            }
+
+            var id = normalized.ToString().Trim('.', '-', '_');
+            if (id.Length == 0)
+            {
+                return "default";
+            }
+
+            // RabbitMQ queue names are capped at 255 bytes; leave room for QueuePrefix.
+            return id.Length <= 200 ? id : id.Substring(0, 200);
+        }
+
+        /// <summary>
+        /// Resolves the per-algo id: ALGO_INSTANCE_ID wins. Otherwise derive it from the compose
+        /// args already set per service (Ticker + ib-client-id), then from either one alone, then
+        /// "default". The chosen id is visible in the startup log as the queue name.
+        /// </summary>
+        public static string ResolveInstanceId()
+        {
+            var instanceId = Config.Get("ALGO_INSTANCE_ID");
+            if (!string.IsNullOrWhiteSpace(instanceId))
+            {
+                return instanceId;
+            }
+
+            var ticker = Config.Get("Ticker");
+            var ibClientId = Config.Get("ib-client-id");
+            if (!string.IsNullOrWhiteSpace(ticker) && !string.IsNullOrWhiteSpace(ibClientId))
+            {
+                return $"{ticker.Trim()}-{ibClientId.Trim()}";
+            }
+            if (!string.IsNullOrWhiteSpace(ticker))
+            {
+                return ticker.Trim();
+            }
+            if (!string.IsNullOrWhiteSpace(ibClientId))
+            {
+                return $"ib-{ibClientId.Trim()}";
+            }
+
+            return "default";
         }
 
         /// <summary>Connects in the background; a broker that is down never blocks Initialize.</summary>
@@ -110,15 +196,24 @@ namespace QuantConnect.Algorithm.CSharp.Core.IO
 
                 await _channel.ExchangeDeclareAsync(ExchangeIn, ExchangeType.Topic, durable: true);
                 await _channel.ExchangeDeclareAsync(ExchangeOut, ExchangeType.Topic, durable: true);
-                await _channel.QueueDeclareAsync(QueueName, durable: true, exclusive: false, autoDelete: false);
-                await _channel.QueueBindAsync(QueueName, ExchangeIn, BindingKey);
+
+                if (_instanceId == "default")
+                {
+                    _algo.Error($"{_algo.Time} ConfigUpdateChannel: ALGO_INSTANCE_ID is not set — " +
+                                $"using shared queue {_queueName}; targeted config updates need a per-container id.");
+                }
+
+                await _channel.QueueDeclareAsync(_queueName, durable: true, exclusive: false, autoDelete: false);
+                await _channel.QueueBindAsync(_queueName, ExchangeIn, BroadcastBindingKey);
+                await _channel.QueueBindAsync(_queueName, ExchangeIn, BindingPrefix + _instanceId);
 
                 var consumer = new AsyncEventingBasicConsumer(_channel);
                 consumer.ReceivedAsync += OnReceivedAsync;
-                await _channel.BasicConsumeAsync(QueueName, autoAck: false, consumer);
+                await _channel.BasicConsumeAsync(_queueName, autoAck: false, consumer);
 
-                _algo.Log($"{_algo.Time} ConfigUpdateChannel: listening on {ExchangeIn}/{BindingKey} " +
-                          $"(queue {QueueName}, vhost {virtualHost}).");
+                _algo.Log($"{_algo.Time} ConfigUpdateChannel: listening on {ExchangeIn}/" +
+                          $"[{BroadcastBindingKey}, {BindingPrefix}{_instanceId}] " +
+                          $"(queue {_queueName}, vhost {virtualHost}).");
             }
             catch (Exception error)
             {

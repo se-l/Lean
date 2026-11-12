@@ -108,7 +108,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
 
             // Live config deltas: its own connection (the client above owns the catch-all reply
             // queue). Fails open — a broker hiccup must never block Initialize.
-            ConfigUpdates = new ConfigUpdateChannel(this);
+            ConfigUpdates = new ConfigUpdateChannel(this, ConfigUpdateChannel.ResolveInstanceId());
             ConfigUpdates.Start(CfgAlgo.MQHost, CfgAlgo.MQPort, CfgAlgo.MQUser, CfgAlgo.MQPass, CfgAlgo.MQVirtualHost);
 
             if (CfgAlgo.PricerCacheEnabled)
@@ -1145,6 +1145,8 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
                 if (!LiveMode && requestNContracts <= heldContracts)
                 {
                     Log($"{Time} RequestTargetPortfolios(): Backtest mode. Already reached backtest limit of {Cfg.RequestContractsSchedulesBacktestNMaximum} for contracts. heldContracts={heldContracts}");
+                    TargetPortfolios[underlying].Clear();
+                    SetTargetHoldingsFromTargetPortfolios();
                     return;
                 }
 

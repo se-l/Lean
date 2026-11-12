@@ -4,8 +4,7 @@
   "Ticker": [ "NET" ],
   "LiquidateTicker": [],
   "SkipRunSignals": {
-    "_": false,
-    "NET": true
+    "_": false
   },
   "ExecuteManualOrderInstructions": true,
   "BacktestingHoldings": {
@@ -220,14 +219,14 @@
         "StartDaysOffset": 0,
         "Start": "14:00",
         "EndDaysOffset": 0,
-        "End": "15:30",
+        "End": "15:40",
         "NRemaining": 2,
         "Increment": 4,
         "NMaximum": 100
       },
       {
         "StartDaysOffset": 0,
-        "Start": "15:30",
+        "Start": "15:40",
         "EndDaysOffset": 0,
         "End": "15:50",
         "NRemaining": 1,
@@ -264,5 +263,5 @@
   "UtilityCacheSpotBucketBps": 5.0,
   "UtilityCacheIvBucket": 0.01,
   "UtilityCacheMaxKeys": 20000,
-  "MaxSignalBatchAgeMs": 50000
+  "MaxSignalBatchAgeMs": 120000
 }
