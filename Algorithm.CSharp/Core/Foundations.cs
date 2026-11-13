@@ -2201,34 +2201,68 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 OrderTicket2UtilityOrder[orderTicket.OrderId] = utilityOrder;
             }            
 
-            // Occasionally limit orders dont get processed resulting in losses due to missing hedging. Also, these eventually hit a timeout set to 15min by QC resulting in runtime error.
-            // Therefore, checking frequently whether a ticket has been process - orderTicket.SubmitRequest.Status;
-            // Expecting orderStatus to be at least Submitted. If not, cancel and allow algo to resubmit.
+            // Submission watchdog. QC's own limit on an unprocessed request is 15 minutes (it ends the
+            // run); a stuck ticket otherwise sits there while the target holding goes unsatisfied, so we
+            // watch it ourselves - see CheckOrderSubmission for why this warns before it cancels.
 
-            // Expecting very fast turnaround time for equity orders. Options order are ok to take longer as they are not used to hedge currently.
-
-            int timeout = 10;
-            Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromSeconds(timeout)), () => CancelOrderTicketIfUnprocessed(orderTicket.OrderId, timeout));
+            // A queued submit is NOT a broken submit. Until BrokerageTransactionHandler's processing
+            // thread picks the request up, the ticket reads Status=New with SubmitRequest.Status=Error
+            // (OrderRequest.SetResponse defaults its status to Error) — exactly the state the old 10s
+            // check called "bad submission". On prd-trader.AMAT-1 2026-11-12 that check cancelled 67
+            // orders whose queue wait was 13.7s at the median (p90 23.7s, max 31.6s), and every one of
+            // them was placed at IB after the cancel had been requested. So: warn first, and cancel
+            // only at a configurable age, on the wall clock, and only if the handler never touched it.
+            int warnSeconds = Math.Max(0, Cfg.OrderSubmissionWarnSeconds);
+            int cancelSeconds = Cfg.OrderSubmissionCancelSeconds;
+            DateTime submittedUtc = DateTime.UtcNow;
+            Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + TimeSpan.FromSeconds(Math.Max(1, warnSeconds))),
+                () => CheckOrderSubmission(orderTicket.OrderId, submittedUtc, warnSeconds, cancelSeconds, warned: false));
 
             OrderEventWriters[Underlying(orderTicket.Symbol)].Write(orderTicket);
         }
-        public void CancelOrderTicketIfUnprocessed(int orderId, int sec)
+
+        /// <summary>
+        /// Submission watchdog for one ticket. Warns once at <paramref name="warnSeconds"/> and cancels at
+        /// <paramref name="cancelSeconds"/> so the algorithm can resubmit — but only when the request is
+        /// provably still unprocessed: age is measured on the WALL clock (live data time and the brokerage
+        /// queue drift apart, and the old check used algorithm time), and a ticket the handler has already
+        /// picked up (<see cref="OrderTicket.HasOrder"/>) or that has left <see cref="OrderStatus.New"/> is
+        /// left to its order events. A non-positive cancel threshold disables the cancel: warn only.
+        /// </summary>
+        public void CheckOrderSubmission(int orderId, DateTime submittedUtc, int warnSeconds, int cancelSeconds, bool warned)
         {
             OrderTicket ticket = Transactions.GetOrderTicket(orderId);
-            if (ticket?.CancelRequest == null && ticket.SubmitRequest.Status == OrderRequestStatus.Unprocessed)
+            if (ticket == null) return;
+
+            // Picked up by the handler, past New, or a cancel already in flight: order events drive it now.
+            if (ticket.HasOrder || ticket.Status != OrderStatus.New || ticket.CancelRequest != null) return;
+
+            double ageSeconds = (DateTime.UtcNow - submittedUtc).TotalSeconds;
+
+            if (!warned)
             {
-                // This was not encountered.
-                string tag = $"CancelOrderTicketIfUnprocessed: {ticket.Symbol} Status: {ticket.Status} remained Unprocessed for {sec} sec after new submission. Canceling LeanID={ticket.OrderId}";
-                Cancel(ticket, tag);
+                warned = true;
+                Log($"{Time} CheckOrderSubmission: {ticket.Symbol} LeanId={orderId} not processed {ageSeconds:0}s after submission " +
+                    $"(Status={ticket.Status}, SubmitRequest.Status={ticket.SubmitRequest.Status}, warn={warnSeconds}s). " +
+                    "Queue wait, not a broken order — " +
+                    (cancelSeconds > 0 ? $"cancel threshold {cancelSeconds}s." : "cancel disabled (warn only)."));
             }
-            else if (ticket?.CancelRequest == null && $"{ticket.Status}" == $"{OrderStatus.New}" && $"{ticket.SubmitRequest.Status}" == $"{OrderRequestStatus.Error}")
+
+            if (cancelSeconds <= 0) return;
+
+            if (ageSeconds < cancelSeconds)
             {
-                // SubmitRequest.Status is initialized with error. true even if log prints false, therefore evaluating as string now..
-                // SubmitRequest.Status=Processed. 15. Remains in bad submission state after 52 seconds. Canceling.
-                string tag = $"CancelOrderTicketIfUnprocessed: Remains in bad submission state after {sec} seconds. Sybmol={ticket.Symbol}, OrderTicket={ticket}, LeanId={ticket.OrderId}, Quantity={ticket.Quantity}, Ticket.Status={ticket.Status}, Ticket.SubmitRequest.Status={ticket.SubmitRequest.Status}.";
-                Cancel(ticket, tag);
+                // Re-arm for the rest of the wait; the warn has been said.
+                TimeSpan next = TimeSpan.FromSeconds(Math.Max(1, cancelSeconds - (int)ageSeconds));
+                Schedule.On(DateRules.Today, TimeRules.At(Time.TimeOfDay + next),
+                    () => CheckOrderSubmission(orderId, submittedUtc, warnSeconds, cancelSeconds, warned: true));
+                return;
             }
-            ;
+
+            string tag = $"CheckOrderSubmission: {ticket.Symbol} never processed {ageSeconds:0}s after submission " +
+                $"(Status={ticket.Status}, SubmitRequest.Status={ticket.SubmitRequest.Status}, OrderSet={ticket.OrderSet.WaitOne(0)}). " +
+                $"Canceling LeanID={orderId}.";
+            Cancel(ticket, tag);
         }
         public void OrderEquity(Symbol symbol, decimal quantity, decimal limitPrice, OrderType orderType, string tag = "")
         {
@@ -2927,7 +2961,22 @@ namespace QuantConnect.Algorithm.CSharp.Core
 
         public HedgingMode GetHedgingMode(Symbol symbol)
         {
-            return HedgingModeMap[Cfg.HedgingMode.TryGetValue(Underlying(symbol).Value, out int hedgeMode) ? hedgeMode : Cfg.HedgingMode[CfgDefault]];
+            string ticker = Underlying(symbol).Value;
+
+            // A matching hedge schedule may impose its own delta basis for its window.
+            if (ScheduledHedgeMode(symbol) is byte scheduled && HedgingModeMap.ContainsKey(scheduled))
+            {
+                return HedgingModeMap[scheduled];
+            }
+
+            // `EquityHedgeMode` is the delta basis (0..4). `HedgingMode` remains as the fallback key so
+            // an existing config without the new one keeps working.
+            if (Cfg.EquityHedgeMode != null &&
+                (Cfg.EquityHedgeMode.ContainsKey(ticker) || Cfg.EquityHedgeMode.ContainsKey(CfgDefault)))
+            {
+                return HedgingModeMap[AlgoConfig.GetEntry(Cfg.EquityHedgeMode, ticker)];
+            }
+            return HedgingModeMap[Cfg.HedgingMode.TryGetValue(ticker, out int hedgeMode) ? hedgeMode : Cfg.HedgingMode[CfgDefault]];
         }
 
         public TimeSpan TimeToMarketClose(Symbol underlying)

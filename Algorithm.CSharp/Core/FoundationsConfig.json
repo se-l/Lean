@@ -24,6 +24,8 @@
   /// Scoping Contracts for data feed subscription
   "ScopeContractStrikeOverUnderlyingMax": 1.35,
   "ScopeContractStrikeOverUnderlyingMin": 0.65,
+  // Minimum DTE to CLOSE a position (post-release buy-backs and sells). -1 disables: {"_": 7, "AMAT": -1}.
+  "MinDteClosePosition": { "_": 7 },
   "ScopeContractMinDTE": 0,
   "ScopeContractMaxDTE": 730,
   ///
@@ -249,7 +251,14 @@
   "MinutesBeforeCloseMMWindowEnds": 5,
   "MinutesBeforeCloseHedgeToAcrossDs": 3,
   "MinutesBeforeCloseIsPreEarningsReleaseEOD": 30,
-  "EquityHedgeMode": { "_": 4 }, // 0-Aggressive pay spread;  1-Mid ; 2-Passive earn spread ; 5 - use SSVI surface for practitioner IV
+  // 0-Aggressive (pay the spread, price at the touch); 1-Mid; 2-Passive (earn the spread, price one
+  // tick inside). The key is clamped to the enum range, so 4/5 silently became Passive and the stale
+  // "5 - use SSVI surface" entry never existed - keep this to 0..2.
+  // DELTA BASIS: 0-FwdRealizedVolatility; 1-HistoricalVolatility; 2-ImpliedVolatility;
+  // 3-ImpliedVolatilitySSVI; 4-MvDelta (sticky + skew - the hedge target).
+  "EquityHedgeMode": { "_": 4 },
+  // PRICING: 0-Agressive (pay the spread); 1-Mid; 2-Passive (one tick inside).
+  "EquityHedgePricingMode": { "_": 2 },
   "MaxDesiredOrders": 20,
   // One pricer round trip for every greek of a node (was: one per greek, ~40 per contract).
   // Hedge delta composition: "surface" adds the vega × dσ/dS smile term (risk surface) to the
@@ -263,5 +272,15 @@
   "UtilityCacheSpotBucketBps": 5.0,
   "UtilityCacheIvBucket": 0.01,
   "UtilityCacheMaxKeys": 20000,
-  "MaxSignalBatchAgeMs": 120000
+  "MaxSignalBatchAgeMs": 120000,
+  // Submission watchdog. A submit that is merely QUEUED is not a broken submit: the ticket reads
+  // Status=New and SubmitRequest.Status=Error (OrderRequest.SetResponse defaults the status to
+  // Error) until BrokerageTransactionHandler's single processing thread picks the request up.
+  // Measured queue latency on prd-trader.AMAT-1 (2026-11-12): median 13.7s, p90 23.7s, max 31.6s.
+  // Warn once at this many seconds; cancel only at OrderSubmissionCancelSeconds.
+  "OrderSubmissionWarnSeconds": 10,
+  // Age in seconds at which a request the handler never picked up is cancelled so the algo can
+  // resubmit. <= 0 disables the cancel (warn only). Keep above the observed queue latency and well
+  // below Lean's own 15-minute unprocessed-request runtime error.
+  "OrderSubmissionCancelSeconds": 120
 }

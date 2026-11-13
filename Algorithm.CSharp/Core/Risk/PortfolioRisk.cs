@@ -51,7 +51,11 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 Metric.DeltaTotal => positions.Sum(p => p.DeltaTotal(volatility)),
                 Metric.DeltaImpliedTotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIV(p.Symbol))),
                 Metric.DeltaImpliedSSVITotal => positions.Sum(p => p.DeltaImpliedTotal(_algo.MidIVSsvi(symbol))),
-                Metric.MvDeltaTotal => positions.Sum(p => p.DeltaTotal(volatility)) + positions.Sum(p => p.DeltaIVdSTotal()),
+                // MvDelta is exactly what the hedge targets and what DeltaMVSplit reports: the surface
+                // sticky delta plus the skew term (vega * dSigma/dS), under the configured switch/scale.
+                // It used to mix the quote/HV DeltaTotal with the skew, which made HedgeMetric() and the
+                // band disagree about the same book.
+                Metric.MvDeltaTotal => MvDelta(positions, symbol),
 
                 Metric.DeltaXBpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(dX ?? 0)),
                 Metric.Delta100BpUSDTotal => positions.Sum(p => p.DeltaXBpUSDTotal(100)),
@@ -100,6 +104,17 @@ namespace QuantConnect.Algorithm.CSharp.Core.Risk
                 total += weight;
             }
             return total == 0m ? 0m : weighted / total;
+        }
+
+        private decimal MvDelta(IEnumerable<Position> positions, Symbol symbol)
+        {
+            List<Position> book = positions as List<Position> ?? positions.ToList();
+            decimal sticky = book.Sum(p => p.DeltaImpliedTotal(_algo.MidIVSsvi(symbol)));
+            if (!string.Equals(_algo.Cfg.DeltaHedgeSkewTerm?.Trim(), "surface", StringComparison.OrdinalIgnoreCase))
+            {
+                return sticky;
+            }
+            return sticky + _algo.Cfg.DeltaHedgeSkewScale * book.Sum(p => p.DeltaIVdSTotal());
         }
 
         public decimal RiskByUnderlying(Symbol symbol, Metric metric, double? volatility = null, Func<IEnumerable<Position>, IEnumerable<Position>>? filter = null, double? dX = null, bool skipCache = false)

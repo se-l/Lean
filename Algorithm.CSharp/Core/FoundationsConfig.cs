@@ -32,6 +32,13 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public decimal ScopeContractStrikeOverUnderlyingMax { get; set; }
         public decimal ScopeContractStrikeOverUnderlyingMin { get; set; }
         public int ScopeContractMinDTE { get; set; }
+
+        /// <summary>
+        /// Minimum days to expiration for CLOSING a position on the target-holdings path (post-release
+        /// buy-backs and sells). -1 disables the gate entirely. Per underlying, "_" is the default:
+        /// { "_": 7, "AMAT": -1 }. Was hardcoded to 7 in UtilityOrderEarnings.GetUtilityTargetHoldings.
+        /// </summary>
+        public Dictionary<string, int> MinDteClosePosition { get; set; }
         public int ScopeContractMaxDTE { get; set; }
         public Dictionary<string, DiscountParams> DiscountParams { get; set; }
         public decimal RiskLimitEODDelta100BpUSDTotalLong { get; set; }
@@ -80,7 +87,20 @@ namespace QuantConnect.Algorithm.CSharp.Core
         public int MinutesBeforeCloseMMWindowEnds { get; set; }
         public int MinutesBeforeCloseHedgeToAcrossDs { get; set; }
         public int MinutesBeforeCloseIsPreEarningsReleaseEOD { get; set; }
+        /// <summary>
+        /// DELTA BASIS for equity hedging: 0-FwdRealizedVolatility, 1-HistoricalVolatility,
+        /// 2-ImpliedVolatility, 3-ImpliedVolatilitySSVI, 4-MvDelta (sticky + skew, what the hedge
+        /// targets). Per underlying, "_" is the default. This key used to be read as the PRICING mode
+        /// as well (Passive/Mid/Aggressive), so the two meanings collided on the same numbers - pricing
+        /// now lives in <see cref="EquityHedgePricingMode"/>.
+        /// </summary>
         public Dictionary<string, int> EquityHedgeMode { get; set; }
+
+        /// <summary>
+        /// PRICING for equity hedges: 0-Agressive (touch, pay the spread), 1-MidPrice, 2-Passive (one
+        /// tick inside, earn the spread). Per underlying, "_" is the default.
+        /// </summary>
+        public Dictionary<string, int> EquityHedgePricingMode { get; set; }
 
         /// <summary>
         /// Emit every utility component as an OTLP gauge. Replaces the per-underlying
@@ -128,5 +148,21 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// this age is dropped, never applied.
         /// </summary>
         public int MaxSignalBatchAgeMs { get; set; } = 5_000;
+
+        /// <summary>
+        /// Submission watchdog warn threshold, seconds. A request that is merely queued reads
+        /// Status=New with SubmitRequest.Status=Error (<see cref="Orders.OrderRequest.SetResponse"/>
+        /// defaults its status to Error) until the brokerage handler's processing thread picks it up,
+        /// so age - not that status - is what tells a slow queue from a broken order.
+        /// </summary>
+        public int OrderSubmissionWarnSeconds { get; set; } = 10;
+
+        /// <summary>
+        /// Age in seconds at which a submit request the brokerage handler never picked up is
+        /// cancelled so the algorithm can resubmit. 0 or negative disables the cancel (warn only).
+        /// Must stay above the handler's observed queue latency (median ~14s, max ~32s measured) and
+        /// well below Lean's own 15-minute unprocessed-request runtime error.
+        /// </summary>
+        public int OrderSubmissionCancelSeconds { get; set; } = 120;
     }
 }

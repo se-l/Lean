@@ -38,10 +38,23 @@ namespace QuantConnect.Algorithm.CSharp.Core
                     }
                     else if (attr.PropertyType.GenericTypeArguments.Length > 0 && attr.PropertyType?.GetGenericTypeDefinition() == typeof(Dictionary<,>))
                     {
-                        string jsonString = envValue.Replace("{", "{\"").Replace(":", "\":").Replace(",", ",\"");
-
-                        Log.Trace($"AlgoConfig.OverrideWithEnvironmentVariables Dictionary: {attr.Name}: {envValue}     jsonString:  {jsonString}");
-                        var convertedValue = JsonConvert.DeserializeObject(jsonString, attr.PropertyType);
+                        object convertedValue;
+                        try
+                        {
+                            // Environment values for nested dictionaries are normally valid JSON,
+                            // e.g. {"_":{"Start":"13:00","End":"23:00"}}. Parse that first: the
+                            // legacy quoting pass below cannot handle quoted keys or values that
+                            // contain ':' (such as HH:mm times) and corrupts them.
+                            convertedValue = JsonConvert.DeserializeObject(envValue, attr.PropertyType);
+                            Log.Trace($"AlgoConfig.OverrideWithEnvironmentVariables Dictionary: {attr.Name}: {envValue}");
+                        }
+                        catch (JsonException)
+                        {
+                            // Legacy compact form: {key:value,key2:value2}
+                            string jsonString = envValue.Replace("{", "{\"").Replace(":", "\":").Replace(",", ",\"");
+                            Log.Trace($"AlgoConfig.OverrideWithEnvironmentVariables Dictionary (legacy): {attr.Name}: {envValue}     jsonString:  {jsonString}");
+                            convertedValue = JsonConvert.DeserializeObject(jsonString, attr.PropertyType);
+                        }
                         attr.SetValue(this, convertedValue);
                     }
                     else

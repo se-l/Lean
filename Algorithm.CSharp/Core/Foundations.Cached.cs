@@ -182,6 +182,32 @@ namespace QuantConnect.Algorithm.CSharp.Core
         /// <summary>True when a matching schedule says "Hold" — hedging is suppressed for the window.</summary>
         public bool IsHedgeOnHold(Symbol underlying) => MatchHedgeSchedules(underlying).Hold != null;
 
+        // Delta basis imposed by a matching schedule, memoized per underlying per minute: GetHedgingMode
+        // is on the hot path (every utility/greek) and MatchHedgeSchedules recomputes the regime set.
+        private readonly Dictionary<Symbol, (DateTime Minute, byte? Mode)> _scheduledHedgeModeCache = new();
+
+        /// <summary>
+        /// Delta basis (0..4) imposed by an active hedge schedule for this underlying, or null when no
+        /// schedule sets one (inherit the global EquityHedgeMode). Direction-agnostic: the basis is a
+        /// property of the underlying, not of the side being hedged.
+        /// </summary>
+        public byte? ScheduledHedgeMode(Symbol underlying)
+        {
+            if (Cfg.HedgeSchedules == null || Cfg.HedgeSchedules.Count == 0) return null;
+
+            Symbol equity = Underlying(underlying);
+            DateTime minute = Time.Date.AddMinutes(Math.Floor(Time.TimeOfDay.TotalMinutes));
+            if (_scheduledHedgeModeCache.TryGetValue(equity, out (DateTime Minute, byte? Mode) cached) && cached.Minute == minute)
+            {
+                return cached.Mode;
+            }
+
+            (HedgeScheduleCfg hold, HedgeScheduleCfg buy, HedgeScheduleCfg sell) = MatchHedgeSchedules(equity);
+            byte? mode = (buy ?? sell ?? hold)?.EquityHedgeMode;
+            _scheduledHedgeModeCache[equity] = (minute, mode);
+            return mode;
+        }
+
         /// <summary>The permissive Buy/Sell schedule for this direction, or null when none matches.</summary>
         public HedgeScheduleCfg GetActiveHedgeSchedule(Symbol underlying, OrderDirection direction)
         {
@@ -324,15 +350,32 @@ namespace QuantConnect.Algorithm.CSharp.Core
             // A spread tight enough that we would previously have crossed it with a market order is paid
             // with a limit AT the touch instead — same fill odds, no market order in the book.
             bool isTinySpread = Spread(equity) <= Cfg.MaxSpreadForMarketOrderHedging;
-            int modeInt = Cfg.EquityHedgeMode.TryGetValue(equity.Symbol.Value, out modeInt) ? modeInt : Cfg.EquityHedgeMode[CfgDefault];
+            // Pricing only. The delta basis lives on Cfg.EquityHedgeMode; the two used to share this
+            // key, so a value that meant "MvDelta" here was silently clamped to Passive.
+            int modeInt = Cfg.EquityHedgePricingMode.TryGetValue(equity.Symbol.Value, out modeInt) ? modeInt : Cfg.EquityHedgePricingMode[CfgDefault];
             // An active hedge schedule dictates the mode for its window (byte in the config, the same
             // 0/1/2 encoding as EquityHedgeMode); otherwise the per-underlying setting applies.
+            // A schedule now carries the DELTA basis in EquityHedgeMode and, optionally, the pricing in
+            // EquityHedgePricingMode. Pricing is overridden only when the schedule sets it.
             HedgeScheduleCfg activeSchedule = GetActiveHedgeSchedule(equity.Symbol, direction);
-            if (activeSchedule != null) modeInt = activeSchedule.EquityHedgeMode;
+            if (activeSchedule?.EquityHedgePricingMode is byte schedulePricing) modeInt = schedulePricing;
             int maxMode = Enum.GetValues(typeof(EquityHedgeMode)).Length - 1;
             modeInt = Math.Min(Math.Max(modeInt, 0), maxMode);
             EquityHedgeMode mode = (EquityHedgeMode)Enum.GetValues(typeof(EquityHedgeMode)).GetValue(modeInt);
-            mode = (isPriceMovingAway || isTinySpread) ? EquityHedgeMode.Agressive : mode;
+
+            // Escalation ladder: Passive -> Mid. It used to jump straight to Agressive (price at the
+            // touch, paying the whole spread) as soon as the ticket had been updated more than
+            // LimitOrderUpdateBeforeMarketOrderConversion times, which made every chased hedge the most
+            // expensive fill we do. Crossing is kept only for spreads so tight that a mid price is not
+            // representable; an explicitly configured Agressive (or Mid) is never downgraded.
+            if (isTinySpread)
+            {
+                mode = EquityHedgeMode.Agressive;
+            }
+            else if (isPriceMovingAway && mode == EquityHedgeMode.Passive)
+            {
+                mode = EquityHedgeMode.MidPrice;
+            }
 
             switch (orderType)
             {

@@ -663,7 +663,12 @@ namespace QuantConnect.Algorithm.CSharp.Core
             public string Start;
             public string End;
             public string Direction;
-            public byte EquityHedgeMode;
+            // Delta basis 0..4 (0-FwdRealizedVolatility .. 4-MvDelta), the same encoding as the global
+            // EquityHedgeMode key. null = inherit the global setting.
+            public byte? EquityHedgeMode;
+            // Pricing 0-Agressive / 1-Mid / 2-Passive. null = inherit the global
+            // EquityHedgePricingMode. The two used to share one field.
+            public byte? EquityHedgePricingMode;
         }
         /// Runtime form of `HedgeScheduleCfg`: parsed regime/direction, time window as TimeSpans,
         /// and the equity hedge mode the schedule imposes while it is active.
@@ -673,7 +678,8 @@ namespace QuantConnect.Algorithm.CSharp.Core
             public TimeSpan Start;
             public TimeSpan End;
             public OrderDirection Direction;
-            public byte EquityHedgeMode;
+            public byte? EquityHedgeMode;
+            public byte? EquityHedgePricingMode;
 
             public HedgeSchedule(HedgeScheduleCfg cfg)
             {
@@ -682,6 +688,7 @@ namespace QuantConnect.Algorithm.CSharp.Core
                 End = AlgoConfig.GetTimeSpan(cfg.End);
                 Direction = Enum.Parse<OrderDirection>(cfg.Direction);
                 EquityHedgeMode = cfg.EquityHedgeMode;
+                EquityHedgePricingMode = cfg.EquityHedgePricingMode;
             }
         }
 

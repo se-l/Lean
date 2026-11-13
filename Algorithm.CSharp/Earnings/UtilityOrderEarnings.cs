@@ -101,6 +101,10 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             int dte = ocw.DaysToExpiration();
             double absDelta = Math.Abs(ocw.Delta(_algo.IV(_option)));
 
+            // Closing gate, per underlying: below this many days to expiration the post-release exit is
+            // suppressed. -1 disables it. It used to be a literal 7 in both branches below.
+            int minDteClose = AlgoConfig.GetEntry(_algo.Cfg.MinDteClosePosition, Underlying.Value);
+
             TimeSpan earningsUtilityTargetHoldingsAfterReleaseStartTimeSell;
             TimeSpan earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy;
             try
@@ -128,8 +132,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             else if (isAfterRelease
                      && OrderDirection == OrderDirection.Sell
                      && _algo.Time.TimeOfDay > earningsUtilityTargetHoldingsAfterReleaseStartTimeSell
-                     && (dte >= 7 ||
-                         (dte < 7 && absDelta < 0.95)) // Dont sell deep ITM options, too much trouble adjusting the hedge. Just let it exercise.
+                     && (minDteClose < 0 || dte >= minDteClose || absDelta < 0.95) // Dont sell deep ITM options, too much trouble adjusting the hedge. Just let it exercise.
                     )
             {
                 utility = 200;
@@ -138,7 +141,7 @@ namespace QuantConnect.Algorithm.CSharp.Earnings
             else if (isAfterRelease
                      && OrderDirection == OrderDirection.Buy
                      && _algo.Time.TimeOfDay > earningsUtilityTargetHoldingsAfterReleaseStartTimeBuy
-                     && dte >= 7
+                     && (minDteClose < 0 || dte >= minDteClose)
                     )
             {
                 utility = 200;
